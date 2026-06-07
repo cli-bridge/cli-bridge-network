@@ -1,0 +1,33 @@
+{
+  "id": "cli-anything",
+  "title": "CLI-Anything / CLI-Hub",
+  "description": "External integration for CLI-Anything and its cli-hub package manager. CBN stores only this manifest; third-party source and installed harnesses stay outside the repository.",
+  "source": {
+    "repository": "https://github.com/HKUDS/CLI-Anything.git",
+    "homepage": "https://cli-anything-guide.com/en/getting-started/",
+    "hub": "https://clianything.cc/"
+  },
+  "install": {
+    "pip_packages": [
+      "cli-anything-hub"
+    ]
+  },
+  "entrypoints": [
+    "cli-hub"
+  ],
+  "integrations": {
+    "codex_skill": {
+      "script": "codex-skill/scripts/install.ps1",
+      "note": "Optional. Installs the upstream Codex skill into CODEX_HOME; do not run unless explicitly requested."
+    }
+  },
+  "capabilities": [
+    "cli-hub list --json",
+    "cli-hub search <query> --json",
+    "cli-hub info <name>",
+    "cli-hub install <name>",
+    "cli-hub update <name>",
+    "cli-hub launch <name> [args...]"
+  ]
+}
+

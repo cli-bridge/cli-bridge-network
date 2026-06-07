@@ -11,6 +11,7 @@ members = [
   "crates/cbn-artifact",
   "crates/cbn-workflow",
   "crates/cbn-adapter-cli",
+  "crates/cbn-adapter-cli-anything",
   "crates/cbn-adapter-mcp",
   "crates/cbn-adapter-a2a",
   "crates/cbn-adapter-acp",
@@ -21,4 +22,3 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/cli-bridge/cli-bridge-network"
-

@@ -14,6 +14,8 @@ class ProjectPaths:
     workflows: Path
     runtime: Path
     logs: Path
+    external_plugins: Path
+    plugin_registry: Path
 
     def as_dict(self) -> dict[str, str]:
         return {
@@ -23,6 +25,8 @@ class ProjectPaths:
             "workflows": str(self.workflows),
             "runtime": str(self.runtime),
             "logs": str(self.logs),
+            "external_plugins": str(self.external_plugins),
+            "plugin_registry": str(self.plugin_registry),
         }
 
 
@@ -35,5 +39,6 @@ def resolve_project_paths(root: Path | None = None) -> ProjectPaths:
         workflows=base / "workflows",
         runtime=base / "runtime",
         logs=base / "runtime" / "logs",
+        external_plugins=base / "external_plugins",
+        plugin_registry=base / "plugins" / "registry",
     )
-

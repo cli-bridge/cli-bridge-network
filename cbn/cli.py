@@ -8,6 +8,7 @@ from api_server.routes.health import health_payload
 from cbn.cli_args import build_parser
 from cbn.paths import resolve_project_paths
 from cbn.version import __version__
+from cbn_plugins.manager import PluginManager
 from nodes import CAPABILITY_NODE_MAPPINGS, init_builtin_nodes
 
 
@@ -40,6 +41,44 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0
 
+    if args.command == "plugin":
+        manager = PluginManager()
+        if args.plugin_command == "list":
+            print(json.dumps(manager.list_plugins(), ensure_ascii=False, indent=2))
+            return 0
+        if args.plugin_command == "info":
+            print(json.dumps(manager.plugin_info(args.plugin_id), ensure_ascii=False, indent=2))
+            return 0
+        if args.plugin_command == "plan":
+            plan = manager.plan(
+                args.plugin_id,
+                action=args.action,
+                include_codex_skill=args.with_codex_skill,
+            )
+            print(json.dumps(plan.as_dict(), ensure_ascii=False, indent=2))
+            return 0
+        if args.plugin_command == "install":
+            plan = manager.plan(
+                args.plugin_id,
+                action="install",
+                include_codex_skill=args.with_codex_skill,
+            )
+            if not args.yes:
+                print(json.dumps(plan.as_dict(), ensure_ascii=False, indent=2))
+                return 2
+            print(json.dumps(manager.execute_plan(plan), ensure_ascii=False, indent=2))
+            return 0
+        if args.plugin_command == "update":
+            plan = manager.plan(
+                args.plugin_id,
+                action="update",
+                include_codex_skill=args.with_codex_skill,
+            )
+            if not args.yes:
+                print(json.dumps(plan.as_dict(), ensure_ascii=False, indent=2))
+                return 2
+            print(json.dumps(manager.execute_plan(plan), ensure_ascii=False, indent=2))
+            return 0
+
     parser.print_help()
     return 0
-

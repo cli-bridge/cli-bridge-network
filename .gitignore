@@ -22,3 +22,7 @@ report/artifacts/sample_repo/.git/
 # Local runtime state; keep the directory placeholder tracked
 runtime/*
 !runtime/.gitkeep
+
+# Third-party plugins installed on demand; keep the directory placeholder tracked
+external_plugins/*
+!external_plugins/.gitkeep

@@ -11,4 +11,3 @@
     "check:cbn": "python -m cbn health"
   }
 }
-
