@@ -5,10 +5,13 @@
   "private": true,
   "description": "Dashboard package for CLI Bridge Network.",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./static": "./src/index.html"
+  },
+  "scripts": {
+    "check": "node scripts/check-dashboard.mjs"
   },
   "dependencies": {
     "@cli-bridge/core": "0.1.0"
   }
 }
-

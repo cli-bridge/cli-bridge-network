@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CBN Console Draft</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>CBN Console</h1>
+        <p>Draft control surface for CLI Bridge Network operations.</p>
+      </div>
+      <div class="status-strip" aria-label="Runtime status summary">
+        <span>Branch: feature/dashboard-control-surface</span>
+        <span>Mode: Static Draft</span>
+        <span>API: Not Connected</span>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="control-grid" aria-label="Control groups">
+        <section class="panel">
+          <h2>Runtime</h2>
+          <button data-command="python -m cbn health">Health</button>
+          <button data-command="python -m cbn paths">Paths</button>
+          <button data-command="python -m cbn nodes">Nodes</button>
+          <button data-command="python -m cbn --version">Version</button>
+          <button data-command="python -m unittest discover tests-unit">Run Unit Tests</button>
+          <button data-command="python -m compileall -q cbn cbn_plugins app api_server adapters">Compile Python</button>
+        </section>
+
+        <section class="panel">
+          <h2>Git Flow</h2>
+          <button data-command="git status -sb">Status</button>
+          <button data-command="git switch develop">Switch Develop</button>
+          <button data-command="git switch -c feature/&lt;name&gt;">New Feature</button>
+          <button data-command="git pull --ff-only">Pull Fast-Forward</button>
+          <button data-command="git push -u origin &lt;branch&gt;">Push Tracking</button>
+          <button data-command="git log --oneline --decorate -8">Recent Commits</button>
+        </section>
+
+        <section class="panel highlight">
+          <h2>CLI-Anything Plugin</h2>
+          <button data-command="python -m cbn plugin info cli-anything">Info</button>
+          <button data-command="python -m cbn plugin plan cli-anything">Download / Clone</button>
+          <button data-command="python -m cbn plugin install cli-anything">Install Preview</button>
+          <button data-command="python -m cbn plugin install cli-anything --yes">Install</button>
+          <button data-command="python -m cbn plugin plan cli-anything --action update">Check Updates</button>
+          <button data-command="python -m cbn plugin update cli-anything --yes">Update</button>
+          <button data-command="python -m cbn plugin install cli-anything --with-codex-skill">Codex Skill Preview</button>
+          <button data-command="python -m cbn plugin install cli-anything --with-codex-skill --yes">Install Codex Skill</button>
+          <button data-command="cli-hub list --json">CLI-Hub List</button>
+          <button data-command="cli-hub search image --json">CLI-Hub Search</button>
+          <button data-command="cli-hub info gimp">CLI-Hub Info</button>
+          <button data-command="cli-hub install gimp">Install Harness</button>
+          <button data-command="cli-hub update gimp">Update Harness</button>
+          <button data-command="cli-hub launch gimp">Launch Harness</button>
+        </section>
+
+        <section class="panel">
+          <h2>Plugin Registry</h2>
+          <button data-command="python -m cbn plugin list">List Plugins</button>
+          <button data-command="Get-Content -Raw -Encoding UTF8 plugins\\registry\\cli-anything.json">Open Manifest</button>
+          <button data-command="python -m cbn plugin plan &lt;plugin&gt;">Plan Plugin</button>
+          <button data-command="python -m cbn plugin install &lt;plugin&gt; --yes">Install Plugin</button>
+          <button data-command="python -m cbn plugin update &lt;plugin&gt; --yes">Update Plugin</button>
+          <button data-command="Remove-Item external_plugins\\&lt;plugin&gt; -Recurse">Remove Local Plugin</button>
+        </section>
+
+        <section class="panel">
+          <h2>Discovery</h2>
+          <button data-command="cbn discover git">Discover Git</button>
+          <button data-command="cbn discover ffmpeg">Discover ffmpeg</button>
+          <button data-command="cbn discover cli-hub">Discover CLI-Hub</button>
+          <button data-command="cbn import cli-anything">Import CLI-Anything</button>
+          <button data-command="cbn import openapi &lt;spec&gt;">Import OpenAPI</button>
+          <button data-command="cbn registry refresh">Refresh Registry</button>
+          <button data-command="cbn registry inspect &lt;capability&gt;">Inspect Capability</button>
+        </section>
+
+        <section class="panel">
+          <h2>Execution</h2>
+          <button data-command="cbn call &lt;capability&gt; --dry-run">Dry Run</button>
+          <button data-command="cbn call &lt;capability&gt; --yes">Execute</button>
+          <button data-command="cbn call git.status">Git Status</button>
+          <button data-command="cbn call ffprobe.inspect --file report/artifacts/sample.wav">ffprobe Inspect</button>
+          <button data-command="cbn queue list">Queue</button>
+          <button data-command="cbn queue cancel &lt;id&gt;">Cancel</button>
+          <button data-command="cbn runtime interrupt">Interrupt</button>
+        </section>
+
+        <section class="panel">
+          <h2>Approval Queue</h2>
+          <button data-command="cbn approvals list">List Pending</button>
+          <button data-command="cbn approvals show &lt;id&gt;">Show Request</button>
+          <button data-command="cbn approvals approve &lt;id&gt;">Approve</button>
+          <button data-command="cbn approvals deny &lt;id&gt;">Deny</button>
+          <button data-command="cbn policy risks">Risk Matrix</button>
+          <button data-command="cbn policy audit">Policy Audit</button>
+        </section>
+
+        <section class="panel">
+          <h2>Protocol Exports</h2>
+          <button data-command="cbn mcp serve --stdio">MCP stdio</button>
+          <button data-command="cbn mcp serve --http --host 127.0.0.1">MCP HTTP</button>
+          <button data-command="cbn a2a serve">A2A Serve</button>
+          <button data-command="cbn acp bridge">ACP Bridge</button>
+          <button data-command="cbn rest serve --host 127.0.0.1">REST Gateway</button>
+          <button data-command="cbn exports list">List Exports</button>
+        </section>
+
+        <section class="panel">
+          <h2>Workflow DAG</h2>
+          <button data-command="cbn workflow list">List Workflows</button>
+          <button data-command="cbn workflow validate workflows\\example.yaml">Validate</button>
+          <button data-command="cbn workflow plan workflows\\example.yaml">Plan</button>
+          <button data-command="cbn workflow run workflows\\example.yaml --dry-run">Dry Run</button>
+          <button data-command="cbn workflow run workflows\\example.yaml --yes">Run</button>
+          <button data-command="cbn workflow stop &lt;run-id&gt;">Stop</button>
+        </section>
+
+        <section class="panel">
+          <h2>Artifact Bus</h2>
+          <button data-command="cbn artifact list">List Artifacts</button>
+          <button data-command="cbn artifact inspect &lt;id&gt;">Inspect</button>
+          <button data-command="cbn artifact open &lt;id&gt;">Open</button>
+          <button data-command="cbn artifact export &lt;id&gt;">Export</button>
+          <button data-command="cbn artifact prune --dry-run">Prune Preview</button>
+          <button data-command="cbn artifact prune --yes">Prune</button>
+        </section>
+
+        <section class="panel">
+          <h2>Audit</h2>
+          <button data-command="cbn audit tail">Tail Audit</button>
+          <button data-command="cbn audit search cli-anything">Search CLI-Anything</button>
+          <button data-command="cbn audit export report\\audit.jsonl">Export</button>
+          <button data-command="Get-Content -Raw -Encoding UTF8 report\\logs\\audit.jsonl">Prototype Audit</button>
+          <button data-command="cbn audit verify">Verify Chain</button>
+          <button data-command="cbn audit redact --dry-run">Redact Preview</button>
+        </section>
+
+        <section class="panel">
+          <h2>Packages</h2>
+          <button data-command="npm -s pkg get workspaces">npm Workspaces</button>
+          <button data-command="npm --workspace @cli-bridge/dashboard run check">Dashboard Check</button>
+          <button data-command="npm --workspace @cli-bridge/core test">Core Test</button>
+          <button data-command="cargo metadata --no-deps --format-version 1">Cargo Metadata</button>
+          <button data-command="cargo test --workspace">Cargo Test</button>
+          <button data-command="cargo build --workspace">Cargo Build</button>
+        </section>
+
+        <section class="panel">
+          <h2>Settings</h2>
+          <button data-command="cbn config show">Show Config</button>
+          <button data-command="cbn config edit">Edit Config</button>
+          <button data-command="cbn paths">Show Paths</button>
+          <button data-command="cbn feature list">Feature Flags</button>
+          <button data-command="cbn feature enable &lt;flag&gt;">Enable Flag</button>
+          <button data-command="cbn feature disable &lt;flag&gt;">Disable Flag</button>
+        </section>
+      </section>
+
+      <aside class="sidecar" aria-label="Command queue and logs">
+        <section class="queue">
+          <div class="sidecar-head">
+            <h2>Command Queue</h2>
+            <button id="clearQueue" type="button">Clear</button>
+          </div>
+          <ol id="commandQueue"></ol>
+        </section>
+
+        <section class="queue">
+          <div class="sidecar-head">
+            <h2>Selected Command</h2>
+            <button id="copyCommand" type="button">Copy</button>
+          </div>
+          <pre id="selectedCommand">Select any button to stage a command.</pre>
+        </section>
+
+        <section class="queue">
+          <h2>Operation Log</h2>
+          <pre id="operationLog">Dashboard loaded. Backend API is not connected.</pre>
+        </section>
+      </aside>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
