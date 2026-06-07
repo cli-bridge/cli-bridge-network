@@ -1,0 +1,11 @@
+{
+  "name": "@cli-bridge/network",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Umbrella package for CLI Bridge Network.",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}
+
