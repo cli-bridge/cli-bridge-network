@@ -1,0 +1,21 @@
+# Local browser automation output
+.playwright-mcp/
+
+# Python caches and virtual environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Node package output
+node_modules/
+dist/
+build/
+
+# Rust build output
+target/
+
+# Experiment fixture internals
+report/artifacts/sample_repo/.git/
+
