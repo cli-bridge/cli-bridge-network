@@ -1,0 +1,19 @@
+"""Example custom adapter pack.
+
+Future adapter packs should expose an explicit registration function instead
+of relying on import side effects.
+"""
+
+from app.registry import CapabilityRecord
+
+
+def register(registry):
+    registry.register(
+        CapabilityRecord(
+            capability_id="example.echo",
+            title="Example Echo",
+            transport="stdio",
+            risk="read",
+        )
+    )
+

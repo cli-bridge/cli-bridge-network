@@ -1,0 +1,3 @@
+# Runtime dependencies are intentionally empty for the initial skeleton.
+# Keep MVP1 stdlib-first until Manifest IR, policy, and adapter contracts stabilize.
+
