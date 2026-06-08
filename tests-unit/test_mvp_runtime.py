@@ -188,6 +188,7 @@ class MvpRuntimeTests(unittest.TestCase):
         self.assertTrue(any(route["path"] == "/events" for route in payload))
         self.assertTrue(any(route["path"] == "/artifacts" for route in payload))
         self.assertTrue(any(route["path"] == "/parsers" for route in payload))
+        self.assertTrue(any(route["path"] == "/protocols" for route in payload))
         self.assertTrue(any(route["path"] == "/approvals" for route in payload))
         self.assertTrue(any(route["path"] == "/workflows/run" for route in payload))
 

@@ -15,6 +15,7 @@ from urllib.parse import parse_qs, urlparse
 
 from api_server.routes.health import health_payload
 from cbn_execution.graph import WorkflowGraph
+from cbn_protocol.exports import export_all_protocols, export_protocol, list_protocol_exports
 from cbn_runtime.context import build_runtime
 from cbn_plugins.cli_anything import CliAnythingHub
 from cbn_plugins.manager import PluginManager
@@ -29,6 +30,7 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/events"},
     {"method": "GET", "path": "/artifacts"},
     {"method": "GET", "path": "/parsers"},
+    {"method": "GET", "path": "/protocols"},
     {"method": "GET", "path": "/approvals"},
     {"method": "POST", "path": "/call"},
     {"method": "POST", "path": "/approvals/decide"},
@@ -100,6 +102,19 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 self._send(200, runtime.parser_registry.inspect(parser_ref))
             else:
                 self._send(200, runtime.parser_registry.list())
+            return
+        if parsed.path == "/protocols":
+            target = query.get("target", [None])[0]
+            capability_id = query.get("capability_id", [None])[0]
+            if target == "all":
+                self._send(200, export_all_protocols(runtime.registry, capability_id=capability_id))
+            elif target:
+                self._send(
+                    200,
+                    export_protocol(runtime.registry, target, capability_id=capability_id),
+                )
+            else:
+                self._send(200, list_protocol_exports())
             return
         if parsed.path == "/approvals":
             approval_id = query.get("approval_id", [None])[0]

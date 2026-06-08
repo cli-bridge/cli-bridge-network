@@ -50,6 +50,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser_inspect = parser_subcommands.add_parser("inspect", help="Inspect one parser.")
     parser_inspect.add_argument("parser_ref")
 
+    protocol_parser = subcommands.add_parser("protocol", help="Inspect protocol export descriptors.")
+    protocol_subcommands = protocol_parser.add_subparsers(dest="protocol_command")
+    protocol_subcommands.add_parser("list", help="List supported descriptor exports.")
+    protocol_export = protocol_subcommands.add_parser("export", help="Export capability descriptors.")
+    protocol_export.add_argument("target", choices=["mcp", "a2a", "acp", "all"])
+    protocol_export.add_argument("--capability-id")
+
     approvals_parser = subcommands.add_parser("approvals", help="Manage the approval queue.")
     approvals_subcommands = approvals_parser.add_subparsers(dest="approvals_command")
     approvals_list = approvals_subcommands.add_parser("list", help="List approval requests.")

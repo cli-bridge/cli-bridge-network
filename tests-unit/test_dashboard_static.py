@@ -24,6 +24,7 @@ class DashboardStaticTests(unittest.TestCase):
         self.assertIn("python -m cbn approvals list", self.html)
         self.assertIn("python -m cbn workflow run workflows/example.json --dry-run", self.html)
         self.assertIn("python -m cbn parser list", self.html)
+        self.assertIn("python -m cbn protocol export all", self.html)
 
     def test_static_js_queues_commands(self):
         self.assertIn("stageCommand", self.js)

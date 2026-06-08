@@ -12,6 +12,7 @@ from cbn.version import __version__
 from cbn_execution.graph import WorkflowGraph
 from cbn_plugins.cli_anything import CliAnythingHub
 from cbn_plugins.manager import PluginManager
+from cbn_protocol.exports import export_all_protocols, export_protocol, list_protocol_exports
 from cbn_runtime.context import build_runtime
 from api_server.server import ROUTE_SUMMARY, serve
 from nodes import CAPABILITY_NODE_MAPPINGS, init_builtin_nodes
@@ -109,6 +110,23 @@ def main(argv: list[str] | None = None) -> int:
                     indent=2,
                 )
             )
+            return 0
+
+    if args.command == "protocol":
+        runtime = build_runtime()
+        if args.protocol_command == "list":
+            print(json.dumps(list_protocol_exports(), ensure_ascii=False, indent=2))
+            return 0
+        if args.protocol_command == "export":
+            if args.target == "all":
+                payload = export_all_protocols(runtime.registry, capability_id=args.capability_id)
+            else:
+                payload = export_protocol(
+                    runtime.registry,
+                    args.target,
+                    capability_id=args.capability_id,
+                )
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
             return 0
 
     if args.command == "approvals":

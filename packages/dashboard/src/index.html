@@ -109,6 +109,9 @@
 
         <section class="panel">
           <h2>Protocol Exports</h2>
+          <button data-command="python -m cbn protocol list">List Protocol Exports</button>
+          <button data-command="python -m cbn protocol export all">Export All</button>
+          <button data-command="python -m cbn protocol export mcp --capability-id git.status">Export MCP Tool</button>
           <button data-command="cbn mcp serve --stdio">MCP stdio</button>
           <button data-command="cbn mcp serve --http --host 127.0.0.1">MCP HTTP</button>
           <button data-command="cbn a2a serve">A2A Serve</button>
