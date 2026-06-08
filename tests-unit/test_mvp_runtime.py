@@ -199,6 +199,8 @@ class MvpRuntimeTests(unittest.TestCase):
         payload = json.loads(proc.stdout)
         self.assertTrue(any(route["path"] == "/plugins/plan" for route in payload))
         self.assertTrue(any(route["path"] == "/registry?q=<query>" for route in payload))
+        self.assertTrue(any(route["path"] == "/messages/validate" for route in payload))
+        self.assertTrue(any(route["path"] == "/messages/select" for route in payload))
         self.assertTrue(any(route["path"] == "/plugins/execute" for route in payload))
         self.assertTrue(any(route["path"] == "/plugins/cli-anything/preflight" for route in payload))
         self.assertTrue(any(route["path"] == "/plugins/cli-anything/adapt-harness" for route in payload))

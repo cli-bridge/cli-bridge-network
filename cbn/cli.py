@@ -13,6 +13,7 @@ from cbn.version import __version__
 from cbn_execution.graph import WorkflowGraph
 from cbn_plugins.cli_anything import CliAnythingHub
 from cbn_plugins.manager import PluginManager
+from cbn_protocol.envelope import select_bridge_value, validate_bridge_message
 from cbn_protocol.exports import export_all_protocols, export_protocol, list_protocol_exports
 from cbn_runtime.context import build_runtime
 from api_server.server import ROUTE_SUMMARY, serve
@@ -133,6 +134,20 @@ def main(argv: list[str] | None = None) -> int:
                 )
             print(json.dumps(payload, ensure_ascii=False, indent=2))
             return 0
+
+    if args.command == "message":
+        message = _read_json_arg(args.path)
+        if args.message_command == "validate":
+            result = validate_bridge_message(message)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["valid"] else 7
+        if args.message_command == "select":
+            try:
+                print(json.dumps(select_bridge_value(message, args.selector), ensure_ascii=False, indent=2))
+                return 0
+            except (KeyError, IndexError, ValueError) as exc:
+                print(json.dumps({"error": str(exc), "selector": args.selector}, ensure_ascii=False, indent=2))
+                return 8
 
     if args.command == "approvals":
         runtime = build_runtime()
@@ -353,3 +368,9 @@ def _configure_stdio_utf8() -> None:
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8")
+
+
+def _read_json_arg(path: str) -> dict:
+    if path == "-":
+        return json.loads(sys.stdin.read())
+    return json.loads(Path(path).read_text(encoding="utf-8"))

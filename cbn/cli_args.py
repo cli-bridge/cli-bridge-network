@@ -60,6 +60,14 @@ def build_parser() -> argparse.ArgumentParser:
     protocol_export.add_argument("target", choices=["mcp", "a2a", "acp", "all"])
     protocol_export.add_argument("--capability-id")
 
+    message_parser = subcommands.add_parser("message", help="Validate and inspect BridgeMessage envelopes.")
+    message_subcommands = message_parser.add_subparsers(dest="message_command")
+    message_validate = message_subcommands.add_parser("validate", help="Validate one BridgeMessage JSON file.")
+    message_validate.add_argument("path", help="BridgeMessage JSON path, or '-' for stdin.")
+    message_select = message_subcommands.add_parser("select", help="Select a value from one BridgeMessage.")
+    message_select.add_argument("path", help="BridgeMessage JSON path, or '-' for stdin.")
+    message_select.add_argument("selector", help="Selector such as payload.data.stdout or artifacts[0].artifact_id.")
+
     approvals_parser = subcommands.add_parser("approvals", help="Manage the approval queue.")
     approvals_subcommands = approvals_parser.add_subparsers(dest="approvals_command")
     approvals_list = approvals_subcommands.add_parser("list", help="List approval requests.")

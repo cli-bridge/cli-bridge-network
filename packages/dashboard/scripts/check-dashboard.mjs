@@ -91,6 +91,14 @@ if (!html.includes("python -m cbn protocol export all")) {
   throw new Error("Dashboard does not expose the protocol export command.");
 }
 
+if (!html.includes("python -m cbn message validate")) {
+  throw new Error("Dashboard does not expose the BridgeMessage validate command.");
+}
+
+if (!html.includes("python -m cbn message select")) {
+  throw new Error("Dashboard does not expose the BridgeMessage selector command.");
+}
+
 if (!js.includes("stageCommand")) {
   throw new Error("Dashboard script does not stage commands.");
 }

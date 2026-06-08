@@ -1,10 +1,12 @@
 import json
 import subprocess
 import sys
+import tempfile
 import unittest
+from pathlib import Path
 
 from cbn_parsers.registry import ParserRegistry
-from cbn_protocol.envelope import BridgeMessage
+from cbn_protocol.envelope import BridgeMessage, select_bridge_value, validate_bridge_message
 
 
 class ParserProtocolTests(unittest.TestCase):
@@ -34,6 +36,24 @@ class ParserProtocolTests(unittest.TestCase):
         self.assertEqual(message["metadata"]["producer"], "git.status")
         self.assertEqual(message["metadata"]["correlationId"], "call-1")
 
+    def test_bridge_message_validation_and_selectors(self):
+        message = BridgeMessage(
+            producer="git.status",
+            channel="capability.output",
+            correlation_id="call-1",
+            payload={"parser_ref": "raw.text", "data": {"stdout": "git status --short"}},
+            artifacts=({"artifact_id": "artifact-1", "kind": "stdout"},),
+        ).as_dict()
+        self.assertTrue(validate_bridge_message(message)["valid"])
+        self.assertEqual(select_bridge_value(message, "payload.data.stdout")["value"], "git status --short")
+        self.assertEqual(select_bridge_value(message, "artifacts[0].artifact_id")["value"], "artifact-1")
+
+    def test_invalid_bridge_message_reports_errors(self):
+        result = validate_bridge_message({"kind": "BridgeMessage", "payload": []})
+        self.assertFalse(result["valid"])
+        self.assertIn("metadata must be an object", result["errors"])
+        self.assertIn("payload must be an object", result["errors"])
+
     def test_cli_parser_list_and_call_message(self):
         parsers = subprocess.run(
             [sys.executable, "-m", "cbn", "parser", "list"],
@@ -58,6 +78,36 @@ class ParserProtocolTests(unittest.TestCase):
         self.assertEqual(payload["parsed"]["parser_ref"], "raw.text")
         self.assertEqual(payload["message"]["kind"], "BridgeMessage")
         self.assertEqual(payload["message"]["metadata"]["producer"], "git.version")
+
+    def test_cli_message_validate_and_select(self):
+        message = BridgeMessage(
+            producer="git.version",
+            channel="capability.output",
+            correlation_id="call-1",
+            payload={"parser_ref": "raw.text", "data": {"stdout": "git --version"}},
+        ).as_dict()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "message.json"
+            path.write_text(json.dumps(message, ensure_ascii=False), encoding="utf-8")
+            validated = subprocess.run(
+                [sys.executable, "-m", "cbn", "message", "validate", str(path)],
+                text=True,
+                encoding="utf-8",
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+            )
+            self.assertTrue(json.loads(validated.stdout)["valid"])
+
+            selected = subprocess.run(
+                [sys.executable, "-m", "cbn", "message", "select", str(path), "payload.data.stdout"],
+                text=True,
+                encoding="utf-8",
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+            )
+            self.assertEqual(json.loads(selected.stdout)["value"], "git --version")
 
     def test_dry_run_uses_raw_parser_even_for_structured_capability(self):
         call = subprocess.run(

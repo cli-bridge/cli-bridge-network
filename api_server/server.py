@@ -15,6 +15,7 @@ from urllib.parse import parse_qs, urlparse
 
 from api_server.routes.health import health_payload
 from cbn_execution.graph import WorkflowGraph
+from cbn_protocol.envelope import select_bridge_value, validate_bridge_message
 from cbn_protocol.exports import export_all_protocols, export_protocol, list_protocol_exports
 from cbn_runtime.context import build_runtime
 from cbn_plugins.cli_anything import CliAnythingHub
@@ -36,6 +37,8 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/protocols"},
     {"method": "GET", "path": "/approvals"},
     {"method": "POST", "path": "/call"},
+    {"method": "POST", "path": "/messages/validate"},
+    {"method": "POST", "path": "/messages/select"},
     {"method": "POST", "path": "/approvals/decide"},
     {"method": "POST", "path": "/workflows/validate"},
     {"method": "POST", "path": "/workflows/plan"},
@@ -156,6 +159,16 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 approval_id=payload.get("approval_id"),
             )
             self._send(200 if result.get("allowed") else 403, result)
+            return
+        if self.path == "/messages/validate":
+            result = validate_bridge_message(payload["message"])
+            self._send(200 if result["valid"] else 422, result)
+            return
+        if self.path == "/messages/select":
+            try:
+                self._send(200, select_bridge_value(payload["message"], payload["selector"]))
+            except (KeyError, IndexError, ValueError) as exc:
+                self._send(400, {"error": str(exc), "selector": payload.get("selector")})
             return
         if self.path == "/approvals/decide":
             approval = runtime.approval_store.decide(
