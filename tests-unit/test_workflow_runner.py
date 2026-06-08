@@ -53,6 +53,26 @@ class WorkflowRunnerTests(unittest.TestCase):
             [{"task": "source-diagram", "selector": "payload.data.stdout"}],
         )
 
+    def test_cli_anything_macrocli_mermaid_workflow_routes_parser_payload(self):
+        graph = WorkflowGraph.from_file(Path("workflows/cli-anything-macrocli-mermaid-routing.example.json"))
+        plan = graph.as_plan()
+        transform = plan["tasks"][1]
+        consumer = plan["tasks"][2]
+        self.assertEqual(plan["workflow_id"], "example.cli-anything-macrocli-mermaid-routing")
+        self.assertEqual([task["uses"] for task in plan["tasks"]], [
+            "cli-anything.macrocli.backends",
+            "cbn.transform.macrocli-backends-to-mermaid",
+            "cli-anything.mermaid.set-diagram",
+        ])
+        self.assertEqual(
+            transform["argsFrom"],
+            [{"task": "macrocli-backends", "selector": "payload.data"}],
+        )
+        self.assertEqual(
+            consumer["argsFrom"],
+            [{"task": "backend-diagram-source", "selector": "payload.data.stdout"}],
+        )
+
     def test_workflow_graph_rejects_cycles(self):
         graph = WorkflowGraph.from_dict(
             {
@@ -149,6 +169,7 @@ class WorkflowRunnerTests(unittest.TestCase):
             ["workflow", "plan", "workflows/example.json"],
             ["workflow", "run", "workflows/example.json", "--dry-run"],
             ["workflow", "run", "workflows/message-routing.example.json", "--dry-run"],
+            ["workflow", "validate", "workflows/cli-anything-macrocli-mermaid-routing.example.json"],
         ):
             proc = subprocess.run(
                 [sys.executable, "-m", "cbn", *args],

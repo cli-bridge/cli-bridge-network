@@ -1,0 +1,37 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "ToolManifest",
+  "metadata": {
+    "id": "cbn.transform.macrocli-backends-to-mermaid",
+    "title": "CBN Transform MacroCLI Backends To Mermaid",
+    "labels": {
+      "transform": "true",
+      "protocol": "bridge-message",
+      "source": "verified-fixture"
+    },
+    "annotations": {
+      "cbn.description": "Converts verified MacroCLI backend parser payload JSON into a runtime Mermaid source file path."
+    }
+  },
+  "spec": {
+    "transport": {
+      "kind": "stdio",
+      "command": "python",
+      "argsTemplate": [
+        "-m",
+        "cbn_tools.macrocli_backends_to_mermaid"
+      ],
+      "cwdPolicy": "workspace",
+      "timeoutSeconds": 30
+    },
+    "policy": {
+      "risk": "write-workspace",
+      "requiresConfirmation": false,
+      "network": "deny"
+    },
+    "output": {
+      "parserRef": "raw.text",
+      "verified": true
+    }
+  }
+}

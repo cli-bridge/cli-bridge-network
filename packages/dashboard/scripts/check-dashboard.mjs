@@ -153,6 +153,10 @@ if (!html.includes("python -m cbn workflow run workflows/cli-anything-mermaid-ro
   throw new Error("Dashboard does not expose the CLI-Anything Mermaid routing workflow command.");
 }
 
+if (!html.includes("python -m cbn workflow run workflows/cli-anything-macrocli-mermaid-routing.example.json")) {
+  throw new Error("Dashboard does not expose the MacroCLI to Mermaid routing workflow command.");
+}
+
 if (!html.includes("python -m cbn parser list")) {
   throw new Error("Dashboard does not expose the parser registry list command.");
 }

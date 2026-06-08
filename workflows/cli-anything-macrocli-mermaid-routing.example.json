@@ -1,0 +1,42 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "Workflow",
+  "metadata": {
+    "id": "example.cli-anything-macrocli-mermaid-routing",
+    "title": "CLI-Anything MacroCLI To Mermaid BridgeMessage Routing"
+  },
+  "spec": {
+    "tasks": [
+      {
+        "id": "macrocli-backends",
+        "uses": "cli-anything.macrocli.backends"
+      },
+      {
+        "id": "backend-diagram-source",
+        "uses": "cbn.transform.macrocli-backends-to-mermaid",
+        "needs": [
+          "macrocli-backends"
+        ],
+        "argsFrom": [
+          {
+            "task": "macrocli-backends",
+            "selector": "payload.data"
+          }
+        ]
+      },
+      {
+        "id": "mermaid-consumer",
+        "uses": "cli-anything.mermaid.set-diagram",
+        "needs": [
+          "backend-diagram-source"
+        ],
+        "argsFrom": [
+          {
+            "task": "backend-diagram-source",
+            "selector": "payload.data.stdout"
+          }
+        ]
+      }
+    ]
+  }
+}
