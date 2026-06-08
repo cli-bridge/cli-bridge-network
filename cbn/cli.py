@@ -215,6 +215,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.plugin_command == "info":
             print(json.dumps(manager.plugin_info(args.plugin_id), ensure_ascii=False, indent=2))
             return 0
+        if args.plugin_command == "preflight":
+            result = manager.preflight(args.plugin_id)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["ready"] else 5
         if args.plugin_command == "status":
             if args.plugin_id != "cli-anything":
                 raise KeyError(f"status is not implemented for plugin: {args.plugin_id}")

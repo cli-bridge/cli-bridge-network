@@ -96,6 +96,9 @@ def build_parser() -> argparse.ArgumentParser:
     plugin_info = plugin_subcommands.add_parser("info", help="Show plugin metadata.")
     plugin_info.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
 
+    plugin_preflight = plugin_subcommands.add_parser("preflight", help="Run install readiness checks.")
+    plugin_preflight.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
+
     plugin_status = plugin_subcommands.add_parser("status", help="Show external plugin runtime status.")
     plugin_status.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
 

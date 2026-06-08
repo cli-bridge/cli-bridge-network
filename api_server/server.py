@@ -26,6 +26,7 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/registry"},
     {"method": "GET", "path": "/plugins"},
     {"method": "GET", "path": "/plugins/cli-anything/status"},
+    {"method": "GET", "path": "/plugins/cli-anything/preflight"},
     {"method": "GET", "path": "/audit"},
     {"method": "GET", "path": "/events"},
     {"method": "GET", "path": "/artifacts"},
@@ -80,6 +81,9 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/plugins/cli-anything/status":
             self._send(200, CliAnythingHub().status())
+            return
+        if parsed.path == "/plugins/cli-anything/preflight":
+            self._send(200, PluginManager().preflight("cli-anything"))
             return
         if parsed.path == "/audit":
             self._send(200, runtime.audit_log.tail())

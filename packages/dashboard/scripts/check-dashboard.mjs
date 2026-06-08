@@ -31,6 +31,10 @@ if (!html.includes("python -m cbn plugin plan cli-anything")) {
   throw new Error("Dashboard does not expose the CLI-Anything plan command.");
 }
 
+if (!html.includes("python -m cbn plugin preflight cli-anything")) {
+  throw new Error("Dashboard does not expose the CLI-Anything preflight command.");
+}
+
 if (!html.includes("python -m cbn plugin market cli-anything list")) {
   throw new Error("Dashboard does not expose the CBN-managed CLI-Hub list command.");
 }

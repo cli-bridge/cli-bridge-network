@@ -14,6 +14,7 @@ class DashboardStaticTests(unittest.TestCase):
 
     def test_cli_anything_commands_are_staged(self):
         self.assertIn("python -m cbn plugin plan cli-anything", self.html)
+        self.assertIn("python -m cbn plugin preflight cli-anything", self.html)
         self.assertIn("python -m cbn plugin install cli-anything --yes", self.html)
         self.assertIn("python -m cbn plugin update cli-anything --yes", self.html)
         self.assertIn("python -m cbn plugin status cli-anything", self.html)
