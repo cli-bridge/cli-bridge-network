@@ -67,8 +67,21 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Access-Control-Allow-Origin", "http://127.0.0.1")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
         self.wfile.write(body)
+
+    def _send_error(self, status: int, error_type: str, message: str) -> None:
+        self._send(
+            status,
+            {
+                "ok": False,
+                "error": message,
+                "error_type": error_type,
+                "status": status,
+            },
+        )
 
     def _read_json(self) -> dict[str, Any]:
         length = int(self.headers.get("Content-Length", "0"))
@@ -81,6 +94,29 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
         runtime.audit_log.append({"type": "daemon.http_log", "message": fmt % args})
 
     def do_GET(self) -> None:
+        try:
+            self._handle_GET()
+        except KeyError as exc:
+            self._send_error(404, "not_found", str(exc))
+        except (IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            self._send_error(400, "bad_request", str(exc))
+        except Exception as exc:
+            self._send_error(500, "internal_error", str(exc))
+
+    def do_POST(self) -> None:
+        try:
+            self._handle_POST()
+        except KeyError as exc:
+            self._send_error(404, "not_found", str(exc))
+        except (IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            self._send_error(400, "bad_request", str(exc))
+        except Exception as exc:
+            self._send_error(500, "internal_error", str(exc))
+
+    def do_OPTIONS(self) -> None:
+        self._send(200, {"ok": True})
+
+    def _handle_GET(self) -> None:
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
         if parsed.path == "/health":
@@ -158,7 +194,7 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             return
         self._send(404, {"error": "not found", "routes": ROUTE_SUMMARY})
 
-    def do_POST(self) -> None:
+    def _handle_POST(self) -> None:
         runtime = build_runtime()
         payload = self._read_json()
         if self.path == "/call":
