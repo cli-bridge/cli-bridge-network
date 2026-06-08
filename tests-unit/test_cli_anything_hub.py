@@ -128,6 +128,10 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(plan.action, "harness-install-gimp")
         self.assertEqual(plan.commands[0].argv, ("cli-hub", "install", "gimp"))
 
+        uninstall = CliAnythingHub().harness_plan("uninstall", "gimp")
+        self.assertEqual(uninstall.action, "harness-uninstall-gimp")
+        self.assertEqual(uninstall.commands[0].argv, ("cli-hub", "uninstall", "gimp"))
+
     def test_cli_harness_plan_does_not_execute_without_yes(self):
         proc = subprocess.run(
             [
@@ -149,6 +153,28 @@ class CliAnythingHubTests(unittest.TestCase):
         payload = json.loads(proc.stdout)
         self.assertEqual(payload["plugin_id"], "cli-anything")
         self.assertEqual(payload["commands"][0]["argv"], ["cli-hub", "install", "gimp"])
+
+    def test_cli_harness_uninstall_plan_does_not_execute_without_yes(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "plugin",
+                "harness",
+                "cli-anything",
+                "uninstall",
+                "gimp",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertEqual(proc.returncode, 2)
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["action"], "harness-uninstall-gimp")
+        self.assertEqual(payload["commands"][0]["argv"], ["cli-hub", "uninstall", "gimp"])
 
     def test_cli_harness_status_outputs_json(self):
         proc = subprocess.run(

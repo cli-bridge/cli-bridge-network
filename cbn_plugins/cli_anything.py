@@ -147,7 +147,7 @@ class CliAnythingHub:
         harness_name: str,
         extra_args: tuple[str, ...] = (),
     ) -> PluginPlan:
-        if action not in {"install", "update", "launch"}:
+        if action not in {"install", "update", "uninstall", "launch"}:
             raise ValueError(f"unsupported CLI-Anything harness action: {action}")
         safe_name = sanitize_harness_name(harness_name)
         if action == "launch":
