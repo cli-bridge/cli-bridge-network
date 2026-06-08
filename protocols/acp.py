@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Any
 
 from cbn_core.manifest import CapabilityManifest
+from protocols.common import cbn_descriptor
 
 EXPORT_NAME = "acp"
 
@@ -32,6 +33,7 @@ def capability_to_tool(manifest: CapabilityManifest) -> dict[str, Any]:
             "requires_confirmation": manifest.policy.requires_confirmation,
             "network": manifest.policy.network,
         },
+        "cbn": cbn_descriptor(manifest),
     }
 
 

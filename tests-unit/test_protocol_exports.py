@@ -22,12 +22,28 @@ class ProtocolExportTests(unittest.TestCase):
         payload = export_protocol(self.registry, "mcp", capability_id="git.status")
         self.assertFalse(payload["wire_compatible"])
         self.assertEqual(payload["tools"][0]["name"], "git.status")
-        self.assertEqual(payload["tools"][0]["_meta"]["cbn"]["parser_ref"], "git.status.short")
+        cbn = payload["tools"][0]["_meta"]["cbn"]
+        self.assertEqual(cbn["output"]["parser_ref"], "git.status.short")
+        self.assertEqual(cbn["output"]["message_kind"], "BridgeMessage")
+        self.assertEqual(cbn["policy"]["network"], "deny")
 
     def test_a2a_and_acp_exports_include_git_status(self):
         payload = export_all_protocols(self.registry, capability_id="git.status")
         self.assertEqual(payload["exports"]["a2a"]["agentCard"]["skills"][0]["id"], "git.status")
         self.assertEqual(payload["exports"]["acp"]["tools"][0]["id"], "git.status")
+        a2a_cbn = payload["exports"]["a2a"]["agentCard"]["skills"][0]["cbn"]
+        acp_cbn = payload["exports"]["acp"]["tools"][0]["cbn"]
+        self.assertEqual(a2a_cbn["capability_id"], "git.status")
+        self.assertEqual(acp_cbn["capability_id"], "git.status")
+        self.assertEqual(a2a_cbn["output"], acp_cbn["output"])
+        self.assertEqual(a2a_cbn["transport"]["args_template"], ["status", "--short"])
+
+    def test_protocol_exports_preserve_manifest_labels_and_source_path(self):
+        payload = export_protocol(self.registry, "mcp", capability_id="ffprobe.inspect")
+        cbn = payload["tools"][0]["_meta"]["cbn"]
+        self.assertEqual(cbn["labels"], {})
+        self.assertEqual(cbn["output"]["parser_ref"], "ffprobe.json")
+        self.assertIn("manifests", cbn["source_path"])
 
     def test_cli_protocol_export(self):
         proc = subprocess.run(
