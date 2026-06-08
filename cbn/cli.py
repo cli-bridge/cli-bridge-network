@@ -96,6 +96,21 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 0
 
+    if args.command == "parser":
+        runtime = build_runtime()
+        if args.parser_command == "list":
+            print(json.dumps(runtime.parser_registry.list(), ensure_ascii=False, indent=2))
+            return 0
+        if args.parser_command == "inspect":
+            print(
+                json.dumps(
+                    runtime.parser_registry.inspect(args.parser_ref),
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 0
+
     if args.command == "approvals":
         runtime = build_runtime()
         if args.approvals_command == "list":

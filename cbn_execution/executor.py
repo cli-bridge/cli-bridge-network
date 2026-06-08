@@ -13,7 +13,9 @@ from cbn_approval.store import ApprovalStore
 from cbn_artifacts.store import ArtifactStore
 from cbn_core.manifest import CapabilityManifest, ManifestRegistry
 from cbn_events.bus import EventBus
+from cbn_parsers.registry import ParserRegistry
 from cbn_policy.engine import PolicyEngine
+from cbn_protocol.envelope import BridgeMessage
 from protocol import EventType
 
 
@@ -26,6 +28,7 @@ class CapabilityExecutor:
         approval_store: ApprovalStore | None = None,
         event_bus: EventBus | None = None,
         artifact_store: ArtifactStore | None = None,
+        parser_registry: ParserRegistry | None = None,
     ) -> None:
         self.registry = registry
         self.audit_log = audit_log
@@ -33,6 +36,7 @@ class CapabilityExecutor:
         self.approval_store = approval_store
         self.event_bus = event_bus
         self.artifact_store = artifact_store
+        self.parser_registry = parser_registry or ParserRegistry.builtins()
         self.stdio = StdioAdapter()
 
     def call(
@@ -122,6 +126,22 @@ class CapabilityExecutor:
         )
         result = self._dispatch(manifest, request)
         artifacts = self._record_artifacts(capability_id, call_id, result)
+        parsed = self._parse_result(manifest, call_id, result, artifacts)
+        if parsed["artifact"] is not None:
+            artifacts.append(parsed["artifact"])
+        message = BridgeMessage(
+            producer=capability_id,
+            channel="capability.output",
+            correlation_id=call_id,
+            payload=parsed["payload"],
+            artifacts=tuple(artifacts),
+        ).as_dict()
+        self._publish(
+            EventType.BRIDGE_MESSAGE_CREATED,
+            capability_id,
+            {"message": message},
+            call_id,
+        )
         event = self.audit_log.append(
             {
                 "type": "tool_call.completed",
@@ -132,6 +152,7 @@ class CapabilityExecutor:
                 "reason": result.reason,
                 "stdout_summary": result.stdout[:500],
                 "stderr_summary": result.stderr[:500],
+                "parser_ref": parsed["payload"]["parser_ref"],
                 "artifact_ids": [artifact["artifact_id"] for artifact in artifacts],
                 "dry_run": dry_run,
             }
@@ -144,6 +165,7 @@ class CapabilityExecutor:
                 "exit_code": result.exit_code,
                 "reason": result.reason,
                 "approval_id": approval_id if approval_confirmed else None,
+                "parser_ref": parsed["payload"]["parser_ref"],
                 "artifact_ids": [artifact["artifact_id"] for artifact in artifacts],
                 "dry_run": dry_run,
             },
@@ -158,6 +180,8 @@ class CapabilityExecutor:
             "stdout": result.stdout,
             "stderr": result.stderr,
             "approval_id": approval_id if approval_confirmed else None,
+            "parsed": parsed["payload"],
+            "message": message,
             "artifacts": artifacts,
             "audit_event_id": event["event_id"],
         }
@@ -212,6 +236,43 @@ class CapabilityExecutor:
                     call_id,
                 )
         return records
+
+    def _parse_result(
+        self,
+        manifest: CapabilityManifest,
+        call_id: str,
+        result: ToolResult,
+        artifacts: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        try:
+            payload = self.parser_registry.parse(
+                manifest.output.parser_ref,
+                result.stdout,
+                result.stderr,
+            )
+        except Exception as exc:
+            payload = {
+                "parser_ref": manifest.output.parser_ref,
+                "ok": False,
+                "error": str(exc),
+                "data": {"stdout": result.stdout, "stderr": result.stderr},
+            }
+        artifact = None
+        if self.artifact_store is not None:
+            record = self.artifact_store.create_json(
+                capability_id=manifest.capability_id,
+                call_id=call_id,
+                kind="parsed",
+                payload=payload,
+            )
+            artifact = record.as_dict()
+            self._publish(
+                EventType.OUTPUT_PARSED,
+                manifest.capability_id,
+                {"parsed": payload, "artifact": artifact},
+                call_id,
+            )
+        return {"payload": payload, "artifact": artifact}
 
     def _publish(
         self,

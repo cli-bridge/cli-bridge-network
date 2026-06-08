@@ -1,0 +1,111 @@
+"""Built-in output parser registry."""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from typing import Any, Callable
+
+
+ParserFn = Callable[[str, str], dict[str, Any]]
+
+
+@dataclass(frozen=True)
+class ParserRecord:
+    parser_ref: str
+    title: str
+    description: str
+
+    def as_dict(self) -> dict[str, str]:
+        return {
+            "parser_ref": self.parser_ref,
+            "title": self.title,
+            "description": self.description,
+        }
+
+
+class ParserRegistry:
+    def __init__(self) -> None:
+        self._parsers: dict[str, tuple[ParserRecord, ParserFn]] = {}
+
+    @classmethod
+    def builtins(cls) -> "ParserRegistry":
+        registry = cls()
+        registry.register("raw.text", "Raw Text", "Return stdout and stderr as text.", parse_raw_text)
+        registry.register("json.stdout", "JSON stdout", "Parse stdout as JSON.", parse_json_stdout)
+        registry.register(
+            "git.status.short",
+            "Git short status",
+            "Parse `git status --short` porcelain-ish output into entries.",
+            parse_git_status_short,
+        )
+        registry.register("ffprobe.json", "ffprobe JSON", "Parse ffprobe `-of json` output.", parse_json_stdout)
+        registry.register(
+            "cli-anything.raw",
+            "CLI-Anything raw",
+            "Keep CLI-Anything harness output as raw text until a verified harness parser exists.",
+            parse_raw_text,
+        )
+        return registry
+
+    def register(
+        self,
+        parser_ref: str,
+        title: str,
+        description: str,
+        parser: ParserFn,
+    ) -> None:
+        if parser_ref in self._parsers:
+            raise ValueError(f"duplicate parser: {parser_ref}")
+        self._parsers[parser_ref] = (ParserRecord(parser_ref, title, description), parser)
+
+    def list(self) -> list[dict[str, str]]:
+        return [record.as_dict() for record, _ in self._parsers.values()]
+
+    def inspect(self, parser_ref: str) -> dict[str, str]:
+        record, _ = self._require(parser_ref)
+        return record.as_dict()
+
+    def parse(self, parser_ref: str | None, stdout: str, stderr: str) -> dict[str, Any]:
+        if parser_ref is None:
+            parser_ref = "raw.text"
+        _, parser = self._require(parser_ref)
+        return {
+            "parser_ref": parser_ref,
+            "ok": True,
+            "data": parser(stdout, stderr),
+        }
+
+    def _require(self, parser_ref: str) -> tuple[ParserRecord, ParserFn]:
+        parser = self._parsers.get(parser_ref)
+        if parser is None:
+            raise KeyError(f"unknown parser: {parser_ref}")
+        return parser
+
+
+def parse_raw_text(stdout: str, stderr: str) -> dict[str, Any]:
+    return {"stdout": stdout, "stderr": stderr}
+
+
+def parse_json_stdout(stdout: str, stderr: str) -> dict[str, Any]:
+    if stderr.strip():
+        return {"json": json.loads(stdout), "stderr": stderr}
+    return {"json": json.loads(stdout)}
+
+
+def parse_git_status_short(stdout: str, stderr: str) -> dict[str, Any]:
+    entries = []
+    for line in stdout.splitlines():
+        if not line:
+            continue
+        status = line[:2]
+        path = line[3:] if len(line) > 3 else ""
+        entries.append(
+            {
+                "index": status[0],
+                "worktree": status[1],
+                "path": path,
+                "raw": line,
+            }
+        )
+    return {"entries": entries, "stderr": stderr}

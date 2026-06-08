@@ -44,6 +44,12 @@ def build_parser() -> argparse.ArgumentParser:
     artifact_inspect = artifact_subcommands.add_parser("inspect", help="Inspect one artifact.")
     artifact_inspect.add_argument("artifact_id")
 
+    parser_parser = subcommands.add_parser("parser", help="Inspect output parsers.")
+    parser_subcommands = parser_parser.add_subparsers(dest="parser_command")
+    parser_subcommands.add_parser("list", help="List built-in parsers.")
+    parser_inspect = parser_subcommands.add_parser("inspect", help="Inspect one parser.")
+    parser_inspect.add_argument("parser_ref")
+
     approvals_parser = subcommands.add_parser("approvals", help="Manage the approval queue.")
     approvals_subcommands = approvals_parser.add_subparsers(dest="approvals_command")
     approvals_list = approvals_subcommands.add_parser("list", help="List approval requests.")

@@ -11,6 +11,8 @@ class EventType(StrEnum):
     APPROVAL_REQUESTED = "approval.requested"
     APPROVAL_DECIDED = "approval.decided"
     ARTIFACT_CREATED = "artifact.created"
+    OUTPUT_PARSED = "output.parsed"
+    BRIDGE_MESSAGE_CREATED = "bridge.message.created"
     WORKFLOW_STARTED = "workflow.started"
     WORKFLOW_TASK_STARTED = "workflow.task.started"
     WORKFLOW_TASK_COMPLETED = "workflow.task.completed"

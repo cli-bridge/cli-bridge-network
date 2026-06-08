@@ -77,6 +77,25 @@ class ArtifactStore:
             f.write(json.dumps(record.as_dict(), ensure_ascii=False) + "\n")
         return record
 
+    def create_json(
+        self,
+        capability_id: str,
+        call_id: str,
+        kind: str,
+        payload: dict[str, Any],
+    ) -> ArtifactRecord:
+        text = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+        record = self.create_text(
+            capability_id=capability_id,
+            call_id=call_id,
+            kind=kind,
+            text=text,
+            media_type="application/json; charset=utf-8",
+        )
+        if record is None:
+            raise ValueError("json artifact payload cannot be empty")
+        return record
+
     def list(self, limit: int = 50) -> list[dict[str, Any]]:
         if not self.index_path.exists():
             return []

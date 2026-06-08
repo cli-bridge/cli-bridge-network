@@ -28,6 +28,7 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/audit"},
     {"method": "GET", "path": "/events"},
     {"method": "GET", "path": "/artifacts"},
+    {"method": "GET", "path": "/parsers"},
     {"method": "GET", "path": "/approvals"},
     {"method": "POST", "path": "/call"},
     {"method": "POST", "path": "/approvals/decide"},
@@ -92,6 +93,13 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             else:
                 limit = int(query.get("limit", ["50"])[0])
                 self._send(200, runtime.artifact_store.list(limit=limit))
+            return
+        if parsed.path == "/parsers":
+            parser_ref = query.get("parser_ref", [None])[0]
+            if parser_ref:
+                self._send(200, runtime.parser_registry.inspect(parser_ref))
+            else:
+                self._send(200, runtime.parser_registry.list())
             return
         if parsed.path == "/approvals":
             approval_id = query.get("approval_id", [None])[0]
