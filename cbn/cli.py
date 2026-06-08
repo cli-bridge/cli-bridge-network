@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from api_server.routes.health import health_payload
 from cbn.cli_args import build_parser
 from cbn.paths import resolve_project_paths
 from cbn.version import __version__
+from cbn_execution.graph import WorkflowGraph
 from cbn_plugins.cli_anything import CliAnythingHub
 from cbn_plugins.manager import PluginManager
 from cbn_runtime.context import build_runtime
@@ -144,6 +146,25 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(json.dumps(approval, ensure_ascii=False, indent=2))
             return 0
+
+    if args.command == "workflow":
+        runtime = build_runtime()
+        graph = WorkflowGraph.from_file(Path(args.path))
+        if args.workflow_command == "validate":
+            graph.validate()
+            print(json.dumps({"valid": True, "workflow_id": graph.workflow_id}, ensure_ascii=False, indent=2))
+            return 0
+        if args.workflow_command == "plan":
+            print(json.dumps(runtime.workflow_runner.plan(graph), ensure_ascii=False, indent=2))
+            return 0
+        if args.workflow_command == "run":
+            result = runtime.workflow_runner.run(
+                graph,
+                dry_run=args.dry_run,
+                confirmed=args.yes,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["status"] == "completed" else 4
 
     if args.command == "daemon":
         if args.daemon_command == "routes":

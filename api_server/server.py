@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from api_server.routes.health import health_payload
+from cbn_execution.graph import WorkflowGraph
 from cbn_runtime.context import build_runtime
 from cbn_plugins.cli_anything import CliAnythingHub
 from cbn_plugins.manager import PluginManager
@@ -29,6 +31,9 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/approvals"},
     {"method": "POST", "path": "/call"},
     {"method": "POST", "path": "/approvals/decide"},
+    {"method": "POST", "path": "/workflows/validate"},
+    {"method": "POST", "path": "/workflows/plan"},
+    {"method": "POST", "path": "/workflows/run"},
     {"method": "POST", "path": "/plugins/plan"},
     {"method": "POST", "path": "/plugins/cli-anything/market"},
     {"method": "POST", "path": "/plugins/cli-anything/import-harness"},
@@ -126,6 +131,25 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 correlation_id=approval["call_id"],
             )
             self._send(200, approval)
+            return
+        if self.path in {"/workflows/validate", "/workflows/plan", "/workflows/run"}:
+            if "workflow" in payload:
+                graph = WorkflowGraph.from_dict(payload["workflow"])
+            else:
+                graph = WorkflowGraph.from_file(Path(payload["path"]))
+            if self.path == "/workflows/validate":
+                graph.validate()
+                self._send(200, {"valid": True, "workflow_id": graph.workflow_id})
+                return
+            if self.path == "/workflows/plan":
+                self._send(200, runtime.workflow_runner.plan(graph))
+                return
+            result = runtime.workflow_runner.run(
+                graph,
+                dry_run=bool(payload.get("dry_run", False)),
+                confirmed=bool(payload.get("confirmed", False)),
+            )
+            self._send(200 if result["status"] == "completed" else 409, result)
             return
         if self.path == "/plugins/plan":
             manager = PluginManager()

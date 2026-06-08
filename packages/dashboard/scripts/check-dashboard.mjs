@@ -51,6 +51,10 @@ if (!html.includes("python -m cbn approvals list")) {
   throw new Error("Dashboard does not expose the approval queue list command.");
 }
 
+if (!html.includes("python -m cbn workflow run workflows/example.json --dry-run")) {
+  throw new Error("Dashboard does not expose the runnable workflow dry-run command.");
+}
+
 if (!js.includes("stageCommand")) {
   throw new Error("Dashboard script does not stage commands.");
 }

@@ -118,10 +118,10 @@
         <section class="panel">
           <h2>Workflow DAG</h2>
           <button data-command="cbn workflow list">List Workflows</button>
-          <button data-command="cbn workflow validate workflows\\example.yaml">Validate</button>
-          <button data-command="cbn workflow plan workflows\\example.yaml">Plan</button>
-          <button data-command="cbn workflow run workflows\\example.yaml --dry-run">Dry Run</button>
-          <button data-command="cbn workflow run workflows\\example.yaml --yes">Run</button>
+          <button data-command="python -m cbn workflow validate workflows/example.json">Validate</button>
+          <button data-command="python -m cbn workflow plan workflows/example.json">Plan</button>
+          <button data-command="python -m cbn workflow run workflows/example.json --dry-run">Dry Run</button>
+          <button data-command="python -m cbn workflow run workflows/example.json --yes">Run</button>
           <button data-command="cbn workflow stop &lt;run-id&gt;">Stop</button>
         </section>
 

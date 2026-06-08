@@ -58,6 +58,17 @@ def build_parser() -> argparse.ArgumentParser:
     approvals_deny.add_argument("approval_id")
     approvals_deny.add_argument("--reason", default="")
 
+    workflow_parser = subcommands.add_parser("workflow", help="Validate, plan, or run workflows.")
+    workflow_subcommands = workflow_parser.add_subparsers(dest="workflow_command")
+    workflow_validate = workflow_subcommands.add_parser("validate", help="Validate a workflow JSON file.")
+    workflow_validate.add_argument("path")
+    workflow_plan = workflow_subcommands.add_parser("plan", help="Print workflow execution plan.")
+    workflow_plan.add_argument("path")
+    workflow_run = workflow_subcommands.add_parser("run", help="Run a workflow.")
+    workflow_run.add_argument("path")
+    workflow_run.add_argument("--dry-run", action="store_true")
+    workflow_run.add_argument("--yes", action="store_true", help="Confirm high-risk workflow tasks.")
+
     daemon_parser = subcommands.add_parser("daemon", help="Run or inspect the local daemon API.")
     daemon_subcommands = daemon_parser.add_subparsers(dest="daemon_command")
     daemon_subcommands.add_parser("routes", help="List MVP daemon routes.")

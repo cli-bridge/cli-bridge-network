@@ -12,6 +12,7 @@ from cbn_artifacts.store import ArtifactStore
 from cbn_core.manifest import ManifestRegistry
 from cbn_events.bus import EventBus
 from cbn_execution.executor import CapabilityExecutor
+from cbn_workflow.runner import WorkflowRunner
 
 
 @dataclass
@@ -22,6 +23,7 @@ class RuntimeContext:
     event_bus: EventBus
     artifact_store: ArtifactStore
     executor: CapabilityExecutor
+    workflow_runner: WorkflowRunner
 
 
 def build_runtime(root: Path | None = None) -> RuntimeContext:
@@ -32,17 +34,19 @@ def build_runtime(root: Path | None = None) -> RuntimeContext:
     approval_store = ApprovalStore(paths.approvals)
     event_bus = EventBus(paths.logs / "cbn-events.jsonl")
     artifact_store = ArtifactStore(paths.artifacts)
+    executor = CapabilityExecutor(
+        registry=registry,
+        audit_log=audit_log,
+        approval_store=approval_store,
+        event_bus=event_bus,
+        artifact_store=artifact_store,
+    )
     return RuntimeContext(
         registry=registry,
         audit_log=audit_log,
         approval_store=approval_store,
         event_bus=event_bus,
         artifact_store=artifact_store,
-        executor=CapabilityExecutor(
-            registry=registry,
-            audit_log=audit_log,
-            approval_store=approval_store,
-            event_bus=event_bus,
-            artifact_store=artifact_store,
-        ),
+        executor=executor,
+        workflow_runner=WorkflowRunner(executor, event_bus=event_bus, audit_log=audit_log),
     )
