@@ -256,6 +256,21 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 )
             return 0
+        if args.plugin_command == "harness":
+            if args.plugin_id != "cli-anything":
+                raise KeyError(f"harness operations are not implemented for plugin: {args.plugin_id}")
+            hub = CliAnythingHub()
+            plan = hub.harness_plan(
+                args.harness_action,
+                args.harness_name,
+                extra_args=tuple(args.extra_args),
+            )
+            if not args.yes:
+                print(json.dumps(plan.as_dict(), ensure_ascii=False, indent=2))
+                return 2
+            runtime = build_runtime()
+            print(json.dumps(runtime.plugin_runner.execute(plan), ensure_ascii=False, indent=2))
+            return 0
         if args.plugin_command == "plan":
             plan = manager.plan(
                 args.plugin_id,

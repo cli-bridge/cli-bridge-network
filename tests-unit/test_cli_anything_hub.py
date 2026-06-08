@@ -36,6 +36,34 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(manifest["spec"]["transport"]["argsTemplate"], ["launch", "gimp"])
         self.assertFalse(manifest["spec"]["output"]["verified"])
 
+    def test_harness_plan_uses_cli_hub_lifecycle_command(self):
+        plan = CliAnythingHub().harness_plan("install", "gimp")
+        self.assertEqual(plan.plugin_id, "cli-anything")
+        self.assertEqual(plan.action, "harness-install-gimp")
+        self.assertEqual(plan.commands[0].argv, ("cli-hub", "install", "gimp"))
+
+    def test_cli_harness_plan_does_not_execute_without_yes(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "plugin",
+                "harness",
+                "cli-anything",
+                "install",
+                "gimp",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertEqual(proc.returncode, 2)
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["plugin_id"], "cli-anything")
+        self.assertEqual(payload["commands"][0]["argv"], ["cli-hub", "install", "gimp"])
+
     def test_write_harness_manifest_writes_utf8_json(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

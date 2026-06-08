@@ -109,15 +109,31 @@ class PluginOperationRunner:
             {"command_id": command_id, "label": command.label, "argv": list(command.argv)},
             operation_id,
         )
-        proc = subprocess.run(
-            list(command.argv),
-            cwd=command.cwd,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
+        try:
+            proc = subprocess.run(
+                list(command.argv),
+                cwd=command.cwd,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+        except OSError as exc:
+            result = {
+                "command_id": command_id,
+                "label": command.label,
+                "argv": list(command.argv),
+                "cwd": command.cwd,
+                "optional": command.optional,
+                "exit_code": 127,
+                "stdout": "",
+                "stderr": f"{command.argv[0]} failed to start: {exc}",
+                "artifact_ids": [],
+            }
+            self._audit("plugin.command.completed", operation_id, plan, result)
+            self._publish(EventType.PLUGIN_COMMAND_COMPLETED, plan.plugin_id, result, operation_id)
+            return result
         artifact_ids = self._record_artifacts(plan.plugin_id, operation_id, command_id, proc)
         result = {
             "command_id": command_id,

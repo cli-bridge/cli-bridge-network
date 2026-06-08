@@ -77,6 +77,30 @@ class PluginOperationTests(unittest.TestCase):
             self.assertEqual(result["status"], "failed")
             self.assertEqual(len(result["results"]), 1)
 
+    def test_plugin_operation_handles_missing_executable_as_result(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            runner = PluginOperationRunner(
+                audit_log=AuditLog(root / "audit.jsonl"),
+                event_bus=EventBus(root / "events.jsonl"),
+                artifact_store=ArtifactStore(root / "artifacts"),
+            )
+            plan = PluginPlan(
+                plugin_id="test-plugin",
+                action="install",
+                plugin_dir=str(root / "external_plugins" / "test-plugin"),
+                commands=(
+                    PluginCommand(
+                        label="Missing",
+                        argv=("cbn-command-that-does-not-exist",),
+                    ),
+                ),
+            )
+            result = runner.execute(plan)
+            self.assertEqual(result["status"], "failed")
+            self.assertEqual(result["results"][0]["exit_code"], 127)
+            self.assertIn("cbn-command-that-does-not-exist", result["results"][0]["stderr"])
+
 
 if __name__ == "__main__":
     unittest.main()

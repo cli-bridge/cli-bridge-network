@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from cbn.paths import resolve_project_paths
+from cbn_plugins.manager import PluginCommand, PluginPlan
 
 
 PLUGIN_ID = "cli-anything"
@@ -69,6 +70,31 @@ class CliAnythingHub:
 
     def info(self, harness_name: str) -> CliHubCommandResult:
         return self._run(("info", harness_name), parse_json=False)
+
+    def harness_plan(
+        self,
+        action: str,
+        harness_name: str,
+        extra_args: tuple[str, ...] = (),
+    ) -> PluginPlan:
+        if action not in {"install", "update", "launch"}:
+            raise ValueError(f"unsupported CLI-Anything harness action: {action}")
+        safe_name = sanitize_harness_name(harness_name)
+        if action == "launch":
+            argv = (self.entrypoint, "launch", harness_name, *extra_args)
+        else:
+            argv = (self.entrypoint, action, harness_name)
+        return PluginPlan(
+            plugin_id=PLUGIN_ID,
+            action=f"harness-{action}-{safe_name}",
+            plugin_dir=str(self.paths.external_plugins / PLUGIN_ID),
+            commands=(
+                PluginCommand(
+                    label=f"CLI-Anything harness {action}: {harness_name}",
+                    argv=argv,
+                ),
+            ),
+        )
 
     def manifest_for_harness(
         self,
@@ -155,4 +181,3 @@ def sanitize_harness_name(name: str) -> str:
     if not normalized:
         raise ValueError("harness name cannot be empty")
     return normalized.lower()
-

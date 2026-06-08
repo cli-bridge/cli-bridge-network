@@ -42,6 +42,7 @@ ROUTE_SUMMARY = [
     {"method": "POST", "path": "/plugins/execute"},
     {"method": "POST", "path": "/plugins/cli-anything/market"},
     {"method": "POST", "path": "/plugins/cli-anything/import-harness"},
+    {"method": "POST", "path": "/plugins/cli-anything/harness"},
 ]
 
 
@@ -221,6 +222,18 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 title=payload.get("title"),
             )
             self._send(200, manifest)
+            return
+        if self.path == "/plugins/cli-anything/harness":
+            hub = CliAnythingHub()
+            plan = hub.harness_plan(
+                payload["action"],
+                payload["harness_name"],
+                extra_args=tuple(payload.get("extra_args", [])),
+            )
+            if not bool(payload.get("confirmed", False)):
+                self._send(200, plan.as_dict())
+                return
+            self._send(200, runtime.plugin_runner.execute(plan))
             return
         self._send(404, {"error": "not found", "routes": ROUTE_SUMMARY})
 

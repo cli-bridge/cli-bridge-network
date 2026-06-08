@@ -43,6 +43,10 @@ if (!html.includes("python -m cbn plugin import-harness cli-anything gimp")) {
   throw new Error("Dashboard does not expose the CLI-Anything harness import command.");
 }
 
+if (!html.includes("python -m cbn plugin harness cli-anything install gimp")) {
+  throw new Error("Dashboard does not expose the managed CLI-Anything harness install command.");
+}
+
 if (!html.includes("python -m cbn event tail")) {
   throw new Error("Dashboard does not expose the event bus tail command.");
 }
