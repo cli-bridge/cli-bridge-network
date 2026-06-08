@@ -248,6 +248,59 @@ class CliAnythingHubTests(unittest.TestCase):
             payload = json.loads(written.read_text(encoding="utf-8"))
             self.assertEqual(payload["metadata"]["id"], "cli-anything.gimp.launch")
 
+    def test_sync_market_reports_capability_id_collisions_without_writing(self):
+        class FakeHub(CliAnythingHub):
+            def list_market(self) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "list", "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[
+                        {"name": "gimp", "display_name": "GIMP", "_source": "harness"},
+                        {"name": "GIMP!", "display_name": "GIMP duplicate", "_source": "public"},
+                    ],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result = FakeHub(root=Path(tmp)).sync_market(write=True)
+            self.assertFalse(result["ok"])
+            self.assertTrue(result["write"])
+            self.assertEqual(result["conflict_count"], 2)
+            self.assertEqual(result["failed_count"], 2)
+            self.assertEqual(result["importable_count"], 0)
+            self.assertFalse((Path(tmp) / "manifests" / "cli-anything.gimp.launch.json").exists())
+            errors = {item["error"] for item in result["manifests"]}
+            self.assertEqual(errors, {"duplicate capability_id generated from market records"})
+            collision = result["manifests"][0]["collision"]
+            self.assertEqual(collision["capability_id"], "cli-anything.gimp.launch")
+            self.assertEqual(len(collision["market_records"]), 2)
+
+    def test_sync_market_writes_only_non_colliding_valid_manifests(self):
+        class FakeHub(CliAnythingHub):
+            def list_market(self) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "list", "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[
+                        {"name": "gimp", "display_name": "GIMP", "_source": "harness"},
+                        {"name": "GIMP!", "display_name": "GIMP duplicate", "_source": "public"},
+                        {"name": "inkscape", "display_name": "Inkscape", "_source": "harness"},
+                    ],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            result = FakeHub(root=root).sync_market(write=True)
+            self.assertFalse(result["ok"])
+            self.assertEqual(result["conflict_count"], 2)
+            self.assertEqual(result["failed_count"], 2)
+            self.assertEqual(result["importable_count"], 1)
+            self.assertFalse((root / "manifests" / "cli-anything.gimp.launch.json").exists())
+            self.assertTrue((root / "manifests" / "cli-anything.inkscape.launch.json").exists())
+
     def test_sync_market_reports_unsupported_json_shape(self):
         class FakeHub(CliAnythingHub):
             def list_market(self) -> CliHubCommandResult:

@@ -427,10 +427,6 @@ class CliAnythingHub:
             manifest = self.manifest_for_harness(harness_name, market_record=record)
             capability_id = manifest["metadata"]["id"]
             path = self.paths.manifests / f"{capability_id}.json"
-            written = None
-            if write:
-                written = self.write_harness_manifest(harness_name, market_record=record)
-                path = written
             validation = validate_manifest_dict(
                 manifest,
                 source_path=path,
@@ -438,25 +434,50 @@ class CliAnythingHub:
             )
             manifests.append(
                 {
-                    "ok": True,
+                    "ok": bool(validation["valid"]),
+                    "error": None if validation["valid"] else "generated manifest is invalid",
                     "harness_name": harness_name,
                     "capability_id": capability_id,
                     "manifest_path": str(path),
-                    "written": str(written) if written else None,
+                    "written": None,
                     "manifest": manifest,
                     "validation": validation,
+                    "market_record": record,
                 }
             )
-        imported = [item for item in manifests if item.get("ok")]
+        _mark_capability_collisions(manifests)
+        writable = [item for item in manifests if item.get("ok")]
+        if write:
+            for item in writable:
+                record = item["market_record"]
+                harness_name = item["harness_name"]
+                written = self.write_harness_manifest(harness_name, market_record=record)
+                item["written"] = str(written)
+                item["manifest_path"] = str(written)
+                item["validation"] = validate_manifest_dict(
+                    item["manifest"],
+                    source_path=written,
+                    known_parser_refs=_known_parser_refs(),
+                )
+        conflict_count = sum(
+            1
+            for item in manifests
+            if item.get("error") == "duplicate capability_id generated from market records"
+        )
+        invalid_count = sum(1 for item in manifests if item.get("error") == "generated manifest is invalid")
+        failed_count = sum(1 for item in manifests if not item.get("ok"))
         return {
-            "ok": True,
+            "ok": failed_count == 0,
             "plugin_id": PLUGIN_ID,
             "query": query,
             "write": write,
             "limit": bounded_limit,
             "market_count": len(records),
             "selected_count": len(selected),
-            "importable_count": len(imported),
+            "importable_count": len(writable),
+            "conflict_count": conflict_count,
+            "invalid_count": invalid_count,
+            "failed_count": failed_count,
             "market": result.as_dict(),
             "manifests": manifests,
             "next_commands": [
@@ -605,6 +626,37 @@ def _market_records_from_result(parsed_json: Any) -> list[dict[str, Any]] | None
     else:
         return None
     return [item for item in records if isinstance(item, dict)]
+
+
+def _mark_capability_collisions(manifests: list[dict[str, Any]]) -> None:
+    by_id: dict[str, list[dict[str, Any]]] = {}
+    for item in manifests:
+        capability_id = item.get("capability_id")
+        if isinstance(capability_id, str) and capability_id:
+            by_id.setdefault(capability_id, []).append(item)
+    for capability_id, matches in by_id.items():
+        if len(matches) < 2:
+            continue
+        sources = [_market_record_identity(item) for item in matches]
+        for item in matches:
+            item["ok"] = False
+            item["error"] = "duplicate capability_id generated from market records"
+            item["collision"] = {
+                "capability_id": capability_id,
+                "market_records": sources,
+            }
+
+
+def _market_record_identity(item: dict[str, Any]) -> dict[str, str | None]:
+    record = item.get("market_record")
+    if not isinstance(record, dict):
+        record = {}
+    return {
+        "name": str(record.get("name")) if record.get("name") is not None else None,
+        "display_name": str(record.get("display_name")) if record.get("display_name") is not None else None,
+        "entry_point": str(record.get("entry_point")) if record.get("entry_point") is not None else None,
+        "source": str(record.get("_source")) if record.get("_source") is not None else None,
+    }
 
 
 def _market_runtime_text(market_record: dict[str, Any]) -> str:
