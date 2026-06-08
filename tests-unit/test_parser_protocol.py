@@ -37,6 +37,17 @@ class ParserProtocolTests(unittest.TestCase):
         )
         self.assertEqual(parsed["data"], {"action": "set_diagram", "line_count": 2})
 
+    def test_cli_anything_macrocli_backends_parser_returns_verified_shape(self):
+        parsed = ParserRegistry.builtins().parse(
+            "cli-anything.macrocli.backends",
+            '{"native_api":{"name":"native_api","priority":100,"available":true},'
+            '"semantic_ui":{"name":"semantic_ui","priority":50,"available":false}}',
+            "",
+        )
+        self.assertEqual(parsed["data"]["backend_count"], 2)
+        self.assertEqual(parsed["data"]["available_count"], 1)
+        self.assertEqual(parsed["data"]["backends"][0]["id"], "native_api")
+
     def test_bridge_message_envelope_shape(self):
         message = BridgeMessage(
             producer="git.status",
@@ -110,6 +121,7 @@ class ParserProtocolTests(unittest.TestCase):
         parser_refs = {item["parser_ref"] for item in json.loads(parsers.stdout)}
         self.assertIn("git.status.short", parser_refs)
         self.assertIn("cli-anything.mermaid.set_diagram", parser_refs)
+        self.assertIn("cli-anything.macrocli.backends", parser_refs)
 
         call = subprocess.run(
             [sys.executable, "-m", "cbn", "call", "git.version", "--dry-run"],

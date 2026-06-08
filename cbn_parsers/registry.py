@@ -52,6 +52,12 @@ class ParserRegistry:
             "Parse verified Mermaid harness `diagram set` dry-run JSON output.",
             parse_cli_anything_mermaid_set_diagram,
         )
+        registry.register(
+            "cli-anything.macrocli.backends",
+            "CLI-Anything MacroCLI backends",
+            "Parse verified MacroCLI `backends --json` output.",
+            parse_cli_anything_macrocli_backends,
+        )
         return registry
 
     def register(
@@ -129,6 +135,44 @@ def parse_cli_anything_mermaid_set_diagram(stdout: str, stderr: str) -> dict[str
     data: dict[str, Any] = {
         "action": payload["action"],
         "line_count": line_count,
+    }
+    if stderr.strip():
+        data["stderr"] = stderr
+    return data
+
+
+def parse_cli_anything_macrocli_backends(stdout: str, stderr: str) -> dict[str, Any]:
+    payload = json.loads(stdout)
+    if not isinstance(payload, dict):
+        raise ValueError("MacroCLI backends output must be a JSON object")
+    backends: list[dict[str, Any]] = []
+    available = 0
+    for key, value in sorted(payload.items()):
+        if not isinstance(value, dict):
+            raise ValueError(f"MacroCLI backend {key} must be an object")
+        name = value.get("name")
+        priority = value.get("priority")
+        is_available = value.get("available")
+        if not isinstance(name, str) or not name:
+            raise ValueError(f"MacroCLI backend {key} name must be a string")
+        if not isinstance(priority, int) or isinstance(priority, bool):
+            raise ValueError(f"MacroCLI backend {key} priority must be an integer")
+        if not isinstance(is_available, bool):
+            raise ValueError(f"MacroCLI backend {key} available must be a boolean")
+        if is_available:
+            available += 1
+        backends.append(
+            {
+                "id": key,
+                "name": name,
+                "priority": priority,
+                "available": is_available,
+            }
+        )
+    data: dict[str, Any] = {
+        "backend_count": len(backends),
+        "available_count": available,
+        "backends": backends,
     }
     if stderr.strip():
         data["stderr"] = stderr

@@ -201,6 +201,18 @@ if (!html.includes("python -m cbn a2a smoke --capability-id git.version")) {
   throw new Error("Dashboard does not expose the A2A smoke command.");
 }
 
+if (!html.includes("python -m cbn plugin evaluate-harness cli-anything macrocli")) {
+  throw new Error("Dashboard does not expose the MacroCLI evaluation command.");
+}
+
+if (!html.includes("python -m cbn plugin harness cli-anything install macrocli --yes")) {
+  throw new Error("Dashboard does not expose the MacroCLI install command.");
+}
+
+if (!html.includes("python -m cbn call cli-anything.macrocli.backends")) {
+  throw new Error("Dashboard does not expose the MacroCLI verified backends command.");
+}
+
 if (!html.includes("python -m cbn acp serve --stdio")) {
   throw new Error("Dashboard does not expose the ACP stdio agent command.");
 }
