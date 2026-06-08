@@ -24,6 +24,9 @@ from cbn_plugins.cli_anything import CliAnythingHub
 from cbn_plugins.manager import PluginManager
 
 
+ALLOWED_ORIGIN_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
+
 ROUTE_SUMMARY = [
     {"method": "GET", "path": "/health"},
     {"method": "GET", "path": "/registry"},
@@ -66,7 +69,9 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "http://127.0.0.1")
+        cors_origin = self._cors_origin()
+        if cors_origin:
+            self.send_header("Access-Control-Allow-Origin", cors_origin)
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
@@ -94,6 +99,8 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
         runtime.audit_log.append({"type": "daemon.http_log", "message": fmt % args})
 
     def do_GET(self) -> None:
+        if not self._require_allowed_origin():
+            return
         try:
             self._handle_GET()
         except KeyError as exc:
@@ -104,6 +111,8 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             self._send_error(500, "internal_error", str(exc))
 
     def do_POST(self) -> None:
+        if not self._require_allowed_origin():
+            return
         try:
             self._handle_POST()
         except KeyError as exc:
@@ -114,7 +123,22 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             self._send_error(500, "internal_error", str(exc))
 
     def do_OPTIONS(self) -> None:
+        if not self._require_allowed_origin():
+            return
         self._send(200, {"ok": True})
+
+    def _cors_origin(self) -> str | None:
+        origin = self.headers.get("Origin")
+        if not origin:
+            return "http://127.0.0.1"
+        return origin if _is_allowed_origin(origin) else None
+
+    def _require_allowed_origin(self) -> bool:
+        origin = self.headers.get("Origin")
+        if _is_allowed_origin(origin):
+            return True
+        self._send_error(403, "origin_denied", f"Origin is not allowed: {origin}")
+        return False
 
     def _handle_GET(self) -> None:
         parsed = urlparse(self.path)
@@ -401,3 +425,10 @@ def serve(host: str = "127.0.0.1", port: int = 8787) -> None:
 
 def _known_parser_refs() -> set[str]:
     return {item["parser_ref"] for item in ParserRegistry.builtins().list()}
+
+
+def _is_allowed_origin(origin: str | None) -> bool:
+    if not origin:
+        return True
+    parsed = urlparse(origin)
+    return parsed.scheme in {"http", "https"} and parsed.hostname in ALLOWED_ORIGIN_HOSTS

@@ -29,13 +29,57 @@ class DaemonApiTests(unittest.TestCase):
 
     def test_options_returns_cors_headers(self):
         with daemon_url() as base_url:
-            request = urllib.request.Request(f"{base_url}/call", method="OPTIONS")
+            request = urllib.request.Request(
+                f"{base_url}/call",
+                method="OPTIONS",
+                headers={"Origin": "http://127.0.0.1:5173"},
+            )
             with urllib.request.urlopen(request, timeout=5) as response:
                 payload = json.loads(response.read().decode("utf-8"))
                 self.assertEqual(response.status, 200)
                 self.assertTrue(payload["ok"])
+                self.assertEqual(
+                    response.headers["Access-Control-Allow-Origin"],
+                    "http://127.0.0.1:5173",
+                )
                 self.assertEqual(response.headers["Access-Control-Allow-Methods"], "GET, POST, OPTIONS")
                 self.assertEqual(response.headers["Access-Control-Allow-Headers"], "Content-Type")
+
+    def test_disallowed_origin_is_rejected_before_route_handling(self):
+        with daemon_url() as base_url:
+            request = urllib.request.Request(
+                f"{base_url}/call",
+                data=b"{}",
+                method="POST",
+                headers={
+                    "Content-Type": "application/json",
+                    "Origin": "https://example.com",
+                },
+            )
+            with self.assertRaises(urllib.error.HTTPError) as raised:
+                urllib.request.urlopen(request, timeout=5)
+
+            self.assertEqual(raised.exception.code, 403)
+            payload = json.loads(raised.exception.read().decode("utf-8"))
+            self.assertFalse(payload["ok"])
+            self.assertEqual(payload["error_type"], "origin_denied")
+            self.assertNotIn("Access-Control-Allow-Origin", raised.exception.headers)
+
+    def test_localhost_origin_is_allowed(self):
+        with daemon_url() as base_url:
+            request = urllib.request.Request(
+                f"{base_url}/health",
+                method="GET",
+                headers={"Origin": "http://localhost:3000"},
+            )
+            with urllib.request.urlopen(request, timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(response.status, 200)
+                self.assertEqual(payload["status"], "ok")
+                self.assertEqual(
+                    response.headers["Access-Control-Allow-Origin"],
+                    "http://localhost:3000",
+                )
 
 
 @contextmanager
