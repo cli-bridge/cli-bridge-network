@@ -38,6 +38,45 @@ MARKET_ANNOTATION_KEYS = (
     "npx_cmd",
     "contributors",
 )
+RISK_ORDER = ("read", "write-workspace", "external-network", "privileged")
+RUNTIME_TEXT_KEYS = ("description", "requires")
+LOCAL_NETWORK_MARKERS = (
+    "localhost",
+    "127.0.0.1",
+    "::1",
+)
+EXTERNAL_NETWORK_MARKERS = (
+    "api key",
+    "apikey",
+    "access token",
+    "auth token",
+    "bearer token",
+    "google_cloud_project",
+    "gemini_api_key",
+    "openai_api_key",
+    "anthropic_api_key",
+    "vertex ai",
+    "gemini",
+    "openai",
+    "anthropic",
+    "replicate",
+    "huggingface",
+    "cloud",
+)
+WRITE_WORKSPACE_MARKERS = (
+    "generate",
+    "generation",
+    "export",
+    "convert",
+    "transcode",
+    "render",
+    "edit",
+    "image",
+    "video",
+    "svg",
+    "raster",
+    "painting",
+)
 
 
 @dataclass(frozen=True)
@@ -186,6 +225,13 @@ class CliAnythingHub:
         }
         labels.update(_market_labels(market_record))
         annotations = _market_annotations(market_record)
+        policy = infer_market_policy(market_record, requested_risk=risk)
+        if policy["reasons"]:
+            annotations["cli-anything.policy_inference"] = json.dumps(
+                policy["reasons"],
+                ensure_ascii=False,
+                sort_keys=True,
+            )
         return {
             "apiVersion": "bridge.dev/v1alpha1",
             "kind": "ToolManifest",
@@ -203,9 +249,9 @@ class CliAnythingHub:
                     "cwdPolicy": "workspace",
                 },
                 "policy": {
-                    "risk": risk,
-                    "requiresConfirmation": risk in {"privileged", "external-network"},
-                    "network": "deny" if risk != "external-network" else "requires-confirmation",
+                    "risk": policy["risk"],
+                    "requiresConfirmation": policy["requires_confirmation"],
+                    "network": policy["network"],
                 },
                 "output": {
                     "parserRef": "cli-anything.raw",
@@ -442,6 +488,36 @@ def _market_annotations(market_record: dict[str, Any]) -> dict[str, str]:
     return annotations
 
 
+def infer_market_policy(
+    market_record: dict[str, Any] | None,
+    requested_risk: str = "read",
+) -> dict[str, Any]:
+    risk = requested_risk
+    network = "deny"
+    reasons: list[str] = []
+    if market_record:
+        runtime_text = _market_runtime_text(market_record)
+        if _has_local_network_signal(runtime_text):
+            network = "localhost"
+            reasons.append("runtime mentions local service or localhost dependency")
+        if _has_external_network_signal(runtime_text):
+            risk = _max_risk(risk, "external-network")
+            network = "requires-confirmation"
+            reasons.append("runtime mentions external API, cloud service, token, or API key")
+        if _has_write_workspace_signal(runtime_text):
+            risk = _max_risk(risk, "write-workspace")
+            reasons.append("runtime appears to generate, edit, render, convert, or export artifacts")
+    requires_confirmation = risk in {"privileged", "external-network"}
+    if risk in {"privileged", "external-network"}:
+        network = "requires-confirmation" if risk == "external-network" else network
+    return {
+        "risk": risk,
+        "requires_confirmation": requires_confirmation,
+        "network": network,
+        "reasons": reasons,
+    }
+
+
 def _market_records_from_result(parsed_json: Any) -> list[dict[str, Any]] | None:
     if isinstance(parsed_json, list):
         records = parsed_json
@@ -457,3 +533,38 @@ def _market_records_from_result(parsed_json: Any) -> list[dict[str, Any]] | None
     else:
         return None
     return [item for item in records if isinstance(item, dict)]
+
+
+def _market_runtime_text(market_record: dict[str, Any]) -> str:
+    values = []
+    for key in RUNTIME_TEXT_KEYS:
+        value = market_record.get(key)
+        if value:
+            values.append(str(value))
+    return "\n".join(values).casefold()
+
+
+def _has_local_network_signal(text: str) -> bool:
+    return any(marker in text for marker in LOCAL_NETWORK_MARKERS)
+
+
+def _has_external_network_signal(text: str) -> bool:
+    if any(marker in text for marker in EXTERNAL_NETWORK_MARKERS):
+        return True
+    for match in re.findall(r"https?://[^\s)]+", text):
+        if not any(local in match for local in LOCAL_NETWORK_MARKERS):
+            return True
+    return False
+
+
+def _has_write_workspace_signal(text: str) -> bool:
+    return any(marker in text for marker in WRITE_WORKSPACE_MARKERS)
+
+
+def _max_risk(left: str, right: str) -> str:
+    try:
+        left_rank = RISK_ORDER.index(left)
+        right_rank = RISK_ORDER.index(right)
+    except ValueError as exc:
+        raise ValueError(f"unknown risk level for CLI-Anything policy inference: {exc}") from exc
+    return left if left_rank >= right_rank else right

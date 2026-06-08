@@ -6,7 +6,12 @@ import unittest
 from pathlib import Path
 
 from cbn_core.manifest import CapabilityManifest
-from cbn_plugins.cli_anything import CliAnythingHub, CliHubCommandResult, sanitize_harness_name
+from cbn_plugins.cli_anything import (
+    CliAnythingHub,
+    CliHubCommandResult,
+    infer_market_policy,
+    sanitize_harness_name,
+)
 
 
 SAMPLE_MARKET_RECORD = {
@@ -220,6 +225,50 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(manifest["spec"]["transport"]["kind"], "stdio")
         self.assertEqual(manifest["spec"]["transport"]["argsTemplate"], ["launch", "gimp"])
         self.assertFalse(manifest["spec"]["output"]["verified"])
+
+    def test_manifest_for_harness_infers_write_workspace_policy(self):
+        manifest = CliAnythingHub().manifest_for_harness("gimp", market_record=SAMPLE_MARKET_RECORD)
+        self.assertEqual(manifest["spec"]["policy"]["risk"], "write-workspace")
+        self.assertFalse(manifest["spec"]["policy"]["requiresConfirmation"])
+        self.assertEqual(manifest["spec"]["policy"]["network"], "deny")
+        self.assertIn("cli-anything.policy_inference", manifest["metadata"]["annotations"])
+
+    def test_manifest_for_harness_infers_external_network_policy(self):
+        market_record = {
+            "name": "generate-veo-video",
+            "display_name": "Generate Veo Video",
+            "description": "Generate videos with Google Veo via Vertex AI and Gemini",
+            "requires": "GOOGLE_CLOUD_PROJECT env var and GEMINI_API_KEY optional",
+            "entry_point": "generate-veo",
+            "_source": "public",
+        }
+        manifest = CliAnythingHub().manifest_for_harness(
+            "generate-veo-video",
+            market_record=market_record,
+        )
+        policy = manifest["spec"]["policy"]
+        self.assertEqual(policy["risk"], "external-network")
+        self.assertTrue(policy["requiresConfirmation"])
+        self.assertEqual(policy["network"], "requires-confirmation")
+
+    def test_manifest_for_harness_keeps_local_service_policy_local(self):
+        market_record = {
+            "name": "comfyui",
+            "display_name": "ComfyUI",
+            "description": "AI image generation workflow management via ComfyUI REST API",
+            "requires": "ComfyUI running at http://localhost:8188",
+            "entry_point": "cli-anything-comfyui",
+        }
+        manifest = CliAnythingHub().manifest_for_harness("comfyui", market_record=market_record)
+        policy = manifest["spec"]["policy"]
+        self.assertEqual(policy["risk"], "write-workspace")
+        self.assertFalse(policy["requiresConfirmation"])
+        self.assertEqual(policy["network"], "localhost")
+
+    def test_infer_market_policy_only_escalates_risk(self):
+        policy = infer_market_policy(SAMPLE_MARKET_RECORD, requested_risk="privileged")
+        self.assertEqual(policy["risk"], "privileged")
+        self.assertTrue(policy["requires_confirmation"])
 
     def test_manifest_ir_preserves_harness_labels(self):
         manifest = CapabilityManifest.from_dict(CliAnythingHub().manifest_for_harness("gimp"))
