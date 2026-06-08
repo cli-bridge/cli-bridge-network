@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 import uuid
+import json
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -84,6 +85,50 @@ def select_bridge_value(message: dict[str, Any], selector: str) -> dict[str, Any
                 raise KeyError(f"selector expected object before .{token}")
             current = current[token]
     return {"selector": selector, "value": current}
+
+
+def bridge_value_to_arg(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if value is None:
+        return ""
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+    return str(value)
+
+
+def bridge_args_from_selectors(message: dict[str, Any], selectors: list[str]) -> dict[str, Any]:
+    validation = validate_bridge_message(message)
+    if not validation["valid"]:
+        return {
+            "valid": False,
+            "errors": validation["errors"],
+            "args": [],
+            "mappings": [],
+        }
+    mappings = []
+    args = []
+    for selector in selectors:
+        selected = select_bridge_value(message, selector)
+        arg = bridge_value_to_arg(selected["value"])
+        args.append(arg)
+        mappings.append(
+            {
+                "selector": selector,
+                "value": selected["value"],
+                "arg": arg,
+            }
+        )
+    return {
+        "valid": True,
+        "errors": [],
+        "message_id": validation["message_id"],
+        "producer": validation["producer"],
+        "channel": validation["channel"],
+        "correlation_id": validation["correlation_id"],
+        "args": args,
+        "mappings": mappings,
+    }
 
 
 def _selector_tokens(selector: str) -> list[str | int]:

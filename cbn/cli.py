@@ -13,7 +13,7 @@ from cbn.version import __version__
 from cbn_execution.graph import WorkflowGraph
 from cbn_plugins.cli_anything import CliAnythingHub
 from cbn_plugins.manager import PluginManager
-from cbn_protocol.envelope import select_bridge_value, validate_bridge_message
+from cbn_protocol.envelope import bridge_args_from_selectors, select_bridge_value, validate_bridge_message
 from cbn_protocol.exports import export_all_protocols, export_protocol, list_protocol_exports
 from cbn_runtime.context import build_runtime
 from api_server.server import ROUTE_SUMMARY, serve
@@ -147,6 +147,14 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
             except (KeyError, IndexError, ValueError) as exc:
                 print(json.dumps({"error": str(exc), "selector": args.selector}, ensure_ascii=False, indent=2))
+                return 8
+        if args.message_command == "args":
+            try:
+                result = bridge_args_from_selectors(message, list(args.selectors))
+                print(json.dumps(result, ensure_ascii=False, indent=2))
+                return 0 if result["valid"] else 7
+            except (KeyError, IndexError, ValueError) as exc:
+                print(json.dumps({"error": str(exc), "selectors": args.selectors}, ensure_ascii=False, indent=2))
                 return 8
 
     if args.command == "approvals":

@@ -6,7 +6,12 @@ import unittest
 from pathlib import Path
 
 from cbn_parsers.registry import ParserRegistry
-from cbn_protocol.envelope import BridgeMessage, select_bridge_value, validate_bridge_message
+from cbn_protocol.envelope import (
+    BridgeMessage,
+    bridge_args_from_selectors,
+    select_bridge_value,
+    validate_bridge_message,
+)
 
 
 class ParserProtocolTests(unittest.TestCase):
@@ -47,6 +52,37 @@ class ParserProtocolTests(unittest.TestCase):
         self.assertTrue(validate_bridge_message(message)["valid"])
         self.assertEqual(select_bridge_value(message, "payload.data.stdout")["value"], "git status --short")
         self.assertEqual(select_bridge_value(message, "artifacts[0].artifact_id")["value"], "artifact-1")
+
+    def test_bridge_message_args_from_selectors(self):
+        message = BridgeMessage(
+            producer="json.tool",
+            channel="capability.output",
+            correlation_id="call-1",
+            payload={
+                "parser_ref": "json.stdout",
+                "data": {
+                    "name": "gimp",
+                    "enabled": True,
+                    "options": {"mode": "batch", "scale": 2},
+                    "empty": None,
+                },
+            },
+        ).as_dict()
+        routed = bridge_args_from_selectors(
+            message,
+            [
+                "payload.data.name",
+                "payload.data.enabled",
+                "payload.data.options",
+                "payload.data.empty",
+            ],
+        )
+        self.assertTrue(routed["valid"])
+        self.assertEqual(
+            routed["args"],
+            ["gimp", "True", '{"mode": "batch", "scale": 2}', ""],
+        )
+        self.assertEqual(routed["mappings"][2]["selector"], "payload.data.options")
 
     def test_invalid_bridge_message_reports_errors(self):
         result = validate_bridge_message({"kind": "BridgeMessage", "payload": []})
@@ -108,6 +144,27 @@ class ParserProtocolTests(unittest.TestCase):
                 check=True,
             )
             self.assertEqual(json.loads(selected.stdout)["value"], "git --version")
+
+            args = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "cbn",
+                    "message",
+                    "args",
+                    str(path),
+                    "payload.data.stdout",
+                    "metadata.producer",
+                ],
+                text=True,
+                encoding="utf-8",
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+            )
+            payload = json.loads(args.stdout)
+            self.assertEqual(payload["args"], ["git --version", "git.version"])
+            self.assertEqual(payload["mappings"][0]["selector"], "payload.data.stdout")
 
     def test_dry_run_uses_raw_parser_even_for_structured_capability(self):
         call = subprocess.run(

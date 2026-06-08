@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import uuid
 from typing import Any
 
@@ -10,7 +9,7 @@ from cbn_audit.log import AuditLog
 from cbn_events.bus import EventBus
 from cbn_execution.executor import CapabilityExecutor
 from cbn_execution.graph import TaskNode, WorkflowGraph
-from cbn_protocol.envelope import select_bridge_value
+from cbn_protocol.envelope import bridge_value_to_arg, select_bridge_value
 from protocol import EventType
 
 
@@ -97,7 +96,7 @@ class WorkflowRunner:
         for arg_from in task.args_from:
             source = results_by_task[arg_from.task_id]["result"]["message"]
             selected = select_bridge_value(source, arg_from.selector)["value"]
-            args.append(_stringify_arg(selected))
+            args.append(bridge_value_to_arg(selected))
         return tuple(args)
 
     def _publish(
@@ -128,13 +127,3 @@ class WorkflowRunner:
                 "payload": payload,
             }
         )
-
-
-def _stringify_arg(value: Any) -> str:
-    if isinstance(value, str):
-        return value
-    if value is None:
-        return ""
-    if isinstance(value, (dict, list)):
-        return json.dumps(value, ensure_ascii=False, sort_keys=True)
-    return str(value)

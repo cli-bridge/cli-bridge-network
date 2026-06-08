@@ -107,6 +107,10 @@ if (!html.includes("python -m cbn message select")) {
   throw new Error("Dashboard does not expose the BridgeMessage selector command.");
 }
 
+if (!html.includes("python -m cbn message args")) {
+  throw new Error("Dashboard does not expose the BridgeMessage argv mapping command.");
+}
+
 if (!js.includes("stageCommand")) {
   throw new Error("Dashboard script does not stage commands.");
 }
