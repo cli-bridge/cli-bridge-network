@@ -89,6 +89,44 @@ class CliAnythingHub:
     def info(self, harness_name: str) -> CliHubCommandResult:
         return self._run(("info", harness_name), parse_json=False)
 
+    def harness_status(self, harness_name: str, from_market: bool = False) -> dict[str, Any]:
+        safe_name = sanitize_harness_name(harness_name)
+        capability_id = f"cli-anything.{safe_name}.launch"
+        manifest_path = self.paths.manifests / f"{capability_id}.json"
+        info_result = self.info(harness_name)
+        info_fields = _parse_info_fields(info_result.stdout)
+        market_record = self.market_record_for_harness(harness_name) if from_market else None
+        entry_point = (
+            info_fields.get("entry_point")
+            or str((market_record or {}).get("entry_point") or "")
+            or None
+        )
+        status_text = info_fields.get("status")
+        installed = _is_installed_status(status_text)
+        entrypoint_path = shutil.which(entry_point) if entry_point else None
+        return {
+            "plugin_id": PLUGIN_ID,
+            "harness_name": harness_name,
+            "safe_name": safe_name,
+            "capability_id": capability_id,
+            "manifest_path": str(manifest_path),
+            "manifest_imported": manifest_path.exists(),
+            "cli_hub_available": info_result.exit_code != 127,
+            "cli_hub_info": {
+                "argv": list(info_result.argv),
+                "exit_code": info_result.exit_code,
+                "status": status_text,
+                "fields": info_fields,
+            },
+            "market_record_available": market_record is not None,
+            "market_record": market_record,
+            "entry_point": entry_point,
+            "entrypoint_path": entrypoint_path,
+            "entrypoint_available": entrypoint_path is not None,
+            "installed": installed,
+            "launch_ready": bool(installed and entrypoint_path),
+        }
+
     def market_record_for_harness(self, harness_name: str) -> dict[str, Any] | None:
         result = self.search_market(harness_name)
         if result.exit_code != 0 or not isinstance(result.parsed_json, list):
@@ -235,6 +273,26 @@ def _matches_sanitized_name(value: Any, expected: str) -> bool:
         return sanitize_harness_name(str(value)) == expected
     except ValueError:
         return False
+
+
+def _parse_info_fields(stdout: str) -> dict[str, str]:
+    fields = {}
+    for line in stdout.splitlines():
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        key = re.sub(r"[^a-z0-9]+", "_", key.strip().casefold()).strip("_")
+        value = value.strip()
+        if key and value:
+            fields[key] = value
+    return fields
+
+
+def _is_installed_status(status_text: str | None) -> bool:
+    if not status_text:
+        return False
+    normalized = status_text.strip().casefold()
+    return normalized == "installed" or normalized.startswith("installed ")
 
 
 def _market_labels(market_record: dict[str, Any]) -> dict[str, str]:

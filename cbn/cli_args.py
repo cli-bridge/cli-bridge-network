@@ -126,9 +126,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     plugin_harness = plugin_subcommands.add_parser("harness", help="Plan or execute external harness operations.")
     plugin_harness.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
-    plugin_harness.add_argument("harness_action", choices=["install", "update", "launch"])
+    plugin_harness.add_argument("harness_action", choices=["status", "install", "update", "launch"])
     plugin_harness.add_argument("harness_name", help="Harness name from the plugin market.")
     plugin_harness.add_argument("extra_args", nargs="*", help="Extra args passed to harness launch.")
+    plugin_harness.add_argument(
+        "--from-market",
+        action="store_true",
+        help="Include CLI-Hub market metadata when checking harness status.",
+    )
     plugin_harness.add_argument("--yes", action="store_true", help="Execute the harness operation.")
 
     plugin_plan = plugin_subcommands.add_parser("plan", help="Print install/update plan.")

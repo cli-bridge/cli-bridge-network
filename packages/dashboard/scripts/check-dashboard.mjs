@@ -47,6 +47,10 @@ if (!html.includes("python -m cbn plugin import-harness cli-anything gimp --from
   throw new Error("Dashboard does not expose the CLI-Anything market metadata import command.");
 }
 
+if (!html.includes("python -m cbn plugin harness cli-anything status gimp --from-market")) {
+  throw new Error("Dashboard does not expose the CLI-Anything harness status command.");
+}
+
 if (!html.includes("python -m cbn plugin harness cli-anything install gimp")) {
   throw new Error("Dashboard does not expose the managed CLI-Anything harness install command.");
 }

@@ -281,6 +281,15 @@ def main(argv: list[str] | None = None) -> int:
             if args.plugin_id != "cli-anything":
                 raise KeyError(f"harness operations are not implemented for plugin: {args.plugin_id}")
             hub = CliAnythingHub()
+            if args.harness_action == "status":
+                print(
+                    json.dumps(
+                        hub.harness_status(args.harness_name, from_market=args.from_market),
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                )
+                return 0
             plan = hub.harness_plan(
                 args.harness_action,
                 args.harness_name,

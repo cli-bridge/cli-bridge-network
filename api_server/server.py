@@ -260,6 +260,15 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             return
         if self.path == "/plugins/cli-anything/harness":
             hub = CliAnythingHub()
+            if payload["action"] == "status":
+                self._send(
+                    200,
+                    hub.harness_status(
+                        payload["harness_name"],
+                        from_market=bool(payload.get("from_market", False)),
+                    ),
+                )
+                return
             plan = hub.harness_plan(
                 payload["action"],
                 payload["harness_name"],
