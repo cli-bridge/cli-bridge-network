@@ -22,6 +22,7 @@ from cbn_protocol.envelope import bridge_args_from_selectors, select_bridge_valu
 from cbn_protocol.compatibility import check_protocol
 from cbn_protocol.exports import export_all_protocols, export_protocol, list_protocol_exports
 from cbn_runtime.context import build_runtime
+from cbn_workflow.catalog import inspect_workflow, list_workflows
 from cbn_plugins.cli_anything import CliAnythingHub
 from cbn_plugins.manager import PluginManager
 
@@ -46,6 +47,7 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/protocols"},
     {"method": "GET", "path": "/protocols/check"},
     {"method": "GET", "path": "/approvals"},
+    {"method": "GET", "path": "/workflows"},
     {"method": "POST", "path": "/call"},
     {"method": "POST", "path": "/a2a"},
     {"method": "POST", "path": "/messages/validate"},
@@ -229,6 +231,14 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 limit = int(query.get("limit", ["50"])[0])
                 status = query.get("status", [None])[0]
                 self._send(200, runtime.approval_store.list(status=status, limit=limit))
+            return
+        if parsed.path == "/workflows":
+            path = query.get("path", [None])[0]
+            if path:
+                result = inspect_workflow(Path(path), registry=runtime.registry)
+                self._send(200 if result["valid"] else 422, result)
+            else:
+                self._send(200, list_workflows(registry=runtime.registry))
             return
         self._send(404, {"error": "not found", "routes": ROUTE_SUMMARY})
 

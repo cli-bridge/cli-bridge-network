@@ -121,6 +121,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     workflow_parser = subcommands.add_parser("workflow", help="Validate, plan, or run workflows.")
     workflow_subcommands = workflow_parser.add_subparsers(dest="workflow_command")
+    workflow_subcommands.add_parser("list", help="List workflow descriptors.")
+    workflow_inspect = workflow_subcommands.add_parser("inspect", help="Inspect one workflow descriptor.")
+    workflow_inspect.add_argument("path")
     workflow_validate = workflow_subcommands.add_parser("validate", help="Validate a workflow JSON file.")
     workflow_validate.add_argument("path")
     workflow_plan = workflow_subcommands.add_parser("plan", help="Print workflow execution plan.")

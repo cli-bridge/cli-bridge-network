@@ -16,6 +16,7 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("GET", "/protocols/check"), routes)
         self.assertIn(("GET", "/.well-known/agent-card.json"), routes)
         self.assertIn(("POST", "/a2a"), routes)
+        self.assertIn(("GET", "/workflows"), routes)
 
     def test_post_bad_json_returns_structured_error(self):
         with daemon_url() as base_url:
@@ -101,6 +102,28 @@ class DaemonApiTests(unittest.TestCase):
                 self.assertTrue(
                     any(item["status"] == "missing" for item in payload["checks"])
                 )
+
+    def test_workflows_route_returns_catalog(self):
+        with daemon_url() as base_url:
+            with urllib.request.urlopen(f"{base_url}/workflows", timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(response.status, 200)
+                self.assertTrue(
+                    any(
+                        item["workflow_id"] == "example.cli-anything-macrocli-mermaid-routing"
+                        and item["valid"]
+                        for item in payload
+                    )
+                )
+
+            with urllib.request.urlopen(
+                f"{base_url}/workflows?path=workflows/cli-anything-macrocli-mermaid-routing.example.json",
+                timeout=5,
+            ) as response:
+                descriptor = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(response.status, 200)
+                self.assertEqual(descriptor["task_count"], 3)
+                self.assertEqual(descriptor["tasks"][0]["uses"], "cli-anything.macrocli.backends")
 
     def test_a2a_routes_return_agent_card_and_task(self):
         with daemon_url() as base_url:

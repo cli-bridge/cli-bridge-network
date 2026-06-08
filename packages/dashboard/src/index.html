@@ -353,7 +353,11 @@
 
         <section class="panel">
           <h2>Workflow DAG</h2>
-          <button data-command="cbn workflow list">List Workflows</button>
+          <button
+            data-command="python -m cbn workflow list"
+            data-api-method="GET"
+            data-api-path="/workflows"
+          >List Workflows</button>
           <button
             data-command="python -m cbn workflow validate workflows/example.json"
             data-api-method="POST"

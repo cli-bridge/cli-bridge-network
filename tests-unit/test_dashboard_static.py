@@ -24,6 +24,7 @@ class DashboardStaticTests(unittest.TestCase):
         self.assertIn("python -m cbn event tail", self.html)
         self.assertIn("python -m cbn artifact list", self.html)
         self.assertIn("python -m cbn approvals list", self.html)
+        self.assertIn("python -m cbn workflow list", self.html)
         self.assertIn("python -m cbn workflow run workflows/example.json --dry-run", self.html)
         self.assertIn("python -m cbn workflow run workflows/cli-anything-macrocli-mermaid-routing.example.json", self.html)
         self.assertIn("python -m cbn parser list", self.html)

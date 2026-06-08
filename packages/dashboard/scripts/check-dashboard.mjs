@@ -141,6 +141,14 @@ if (!html.includes("python -m cbn workflow run workflows/example.json --dry-run"
   throw new Error("Dashboard does not expose the runnable workflow dry-run command.");
 }
 
+if (!html.includes("python -m cbn workflow list")) {
+  throw new Error("Dashboard does not expose the workflow catalog command.");
+}
+
+if (!html.includes('data-api-path="/workflows"')) {
+  throw new Error("Dashboard does not wire the workflow catalog to the daemon API.");
+}
+
 if (!html.includes('data-api-path="/workflows/run"')) {
   throw new Error("Dashboard does not wire workflow execution to the daemon API.");
 }

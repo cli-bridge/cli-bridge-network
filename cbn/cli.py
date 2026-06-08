@@ -23,6 +23,7 @@ from cbn_protocol.compatibility import check_protocol
 from cbn_protocol.exports import export_all_protocols, export_protocol, list_protocol_exports
 from cbn_protocol.mcp_stdio import serve_stdio, smoke_mcp_stdio
 from cbn_runtime.context import build_runtime
+from cbn_workflow.catalog import inspect_workflow, list_workflows
 from api_server.server import ROUTE_SUMMARY, serve
 from nodes import CAPABILITY_NODE_MAPPINGS, init_builtin_nodes
 
@@ -262,6 +263,13 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "workflow":
         runtime = build_runtime()
+        if args.workflow_command == "list":
+            print(json.dumps(list_workflows(registry=runtime.registry), ensure_ascii=False, indent=2))
+            return 0
+        if args.workflow_command == "inspect":
+            result = inspect_workflow(Path(args.path), registry=runtime.registry)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["valid"] else 7
         graph = WorkflowGraph.from_file(Path(args.path))
         if args.workflow_command == "validate":
             graph.validate()

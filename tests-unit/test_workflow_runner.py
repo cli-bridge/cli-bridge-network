@@ -11,6 +11,7 @@ from cbn_core.manifest import ManifestRegistry
 from cbn_events.bus import EventBus
 from cbn_execution.executor import CapabilityExecutor
 from cbn_execution.graph import WorkflowGraph
+from cbn_workflow.catalog import inspect_workflow, list_workflows
 from cbn_workflow.runner import WorkflowRunner
 
 
@@ -72,6 +73,27 @@ class WorkflowRunnerTests(unittest.TestCase):
             consumer["argsFrom"],
             [{"task": "backend-diagram-source", "selector": "payload.data.stdout"}],
         )
+
+    def test_workflow_catalog_lists_descriptors_with_capability_summaries(self):
+        registry = ManifestRegistry()
+        registry.load_dir(Path("manifests"))
+        descriptors = list_workflows(registry=registry)
+        by_id = {item["workflow_id"]: item for item in descriptors}
+        self.assertIn("example.cli-anything-macrocli-mermaid-routing", by_id)
+        workflow = by_id["example.cli-anything-macrocli-mermaid-routing"]
+        self.assertTrue(workflow["valid"])
+        self.assertEqual(workflow["task_count"], 3)
+        self.assertEqual(workflow["tasks"][0]["capability"]["parser_ref"], "cli-anything.macrocli.backends")
+        self.assertEqual(workflow["tasks"][1]["capability"]["risk"], "write-workspace")
+        self.assertTrue(workflow["tasks"][2]["capability"]["verified"])
+
+    def test_workflow_catalog_reports_invalid_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "bad.json"
+            path.write_text("{}", encoding="utf-8")
+            descriptor = inspect_workflow(path)
+            self.assertFalse(descriptor["valid"])
+            self.assertIn("unsupported workflow apiVersion", descriptor["errors"][0])
 
     def test_workflow_graph_rejects_cycles(self):
         graph = WorkflowGraph.from_dict(
@@ -166,6 +188,8 @@ class WorkflowRunnerTests(unittest.TestCase):
     def test_cli_workflow_validate_plan_and_run(self):
         for args in (
             ["workflow", "validate", "workflows/example.json"],
+            ["workflow", "list"],
+            ["workflow", "inspect", "workflows/cli-anything-macrocli-mermaid-routing.example.json"],
             ["workflow", "plan", "workflows/example.json"],
             ["workflow", "run", "workflows/example.json", "--dry-run"],
             ["workflow", "run", "workflows/message-routing.example.json", "--dry-run"],
