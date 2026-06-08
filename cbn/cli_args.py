@@ -61,6 +61,12 @@ def build_parser() -> argparse.ArgumentParser:
     protocol_export = protocol_subcommands.add_parser("export", help="Export capability descriptors.")
     protocol_export.add_argument("target", choices=["mcp", "a2a", "acp", "all"])
     protocol_export.add_argument("--capability-id")
+    protocol_check = protocol_subcommands.add_parser(
+        "check",
+        help="Report descriptor evidence and remaining wire-compatibility gaps.",
+    )
+    protocol_check.add_argument("target", choices=["mcp", "a2a", "acp", "all"])
+    protocol_check.add_argument("--capability-id")
 
     message_parser = subcommands.add_parser("message", help="Validate and inspect BridgeMessage envelopes.")
     message_subcommands = message_parser.add_subparsers(dest="message_command")

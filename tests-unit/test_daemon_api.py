@@ -13,6 +13,7 @@ class DaemonApiTests(unittest.TestCase):
     def test_route_summary_exposes_cli_anything_evaluation(self):
         routes = {(route["method"], route["path"]) for route in ROUTE_SUMMARY}
         self.assertIn(("POST", "/plugins/cli-anything/evaluate-harness"), routes)
+        self.assertIn(("GET", "/protocols/check"), routes)
 
     def test_post_bad_json_returns_structured_error(self):
         with daemon_url() as base_url:
@@ -83,6 +84,20 @@ class DaemonApiTests(unittest.TestCase):
                 self.assertEqual(
                     response.headers["Access-Control-Allow-Origin"],
                     "http://localhost:3000",
+                )
+
+    def test_protocol_check_route_returns_wire_gaps(self):
+        with daemon_url() as base_url:
+            with urllib.request.urlopen(
+                f"{base_url}/protocols/check?target=mcp&capability_id=cli-anything.mermaid.set-diagram",
+                timeout=5,
+            ) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(response.status, 200)
+                self.assertEqual(payload["protocol"], "mcp")
+                self.assertFalse(payload["wire_compatible"])
+                self.assertTrue(
+                    any(item["status"] == "missing" for item in payload["checks"])
                 )
 
 

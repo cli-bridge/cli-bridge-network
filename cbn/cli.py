@@ -16,6 +16,7 @@ from cbn_parsers.registry import ParserRegistry
 from cbn_plugins.cli_anything import CliAnythingHub
 from cbn_plugins.manager import PluginManager
 from cbn_protocol.envelope import bridge_args_from_selectors, select_bridge_value, validate_bridge_message
+from cbn_protocol.compatibility import check_protocol
 from cbn_protocol.exports import export_all_protocols, export_protocol, list_protocol_exports
 from cbn_runtime.context import build_runtime
 from api_server.server import ROUTE_SUMMARY, serve
@@ -138,6 +139,10 @@ def main(argv: list[str] | None = None) -> int:
                     args.target,
                     capability_id=args.capability_id,
                 )
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0
+        if args.protocol_command == "check":
+            payload = check_protocol(runtime.registry, args.target, capability_id=args.capability_id)
             print(json.dumps(payload, ensure_ascii=False, indent=2))
             return 0
 

@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 from cbn_core.manifest import ManifestRegistry
+from cbn_protocol.compatibility import check_protocol
 from cbn_protocol.exports import export_all_protocols, export_protocol, list_protocol_exports
 
 
@@ -46,6 +47,21 @@ class ProtocolExportTests(unittest.TestCase):
         self.assertEqual(cbn["output"]["parser_ref"], "ffprobe.json")
         self.assertIn("manifests", cbn["source_path"])
 
+    def test_protocol_check_reports_descriptor_evidence_and_wire_gaps(self):
+        payload = check_protocol(self.registry, "all", capability_id="cli-anything.mermaid.set-diagram")
+        self.assertEqual(set(payload["checks"]), {"a2a", "acp", "mcp"})
+        mcp = payload["checks"]["mcp"]
+        self.assertFalse(mcp["wire_compatible"])
+        self.assertGreaterEqual(mcp["status_counts"]["present"], 3)
+        self.assertTrue(
+            any(
+                item["requirement"] == "MCP initialize/tools/list/tools/call wire lifecycle"
+                and item["status"] == "missing"
+                for item in mcp["checks"]
+            )
+        )
+        self.assertIn("modelcontextprotocol.io", mcp["source"]["url"])
+
     def test_cli_protocol_export(self):
         proc = subprocess.run(
             [sys.executable, "-m", "cbn", "protocol", "export", "mcp", "--capability-id", "git.status"],
@@ -58,6 +74,29 @@ class ProtocolExportTests(unittest.TestCase):
         payload = json.loads(proc.stdout)
         self.assertEqual(payload["protocol"], "mcp")
         self.assertEqual(payload["tools"][0]["name"], "git.status")
+
+    def test_cli_protocol_check(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "protocol",
+                "check",
+                "mcp",
+                "--capability-id",
+                "cli-anything.mermaid.set-diagram",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["protocol"], "mcp")
+        self.assertFalse(payload["wire_compatible"])
+        self.assertEqual(payload["capability_id"], "cli-anything.mermaid.set-diagram")
 
 
 if __name__ == "__main__":

@@ -303,6 +303,11 @@
             data-api-path="/protocols?target=all"
           >Export All</button>
           <button
+            data-command="python -m cbn protocol check all --capability-id cli-anything.mermaid.set-diagram"
+            data-api-method="GET"
+            data-api-path="/protocols/check?target=all&amp;capability_id=cli-anything.mermaid.set-diagram"
+          >Check Compatibility</button>
+          <button
             data-command="python -m cbn protocol export mcp --capability-id git.status"
             data-api-method="GET"
             data-api-path="/protocols?target=mcp&amp;capability_id=git.status"

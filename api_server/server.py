@@ -18,6 +18,7 @@ from cbn_core.manifest import validate_manifest_path
 from cbn_execution.graph import WorkflowGraph
 from cbn_parsers.registry import ParserRegistry
 from cbn_protocol.envelope import bridge_args_from_selectors, select_bridge_value, validate_bridge_message
+from cbn_protocol.compatibility import check_protocol
 from cbn_protocol.exports import export_all_protocols, export_protocol, list_protocol_exports
 from cbn_runtime.context import build_runtime
 from cbn_plugins.cli_anything import CliAnythingHub
@@ -41,6 +42,7 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/artifacts"},
     {"method": "GET", "path": "/parsers"},
     {"method": "GET", "path": "/protocols"},
+    {"method": "GET", "path": "/protocols/check"},
     {"method": "GET", "path": "/approvals"},
     {"method": "POST", "path": "/call"},
     {"method": "POST", "path": "/messages/validate"},
@@ -207,6 +209,11 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 )
             else:
                 self._send(200, list_protocol_exports())
+            return
+        if parsed.path == "/protocols/check":
+            target = query.get("target", ["all"])[0]
+            capability_id = query.get("capability_id", [None])[0]
+            self._send(200, check_protocol(runtime.registry, target, capability_id=capability_id))
             return
         if parsed.path == "/approvals":
             approval_id = query.get("approval_id", [None])[0]

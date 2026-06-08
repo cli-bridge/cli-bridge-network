@@ -177,6 +177,14 @@ if (!html.includes('data-api-path="/protocols?target=all"')) {
   throw new Error("Dashboard does not wire protocol export to the daemon API.");
 }
 
+if (!html.includes("python -m cbn protocol check all --capability-id cli-anything.mermaid.set-diagram")) {
+  throw new Error("Dashboard does not expose the protocol compatibility check command.");
+}
+
+if (!html.includes('data-api-path="/protocols/check?target=all&amp;capability_id=cli-anything.mermaid.set-diagram"')) {
+  throw new Error("Dashboard does not wire protocol compatibility checks to the daemon API.");
+}
+
 if (!html.includes("python -m cbn message validate")) {
   throw new Error("Dashboard does not expose the BridgeMessage validate command.");
 }
