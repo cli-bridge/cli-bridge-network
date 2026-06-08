@@ -169,6 +169,62 @@ class MvpRuntimeTests(unittest.TestCase):
         )
         decision = PolicyEngine().evaluate(danger, confirmed=False)
         self.assertFalse(decision.allowed)
+        self.assertEqual(decision.as_dict()["network"], "deny")
+
+    def test_policy_blocks_network_requires_confirmation_without_confirmation(self):
+        network_manifest = CapabilityManifest.from_dict(
+            {
+                "apiVersion": "bridge.dev/v1alpha1",
+                "kind": "ToolManifest",
+                "metadata": {"id": "test.network", "title": "Network"},
+                "spec": {
+                    "transport": {
+                        "kind": "stdio",
+                        "command": "python",
+                        "argsTemplate": ["--version"],
+                        "cwdPolicy": "workspace",
+                    },
+                    "policy": {
+                        "risk": "read",
+                        "requiresConfirmation": False,
+                        "network": "requires-confirmation",
+                    },
+                    "output": {"parserRef": "raw.text", "verified": True},
+                },
+            }
+        )
+        decision = PolicyEngine().evaluate(network_manifest, confirmed=False)
+        self.assertFalse(decision.allowed)
+        self.assertIn("network=requires-confirmation", decision.reason)
+        confirmed = PolicyEngine().evaluate(network_manifest, confirmed=True)
+        self.assertTrue(confirmed.allowed)
+        self.assertTrue(confirmed.requires_confirmation)
+
+    def test_policy_allows_localhost_network_without_confirmation(self):
+        manifest = CapabilityManifest.from_dict(
+            {
+                "apiVersion": "bridge.dev/v1alpha1",
+                "kind": "ToolManifest",
+                "metadata": {"id": "test.localhost", "title": "Localhost"},
+                "spec": {
+                    "transport": {
+                        "kind": "stdio",
+                        "command": "python",
+                        "argsTemplate": ["--version"],
+                        "cwdPolicy": "workspace",
+                    },
+                    "policy": {
+                        "risk": "write-workspace",
+                        "requiresConfirmation": False,
+                        "network": "localhost",
+                    },
+                    "output": {"parserRef": "raw.text", "verified": True},
+                },
+            }
+        )
+        decision = PolicyEngine().evaluate(manifest, confirmed=False)
+        self.assertTrue(decision.allowed)
+        self.assertEqual(decision.as_dict()["network"], "localhost")
 
     def test_executor_creates_and_consumes_approval_request(self):
         with tempfile.TemporaryDirectory() as tmp:
