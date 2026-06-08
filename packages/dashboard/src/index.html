@@ -345,6 +345,12 @@
             data-api-path="/workflows/run"
             data-api-body='{"path":"workflows/message-routing.example.json","dry_run":true}'
           >Message Routing Dry Run</button>
+          <button
+            data-command="python -m cbn workflow run workflows/cli-anything-mermaid-routing.example.json"
+            data-api-method="POST"
+            data-api-path="/workflows/run"
+            data-api-body='{"path":"workflows/cli-anything-mermaid-routing.example.json"}'
+          >Mermaid Routing</button>
           <button data-command="python -m cbn workflow run workflows/example.json --yes">Run</button>
           <button data-command="cbn workflow stop &lt;run-id&gt;">Stop</button>
         </section>

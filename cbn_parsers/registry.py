@@ -46,6 +46,12 @@ class ParserRegistry:
             "Keep CLI-Anything harness output as raw text until a verified harness parser exists.",
             parse_raw_text,
         )
+        registry.register(
+            "cli-anything.mermaid.set_diagram",
+            "CLI-Anything Mermaid set diagram",
+            "Parse verified Mermaid harness `diagram set` dry-run JSON output.",
+            parse_cli_anything_mermaid_set_diagram,
+        )
         return registry
 
     def register(
@@ -109,3 +115,21 @@ def parse_git_status_short(stdout: str, stderr: str) -> dict[str, Any]:
             }
         )
     return {"entries": entries, "stderr": stderr}
+
+
+def parse_cli_anything_mermaid_set_diagram(stdout: str, stderr: str) -> dict[str, Any]:
+    payload = json.loads(stdout)
+    if not isinstance(payload, dict):
+        raise ValueError("Mermaid set diagram output must be a JSON object")
+    if payload.get("action") != "set_diagram":
+        raise ValueError(f"unexpected Mermaid action: {payload.get('action')}")
+    line_count = payload.get("line_count")
+    if not isinstance(line_count, int) or isinstance(line_count, bool):
+        raise ValueError("Mermaid set diagram line_count must be an integer")
+    data: dict[str, Any] = {
+        "action": payload["action"],
+        "line_count": line_count,
+    }
+    if stderr.strip():
+        data["stderr"] = stderr
+    return data

@@ -27,7 +27,8 @@
       "command": "cli-hub",
       "argsTemplate": [
         "launch",
-        "mermaid"
+        "mermaid",
+        "--"
       ],
       "cwdPolicy": "workspace",
       "timeoutSeconds": 600

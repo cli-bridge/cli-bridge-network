@@ -149,6 +149,10 @@ if (!html.includes("python -m cbn workflow run workflows/message-routing.example
   throw new Error("Dashboard does not expose the BridgeMessage routing workflow command.");
 }
 
+if (!html.includes("python -m cbn workflow run workflows/cli-anything-mermaid-routing.example.json")) {
+  throw new Error("Dashboard does not expose the CLI-Anything Mermaid routing workflow command.");
+}
+
 if (!html.includes("python -m cbn parser list")) {
   throw new Error("Dashboard does not expose the parser registry list command.");
 }

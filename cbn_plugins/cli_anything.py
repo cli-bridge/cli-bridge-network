@@ -248,7 +248,7 @@ class CliAnythingHub:
                 "transport": {
                     "kind": "stdio",
                     "command": self.entrypoint,
-                    "argsTemplate": ["launch", market_name],
+                    "argsTemplate": ["launch", market_name, "--"],
                     "cwdPolicy": "workspace",
                     "timeoutSeconds": 600,
                 },

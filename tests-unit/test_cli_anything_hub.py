@@ -399,7 +399,7 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(manifest["metadata"]["id"], "cli-anything.gimp.launch")
         self.assertEqual(manifest["metadata"]["labels"]["plugin"], "cli-anything")
         self.assertEqual(manifest["spec"]["transport"]["kind"], "stdio")
-        self.assertEqual(manifest["spec"]["transport"]["argsTemplate"], ["launch", "gimp"])
+        self.assertEqual(manifest["spec"]["transport"]["argsTemplate"], ["launch", "gimp", "--"])
         self.assertEqual(manifest["spec"]["transport"]["timeoutSeconds"], 600)
         self.assertFalse(manifest["spec"]["output"]["verified"])
 
@@ -653,7 +653,7 @@ class CliAnythingHubTests(unittest.TestCase):
         )
         payload = json.loads(proc.stdout)
         self.assertEqual(payload["metadata"]["id"], "cli-anything.gimp.launch")
-        self.assertEqual(payload["spec"]["transport"]["argsTemplate"], ["launch", "gimp"])
+        self.assertEqual(payload["spec"]["transport"]["argsTemplate"], ["launch", "gimp", "--"])
 
 
 if __name__ == "__main__":

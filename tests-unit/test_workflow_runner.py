@@ -41,6 +41,18 @@ class WorkflowRunnerTests(unittest.TestCase):
         plan = graph.as_plan()
         self.assertEqual(plan["tasks"][1]["argsFrom"][0]["selector"], "payload.data.stdout")
 
+    def test_cli_anything_mermaid_workflow_routes_file_path_from_bridge_message(self):
+        graph = WorkflowGraph.from_file(Path("workflows/cli-anything-mermaid-routing.example.json"))
+        plan = graph.as_plan()
+        consumer = plan["tasks"][1]
+        self.assertEqual(plan["workflow_id"], "example.cli-anything-mermaid-routing")
+        self.assertEqual(consumer["uses"], "cli-anything.mermaid.set-diagram")
+        self.assertEqual(consumer["args"], [])
+        self.assertEqual(
+            consumer["argsFrom"],
+            [{"task": "source-diagram", "selector": "payload.data.stdout"}],
+        )
+
     def test_workflow_graph_rejects_cycles(self):
         graph = WorkflowGraph.from_dict(
             {
