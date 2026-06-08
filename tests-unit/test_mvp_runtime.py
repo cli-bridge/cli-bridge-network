@@ -185,6 +185,7 @@ class MvpRuntimeTests(unittest.TestCase):
         )
         payload = json.loads(proc.stdout)
         self.assertTrue(any(route["path"] == "/plugins/plan" for route in payload))
+        self.assertTrue(any(route["path"] == "/plugins/execute" for route in payload))
         self.assertTrue(any(route["path"] == "/plugins/cli-anything/preflight" for route in payload))
         self.assertTrue(any(route["path"] == "/events" for route in payload))
         self.assertTrue(any(route["path"] == "/artifacts" for route in payload))

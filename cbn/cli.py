@@ -273,7 +273,8 @@ def main(argv: list[str] | None = None) -> int:
             if not args.yes:
                 print(json.dumps(plan.as_dict(), ensure_ascii=False, indent=2))
                 return 2
-            print(json.dumps(manager.execute_plan(plan), ensure_ascii=False, indent=2))
+            runtime = build_runtime()
+            print(json.dumps(runtime.plugin_runner.execute(plan), ensure_ascii=False, indent=2))
             return 0
         if args.plugin_command == "update":
             plan = manager.plan(
@@ -284,7 +285,8 @@ def main(argv: list[str] | None = None) -> int:
             if not args.yes:
                 print(json.dumps(plan.as_dict(), ensure_ascii=False, indent=2))
                 return 2
-            print(json.dumps(manager.execute_plan(plan), ensure_ascii=False, indent=2))
+            runtime = build_runtime()
+            print(json.dumps(runtime.plugin_runner.execute(plan), ensure_ascii=False, indent=2))
             return 0
 
     parser.print_help()

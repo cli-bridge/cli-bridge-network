@@ -17,3 +17,7 @@ class EventType(StrEnum):
     WORKFLOW_TASK_STARTED = "workflow.task.started"
     WORKFLOW_TASK_COMPLETED = "workflow.task.completed"
     WORKFLOW_COMPLETED = "workflow.completed"
+    PLUGIN_OPERATION_STARTED = "plugin.operation.started"
+    PLUGIN_COMMAND_STARTED = "plugin.command.started"
+    PLUGIN_COMMAND_COMPLETED = "plugin.command.completed"
+    PLUGIN_OPERATION_COMPLETED = "plugin.operation.completed"

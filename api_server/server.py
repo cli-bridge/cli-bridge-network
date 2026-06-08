@@ -39,6 +39,7 @@ ROUTE_SUMMARY = [
     {"method": "POST", "path": "/workflows/plan"},
     {"method": "POST", "path": "/workflows/run"},
     {"method": "POST", "path": "/plugins/plan"},
+    {"method": "POST", "path": "/plugins/execute"},
     {"method": "POST", "path": "/plugins/cli-anything/market"},
     {"method": "POST", "path": "/plugins/cli-anything/import-harness"},
 ]
@@ -186,6 +187,18 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 include_codex_skill=bool(payload.get("include_codex_skill", False)),
             )
             self._send(200, plan.as_dict())
+            return
+        if self.path == "/plugins/execute":
+            if not bool(payload.get("confirmed", False)):
+                self._send(403, {"error": "plugin execution requires confirmed=true"})
+                return
+            manager = PluginManager()
+            plan = manager.plan(
+                payload["plugin_id"],
+                action=payload.get("action", "install"),
+                include_codex_skill=bool(payload.get("include_codex_skill", False)),
+            )
+            self._send(200, runtime.plugin_runner.execute(plan))
             return
         if self.path == "/plugins/cli-anything/market":
             hub = CliAnythingHub()

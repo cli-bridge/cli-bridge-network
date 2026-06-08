@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 import uuid
 from dataclasses import dataclass
@@ -60,7 +61,8 @@ class ArtifactStore:
         artifact_id = str(uuid.uuid4())
         truncated = len(text) > self.max_inline_chars
         stored_text = text[: self.max_inline_chars] if truncated else text
-        path = self.root / f"{artifact_id}.{kind}.txt"
+        safe_kind = safe_artifact_kind(kind)
+        path = self.root / f"{artifact_id}.{safe_kind}.txt"
         path.write_text(stored_text, encoding="utf-8")
         record = ArtifactRecord(
             artifact_id=artifact_id,
@@ -110,3 +112,8 @@ class ArtifactStore:
                 payload["content"] = path.read_text(encoding="utf-8") if path.exists() else None
                 return payload
         raise KeyError(f"unknown artifact: {artifact_id}")
+
+
+def safe_artifact_kind(kind: str) -> str:
+    safe = re.sub(r"[^a-zA-Z0-9_.-]+", "-", kind.strip()).strip("-._")
+    return safe or "artifact"

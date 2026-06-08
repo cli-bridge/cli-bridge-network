@@ -13,6 +13,7 @@ from cbn_core.manifest import ManifestRegistry
 from cbn_events.bus import EventBus
 from cbn_execution.executor import CapabilityExecutor
 from cbn_parsers.registry import ParserRegistry
+from cbn_plugins.operations import PluginOperationRunner
 from cbn_workflow.runner import WorkflowRunner
 
 
@@ -26,6 +27,7 @@ class RuntimeContext:
     parser_registry: ParserRegistry
     executor: CapabilityExecutor
     workflow_runner: WorkflowRunner
+    plugin_runner: PluginOperationRunner
 
 
 def build_runtime(root: Path | None = None) -> RuntimeContext:
@@ -54,4 +56,9 @@ def build_runtime(root: Path | None = None) -> RuntimeContext:
         parser_registry=parser_registry,
         executor=executor,
         workflow_runner=WorkflowRunner(executor, event_bus=event_bus, audit_log=audit_log),
+        plugin_runner=PluginOperationRunner(
+            audit_log=audit_log,
+            event_bus=event_bus,
+            artifact_store=artifact_store,
+        ),
     )
