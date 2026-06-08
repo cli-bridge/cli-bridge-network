@@ -1,14 +1,22 @@
 # @cli-bridge/dashboard
 
 Draft CBN Console package. The first version is intentionally static and
-button-heavy: it exposes the management surface before the backend API is
-finalized.
+button-heavy: it exposes the management surface while calling the MVP daemon
+API for routes that already exist.
 
-Open directly:
+Start the daemon first:
 
 ```powershell
-start packages\dashboard\src\index.html
+python -m cbn daemon serve --host 127.0.0.1 --port 8787
 ```
+
+Serve the dashboard from a local origin:
+
+```powershell
+npm --workspace @cli-bridge/dashboard run serve
+```
+
+Then open `http://127.0.0.1:5173`.
 
 Run the lightweight static check:
 
@@ -24,4 +32,8 @@ python -m cbn plugin install cli-anything --yes
 python -m cbn plugin update cli-anything --yes
 ```
 
-Future work should replace command preview handlers with CBN gateway API calls.
+Buttons with daemon API support call `http://127.0.0.1:8787` and still stage
+the equivalent command as a fallback. Confirmed install, update, manifest write,
+and harness lifecycle buttons ask for browser confirmation before sending
+`confirmed=true`. Serving from `127.0.0.1` keeps the dashboard inside the
+daemon's local Origin allowlist.

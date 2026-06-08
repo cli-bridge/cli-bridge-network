@@ -15,8 +15,8 @@
       </div>
       <div class="status-strip" aria-label="Runtime status summary">
         <span>Branch: feature/mvp-runtime-foundation</span>
-        <span>Mode: Static Draft</span>
-        <span>API: Not Connected</span>
+        <span id="apiMode">Mode: API + Queue</span>
+        <span id="apiStatus">API: Unknown</span>
       </div>
     </header>
 
@@ -24,7 +24,11 @@
       <section class="control-grid" aria-label="Control groups">
         <section class="panel">
           <h2>Runtime</h2>
-          <button data-command="python -m cbn health">Health</button>
+          <button
+            data-command="python -m cbn health"
+            data-api-method="GET"
+            data-api-path="/health"
+          >Health</button>
           <button data-command="python -m cbn paths">Paths</button>
           <button data-command="python -m cbn nodes">Nodes</button>
           <button data-command="python -m cbn --version">Version</button>
@@ -45,34 +49,172 @@
         <section class="panel highlight">
           <h2>CLI-Anything Plugin</h2>
           <button data-command="python -m cbn plugin info cli-anything">Info</button>
-          <button data-command="python -m cbn plugin preflight cli-anything">Preflight</button>
-          <button data-command="python -m cbn plugin status cli-anything">Status</button>
-          <button data-command="python -m cbn plugin plan cli-anything">Download / Clone</button>
-          <button data-command="python -m cbn plugin install cli-anything">Install Preview</button>
-          <button data-command="python -m cbn plugin install cli-anything --yes">Install</button>
-          <button data-command="python -m cbn plugin plan cli-anything --action update">Check Updates</button>
-          <button data-command="python -m cbn plugin update cli-anything --yes">Update</button>
+          <button
+            data-command="python -m cbn plugin preflight cli-anything"
+            data-api-method="GET"
+            data-api-path="/plugins/cli-anything/preflight"
+          >Preflight</button>
+          <button
+            data-command="python -m cbn plugin status cli-anything"
+            data-api-method="GET"
+            data-api-path="/plugins/cli-anything/status"
+          >Status</button>
+          <button
+            data-command="python -m cbn plugin plan cli-anything"
+            data-api-method="POST"
+            data-api-path="/plugins/plan"
+            data-api-body='{"plugin_id":"cli-anything"}'
+          >Download / Clone</button>
+          <button
+            data-command="python -m cbn plugin install cli-anything"
+            data-api-method="POST"
+            data-api-path="/plugins/plan"
+            data-api-body='{"plugin_id":"cli-anything"}'
+          >Install Preview</button>
+          <button
+            data-command="python -m cbn plugin install cli-anything --yes"
+            data-api-method="POST"
+            data-api-path="/plugins/execute"
+            data-api-body='{"plugin_id":"cli-anything","confirmed":true}'
+            data-api-confirm="Install CLI-Anything now?"
+          >Install</button>
+          <button
+            data-command="python -m cbn plugin plan cli-anything --action update"
+            data-api-method="POST"
+            data-api-path="/plugins/plan"
+            data-api-body='{"plugin_id":"cli-anything","action":"update"}'
+          >Check Updates</button>
+          <button
+            data-command="python -m cbn plugin update cli-anything --yes"
+            data-api-method="POST"
+            data-api-path="/plugins/execute"
+            data-api-body='{"plugin_id":"cli-anything","action":"update","confirmed":true}'
+            data-api-confirm="Update CLI-Anything now?"
+          >Update</button>
           <button data-command="python -m cbn plugin install cli-anything --with-codex-skill">Codex Skill Preview</button>
           <button data-command="python -m cbn plugin install cli-anything --with-codex-skill --yes">Install Codex Skill</button>
-          <button data-command="python -m cbn plugin market cli-anything list">CLI-Hub List</button>
-          <button data-command="python -m cbn plugin market cli-anything search image">CLI-Hub Search</button>
-          <button data-command="python -m cbn plugin market cli-anything info gimp">CLI-Hub Info</button>
-          <button data-command="python -m cbn plugin sync-market cli-anything --query image --limit 20">Sync Market Preview</button>
-          <button data-command="python -m cbn plugin sync-market cli-anything --query image --limit 20 --write">Sync Market Manifests</button>
-          <button data-command="python -m cbn plugin harness cli-anything status gimp --from-market">Harness Status</button>
-          <button data-command="python -m cbn plugin import-harness cli-anything gimp">Import Harness Preview</button>
-          <button data-command="python -m cbn plugin import-harness cli-anything gimp --from-market">Import Market Metadata Preview</button>
-          <button data-command="python -m cbn plugin import-harness cli-anything gimp --write">Import Harness</button>
-          <button data-command="python -m cbn plugin import-harness cli-anything gimp --from-market --write">Import Harness With Metadata</button>
-          <button data-command="python -m cbn plugin adapt-harness cli-anything gimp --from-market">Adapt Harness Preview</button>
-          <button data-command="python -m cbn plugin adapt-harness cli-anything gimp --from-market --write">Adapt Harness</button>
-          <button data-command="python -m cbn plugin prepare-harness cli-anything gimp --from-market">Prepare Harness</button>
-          <button data-command="python -m cbn plugin harness cli-anything install gimp">Install Harness Preview</button>
-          <button data-command="python -m cbn plugin harness cli-anything install gimp --yes">Install Harness</button>
-          <button data-command="python -m cbn plugin harness cli-anything update gimp --yes">Update Harness</button>
-          <button data-command="python -m cbn plugin harness cli-anything uninstall gimp">Uninstall Harness Preview</button>
-          <button data-command="python -m cbn plugin harness cli-anything uninstall gimp --yes">Uninstall Harness</button>
-          <button data-command="python -m cbn plugin harness cli-anything launch gimp --yes">Launch Harness</button>
+          <button
+            data-command="python -m cbn plugin market cli-anything list"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/market"
+            data-api-body='{"command":"list"}'
+          >CLI-Hub List</button>
+          <button
+            data-command="python -m cbn plugin market cli-anything search image"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/market"
+            data-api-body='{"command":"search","query":"image"}'
+          >CLI-Hub Search</button>
+          <button
+            data-command="python -m cbn plugin market cli-anything info gimp"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/market"
+            data-api-body='{"command":"info","harness_name":"gimp"}'
+          >CLI-Hub Info</button>
+          <button
+            data-command="python -m cbn plugin sync-market cli-anything --query image --limit 20"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/sync-market"
+            data-api-body='{"query":"image","limit":20}'
+          >Sync Market Preview</button>
+          <button
+            data-command="python -m cbn plugin sync-market cli-anything --query image --limit 20 --write"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/sync-market"
+            data-api-body='{"query":"image","limit":20,"write":true,"confirmed":true}'
+            data-api-confirm="Write synced CLI-Anything manifests now?"
+          >Sync Market Manifests</button>
+          <button
+            data-command="python -m cbn plugin harness cli-anything status gimp --from-market"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/harness"
+            data-api-body='{"action":"status","harness_name":"gimp","from_market":true}'
+          >Harness Status</button>
+          <button
+            data-command="python -m cbn plugin import-harness cli-anything gimp"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/import-harness"
+            data-api-body='{"harness_name":"gimp"}'
+          >Import Harness Preview</button>
+          <button
+            data-command="python -m cbn plugin import-harness cli-anything gimp --from-market"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/import-harness"
+            data-api-body='{"harness_name":"gimp","from_market":true}'
+          >Import Market Metadata Preview</button>
+          <button
+            data-command="python -m cbn plugin import-harness cli-anything gimp --write"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/import-harness"
+            data-api-body='{"harness_name":"gimp","write":true,"confirmed":true}'
+            data-api-confirm="Write the gimp harness manifest now?"
+          >Import Harness</button>
+          <button
+            data-command="python -m cbn plugin import-harness cli-anything gimp --from-market --write"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/import-harness"
+            data-api-body='{"harness_name":"gimp","from_market":true,"write":true,"confirmed":true}'
+            data-api-confirm="Write the gimp market-enriched manifest now?"
+          >Import Harness With Metadata</button>
+          <button
+            data-command="python -m cbn plugin adapt-harness cli-anything gimp --from-market"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/adapt-harness"
+            data-api-body='{"harness_name":"gimp","from_market":true}'
+          >Adapt Harness Preview</button>
+          <button
+            data-command="python -m cbn plugin adapt-harness cli-anything gimp --from-market --write"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/adapt-harness"
+            data-api-body='{"harness_name":"gimp","from_market":true,"write":true,"confirmed":true}'
+            data-api-confirm="Write the gimp adaptation manifest now?"
+          >Adapt Harness</button>
+          <button
+            data-command="python -m cbn plugin prepare-harness cli-anything gimp --from-market"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/prepare-harness"
+            data-api-body='{"harness_name":"gimp","from_market":true}'
+          >Prepare Harness</button>
+          <button
+            data-command="python -m cbn plugin harness cli-anything install gimp"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/harness"
+            data-api-body='{"action":"install","harness_name":"gimp"}'
+          >Install Harness Preview</button>
+          <button
+            data-command="python -m cbn plugin harness cli-anything install gimp --yes"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/harness"
+            data-api-body='{"action":"install","harness_name":"gimp","confirmed":true}'
+            data-api-confirm="Install the gimp harness now?"
+          >Install Harness</button>
+          <button
+            data-command="python -m cbn plugin harness cli-anything update gimp --yes"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/harness"
+            data-api-body='{"action":"update","harness_name":"gimp","confirmed":true}'
+            data-api-confirm="Update the gimp harness now?"
+          >Update Harness</button>
+          <button
+            data-command="python -m cbn plugin harness cli-anything uninstall gimp"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/harness"
+            data-api-body='{"action":"uninstall","harness_name":"gimp"}'
+          >Uninstall Harness Preview</button>
+          <button
+            data-command="python -m cbn plugin harness cli-anything uninstall gimp --yes"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/harness"
+            data-api-body='{"action":"uninstall","harness_name":"gimp","confirmed":true}'
+            data-api-confirm="Uninstall the gimp harness now?"
+          >Uninstall Harness</button>
+          <button
+            data-command="python -m cbn plugin harness cli-anything launch gimp --yes"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/harness"
+            data-api-body='{"action":"launch","harness_name":"gimp","confirmed":true}'
+            data-api-confirm="Launch the gimp harness now?"
+          >Launch Harness</button>
         </section>
 
         <section class="panel">
@@ -94,9 +236,21 @@
           <button data-command="python -m cbn parser list">List Parsers</button>
           <button data-command="python -m cbn parser inspect git.status.short">Inspect Parser</button>
           <button data-command="cbn import openapi &lt;spec&gt;">Import OpenAPI</button>
-          <button data-command="python -m cbn registry list">Refresh Registry</button>
-          <button data-command="python -m cbn registry validate manifests">Validate Manifests</button>
-          <button data-command="python -m cbn registry search &lt;query&gt;">Search Registry</button>
+          <button
+            data-command="python -m cbn registry list"
+            data-api-method="GET"
+            data-api-path="/registry"
+          >Refresh Registry</button>
+          <button
+            data-command="python -m cbn registry validate manifests"
+            data-api-method="GET"
+            data-api-path="/registry/validate"
+          >Validate Manifests</button>
+          <button
+            data-command="python -m cbn registry search &lt;query&gt;"
+            data-api-method="GET"
+            data-api-path="/registry?q=git"
+          >Search Registry</button>
           <button data-command="python -m cbn registry inspect &lt;capability&gt;">Inspect Capability</button>
         </section>
 
@@ -104,7 +258,12 @@
           <h2>Execution</h2>
           <button data-command="python -m cbn call &lt;capability&gt; --dry-run">Dry Run</button>
           <button data-command="python -m cbn call &lt;capability&gt; --yes">Execute</button>
-          <button data-command="python -m cbn call git.status">Git Status</button>
+          <button
+            data-command="python -m cbn call git.status"
+            data-api-method="POST"
+            data-api-path="/call"
+            data-api-body='{"capability_id":"git.status"}'
+          >Git Status</button>
           <button data-command="python -m cbn call ffprobe.inspect report/artifacts/sample.wav">ffprobe Inspect</button>
           <button data-command="cbn queue list">Queue</button>
           <button data-command="cbn queue cancel &lt;id&gt;">Cancel</button>
@@ -113,7 +272,11 @@
 
         <section class="panel">
           <h2>Approval Queue</h2>
-          <button data-command="python -m cbn approvals list --status pending">List Pending</button>
+          <button
+            data-command="python -m cbn approvals list --status pending"
+            data-api-method="GET"
+            data-api-path="/approvals?status=pending"
+          >List Pending</button>
           <button data-command="python -m cbn approvals show &lt;id&gt;">Show Request</button>
           <button data-command="python -m cbn approvals approve &lt;id&gt;">Approve</button>
           <button data-command="python -m cbn approvals deny &lt;id&gt;">Deny</button>
@@ -123,9 +286,21 @@
 
         <section class="panel">
           <h2>Protocol Exports</h2>
-          <button data-command="python -m cbn protocol list">List Protocol Exports</button>
-          <button data-command="python -m cbn protocol export all">Export All</button>
-          <button data-command="python -m cbn protocol export mcp --capability-id git.status">Export MCP Tool</button>
+          <button
+            data-command="python -m cbn protocol list"
+            data-api-method="GET"
+            data-api-path="/protocols"
+          >List Protocol Exports</button>
+          <button
+            data-command="python -m cbn protocol export all"
+            data-api-method="GET"
+            data-api-path="/protocols?target=all"
+          >Export All</button>
+          <button
+            data-command="python -m cbn protocol export mcp --capability-id git.status"
+            data-api-method="GET"
+            data-api-path="/protocols?target=mcp&amp;capability_id=git.status"
+          >Export MCP Tool</button>
           <button data-command="python -m cbn message validate &lt;message.json&gt;">Validate Message</button>
           <button data-command="python -m cbn message select &lt;message.json&gt; payload.data.stdout">Select Message Field</button>
           <button data-command="python -m cbn message args &lt;message.json&gt; payload.data.stdout artifacts[0].artifact_id">Message Args</button>
@@ -140,17 +315,41 @@
         <section class="panel">
           <h2>Workflow DAG</h2>
           <button data-command="cbn workflow list">List Workflows</button>
-          <button data-command="python -m cbn workflow validate workflows/example.json">Validate</button>
-          <button data-command="python -m cbn workflow plan workflows/example.json">Plan</button>
-          <button data-command="python -m cbn workflow run workflows/example.json --dry-run">Dry Run</button>
-          <button data-command="python -m cbn workflow run workflows/message-routing.example.json --dry-run">Message Routing Dry Run</button>
+          <button
+            data-command="python -m cbn workflow validate workflows/example.json"
+            data-api-method="POST"
+            data-api-path="/workflows/validate"
+            data-api-body='{"path":"workflows/example.json"}'
+          >Validate</button>
+          <button
+            data-command="python -m cbn workflow plan workflows/example.json"
+            data-api-method="POST"
+            data-api-path="/workflows/plan"
+            data-api-body='{"path":"workflows/example.json"}'
+          >Plan</button>
+          <button
+            data-command="python -m cbn workflow run workflows/example.json --dry-run"
+            data-api-method="POST"
+            data-api-path="/workflows/run"
+            data-api-body='{"path":"workflows/example.json","dry_run":true}'
+          >Dry Run</button>
+          <button
+            data-command="python -m cbn workflow run workflows/message-routing.example.json --dry-run"
+            data-api-method="POST"
+            data-api-path="/workflows/run"
+            data-api-body='{"path":"workflows/message-routing.example.json","dry_run":true}'
+          >Message Routing Dry Run</button>
           <button data-command="python -m cbn workflow run workflows/example.json --yes">Run</button>
           <button data-command="cbn workflow stop &lt;run-id&gt;">Stop</button>
         </section>
 
         <section class="panel">
           <h2>Artifact Bus</h2>
-          <button data-command="python -m cbn artifact list">List Artifacts</button>
+          <button
+            data-command="python -m cbn artifact list"
+            data-api-method="GET"
+            data-api-path="/artifacts"
+          >List Artifacts</button>
           <button data-command="python -m cbn artifact inspect &lt;id&gt;">Inspect</button>
           <button data-command="cbn artifact open &lt;id&gt;">Open</button>
           <button data-command="cbn artifact export &lt;id&gt;">Export</button>
@@ -160,8 +359,16 @@
 
         <section class="panel">
           <h2>Audit</h2>
-          <button data-command="python -m cbn audit tail">Tail Audit</button>
-          <button data-command="python -m cbn event tail">Tail Events</button>
+          <button
+            data-command="python -m cbn audit tail"
+            data-api-method="GET"
+            data-api-path="/audit"
+          >Tail Audit</button>
+          <button
+            data-command="python -m cbn event tail"
+            data-api-method="GET"
+            data-api-path="/events"
+          >Tail Events</button>
           <button data-command="cbn audit search cli-anything">Search CLI-Anything</button>
           <button data-command="cbn audit export report\\audit.jsonl">Export</button>
           <button data-command="Get-Content -Raw -Encoding UTF8 report\\logs\\audit.jsonl">Prototype Audit</button>
@@ -191,6 +398,15 @@
       </section>
 
       <aside class="sidecar" aria-label="Command queue and logs">
+        <section class="queue">
+          <div class="sidecar-head">
+            <h2>Daemon API</h2>
+            <button id="checkApi" type="button">Check</button>
+          </div>
+          <input id="apiBase" type="url" value="http://127.0.0.1:8787" aria-label="Daemon API base URL" />
+          <pre id="apiResult">No API response yet.</pre>
+        </section>
+
         <section class="queue">
           <div class="sidecar-head">
             <h2>Command Queue</h2>

@@ -117,6 +117,16 @@ button:hover {
   color: var(--accent);
 }
 
+input {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 8px;
+}
+
 .highlight button {
   background: #ffffff;
 }

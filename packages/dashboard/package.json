@@ -9,7 +9,8 @@
     "./static": "./src/index.html"
   },
   "scripts": {
-    "check": "node scripts/check-dashboard.mjs"
+    "check": "node scripts/check-dashboard.mjs",
+    "serve": "node scripts/serve-static.mjs"
   },
   "dependencies": {
     "@cli-bridge/core": "0.1.0"
