@@ -59,6 +59,21 @@ class ParserProtocolTests(unittest.TestCase):
         self.assertEqual(payload["message"]["kind"], "BridgeMessage")
         self.assertEqual(payload["message"]["metadata"]["producer"], "git.version")
 
+    def test_dry_run_uses_raw_parser_even_for_structured_capability(self):
+        call = subprocess.run(
+            [sys.executable, "-m", "cbn", "call", "git.status", "--dry-run"],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(call.stdout)
+        self.assertEqual(payload["reason"], "dry-run")
+        self.assertEqual(payload["parsed"]["parser_ref"], "raw.text")
+        self.assertTrue(payload["parsed"]["dry_run"])
+        self.assertIn("git status --short", payload["parsed"]["data"]["stdout"])
+
 
 if __name__ == "__main__":
     unittest.main()

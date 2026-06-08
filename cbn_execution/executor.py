@@ -244,15 +244,18 @@ class CapabilityExecutor:
         result: ToolResult,
         artifacts: list[dict[str, Any]],
     ) -> dict[str, Any]:
+        parser_ref = "raw.text" if result.reason == "dry-run" else manifest.output.parser_ref
         try:
             payload = self.parser_registry.parse(
-                manifest.output.parser_ref,
+                parser_ref,
                 result.stdout,
                 result.stderr,
             )
+            if result.reason == "dry-run":
+                payload["dry_run"] = True
         except Exception as exc:
             payload = {
-                "parser_ref": manifest.output.parser_ref,
+                "parser_ref": parser_ref,
                 "ok": False,
                 "error": str(exc),
                 "data": {"stdout": result.stdout, "stderr": result.stderr},
