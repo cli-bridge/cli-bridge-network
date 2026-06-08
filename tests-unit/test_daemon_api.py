@@ -116,6 +116,21 @@ class DaemonApiTests(unittest.TestCase):
                 self.assertEqual(payload["workflowTools"][0]["_meta"]["cbn"]["kind"], "WorkflowDescriptor")
                 self.assertEqual(payload["workflowTools"][0]["_meta"]["cbn_workflow"]["task_count"], 3)
 
+    def test_protocol_check_route_returns_workflow_evidence(self):
+        with daemon_url() as base_url:
+            with urllib.request.urlopen(
+                f"{base_url}/protocols/check?target=all&path=workflows/artifact-id-routing.example.json",
+                timeout=5,
+            ) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(response.status, 200)
+                mcp = payload["checks"]["mcp"]
+                self.assertEqual(mcp["scope"], "workflow")
+                self.assertEqual(mcp["workflow_path"], "workflows/artifact-id-routing.example.json")
+                self.assertTrue(
+                    any("artifacts[0].artifact_id" in item["evidence"] for item in mcp["checks"])
+                )
+
     def test_workflows_route_returns_catalog(self):
         with daemon_url() as base_url:
             with urllib.request.urlopen(f"{base_url}/workflows", timeout=5) as response:

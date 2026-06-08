@@ -73,6 +73,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     protocol_check.add_argument("target", choices=["mcp", "a2a", "acp", "all"])
     protocol_check.add_argument("--capability-id")
+    protocol_check.add_argument("--workflow-path", help="Check workflow descriptor compatibility for one workflow.")
 
     mcp_parser = subcommands.add_parser("mcp", help="Run or test the MCP stdio facade.")
     mcp_subcommands = mcp_parser.add_subparsers(dest="mcp_command")

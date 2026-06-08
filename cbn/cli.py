@@ -163,7 +163,12 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(payload, ensure_ascii=False, indent=2))
             return 0
         if args.protocol_command == "check":
-            payload = check_protocol(runtime.registry, args.target, capability_id=args.capability_id)
+            payload = check_protocol(
+                runtime.registry,
+                args.target,
+                capability_id=args.capability_id,
+                workflow_path=args.workflow_path,
+            )
             print(json.dumps(payload, ensure_ascii=False, indent=2))
             return 0
 

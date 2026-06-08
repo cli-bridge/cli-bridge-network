@@ -200,6 +200,81 @@ class ProtocolExportTests(unittest.TestCase):
         self.assertFalse(payload["wire_compatible"])
         self.assertEqual(payload["capability_id"], "cli-anything.mermaid.set-diagram")
 
+    def test_protocol_check_reports_workflow_descriptor_evidence(self):
+        payload = check_protocol(
+            self.registry,
+            "all",
+            workflow_path="workflows/artifact-id-routing.example.json",
+        )
+        self.assertEqual(set(payload["checks"]), {"a2a", "acp", "mcp"})
+        mcp = payload["checks"]["mcp"]
+        self.assertEqual(mcp["scope"], "workflow")
+        self.assertEqual(mcp["workflow_path"], "workflows/artifact-id-routing.example.json")
+        self.assertIsNone(mcp["capability_id"])
+        self.assertFalse(mcp["wire_compatible"])
+        self.assertTrue(
+            any(
+                item["requirement"] == "CBN workflow descriptor is preserved"
+                and item["status"] == "present"
+                for item in mcp["checks"]
+            )
+        )
+        routing = [
+            item
+            for item in mcp["checks"]
+            if item["requirement"] == "workflow routing metadata is inspectable"
+        ][0]
+        self.assertEqual(routing["status"], "present")
+        self.assertIn("artifacts[0].artifact_id", routing["evidence"])
+        self.assertIn("artifact routing=true", routing["evidence"])
+        a2a = payload["checks"]["a2a"]
+        self.assertEqual(a2a["scope"], "workflow")
+        self.assertTrue(
+            any(
+                item["requirement"] == "A2A workflow message/send smoke"
+                and "artifact-id-routing.example.json" in item["evidence"]
+                for item in a2a["checks"]
+            )
+        )
+        acp = payload["checks"]["acp"]
+        self.assertEqual(acp["scope"], "workflow")
+        self.assertGreaterEqual(acp["status_counts"]["present"], 4)
+
+    def test_protocol_check_rejects_mixed_capability_and_workflow_scope(self):
+        with self.assertRaises(ValueError):
+            check_protocol(
+                self.registry,
+                "mcp",
+                capability_id="git.status",
+                workflow_path="workflows/example.json",
+            )
+
+    def test_cli_protocol_check_workflow(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "protocol",
+                "check",
+                "mcp",
+                "--workflow-path",
+                "workflows/artifact-id-routing.example.json",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["protocol"], "mcp")
+        self.assertEqual(payload["scope"], "workflow")
+        self.assertEqual(payload["workflow_path"], "workflows/artifact-id-routing.example.json")
+        self.assertTrue(
+            any("artifacts[0].artifact_id" in item["evidence"] for item in payload["checks"])
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

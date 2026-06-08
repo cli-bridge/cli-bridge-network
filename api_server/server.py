@@ -236,7 +236,16 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
         if parsed.path == "/protocols/check":
             target = query.get("target", ["all"])[0]
             capability_id = query.get("capability_id", [None])[0]
-            self._send(200, check_protocol(runtime.registry, target, capability_id=capability_id))
+            workflow_path = query.get("path", query.get("workflow_path", [None]))[0]
+            self._send(
+                200,
+                check_protocol(
+                    runtime.registry,
+                    target,
+                    capability_id=capability_id,
+                    workflow_path=workflow_path,
+                ),
+            )
             return
         if parsed.path == "/approvals":
             approval_id = query.get("approval_id", [None])[0]
