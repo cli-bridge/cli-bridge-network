@@ -44,6 +44,7 @@ class PluginPlan:
     action: str
     plugin_dir: str
     commands: tuple[PluginCommand, ...]
+    notes: tuple[str, ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -52,6 +53,7 @@ class PluginPlan:
             "plugin_dir": self.plugin_dir,
             "commands": [command.as_dict() for command in self.commands],
             "requires_confirmation": True,
+            "notes": list(self.notes),
         }
 
 

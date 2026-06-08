@@ -256,7 +256,17 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Include CLI-Hub market metadata when checking harness status.",
     )
+    plugin_harness.add_argument(
+        "--offline",
+        action="store_true",
+        help="Skip market metadata during install/update gating.",
+    )
     plugin_harness.add_argument("--yes", action="store_true", help="Execute the harness operation.")
+    plugin_harness.add_argument(
+        "--allow-blocked",
+        action="store_true",
+        help="Execute install/update even when harness evaluation reports blockers.",
+    )
 
     plugin_plan = plugin_subcommands.add_parser("plan", help="Print install/update plan.")
     plugin_plan.add_argument("plugin_id", help="Plugin id, for example cli-anything.")

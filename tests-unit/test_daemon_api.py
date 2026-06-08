@@ -138,6 +138,20 @@ class DaemonApiTests(unittest.TestCase):
                 self.assertEqual(descriptor["task_count"], 3)
                 self.assertEqual(descriptor["tasks"][0]["uses"], "cli-anything.macrocli.backends")
 
+    def test_cli_anything_harness_route_returns_gated_install_plan(self):
+        with daemon_url() as base_url:
+            request = urllib.request.Request(
+                f"{base_url}/plugins/cli-anything/harness",
+                data=json.dumps({"action": "install", "harness_name": "gimp"}).encode("utf-8"),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(request, timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(response.status, 200)
+                self.assertEqual(payload["action"], "harness-install-gimp")
+                self.assertIn("evaluate-harness", payload["notes"][0])
+
     def test_a2a_routes_return_agent_card_and_task(self):
         with daemon_url() as base_url:
             with urllib.request.urlopen(f"{base_url}/.well-known/agent-card.json", timeout=5) as response:

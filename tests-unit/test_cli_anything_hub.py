@@ -280,6 +280,79 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertIn("policy requires elevated confirmation", result["blockers"])
         self.assertIn("declared requirements need external app, account, token, or service", result["blockers"])
 
+    def test_harness_operation_gate_allows_low_dependency_install(self):
+        class FakeHub(CliAnythingHub):
+            def info(self, harness_name: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "info", harness_name),
+                    exit_code=0,
+                    stdout="Entry point: cli-anything-mermaid\nRequires: nothing\nStatus: not installed\n",
+                    stderr="",
+                )
+
+            def search_market(self, query: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "search", query, "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[SAMPLE_MERMAID_RECORD],
+                )
+
+        gate = FakeHub().harness_operation_gate("install", "mermaid", from_market=True)
+        self.assertTrue(gate["ok"])
+        self.assertTrue(gate["gated"])
+        self.assertEqual(gate["blockers"], [])
+        self.assertTrue(gate["evaluation"]["install_candidate"])
+
+    def test_harness_operation_gate_blocks_external_dependencies_before_install(self):
+        class FakeHub(CliAnythingHub):
+            def info(self, harness_name: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "info", harness_name),
+                    exit_code=0,
+                    stdout="Entry point: cli-anything-gimp\nRequires: gimp (apt install gimp)\nStatus: not installed\n",
+                    stderr="",
+                )
+
+            def search_market(self, query: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "search", query, "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[SAMPLE_MARKET_RECORD],
+                )
+
+        gate = FakeHub().harness_operation_gate("install", "gimp", from_market=True)
+        self.assertFalse(gate["ok"])
+        self.assertEqual(gate["override_flag"], "--allow-blocked")
+        self.assertIn("declared requirements need external app, account, token, or service", gate["blockers"])
+        self.assertIn("harness is not an install candidate", gate["blockers"])
+
+    def test_harness_operation_gate_blocks_update_when_harness_is_not_installed(self):
+        class FakeHub(CliAnythingHub):
+            def info(self, harness_name: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "info", harness_name),
+                    exit_code=0,
+                    stdout="Entry point: cli-anything-mermaid\nRequires: nothing\nStatus: not installed\n",
+                    stderr="",
+                )
+
+            def search_market(self, query: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "search", query, "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[SAMPLE_MERMAID_RECORD],
+                )
+
+        gate = FakeHub().harness_operation_gate("update", "mermaid", from_market=True)
+        self.assertFalse(gate["ok"])
+        self.assertIn("harness is not installed", gate["blockers"])
+
     def test_sync_market_previews_multiple_harness_manifests(self):
         class FakeHub(CliAnythingHub):
             def search_market(self, query: str) -> CliHubCommandResult:
@@ -468,10 +541,12 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(plan.plugin_id, "cli-anything")
         self.assertEqual(plan.action, "harness-install-gimp")
         self.assertEqual(plan.commands[0].argv, ("cli-hub", "install", "gimp"))
+        self.assertIn("evaluate-harness", plan.as_dict()["notes"][0])
 
         uninstall = CliAnythingHub().harness_plan("uninstall", "gimp")
         self.assertEqual(uninstall.action, "harness-uninstall-gimp")
         self.assertEqual(uninstall.commands[0].argv, ("cli-hub", "uninstall", "gimp"))
+        self.assertEqual(uninstall.as_dict()["notes"], [])
 
     def test_cli_harness_plan_does_not_execute_without_yes(self):
         proc = subprocess.run(
@@ -494,6 +569,7 @@ class CliAnythingHubTests(unittest.TestCase):
         payload = json.loads(proc.stdout)
         self.assertEqual(payload["plugin_id"], "cli-anything")
         self.assertEqual(payload["commands"][0]["argv"], ["cli-hub", "install", "gimp"])
+        self.assertTrue(payload["notes"])
 
     def test_cli_harness_uninstall_plan_does_not_execute_without_yes(self):
         proc = subprocess.run(

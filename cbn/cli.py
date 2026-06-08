@@ -450,6 +450,15 @@ def main(argv: list[str] | None = None) -> int:
             if not args.yes:
                 print(json.dumps(plan.as_dict(), ensure_ascii=False, indent=2))
                 return 2
+            if args.harness_action in {"install", "update"} and not args.allow_blocked:
+                gate = hub.harness_operation_gate(
+                    args.harness_action,
+                    args.harness_name,
+                    from_market=not args.offline,
+                )
+                if not gate["ok"]:
+                    print(json.dumps(gate, ensure_ascii=False, indent=2))
+                    return 12
             runtime = build_runtime()
             print(json.dumps(runtime.plugin_runner.execute(plan), ensure_ascii=False, indent=2))
             return 0

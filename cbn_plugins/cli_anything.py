@@ -208,7 +208,58 @@ class CliAnythingHub:
                     argv=argv,
                 ),
             ),
+            notes=(
+                f"Preflight install/update with: python -m cbn plugin evaluate-harness cli-anything {harness_name}",
+            )
+            if action in {"install", "update"}
+            else (),
         )
+
+    def harness_operation_gate(
+        self,
+        action: str,
+        harness_name: str,
+        from_market: bool = True,
+    ) -> dict[str, Any]:
+        if action not in {"install", "update"}:
+            return {
+                "ok": True,
+                "plugin_id": PLUGIN_ID,
+                "action": action,
+                "harness_name": harness_name,
+                "gated": False,
+                "blockers": [],
+            }
+        evaluation = self.evaluate_harness(harness_name, from_market=from_market)
+        if not evaluation["ok"]:
+            return {
+                "ok": False,
+                "plugin_id": PLUGIN_ID,
+                "action": action,
+                "harness_name": harness_name,
+                "gated": True,
+                "blockers": [evaluation.get("error", "harness evaluation failed")],
+                "evaluation": evaluation,
+                "override_flag": "--allow-blocked",
+            }
+        gates = evaluation["gates"]
+        blockers = list(evaluation["blockers"])
+        if action == "install" and not (evaluation["install_candidate"] or gates["installed"]):
+            blockers.append("harness is not an install candidate")
+        if action == "update" and not gates["installed"]:
+            blockers.append("harness is not installed")
+        ok = len(blockers) == 0
+        return {
+            "ok": ok,
+            "plugin_id": PLUGIN_ID,
+            "action": action,
+            "harness_name": harness_name,
+            "gated": True,
+            "from_market": from_market,
+            "blockers": blockers,
+            "evaluation": evaluation,
+            "override_flag": "--allow-blocked",
+        }
 
     def manifest_for_harness(
         self,

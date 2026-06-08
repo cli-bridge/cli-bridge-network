@@ -457,6 +457,15 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             if not bool(payload.get("confirmed", False)):
                 self._send(200, plan.as_dict())
                 return
+            if payload["action"] in {"install", "update"} and not bool(payload.get("allow_blocked", False)):
+                gate = hub.harness_operation_gate(
+                    payload["action"],
+                    payload["harness_name"],
+                    from_market=not bool(payload.get("offline", False)),
+                )
+                if not gate["ok"]:
+                    self._send(409, gate)
+                    return
             self._send(200, runtime.plugin_runner.execute(plan))
             return
         self._send(404, {"error": "not found", "routes": ROUTE_SUMMARY})

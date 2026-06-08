@@ -212,14 +212,28 @@
             data-api-path="/plugins/cli-anything/harness"
             data-api-body='{"action":"install","harness_name":"gimp","confirmed":true}'
             data-api-confirm="Install the gimp harness now?"
-          >Install Harness</button>
+          >Install Harness Gated</button>
+          <button
+            data-command="python -m cbn plugin harness cli-anything install gimp --yes --allow-blocked"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/harness"
+            data-api-body='{"action":"install","harness_name":"gimp","confirmed":true,"allow_blocked":true}'
+            data-api-confirm="Override blockers and install the gimp harness now?"
+          >Override Install Harness</button>
           <button
             data-command="python -m cbn plugin harness cli-anything update gimp --yes"
             data-api-method="POST"
             data-api-path="/plugins/cli-anything/harness"
             data-api-body='{"action":"update","harness_name":"gimp","confirmed":true}'
             data-api-confirm="Update the gimp harness now?"
-          >Update Harness</button>
+          >Update Harness Gated</button>
+          <button
+            data-command="python -m cbn plugin harness cli-anything update gimp --yes --allow-blocked"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/harness"
+            data-api-body='{"action":"update","harness_name":"gimp","confirmed":true,"allow_blocked":true}'
+            data-api-confirm="Override blockers and update the gimp harness now?"
+          >Override Update Harness</button>
           <button
             data-command="python -m cbn plugin harness cli-anything uninstall gimp"
             data-api-method="POST"
