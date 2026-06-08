@@ -26,6 +26,7 @@ class PluginCommand:
     argv: tuple[str, ...]
     cwd: str | None = None
     optional: bool = False
+    timeout_seconds: int = 600
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -33,6 +34,7 @@ class PluginCommand:
             "argv": list(self.argv),
             "cwd": self.cwd,
             "optional": self.optional,
+            "timeout_seconds": self.timeout_seconds,
         }
 
 

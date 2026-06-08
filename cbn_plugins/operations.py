@@ -101,12 +101,18 @@ class PluginOperationRunner:
                 "argv": list(command.argv),
                 "cwd": command.cwd,
                 "optional": command.optional,
+                "timeout_seconds": command.timeout_seconds,
             },
         )
         self._publish(
             EventType.PLUGIN_COMMAND_STARTED,
             plan.plugin_id,
-            {"command_id": command_id, "label": command.label, "argv": list(command.argv)},
+            {
+                "command_id": command_id,
+                "label": command.label,
+                "argv": list(command.argv),
+                "timeout_seconds": command.timeout_seconds,
+            },
             operation_id,
         )
         try:
@@ -118,7 +124,36 @@ class PluginOperationRunner:
                 errors="replace",
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
+                timeout=command.timeout_seconds,
             )
+        except subprocess.TimeoutExpired as exc:
+            stdout = _timeout_text(exc.stdout)
+            stderr = _timeout_text(exc.stderr)
+            if stderr:
+                stderr = f"{stderr}\n"
+            stderr = f"{stderr}command timed out after {command.timeout_seconds} seconds"
+            result = {
+                "command_id": command_id,
+                "label": command.label,
+                "argv": list(command.argv),
+                "cwd": command.cwd,
+                "optional": command.optional,
+                "timeout_seconds": command.timeout_seconds,
+                "timed_out": True,
+                "exit_code": 124,
+                "stdout": stdout[-4000:],
+                "stderr": stderr[-4000:],
+                "artifact_ids": self._record_artifact_texts(
+                    plan.plugin_id,
+                    operation_id,
+                    command_id,
+                    stdout,
+                    stderr,
+                ),
+            }
+            self._audit("plugin.command.completed", operation_id, plan, result)
+            self._publish(EventType.PLUGIN_COMMAND_COMPLETED, plan.plugin_id, result, operation_id)
+            return result
         except OSError as exc:
             result = {
                 "command_id": command_id,
@@ -126,6 +161,8 @@ class PluginOperationRunner:
                 "argv": list(command.argv),
                 "cwd": command.cwd,
                 "optional": command.optional,
+                "timeout_seconds": command.timeout_seconds,
+                "timed_out": False,
                 "exit_code": 127,
                 "stdout": "",
                 "stderr": f"{command.argv[0]} failed to start: {exc}",
@@ -141,6 +178,8 @@ class PluginOperationRunner:
             "argv": list(command.argv),
             "cwd": command.cwd,
             "optional": command.optional,
+            "timeout_seconds": command.timeout_seconds,
+            "timed_out": False,
             "exit_code": proc.returncode,
             "stdout": proc.stdout[-4000:],
             "stderr": proc.stderr[-4000:],
@@ -159,8 +198,26 @@ class PluginOperationRunner:
     ) -> list[str]:
         if self.artifact_store is None:
             return []
+        return self._record_artifact_texts(
+            plugin_id,
+            operation_id,
+            command_id,
+            proc.stdout,
+            proc.stderr,
+        )
+
+    def _record_artifact_texts(
+        self,
+        plugin_id: str,
+        operation_id: str,
+        command_id: str,
+        stdout: str,
+        stderr: str,
+    ) -> list[str]:
+        if self.artifact_store is None:
+            return []
         records = []
-        for kind, text in (("stdout", proc.stdout), ("stderr", proc.stderr)):
+        for kind, text in (("stdout", stdout), ("stderr", stderr)):
             record = self.artifact_store.create_text(
                 capability_id=f"plugin.{plugin_id}",
                 call_id=operation_id,
@@ -200,3 +257,11 @@ class PluginOperationRunner:
         if self.event_bus is None:
             return
         self.event_bus.publish(str(event_type), subject, payload, correlation_id=operation_id)
+
+
+def _timeout_text(value: str | bytes | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value
