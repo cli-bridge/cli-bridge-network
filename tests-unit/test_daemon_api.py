@@ -14,6 +14,8 @@ class DaemonApiTests(unittest.TestCase):
         routes = {(route["method"], route["path"]) for route in ROUTE_SUMMARY}
         self.assertIn(("POST", "/plugins/cli-anything/evaluate-harness"), routes)
         self.assertIn(("GET", "/protocols/check"), routes)
+        self.assertIn(("GET", "/.well-known/agent-card.json"), routes)
+        self.assertIn(("POST", "/a2a"), routes)
 
     def test_post_bad_json_returns_structured_error(self):
         with daemon_url() as base_url:
@@ -99,6 +101,39 @@ class DaemonApiTests(unittest.TestCase):
                 self.assertTrue(
                     any(item["status"] == "missing" for item in payload["checks"])
                 )
+
+    def test_a2a_routes_return_agent_card_and_task(self):
+        with daemon_url() as base_url:
+            with urllib.request.urlopen(f"{base_url}/.well-known/agent-card.json", timeout=5) as response:
+                card = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(response.status, 200)
+                self.assertEqual(card["supportedInterfaces"][0]["url"], f"{base_url}/a2a")
+
+            request = urllib.request.Request(
+                f"{base_url}/a2a",
+                data=json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": "daemon-a2a",
+                        "method": "message/send",
+                        "params": {
+                            "message": {
+                                "messageId": "message-1",
+                                "role": "user",
+                                "parts": [{"text": "version"}],
+                            },
+                            "metadata": {"cbn": {"capability_id": "git.version"}},
+                        },
+                    }
+                ).encode("utf-8"),
+                method="POST",
+                headers={"Content-Type": "application/json", "A2A-Version": "0.3"},
+            )
+            with urllib.request.urlopen(request, timeout=10) as response:
+                rpc = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(response.status, 200)
+                self.assertEqual(rpc["result"]["status"]["state"], "completed")
+                self.assertEqual(rpc["result"]["metadata"]["cbn"]["capability_id"], "git.version")
 
 
 @contextmanager

@@ -77,6 +77,14 @@ def build_parser() -> argparse.ArgumentParser:
     mcp_smoke.add_argument("--extra-arg", action="append", default=[])
     mcp_smoke.add_argument("--dry-run", action="store_true")
 
+    a2a_parser = subcommands.add_parser("a2a", help="Inspect or test the A2A HTTP facade.")
+    a2a_subcommands = a2a_parser.add_subparsers(dest="a2a_command")
+    a2a_card = a2a_subcommands.add_parser("agent-card", help="Print the local A2A AgentCard.")
+    a2a_card.add_argument("--base-url", default="http://127.0.0.1:8787")
+    a2a_smoke = a2a_subcommands.add_parser("smoke", help="Run a local A2A HTTP smoke test.")
+    a2a_smoke.add_argument("--capability-id", default="git.version")
+    a2a_smoke.add_argument("--extra-arg", action="append", default=[])
+
     message_parser = subcommands.add_parser("message", help="Validate and inspect BridgeMessage envelopes.")
     message_subcommands = message_parser.add_subparsers(dest="message_command")
     message_validate = message_subcommands.add_parser("validate", help="Validate one BridgeMessage JSON file.")

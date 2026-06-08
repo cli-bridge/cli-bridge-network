@@ -193,6 +193,14 @@ if (!html.includes("python -m cbn mcp smoke --capability-id git.version")) {
   throw new Error("Dashboard does not expose the MCP stdio smoke command.");
 }
 
+if (!html.includes("python -m cbn a2a agent-card")) {
+  throw new Error("Dashboard does not expose the A2A AgentCard command.");
+}
+
+if (!html.includes("python -m cbn a2a smoke --capability-id git.version")) {
+  throw new Error("Dashboard does not expose the A2A smoke command.");
+}
+
 if (!html.includes("python -m cbn message validate")) {
   throw new Error("Dashboard does not expose the BridgeMessage validate command.");
 }

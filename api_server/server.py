@@ -17,6 +17,7 @@ from api_server.routes.health import health_payload
 from cbn_core.manifest import validate_manifest_path
 from cbn_execution.graph import WorkflowGraph
 from cbn_parsers.registry import ParserRegistry
+from cbn_protocol.a2a_http import agent_card, handle_a2a_jsonrpc_request
 from cbn_protocol.envelope import bridge_args_from_selectors, select_bridge_value, validate_bridge_message
 from cbn_protocol.compatibility import check_protocol
 from cbn_protocol.exports import export_all_protocols, export_protocol, list_protocol_exports
@@ -41,10 +42,12 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/events"},
     {"method": "GET", "path": "/artifacts"},
     {"method": "GET", "path": "/parsers"},
+    {"method": "GET", "path": "/.well-known/agent-card.json"},
     {"method": "GET", "path": "/protocols"},
     {"method": "GET", "path": "/protocols/check"},
     {"method": "GET", "path": "/approvals"},
     {"method": "POST", "path": "/call"},
+    {"method": "POST", "path": "/a2a"},
     {"method": "POST", "path": "/messages/validate"},
     {"method": "POST", "path": "/messages/select"},
     {"method": "POST", "path": "/messages/args"},
@@ -149,6 +152,9 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
         if parsed.path == "/health":
             self._send(200, health_payload())
             return
+        if parsed.path == "/.well-known/agent-card.json":
+            self._send(200, agent_card(_base_url(self)))
+            return
         if parsed.path == "/plugins":
             self._send(200, PluginManager().list_plugins())
             return
@@ -238,6 +244,9 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 approval_id=payload.get("approval_id"),
             )
             self._send(200 if result.get("allowed") else 403, result)
+            return
+        if self.path == "/a2a":
+            self._send(200, handle_a2a_jsonrpc_request(payload))
             return
         if self.path == "/messages/validate":
             result = validate_bridge_message(payload["message"])
@@ -448,3 +457,11 @@ def _is_allowed_origin(origin: str | None) -> bool:
         return True
     parsed = urlparse(origin)
     return parsed.scheme in {"http", "https"} and parsed.hostname in ALLOWED_ORIGIN_HOSTS
+
+
+def _base_url(handler: BaseHTTPRequestHandler) -> str:
+    host = handler.headers.get("Host")
+    if host:
+        return f"http://{host}"
+    bound_host, bound_port = handler.server.server_address[:2]
+    return f"http://{bound_host}:{bound_port}"

@@ -139,9 +139,13 @@ def _check_a2a(descriptor: dict[str, Any]) -> list[dict[str, str]]:
             and isinstance(first_skill.get("outputModes"), list),
             "skill declares JSON-oriented input and output modes",
         ),
+        _partial(
+            "A2A AgentCard and message/send smoke",
+            "python -m cbn a2a smoke exercises /.well-known/agent-card.json and message/send over local HTTP JSON-RPC",
+        ),
         _gap(
-            "A2A discovery and task wire lifecycle",
-            "no AgentCard URL, SendMessage, task polling, streaming, or auth binding is implemented yet",
+            "A2A full task lifecycle and conformance",
+            "A2A HTTP is an MVP facade; task polling, streaming, cancellation, version negotiation, authentication, and SDK/conformance coverage are not implemented yet",
         ),
     ]
 
@@ -216,8 +220,8 @@ def _next_steps(protocol: str) -> list[str]:
         ]
     if protocol == "a2a":
         return [
-            "Expose AgentCard discovery with endpoint, auth, and version fields.",
-            "Implement a minimal SendMessage to task lifecycle bridge backed by CBN workflow/call runs.",
+            "Run A2A smoke for each verified capability that should be exposed to peer agents.",
+            "Add task polling, streaming, cancellation, authentication, and official SDK/conformance coverage before setting wire_compatible=true.",
         ]
     return [
         "Implement an ACP stdio agent process using newline-delimited UTF-8 JSON-RPC messages.",

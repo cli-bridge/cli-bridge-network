@@ -50,6 +50,15 @@ class ProtocolExportTests(unittest.TestCase):
     def test_protocol_check_reports_descriptor_evidence_and_wire_gaps(self):
         payload = check_protocol(self.registry, "all", capability_id="cli-anything.mermaid.set-diagram")
         self.assertEqual(set(payload["checks"]), {"a2a", "acp", "mcp"})
+        a2a = payload["checks"]["a2a"]
+        self.assertFalse(a2a["wire_compatible"])
+        self.assertTrue(
+            any(
+                item["requirement"] == "A2A AgentCard and message/send smoke"
+                and item["status"] == "partial"
+                for item in a2a["checks"]
+            )
+        )
         mcp = payload["checks"]["mcp"]
         self.assertFalse(mcp["wire_compatible"])
         self.assertGreaterEqual(mcp["status_counts"]["present"], 3)
