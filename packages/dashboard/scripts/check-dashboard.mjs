@@ -30,6 +30,14 @@ if (!html.includes("python -m cbn plugin plan cli-anything")) {
   throw new Error("Dashboard does not expose the CLI-Anything plan command.");
 }
 
+if (!html.includes("python -m cbn plugin market cli-anything list")) {
+  throw new Error("Dashboard does not expose the CBN-managed CLI-Hub list command.");
+}
+
+if (!html.includes("python -m cbn plugin import-harness cli-anything gimp")) {
+  throw new Error("Dashboard does not expose the CLI-Anything harness import command.");
+}
+
 if (!js.includes("stageCommand")) {
   throw new Error("Dashboard script does not stage commands.");
 }

@@ -16,6 +16,9 @@ class DashboardStaticTests(unittest.TestCase):
         self.assertIn("python -m cbn plugin plan cli-anything", self.html)
         self.assertIn("python -m cbn plugin install cli-anything --yes", self.html)
         self.assertIn("python -m cbn plugin update cli-anything --yes", self.html)
+        self.assertIn("python -m cbn plugin status cli-anything", self.html)
+        self.assertIn("python -m cbn plugin market cli-anything list", self.html)
+        self.assertIn("python -m cbn plugin import-harness cli-anything gimp", self.html)
 
     def test_static_js_queues_commands(self):
         self.assertIn("stageCommand", self.js)

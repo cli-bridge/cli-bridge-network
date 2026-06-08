@@ -14,7 +14,7 @@
         <p>Draft control surface for CLI Bridge Network operations.</p>
       </div>
       <div class="status-strip" aria-label="Runtime status summary">
-        <span>Branch: feature/dashboard-control-surface</span>
+        <span>Branch: feature/mvp-runtime-foundation</span>
         <span>Mode: Static Draft</span>
         <span>API: Not Connected</span>
       </div>
@@ -45,6 +45,7 @@
         <section class="panel highlight">
           <h2>CLI-Anything Plugin</h2>
           <button data-command="python -m cbn plugin info cli-anything">Info</button>
+          <button data-command="python -m cbn plugin status cli-anything">Status</button>
           <button data-command="python -m cbn plugin plan cli-anything">Download / Clone</button>
           <button data-command="python -m cbn plugin install cli-anything">Install Preview</button>
           <button data-command="python -m cbn plugin install cli-anything --yes">Install</button>
@@ -52,9 +53,11 @@
           <button data-command="python -m cbn plugin update cli-anything --yes">Update</button>
           <button data-command="python -m cbn plugin install cli-anything --with-codex-skill">Codex Skill Preview</button>
           <button data-command="python -m cbn plugin install cli-anything --with-codex-skill --yes">Install Codex Skill</button>
-          <button data-command="cli-hub list --json">CLI-Hub List</button>
-          <button data-command="cli-hub search image --json">CLI-Hub Search</button>
-          <button data-command="cli-hub info gimp">CLI-Hub Info</button>
+          <button data-command="python -m cbn plugin market cli-anything list">CLI-Hub List</button>
+          <button data-command="python -m cbn plugin market cli-anything search image">CLI-Hub Search</button>
+          <button data-command="python -m cbn plugin market cli-anything info gimp">CLI-Hub Info</button>
+          <button data-command="python -m cbn plugin import-harness cli-anything gimp">Import Harness Preview</button>
+          <button data-command="python -m cbn plugin import-harness cli-anything gimp --write">Import Harness</button>
           <button data-command="cli-hub install gimp">Install Harness</button>
           <button data-command="cli-hub update gimp">Update Harness</button>
           <button data-command="cli-hub launch gimp">Launch Harness</button>
@@ -74,8 +77,8 @@
           <h2>Discovery</h2>
           <button data-command="cbn discover git">Discover Git</button>
           <button data-command="cbn discover ffmpeg">Discover ffmpeg</button>
-          <button data-command="cbn discover cli-hub">Discover CLI-Hub</button>
-          <button data-command="cbn import cli-anything">Import CLI-Anything</button>
+          <button data-command="python -m cbn plugin market cli-anything list">Discover CLI-Hub</button>
+          <button data-command="python -m cbn plugin import-harness cli-anything &lt;harness&gt;">Import CLI-Anything</button>
           <button data-command="cbn import openapi &lt;spec&gt;">Import OpenAPI</button>
           <button data-command="python -m cbn registry list">Refresh Registry</button>
           <button data-command="python -m cbn registry inspect &lt;capability&gt;">Inspect Capability</button>

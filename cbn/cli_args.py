@@ -45,6 +45,23 @@ def build_parser() -> argparse.ArgumentParser:
     plugin_info = plugin_subcommands.add_parser("info", help="Show plugin metadata.")
     plugin_info.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
 
+    plugin_status = plugin_subcommands.add_parser("status", help="Show external plugin runtime status.")
+    plugin_status.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
+
+    plugin_market = plugin_subcommands.add_parser("market", help="Inspect an external plugin market.")
+    plugin_market.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
+    plugin_market.add_argument("market_command", choices=["list", "search", "info"])
+    plugin_market.add_argument("query", nargs="?", help="Search query or harness name.")
+
+    plugin_import = plugin_subcommands.add_parser(
+        "import-harness",
+        help="Generate or write a CBN manifest for an external harness.",
+    )
+    plugin_import.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
+    plugin_import.add_argument("harness_name", help="Harness name from the plugin market.")
+    plugin_import.add_argument("--title", help="Optional manifest title.")
+    plugin_import.add_argument("--write", action="store_true", help="Write manifest into manifests/.")
+
     plugin_plan = plugin_subcommands.add_parser("plan", help="Print install/update plan.")
     plugin_plan.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
     plugin_plan.add_argument(

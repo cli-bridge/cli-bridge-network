@@ -13,6 +13,7 @@ from typing import Any
 
 from api_server.routes.health import health_payload
 from cbn_runtime.context import build_runtime
+from cbn_plugins.cli_anything import CliAnythingHub
 from cbn_plugins.manager import PluginManager
 
 
@@ -20,9 +21,12 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/health"},
     {"method": "GET", "path": "/registry"},
     {"method": "GET", "path": "/plugins"},
+    {"method": "GET", "path": "/plugins/cli-anything/status"},
     {"method": "GET", "path": "/audit"},
     {"method": "POST", "path": "/call"},
     {"method": "POST", "path": "/plugins/plan"},
+    {"method": "POST", "path": "/plugins/cli-anything/market"},
+    {"method": "POST", "path": "/plugins/cli-anything/import-harness"},
 ]
 
 
@@ -59,6 +63,9 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
         if self.path == "/plugins":
             self._send(200, PluginManager().list_plugins())
             return
+        if self.path == "/plugins/cli-anything/status":
+            self._send(200, CliAnythingHub().status())
+            return
         if self.path == "/audit":
             self._send(200, runtime.audit_log.tail())
             return
@@ -85,6 +92,28 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             )
             self._send(200, plan.as_dict())
             return
+        if self.path == "/plugins/cli-anything/market":
+            hub = CliAnythingHub()
+            command = payload.get("command", "list")
+            if command == "list":
+                result = hub.list_market()
+            elif command == "search":
+                result = hub.search_market(payload["query"])
+            elif command == "info":
+                result = hub.info(payload["harness_name"])
+            else:
+                self._send(400, {"error": f"unsupported market command: {command}"})
+                return
+            self._send(200 if result.exit_code == 0 else 502, result.as_dict())
+            return
+        if self.path == "/plugins/cli-anything/import-harness":
+            hub = CliAnythingHub()
+            manifest = hub.manifest_for_harness(
+                payload["harness_name"],
+                title=payload.get("title"),
+            )
+            self._send(200, manifest)
+            return
         self._send(404, {"error": "not found", "routes": ROUTE_SUMMARY})
 
 
@@ -97,4 +126,3 @@ def serve(host: str = "127.0.0.1", port: int = 8787) -> None:
         print("CBN daemon API stopped")
     finally:
         server.server_close()
-

@@ -8,6 +8,7 @@ from api_server.routes.health import health_payload
 from cbn.cli_args import build_parser
 from cbn.paths import resolve_project_paths
 from cbn.version import __version__
+from cbn_plugins.cli_anything import CliAnythingHub
 from cbn_plugins.manager import PluginManager
 from cbn_runtime.context import build_runtime
 from api_server.server import ROUTE_SUMMARY, serve
@@ -86,6 +87,43 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.plugin_command == "info":
             print(json.dumps(manager.plugin_info(args.plugin_id), ensure_ascii=False, indent=2))
+            return 0
+        if args.plugin_command == "status":
+            if args.plugin_id != "cli-anything":
+                raise KeyError(f"status is not implemented for plugin: {args.plugin_id}")
+            print(json.dumps(CliAnythingHub().status(), ensure_ascii=False, indent=2))
+            return 0
+        if args.plugin_command == "market":
+            if args.plugin_id != "cli-anything":
+                raise KeyError(f"market is not implemented for plugin: {args.plugin_id}")
+            hub = CliAnythingHub()
+            if args.market_command == "list":
+                result = hub.list_market()
+            elif args.market_command == "search":
+                if not args.query:
+                    parser.error("plugin market search requires a query")
+                result = hub.search_market(args.query)
+            else:
+                if not args.query:
+                    parser.error("plugin market info requires a harness name")
+                result = hub.info(args.query)
+            print(json.dumps(result.as_dict(), ensure_ascii=False, indent=2))
+            return 0 if result.exit_code == 0 else result.exit_code
+        if args.plugin_command == "import-harness":
+            if args.plugin_id != "cli-anything":
+                raise KeyError(f"import-harness is not implemented for plugin: {args.plugin_id}")
+            hub = CliAnythingHub()
+            if args.write:
+                path = hub.write_harness_manifest(args.harness_name, title=args.title)
+                print(json.dumps({"written": str(path)}, ensure_ascii=False, indent=2))
+            else:
+                print(
+                    json.dumps(
+                        hub.manifest_for_harness(args.harness_name, title=args.title),
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                )
             return 0
         if args.plugin_command == "plan":
             plan = manager.plan(
