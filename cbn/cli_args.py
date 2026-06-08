@@ -25,6 +25,7 @@ def build_parser() -> argparse.ArgumentParser:
     call_parser.add_argument("extra_args", nargs="*", help="Extra arguments appended to the manifest template.")
     call_parser.add_argument("--dry-run", action="store_true", help="Return the command without executing it.")
     call_parser.add_argument("--yes", action="store_true", help="Confirm high-risk calls.")
+    call_parser.add_argument("--approval-id", help="Use a previously approved approval request.")
 
     audit_parser = subcommands.add_parser("audit", help="Inspect local audit log.")
     audit_subcommands = audit_parser.add_subparsers(dest="audit_command")
@@ -42,6 +43,20 @@ def build_parser() -> argparse.ArgumentParser:
     artifact_list.add_argument("--limit", type=int, default=20)
     artifact_inspect = artifact_subcommands.add_parser("inspect", help="Inspect one artifact.")
     artifact_inspect.add_argument("artifact_id")
+
+    approvals_parser = subcommands.add_parser("approvals", help="Manage the approval queue.")
+    approvals_subcommands = approvals_parser.add_subparsers(dest="approvals_command")
+    approvals_list = approvals_subcommands.add_parser("list", help="List approval requests.")
+    approvals_list.add_argument("--status", choices=["pending", "approved", "denied", "used"])
+    approvals_list.add_argument("--limit", type=int, default=20)
+    approvals_show = approvals_subcommands.add_parser("show", help="Show one approval request.")
+    approvals_show.add_argument("approval_id")
+    approvals_approve = approvals_subcommands.add_parser("approve", help="Approve one request.")
+    approvals_approve.add_argument("approval_id")
+    approvals_approve.add_argument("--reason", default="")
+    approvals_deny = approvals_subcommands.add_parser("deny", help="Deny one request.")
+    approvals_deny.add_argument("approval_id")
+    approvals_deny.add_argument("--reason", default="")
 
     daemon_parser = subcommands.add_parser("daemon", help="Run or inspect the local daemon API.")
     daemon_subcommands = daemon_parser.add_subparsers(dest="daemon_command")

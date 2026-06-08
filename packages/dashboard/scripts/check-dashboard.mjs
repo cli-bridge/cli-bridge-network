@@ -47,6 +47,10 @@ if (!html.includes("python -m cbn artifact list")) {
   throw new Error("Dashboard does not expose the runtime artifact list command.");
 }
 
+if (!html.includes("python -m cbn approvals list")) {
+  throw new Error("Dashboard does not expose the approval queue list command.");
+}
+
 if (!js.includes("stageCommand")) {
   throw new Error("Dashboard script does not stage commands.");
 }

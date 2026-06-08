@@ -62,6 +62,7 @@ def main(argv: list[str] | None = None) -> int:
             extra_args=tuple(args.extra_args),
             dry_run=args.dry_run,
             confirmed=args.yes,
+            approval_id=args.approval_id,
         )
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0 if result.get("allowed") else 3
@@ -91,6 +92,57 @@ def main(argv: list[str] | None = None) -> int:
                     indent=2,
                 )
             )
+            return 0
+
+    if args.command == "approvals":
+        runtime = build_runtime()
+        if args.approvals_command == "list":
+            print(
+                json.dumps(
+                    runtime.approval_store.list(status=args.status, limit=args.limit),
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 0
+        if args.approvals_command == "show":
+            print(
+                json.dumps(
+                    runtime.approval_store.inspect(args.approval_id),
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 0
+        if args.approvals_command == "approve":
+            approval = runtime.approval_store.decide(
+                args.approval_id,
+                "approved",
+                actor="cli",
+                reason=args.reason,
+            )
+            runtime.event_bus.publish(
+                "approval.decided",
+                approval["capability_id"],
+                {"approval": approval},
+                correlation_id=approval["call_id"],
+            )
+            print(json.dumps(approval, ensure_ascii=False, indent=2))
+            return 0
+        if args.approvals_command == "deny":
+            approval = runtime.approval_store.decide(
+                args.approval_id,
+                "denied",
+                actor="cli",
+                reason=args.reason,
+            )
+            runtime.event_bus.publish(
+                "approval.decided",
+                approval["capability_id"],
+                {"approval": approval},
+                correlation_id=approval["call_id"],
+            )
+            print(json.dumps(approval, ensure_ascii=False, indent=2))
             return 0
 
     if args.command == "daemon":

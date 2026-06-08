@@ -9,6 +9,7 @@ from typing import Any
 from adapters.base import ToolCall, ToolResult
 from adapters.stdio import StdioAdapter
 from cbn_audit.log import AuditLog
+from cbn_approval.store import ApprovalStore
 from cbn_artifacts.store import ArtifactStore
 from cbn_core.manifest import CapabilityManifest, ManifestRegistry
 from cbn_events.bus import EventBus
@@ -22,12 +23,14 @@ class CapabilityExecutor:
         registry: ManifestRegistry,
         audit_log: AuditLog,
         policy: PolicyEngine | None = None,
+        approval_store: ApprovalStore | None = None,
         event_bus: EventBus | None = None,
         artifact_store: ArtifactStore | None = None,
     ) -> None:
         self.registry = registry
         self.audit_log = audit_log
         self.policy = policy or PolicyEngine()
+        self.approval_store = approval_store
         self.event_bus = event_bus
         self.artifact_store = artifact_store
         self.stdio = StdioAdapter()
@@ -39,24 +42,54 @@ class CapabilityExecutor:
         cwd: Path | None = None,
         dry_run: bool = False,
         confirmed: bool = False,
+        approval_id: str | None = None,
     ) -> dict[str, Any]:
         call_id = str(uuid.uuid4())
         manifest = self.registry.require(capability_id)
+        request = self._request_from_manifest(manifest, extra_args, cwd, dry_run)
+        approval_confirmed = False
+        if approval_id and self.approval_store:
+            approval_confirmed = self.approval_store.is_approved(approval_id, capability_id)
         decision = self.policy.evaluate(manifest, confirmed=confirmed)
+        if not decision.allowed and approval_confirmed:
+            decision = self.policy.evaluate(manifest, confirmed=True)
         if not decision.allowed:
+            approval = None
+            if decision.requires_confirmation and self.approval_store is not None:
+                approval = self.approval_store.request(
+                    call_id=call_id,
+                    capability_id=capability_id,
+                    argv=request.argv,
+                    cwd=request.cwd,
+                    risk=decision.risk,
+                    reason=decision.reason,
+                    dry_run=dry_run,
+                )
             event = self.audit_log.append(
                 {
                     "type": "tool_call.blocked",
                     "call_id": call_id,
                     "capability_id": capability_id,
                     "decision": decision.as_dict(),
+                    "approval_id": approval["approval_id"] if approval else None,
                     "dry_run": dry_run,
                 }
             )
+            if approval:
+                self._publish(
+                    EventType.APPROVAL_REQUESTED,
+                    capability_id,
+                    {"approval": approval},
+                    call_id,
+                )
             self._publish(
                 EventType.TOOL_CALL_BLOCKED,
                 capability_id,
-                {"decision": decision.as_dict(), "dry_run": dry_run},
+                {
+                    "decision": decision.as_dict(),
+                    "approval_id": approval["approval_id"] if approval else None,
+                    "dry_run": dry_run,
+                },
                 call_id,
             )
             return {
@@ -64,15 +97,18 @@ class CapabilityExecutor:
                 "capability_id": capability_id,
                 "allowed": False,
                 "decision": decision.as_dict(),
+                "approval": approval,
                 "audit_event_id": event["event_id"],
             }
 
-        request = self._request_from_manifest(manifest, extra_args, cwd, dry_run)
+        if approval_id and approval_confirmed and self.approval_store:
+            self.approval_store.use(approval_id, capability_id)
         self.audit_log.append(
             {
                 "type": "tool_call.started",
                 "call_id": call_id,
                 "capability_id": capability_id,
+                "approval_id": approval_id if approval_confirmed else None,
                 "argv": list(request.argv),
                 "cwd": request.cwd,
                 "dry_run": dry_run,
@@ -107,6 +143,7 @@ class CapabilityExecutor:
                 "allowed": result.allowed,
                 "exit_code": result.exit_code,
                 "reason": result.reason,
+                "approval_id": approval_id if approval_confirmed else None,
                 "artifact_ids": [artifact["artifact_id"] for artifact in artifacts],
                 "dry_run": dry_run,
             },
@@ -120,6 +157,7 @@ class CapabilityExecutor:
             "reason": result.reason,
             "stdout": result.stdout,
             "stderr": result.stderr,
+            "approval_id": approval_id if approval_confirmed else None,
             "artifacts": artifacts,
             "audit_event_id": event["event_id"],
         }

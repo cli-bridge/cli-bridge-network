@@ -8,5 +8,6 @@ class EventType(StrEnum):
     TOOL_CALL_STARTED = "tool_call.started"
     TOOL_CALL_COMPLETED = "tool_call.completed"
     TOOL_CALL_BLOCKED = "tool_call.blocked"
+    APPROVAL_REQUESTED = "approval.requested"
+    APPROVAL_DECIDED = "approval.decided"
     ARTIFACT_CREATED = "artifact.created"
-

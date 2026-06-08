@@ -97,10 +97,10 @@
 
         <section class="panel">
           <h2>Approval Queue</h2>
-          <button data-command="cbn approvals list">List Pending</button>
-          <button data-command="cbn approvals show &lt;id&gt;">Show Request</button>
-          <button data-command="cbn approvals approve &lt;id&gt;">Approve</button>
-          <button data-command="cbn approvals deny &lt;id&gt;">Deny</button>
+          <button data-command="python -m cbn approvals list --status pending">List Pending</button>
+          <button data-command="python -m cbn approvals show &lt;id&gt;">Show Request</button>
+          <button data-command="python -m cbn approvals approve &lt;id&gt;">Approve</button>
+          <button data-command="python -m cbn approvals deny &lt;id&gt;">Deny</button>
           <button data-command="cbn policy risks">Risk Matrix</button>
           <button data-command="cbn policy audit">Policy Audit</button>
         </section>

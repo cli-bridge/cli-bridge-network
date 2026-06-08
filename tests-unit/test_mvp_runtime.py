@@ -6,8 +6,9 @@ import unittest
 from pathlib import Path
 
 from cbn_audit.log import AuditLog
+from cbn_approval.store import ApprovalStore
 from cbn_artifacts.store import ArtifactStore
-from cbn_core.manifest import ManifestRegistry
+from cbn_core.manifest import CapabilityManifest, ManifestRegistry
 from cbn_events.bus import EventBus
 from cbn_execution.executor import CapabilityExecutor
 from cbn_policy.engine import PolicyEngine
@@ -75,6 +76,29 @@ class MvpRuntimeTests(unittest.TestCase):
         decision = PolicyEngine().evaluate(danger, confirmed=False)
         self.assertFalse(decision.allowed)
 
+    def test_executor_creates_and_consumes_approval_request(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            registry = ManifestRegistry()
+            registry.register(_danger_manifest())
+            approvals = ApprovalStore(Path(tmp) / "approvals.jsonl")
+            executor = CapabilityExecutor(
+                registry,
+                AuditLog(Path(tmp) / "audit.jsonl"),
+                approval_store=approvals,
+                event_bus=EventBus(Path(tmp) / "events.jsonl"),
+                artifact_store=ArtifactStore(Path(tmp) / "artifacts"),
+            )
+            blocked = executor.call("test.danger", dry_run=True)
+            self.assertFalse(blocked["allowed"])
+            self.assertEqual(blocked["approval"]["status"], "pending")
+
+            approval_id = blocked["approval"]["approval_id"]
+            approvals.decide(approval_id, "approved", actor="test")
+            allowed = executor.call("test.danger", dry_run=True, approval_id=approval_id)
+            self.assertTrue(allowed["allowed"])
+            self.assertEqual(allowed["approval_id"], approval_id)
+            self.assertEqual(approvals.inspect(approval_id)["status"], "used")
+
     def test_executor_writes_audit_for_dry_run(self):
         with tempfile.TemporaryDirectory() as tmp:
             registry = ManifestRegistry()
@@ -139,6 +163,17 @@ class MvpRuntimeTests(unittest.TestCase):
         self.assertTrue(json.loads(events.stdout))
         self.assertTrue(json.loads(artifacts.stdout))
 
+    def test_cli_approval_commands_are_available(self):
+        proc = subprocess.run(
+            [sys.executable, "-m", "cbn", "approvals", "list", "--limit", "1"],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        self.assertIsInstance(json.loads(proc.stdout), list)
+
     def test_daemon_routes_are_listed(self):
         proc = subprocess.run(
             [sys.executable, "-m", "cbn", "daemon", "routes"],
@@ -152,6 +187,31 @@ class MvpRuntimeTests(unittest.TestCase):
         self.assertTrue(any(route["path"] == "/plugins/plan" for route in payload))
         self.assertTrue(any(route["path"] == "/events" for route in payload))
         self.assertTrue(any(route["path"] == "/artifacts" for route in payload))
+        self.assertTrue(any(route["path"] == "/approvals" for route in payload))
+
+
+def _danger_manifest() -> CapabilityManifest:
+    return CapabilityManifest.from_dict(
+        {
+            "apiVersion": "bridge.dev/v1alpha1",
+            "kind": "ToolManifest",
+            "metadata": {"id": "test.danger", "title": "Danger"},
+            "spec": {
+                "transport": {
+                    "kind": "stdio",
+                    "command": "python",
+                    "argsTemplate": ["--version"],
+                    "cwdPolicy": "workspace",
+                },
+                "policy": {
+                    "risk": "privileged",
+                    "requiresConfirmation": True,
+                    "network": "deny",
+                },
+                "output": {"verified": False},
+            },
+        }
+    )
 
 
 if __name__ == "__main__":

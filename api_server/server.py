@@ -26,7 +26,9 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/audit"},
     {"method": "GET", "path": "/events"},
     {"method": "GET", "path": "/artifacts"},
+    {"method": "GET", "path": "/approvals"},
     {"method": "POST", "path": "/call"},
+    {"method": "POST", "path": "/approvals/decide"},
     {"method": "POST", "path": "/plugins/plan"},
     {"method": "POST", "path": "/plugins/cli-anything/market"},
     {"method": "POST", "path": "/plugins/cli-anything/import-harness"},
@@ -86,6 +88,15 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 limit = int(query.get("limit", ["50"])[0])
                 self._send(200, runtime.artifact_store.list(limit=limit))
             return
+        if parsed.path == "/approvals":
+            approval_id = query.get("approval_id", [None])[0]
+            if approval_id:
+                self._send(200, runtime.approval_store.inspect(approval_id))
+            else:
+                limit = int(query.get("limit", ["50"])[0])
+                status = query.get("status", [None])[0]
+                self._send(200, runtime.approval_store.list(status=status, limit=limit))
+            return
         self._send(404, {"error": "not found", "routes": ROUTE_SUMMARY})
 
     def do_POST(self) -> None:
@@ -97,8 +108,24 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 extra_args=tuple(payload.get("extra_args", [])),
                 dry_run=bool(payload.get("dry_run", False)),
                 confirmed=bool(payload.get("confirmed", False)),
+                approval_id=payload.get("approval_id"),
             )
             self._send(200 if result.get("allowed") else 403, result)
+            return
+        if self.path == "/approvals/decide":
+            approval = runtime.approval_store.decide(
+                payload["approval_id"],
+                payload["decision"],
+                actor=payload.get("actor", "api"),
+                reason=payload.get("reason", ""),
+            )
+            runtime.event_bus.publish(
+                "approval.decided",
+                approval["capability_id"],
+                {"approval": approval},
+                correlation_id=approval["call_id"],
+            )
+            self._send(200, approval)
             return
         if self.path == "/plugins/plan":
             manager = PluginManager()
