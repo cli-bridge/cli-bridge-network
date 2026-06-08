@@ -82,6 +82,10 @@ def build_parser() -> argparse.ArgumentParser:
     mcp_smoke.add_argument("--capability-id", default="git.version")
     mcp_smoke.add_argument("--extra-arg", action="append", default=[])
     mcp_smoke.add_argument("--dry-run", action="store_true")
+    mcp_workflow_smoke = mcp_subcommands.add_parser("smoke-workflow", help="Run a local MCP stdio workflow smoke test.")
+    mcp_workflow_smoke.add_argument("--path", required=True, help="Workflow JSON path.")
+    mcp_workflow_smoke.add_argument("--dry-run", action="store_true")
+    mcp_workflow_smoke.add_argument("--yes", action="store_true", help="Confirm workflow tasks.")
 
     a2a_parser = subcommands.add_parser("a2a", help="Inspect or test the A2A HTTP facade.")
     a2a_subcommands = a2a_parser.add_subparsers(dest="a2a_command")
@@ -90,6 +94,10 @@ def build_parser() -> argparse.ArgumentParser:
     a2a_smoke = a2a_subcommands.add_parser("smoke", help="Run a local A2A HTTP smoke test.")
     a2a_smoke.add_argument("--capability-id", default="git.version")
     a2a_smoke.add_argument("--extra-arg", action="append", default=[])
+    a2a_workflow_smoke = a2a_subcommands.add_parser("smoke-workflow", help="Run a local A2A HTTP workflow smoke test.")
+    a2a_workflow_smoke.add_argument("--path", required=True, help="Workflow JSON path.")
+    a2a_workflow_smoke.add_argument("--dry-run", action="store_true")
+    a2a_workflow_smoke.add_argument("--yes", action="store_true", help="Confirm workflow tasks.")
 
     acp_parser = subcommands.add_parser("acp", help="Run or test the ACP stdio facade.")
     acp_subcommands = acp_parser.add_subparsers(dest="acp_command")
@@ -99,6 +107,10 @@ def build_parser() -> argparse.ArgumentParser:
     acp_smoke.add_argument("--capability-id", default="git.version")
     acp_smoke.add_argument("--extra-arg", action="append", default=[])
     acp_smoke.add_argument("--dry-run", action="store_true")
+    acp_workflow_smoke = acp_subcommands.add_parser("smoke-workflow", help="Run a local ACP stdio workflow smoke test.")
+    acp_workflow_smoke.add_argument("--path", required=True, help="Workflow JSON path.")
+    acp_workflow_smoke.add_argument("--dry-run", action="store_true")
+    acp_workflow_smoke.add_argument("--yes", action="store_true", help="Confirm workflow tasks.")
 
     message_parser = subcommands.add_parser("message", help="Validate and inspect BridgeMessage envelopes.")
     message_subcommands = message_parser.add_subparsers(dest="message_command")

@@ -10,7 +10,9 @@ from typing import Any
 
 from cbn.version import __version__
 from cbn_core.manifest import CapabilityManifest
+from cbn_protocol.workflow_calls import run_workflow_from_metadata, workflow_messages, workflow_run_ok
 from cbn_runtime.context import build_runtime
+from cbn_workflow.catalog import list_workflows
 
 
 A2A_PROTOCOL_VERSION = "0.3"
@@ -38,7 +40,10 @@ def agent_card(base_url: str = "http://127.0.0.1:8787") -> dict[str, Any]:
         },
         "defaultInputModes": ["application/json", "text/plain"],
         "defaultOutputModes": ["application/json", "text/plain"],
-        "skills": [_skill_from_manifest(manifest) for manifest in runtime.registry.list()],
+        "skills": [
+            *[_skill_from_manifest(manifest) for manifest in runtime.registry.list()],
+            *[_skill_from_workflow(workflow) for workflow in list_workflows(registry=runtime.registry)],
+        ],
     }
 
 
@@ -124,6 +129,75 @@ def smoke_a2a_http(capability_id: str = "git.version", extra_args: list[str] | N
         thread.join(timeout=5)
 
 
+def smoke_a2a_workflow_http(workflow_path: str, dry_run: bool = False, confirmed: bool = False) -> dict[str, Any]:
+    from api_server.server import CbnRequestHandler
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), CbnRequestHandler)
+    host, port = server.server_address
+    base_url = f"http://{host}:{port}"
+    import threading
+
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with urllib.request.urlopen(f"{base_url}/.well-known/agent-card.json", timeout=5) as response:
+            card = json.loads(response.read().decode("utf-8"))
+        workflow_id = _workflow_id_from_path(workflow_path)
+        request = urllib.request.Request(
+            f"{base_url}/a2a",
+            data=json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": "workflow-smoke-1",
+                    "method": "message/send",
+                    "params": {
+                        "message": {
+                            "messageId": str(uuid.uuid4()),
+                            "role": "user",
+                            "parts": [{"text": "Run CBN workflow"}],
+                        },
+                        "metadata": {
+                            "cbn": {
+                                "workflow_path": workflow_path,
+                                "dry_run": dry_run,
+                                "confirmed": confirmed,
+                            }
+                        },
+                    },
+                },
+                ensure_ascii=False,
+            ).encode("utf-8"),
+            method="POST",
+            headers={
+                "Content-Type": "application/json",
+                "A2A-Version": A2A_PROTOCOL_VERSION,
+            },
+        )
+        with urllib.request.urlopen(request, timeout=60) as response:
+            rpc = json.loads(response.read().decode("utf-8"))
+        task = rpc.get("result", {})
+        ok = (
+            card.get("protocolVersion") == A2A_PROTOCOL_VERSION
+            and any(skill.get("id") == f"workflow:{workflow_id}" for skill in card.get("skills", []))
+            and task.get("status", {}).get("state") == "completed"
+            and task.get("metadata", {}).get("cbn", {}).get("workflow_path") == workflow_path
+            and task.get("metadata", {}).get("cbn", {}).get("status") == "completed"
+        )
+        return {
+            "ok": ok,
+            "base_url": base_url,
+            "workflow_path": workflow_path,
+            "workflow_id": workflow_id,
+            "dry_run": dry_run,
+            "agent_card": card,
+            "response": rpc,
+        }
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
 def _send_message(params: dict[str, Any]) -> dict[str, Any]:
     message = params.get("message")
     if not isinstance(message, dict):
@@ -135,6 +209,9 @@ def _send_message(params: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(cbn_meta, dict):
         raise ValueError("params.metadata.cbn must be an object")
     capability_id = cbn_meta.get("capability_id")
+    workflow_path = cbn_meta.get("workflow_path")
+    if isinstance(workflow_path, str) and workflow_path:
+        return _send_workflow_message(message, workflow_path, cbn_meta)
     if not isinstance(capability_id, str) or not capability_id:
         raise ValueError("params.metadata.cbn.capability_id is required")
     extra_args = cbn_meta.get("extra_args", [])
@@ -181,6 +258,60 @@ def _send_message(params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _send_workflow_message(message: dict[str, Any], workflow_path: str, cbn_meta: dict[str, Any]) -> dict[str, Any]:
+    runtime = build_runtime()
+    result = run_workflow_from_metadata(runtime, cbn_meta)
+    task_id = str(uuid.uuid4())
+    context_id = message.get("contextId") if isinstance(message.get("contextId"), str) else str(uuid.uuid4())
+    state = "completed" if workflow_run_ok(result) else "failed"
+    agent_message = {
+        "messageId": str(uuid.uuid4()),
+        "contextId": context_id,
+        "taskId": task_id,
+        "role": "agent",
+        "parts": [
+            {
+                "data": {
+                    "workflow_path": workflow_path,
+                    "run": result,
+                    "messages": workflow_messages(result),
+                }
+            }
+        ],
+    }
+    artifacts = []
+    for task in result.get("tasks", []):
+        if not isinstance(task, dict):
+            continue
+        task_result = task.get("result", {})
+        if not isinstance(task_result, dict):
+            continue
+        artifacts.extend(_artifact_from_cbn(artifact) for artifact in task_result.get("artifacts", []))
+    return {
+        "id": task_id,
+        "contextId": context_id,
+        "status": {
+            "state": state,
+            "message": agent_message,
+        },
+        "artifacts": [
+            _artifact_from_cbn(artifact)
+            for task in result.get("tasks", [])
+            for artifact in task.get("result", {}).get("artifacts", [])
+            if isinstance(task, dict)
+        ],
+        "history": [message, agent_message],
+        "metadata": {
+            "cbn": {
+                "workflow_path": workflow_path,
+                "workflow_id": result.get("workflow_id"),
+                "run_id": result.get("run_id"),
+                "status": result.get("status"),
+            }
+        },
+    }
+
+
 def _skill_from_manifest(manifest: CapabilityManifest) -> dict[str, Any]:
     return {
         "id": manifest.capability_id,
@@ -204,6 +335,26 @@ def _skill_from_manifest(manifest: CapabilityManifest) -> dict[str, Any]:
     }
 
 
+def _skill_from_workflow(workflow: dict[str, Any]) -> dict[str, Any]:
+    workflow_id = workflow["workflow_id"] or workflow["path"]
+    return {
+        "id": f"workflow:{workflow_id}",
+        "name": workflow["title"] or workflow["path"],
+        "description": "CBN workflow exported as an A2A skill facade.",
+        "tags": ["workflow", f"tasks:{workflow['task_count']}"],
+        "examples": [f"Run workflow {workflow_id} through CBN policy and audit."],
+        "inputModes": ["application/json", "text/plain"],
+        "outputModes": ["application/json", "text/plain"],
+        "metadata": {
+            "cbn": {
+                "workflow_id": workflow["workflow_id"],
+                "workflow_path": workflow["path"],
+                "valid": workflow["valid"],
+            }
+        },
+    }
+
+
 def _artifact_from_cbn(artifact: dict[str, Any]) -> dict[str, Any]:
     artifact_id = artifact.get("artifact_id") or str(uuid.uuid4())
     return {
@@ -221,6 +372,14 @@ def _task_state(result: dict[str, Any]) -> str:
     if result.get("exit_code") not in (0, None):
         return "failed"
     return "completed"
+
+
+def _workflow_id_from_path(workflow_path: str) -> str:
+    from pathlib import Path
+
+    from cbn_execution.graph import WorkflowGraph
+
+    return WorkflowGraph.from_file(Path(workflow_path)).workflow_id
 
 
 def _jsonrpc_error(request_id: Any, code: int, message: str) -> dict[str, Any]:

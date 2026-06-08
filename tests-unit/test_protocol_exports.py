@@ -95,12 +95,26 @@ class ProtocolExportTests(unittest.TestCase):
                 for item in a2a["checks"]
             )
         )
+        self.assertTrue(
+            any(
+                item["requirement"] == "A2A workflow message/send smoke"
+                and item["status"] == "partial"
+                for item in a2a["checks"]
+            )
+        )
         mcp = payload["checks"]["mcp"]
         self.assertFalse(mcp["wire_compatible"])
         self.assertGreaterEqual(mcp["status_counts"]["present"], 3)
         self.assertTrue(
             any(
                 item["requirement"] == "MCP stdio initialize/tools/list/tools/call smoke"
+                and item["status"] == "partial"
+                for item in mcp["checks"]
+            )
+        )
+        self.assertTrue(
+            any(
+                item["requirement"] == "MCP workflow tools/call smoke"
                 and item["status"] == "partial"
                 for item in mcp["checks"]
             )
@@ -112,6 +126,13 @@ class ProtocolExportTests(unittest.TestCase):
         self.assertTrue(
             any(
                 item["requirement"] == "ACP stdio initialize/session/new/session/prompt smoke"
+                and item["status"] == "partial"
+                for item in acp["checks"]
+            )
+        )
+        self.assertTrue(
+            any(
+                item["requirement"] == "ACP workflow session/prompt smoke"
                 and item["status"] == "partial"
                 for item in acp["checks"]
             )

@@ -4,7 +4,7 @@ import sys
 import unittest
 from pathlib import Path
 
-from cbn_protocol.acp_stdio import AcpStdioAgent, smoke_acp_stdio
+from cbn_protocol.acp_stdio import AcpStdioAgent, smoke_acp_stdio, smoke_acp_workflow_stdio
 
 
 class AcpStdioTests(unittest.TestCase):
@@ -71,6 +71,38 @@ class AcpStdioTests(unittest.TestCase):
         self.assertEqual(cbn["exit_code"], 0)
         self.assertTrue(cbn["artifacts"])
 
+    def test_session_prompt_can_run_workflow(self):
+        agent = AcpStdioAgent()
+        session = agent.handle_line(
+            json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "session/new",
+                    "params": {"cwd": str(Path.cwd()), "mcpServers": []},
+                }
+            )
+        )["result"]["sessionId"]
+        response = agent.handle_line(
+            json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "session/prompt",
+                    "params": {
+                        "sessionId": session,
+                        "prompt": [{"type": "text", "text": "workflow"}],
+                        "_meta": {"cbn": {"workflow_path": "workflows/example.json", "dry_run": True}},
+                    },
+                }
+            )
+        )
+        result = response["result"]
+        self.assertEqual(result["stopReason"], "end_turn")
+        cbn = result["_meta"]["cbn"]
+        self.assertEqual(cbn["workflow_id"], "example.git-check")
+        self.assertEqual(cbn["status"], "completed")
+
     def test_smoke_runs_real_stdio_agent(self):
         payload = smoke_acp_stdio("git.version")
         self.assertTrue(payload["ok"], payload)
@@ -89,6 +121,35 @@ class AcpStdioTests(unittest.TestCase):
         payload = json.loads(proc.stdout)
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["capability_id"], "git.version")
+
+    def test_cli_acp_smoke_workflow(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "acp",
+                "smoke-workflow",
+                "--path",
+                "workflows/example.json",
+                "--dry-run",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertTrue(payload["ok"], payload)
+        cbn = payload["responses"][2]["result"]["_meta"]["cbn"]
+        self.assertEqual(cbn["workflow_id"], "example.git-check")
+
+    def test_smoke_workflow_runs_real_stdio_agent(self):
+        payload = smoke_acp_workflow_stdio("workflows/example.json", dry_run=True)
+        self.assertTrue(payload["ok"], payload)
+        cbn = payload["responses"][2]["result"]["_meta"]["cbn"]
+        self.assertEqual(cbn["workflow_id"], "example.git-check")
 
 
 if __name__ == "__main__":

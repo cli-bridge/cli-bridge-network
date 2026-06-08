@@ -6,9 +6,13 @@ import json
 import subprocess
 import sys
 from collections.abc import Iterable
+from pathlib import Path
 from typing import Any, TextIO
 
 from cbn.version import __version__
+from cbn_execution.graph import WorkflowGraph
+from cbn_protocol.exports import export_workflow_protocol
+from cbn_protocol.workflow_calls import run_workflow_from_metadata, workflow_run_ok
 from cbn_runtime.context import build_runtime
 from protocols.mcp import export_capabilities
 
@@ -68,7 +72,8 @@ class McpStdioServer:
             return _initialize_result(params)
         if method == "tools/list":
             descriptor = export_capabilities(self.runtime.registry.list())
-            return {"tools": descriptor["tools"]}
+            workflow_descriptor = export_workflow_protocol(self.runtime.registry, "mcp")
+            return {"tools": [*descriptor["tools"], *workflow_descriptor["workflowTools"]]}
         if method == "tools/call":
             return self._call_tool(params)
         raise NotImplementedError
@@ -84,6 +89,8 @@ class McpStdioServer:
             arguments = {}
         if not isinstance(arguments, dict):
             raise ValueError("tools/call params.arguments must be an object")
+        if name.startswith("workflow:"):
+            return self._call_workflow(name, arguments)
         extra_args = arguments.get("extra_args", [])
         if not isinstance(extra_args, list) or not all(isinstance(item, str) for item in extra_args):
             raise ValueError("arguments.extra_args must be a list of strings")
@@ -106,6 +113,29 @@ class McpStdioServer:
                 "parsed": result.get("parsed"),
                 "message": result.get("message"),
                 "artifacts": result.get("artifacts", []),
+            },
+            "isError": bool(is_error),
+        }
+
+    def _call_workflow(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        workflow_path = arguments.get("workflow_path")
+        if not isinstance(workflow_path, str) or not workflow_path:
+            raise ValueError("workflow tools/call requires arguments.workflow_path")
+        result = run_workflow_from_metadata(
+            self.runtime,
+            {
+                "workflow_path": workflow_path,
+                "dry_run": bool(arguments.get("dry_run", False)),
+                "confirmed": bool(arguments.get("confirmed", False)),
+            },
+        )
+        is_error = not workflow_run_ok(result)
+        return {
+            "content": [{"type": "text", "text": result.get("status", "unknown")}],
+            "structuredContent": {
+                "workflow_tool": name,
+                "workflow_path": workflow_path,
+                "run": result,
             },
             "isError": bool(is_error),
         }
@@ -181,6 +211,81 @@ def smoke_mcp_stdio(capability_id: str, extra_args: Iterable[str] = (), dry_run:
     }
 
 
+def smoke_mcp_workflow_stdio(workflow_path: str, dry_run: bool = False, confirmed: bool = False) -> dict[str, Any]:
+    command = [sys.executable, "-m", "cbn", "mcp", "serve", "--stdio"]
+    proc = subprocess.Popen(
+        command,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+    )
+    assert proc.stdin is not None
+    assert proc.stdout is not None
+    tool_name = f"workflow:{_workflow_id_from_path(workflow_path)}"
+    requests = [
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": MCP_PROTOCOL_VERSION,
+                "capabilities": {},
+                "clientInfo": {"name": "cbn-workflow-smoke", "version": __version__},
+            },
+        },
+        {"jsonrpc": "2.0", "method": "notifications/initialized"},
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+        {
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {
+                "name": tool_name,
+                "arguments": {
+                    "workflow_path": workflow_path,
+                    "dry_run": dry_run,
+                    "confirmed": confirmed,
+                },
+            },
+        },
+    ]
+    for request in requests:
+        proc.stdin.write(json.dumps(request, ensure_ascii=False, separators=(",", ":")) + "\n")
+    proc.stdin.close()
+    responses = []
+    for _ in range(3):
+        line = proc.stdout.readline()
+        if not line:
+            break
+        responses.append(json.loads(line))
+    stderr = proc.stderr.read() if proc.stderr is not None else ""
+    proc.stdout.close()
+    if proc.stderr is not None:
+        proc.stderr.close()
+    return_code = proc.wait(timeout=60)
+    workflow_tools = responses[1].get("result", {}).get("tools", []) if len(responses) > 1 else []
+    structured = responses[2].get("result", {}).get("structuredContent", {}) if len(responses) > 2 else {}
+    ok = (
+        return_code == 0
+        and len(responses) == 3
+        and responses[0].get("result", {}).get("serverInfo", {}).get("name") == "CLI Bridge Network"
+        and any(tool.get("name") == tool_name for tool in workflow_tools)
+        and responses[2].get("result", {}).get("isError") is False
+        and structured.get("run", {}).get("status") == "completed"
+    )
+    return {
+        "ok": ok,
+        "command": command,
+        "return_code": return_code,
+        "workflow_path": workflow_path,
+        "tool_name": tool_name,
+        "responses": responses,
+        "stderr": stderr,
+    }
+
+
 def _initialize_result(params: Any) -> dict[str, Any]:
     requested = params.get("protocolVersion") if isinstance(params, dict) else None
     return {
@@ -197,6 +302,10 @@ def _initialize_result(params: Any) -> dict[str, Any]:
 
 def _optional_str(value: Any) -> str | None:
     return value if isinstance(value, str) and value else None
+
+
+def _workflow_id_from_path(workflow_path: str) -> str:
+    return WorkflowGraph.from_file(Path(workflow_path)).workflow_id
 
 
 def _error_response(request_id: Any, code: int, message: str) -> dict[str, Any]:

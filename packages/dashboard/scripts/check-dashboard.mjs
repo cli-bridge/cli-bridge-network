@@ -213,12 +213,20 @@ if (!html.includes("python -m cbn mcp smoke --capability-id git.version")) {
   throw new Error("Dashboard does not expose the MCP stdio smoke command.");
 }
 
+if (!html.includes("python -m cbn mcp smoke-workflow --path workflows/example.json --dry-run")) {
+  throw new Error("Dashboard does not expose the MCP workflow smoke command.");
+}
+
 if (!html.includes("python -m cbn a2a agent-card")) {
   throw new Error("Dashboard does not expose the A2A AgentCard command.");
 }
 
 if (!html.includes("python -m cbn a2a smoke --capability-id git.version")) {
   throw new Error("Dashboard does not expose the A2A smoke command.");
+}
+
+if (!html.includes("python -m cbn a2a smoke-workflow --path workflows/example.json --dry-run")) {
+  throw new Error("Dashboard does not expose the A2A workflow smoke command.");
 }
 
 if (!html.includes("python -m cbn plugin evaluate-harness cli-anything macrocli")) {
@@ -239,6 +247,10 @@ if (!html.includes("python -m cbn acp serve --stdio")) {
 
 if (!html.includes("python -m cbn acp smoke --capability-id git.version")) {
   throw new Error("Dashboard does not expose the ACP stdio smoke command.");
+}
+
+if (!html.includes("python -m cbn acp smoke-workflow --path workflows/example.json --dry-run")) {
+  throw new Error("Dashboard does not expose the ACP workflow smoke command.");
 }
 
 if (!html.includes("python -m cbn message validate")) {

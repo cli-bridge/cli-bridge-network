@@ -347,11 +347,14 @@
           <button data-command="python -m cbn message args &lt;message.json&gt; payload.data.stdout artifacts[0].artifact_id">Message Args</button>
           <button data-command="python -m cbn mcp serve --stdio">MCP stdio</button>
           <button data-command="python -m cbn mcp smoke --capability-id git.version">MCP Smoke</button>
+          <button data-command="python -m cbn mcp smoke-workflow --path workflows/example.json --dry-run">MCP Workflow Smoke</button>
           <button data-command="cbn mcp serve --http --host 127.0.0.1">MCP HTTP</button>
           <button data-command="python -m cbn a2a agent-card">A2A AgentCard</button>
           <button data-command="python -m cbn a2a smoke --capability-id git.version">A2A Smoke</button>
+          <button data-command="python -m cbn a2a smoke-workflow --path workflows/example.json --dry-run">A2A Workflow Smoke</button>
           <button data-command="python -m cbn acp serve --stdio">ACP stdio</button>
           <button data-command="python -m cbn acp smoke --capability-id git.version">ACP Smoke</button>
+          <button data-command="python -m cbn acp smoke-workflow --path workflows/example.json --dry-run">ACP Workflow Smoke</button>
           <button data-command="python -m cbn daemon serve --host 127.0.0.1 --port 8787">REST Gateway</button>
           <button data-command="python -m cbn daemon routes">List Exports</button>
         </section>

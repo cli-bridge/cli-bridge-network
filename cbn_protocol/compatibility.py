@@ -103,6 +103,10 @@ def _check_mcp(descriptor: dict[str, Any]) -> list[dict[str, str]]:
             "MCP stdio initialize/tools/list/tools/call smoke",
             "python -m cbn mcp smoke exercises initialize, notifications/initialized, tools/list, and tools/call over newline-delimited stdio JSON-RPC",
         ),
+        _partial(
+            "MCP workflow tools/call smoke",
+            "python -m cbn mcp smoke-workflow --path workflows/example.json --dry-run exercises workflow:<id> discovery and tools/call execution",
+        ),
         _gap(
             "MCP full conformance",
             "MCP stdio is an MVP facade; official SDK/conformance coverage, pagination, cancellation, progress, and HTTP transport are not implemented yet",
@@ -143,6 +147,10 @@ def _check_a2a(descriptor: dict[str, Any]) -> list[dict[str, str]]:
             "A2A AgentCard and message/send smoke",
             "python -m cbn a2a smoke exercises /.well-known/agent-card.json and message/send over local HTTP JSON-RPC",
         ),
+        _partial(
+            "A2A workflow message/send smoke",
+            "python -m cbn a2a smoke-workflow --path workflows/example.json --dry-run exercises workflow skills and metadata.cbn.workflow_path execution",
+        ),
         _gap(
             "A2A full task lifecycle and conformance",
             "A2A HTTP is an MVP facade; task polling, streaming, cancellation, version negotiation, authentication, and SDK/conformance coverage are not implemented yet",
@@ -176,6 +184,10 @@ def _check_acp(descriptor: dict[str, Any]) -> list[dict[str, str]]:
         _partial(
             "ACP stdio initialize/session/new/session/prompt smoke",
             "python -m cbn acp smoke exercises initialize, session/new, and session/prompt over newline-delimited UTF-8 stdio JSON-RPC",
+        ),
+        _partial(
+            "ACP workflow session/prompt smoke",
+            "python -m cbn acp smoke-workflow --path workflows/example.json --dry-run exercises _meta.cbn.workflow_path execution",
         ),
         _gap(
             "ACP full session lifecycle and conformance",

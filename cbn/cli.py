@@ -16,8 +16,10 @@ from cbn_parsers.registry import ParserRegistry
 from cbn_plugins.cli_anything import CliAnythingHub
 from cbn_plugins.manager import PluginManager
 from cbn_protocol.a2a_http import agent_card, smoke_a2a_http
+from cbn_protocol.a2a_http import smoke_a2a_workflow_http
 from cbn_protocol.acp_stdio import serve_stdio as serve_acp_stdio
 from cbn_protocol.acp_stdio import smoke_acp_stdio
+from cbn_protocol.acp_stdio import smoke_acp_workflow_stdio
 from cbn_protocol.envelope import bridge_args_from_selectors, select_bridge_value, validate_bridge_message
 from cbn_protocol.compatibility import check_protocol
 from cbn_protocol.exports import (
@@ -28,6 +30,7 @@ from cbn_protocol.exports import (
     list_protocol_exports,
 )
 from cbn_protocol.mcp_stdio import serve_stdio, smoke_mcp_stdio
+from cbn_protocol.mcp_stdio import smoke_mcp_workflow_stdio
 from cbn_runtime.context import build_runtime
 from cbn_workflow.catalog import inspect_workflow, list_workflows
 from api_server.server import ROUTE_SUMMARY, serve
@@ -177,6 +180,10 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(json.dumps(payload, ensure_ascii=False, indent=2))
             return 0 if payload["ok"] else 9
+        if args.mcp_command == "smoke-workflow":
+            payload = smoke_mcp_workflow_stdio(args.path, dry_run=args.dry_run, confirmed=args.yes)
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0 if payload["ok"] else 9
 
     if args.command == "a2a":
         if args.a2a_command == "agent-card":
@@ -184,6 +191,10 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.a2a_command == "smoke":
             payload = smoke_a2a_http(args.capability_id, extra_args=args.extra_arg)
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0 if payload["ok"] else 9
+        if args.a2a_command == "smoke-workflow":
+            payload = smoke_a2a_workflow_http(args.path, dry_run=args.dry_run, confirmed=args.yes)
             print(json.dumps(payload, ensure_ascii=False, indent=2))
             return 0 if payload["ok"] else 9
 
@@ -198,6 +209,10 @@ def main(argv: list[str] | None = None) -> int:
                 extra_args=args.extra_arg,
                 dry_run=args.dry_run,
             )
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0 if payload["ok"] else 9
+        if args.acp_command == "smoke-workflow":
+            payload = smoke_acp_workflow_stdio(args.path, dry_run=args.dry_run, confirmed=args.yes)
             print(json.dumps(payload, ensure_ascii=False, indent=2))
             return 0 if payload["ok"] else 9
 
