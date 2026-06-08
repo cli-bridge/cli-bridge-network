@@ -249,13 +249,29 @@ def main(argv: list[str] | None = None) -> int:
             if args.plugin_id != "cli-anything":
                 raise KeyError(f"import-harness is not implemented for plugin: {args.plugin_id}")
             hub = CliAnythingHub()
+            market_record = None
+            if args.from_market:
+                market_record = hub.market_record_for_harness(args.harness_name)
+                if market_record is None:
+                    print(
+                        json.dumps(
+                            {
+                                "error": "CLI-Anything market record not found",
+                                "plugin_id": args.plugin_id,
+                                "harness_name": args.harness_name,
+                            },
+                            ensure_ascii=False,
+                            indent=2,
+                        )
+                    )
+                    return 6
             if args.write:
-                path = hub.write_harness_manifest(args.harness_name, title=args.title)
+                path = hub.write_harness_manifest(args.harness_name, title=args.title, market_record=market_record)
                 print(json.dumps({"written": str(path)}, ensure_ascii=False, indent=2))
             else:
                 print(
                     json.dumps(
-                        hub.manifest_for_harness(args.harness_name, title=args.title),
+                        hub.manifest_for_harness(args.harness_name, title=args.title, market_record=market_record),
                         ensure_ascii=False,
                         indent=2,
                     )

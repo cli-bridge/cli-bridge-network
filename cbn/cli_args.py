@@ -117,6 +117,11 @@ def build_parser() -> argparse.ArgumentParser:
     plugin_import.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
     plugin_import.add_argument("harness_name", help="Harness name from the plugin market.")
     plugin_import.add_argument("--title", help="Optional manifest title.")
+    plugin_import.add_argument(
+        "--from-market",
+        action="store_true",
+        help="Require a CLI-Hub market record and include its metadata in the manifest.",
+    )
     plugin_import.add_argument("--write", action="store_true", help="Write manifest into manifests/.")
 
     plugin_harness = plugin_subcommands.add_parser("harness", help="Plan or execute external harness operations.")

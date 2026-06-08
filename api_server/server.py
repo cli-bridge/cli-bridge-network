@@ -227,11 +227,36 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             return
         if self.path == "/plugins/cli-anything/import-harness":
             hub = CliAnythingHub()
+            market_record = None
+            if bool(payload.get("from_market", False)):
+                market_record = hub.market_record_for_harness(payload["harness_name"])
+                if market_record is None:
+                    self._send(
+                        502,
+                        {
+                            "error": "CLI-Anything market record not found",
+                            "plugin_id": "cli-anything",
+                            "harness_name": payload["harness_name"],
+                        },
+                    )
+                    return
             manifest = hub.manifest_for_harness(
                 payload["harness_name"],
                 title=payload.get("title"),
+                market_record=market_record,
             )
-            self._send(200, manifest)
+            if bool(payload.get("write", False)):
+                if not bool(payload.get("confirmed", False)):
+                    self._send(403, {"error": "manifest write requires confirmed=true"})
+                    return
+                path = hub.write_harness_manifest(
+                    payload["harness_name"],
+                    title=payload.get("title"),
+                    market_record=market_record,
+                )
+                self._send(200, {"written": str(path), "manifest": manifest})
+            else:
+                self._send(200, manifest)
             return
         if self.path == "/plugins/cli-anything/harness":
             hub = CliAnythingHub()

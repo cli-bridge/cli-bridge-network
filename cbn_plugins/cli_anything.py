@@ -20,6 +20,24 @@ from cbn_plugins.manager import PluginCommand, PluginPlan
 
 
 PLUGIN_ID = "cli-anything"
+MARKET_LABEL_KEYS = ("category", "_source", "package_manager", "platform")
+MARKET_ANNOTATION_KEYS = (
+    "display_name",
+    "version",
+    "description",
+    "requires",
+    "homepage",
+    "docs_url",
+    "source_url",
+    "install_cmd",
+    "update_cmd",
+    "uninstall_cmd",
+    "entry_point",
+    "skill_md",
+    "npm_package",
+    "npx_cmd",
+    "contributors",
+)
 
 
 @dataclass(frozen=True)
@@ -71,6 +89,20 @@ class CliAnythingHub:
     def info(self, harness_name: str) -> CliHubCommandResult:
         return self._run(("info", harness_name), parse_json=False)
 
+    def market_record_for_harness(self, harness_name: str) -> dict[str, Any] | None:
+        result = self.search_market(harness_name)
+        if result.exit_code != 0 or not isinstance(result.parsed_json, list):
+            return None
+        safe_name = sanitize_harness_name(harness_name)
+        candidates = [item for item in result.parsed_json if isinstance(item, dict)]
+        for item in candidates:
+            if _matches_sanitized_name(item.get("name"), safe_name):
+                return item
+        for item in candidates:
+            if _matches_sanitized_name(item.get("display_name"), safe_name):
+                return item
+        return candidates[0] if candidates else None
+
     def harness_plan(
         self,
         action: str,
@@ -101,25 +133,33 @@ class CliAnythingHub:
         harness_name: str,
         title: str | None = None,
         risk: str = "read",
+        market_record: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        safe_name = sanitize_harness_name(harness_name)
+        market_record = market_record or {}
+        market_name = str(market_record.get("name") or harness_name)
+        display_name = str(market_record.get("display_name") or market_name)
+        safe_name = sanitize_harness_name(market_name)
         capability_id = f"cli-anything.{safe_name}.launch"
+        labels = {
+            "plugin": PLUGIN_ID,
+            "harness": market_name,
+        }
+        labels.update(_market_labels(market_record))
+        annotations = _market_annotations(market_record)
         return {
             "apiVersion": "bridge.dev/v1alpha1",
             "kind": "ToolManifest",
             "metadata": {
                 "id": capability_id,
-                "title": title or f"CLI-Anything {harness_name}",
-                "labels": {
-                    "plugin": PLUGIN_ID,
-                    "harness": harness_name,
-                },
+                "title": title or f"CLI-Anything {display_name}",
+                "labels": labels,
+                "annotations": annotations,
             },
             "spec": {
                 "transport": {
                     "kind": "stdio",
                     "command": self.entrypoint,
-                    "argsTemplate": ["launch", harness_name],
+                    "argsTemplate": ["launch", market_name],
                     "cwdPolicy": "workspace",
                 },
                 "policy": {
@@ -134,8 +174,13 @@ class CliAnythingHub:
             },
         }
 
-    def write_harness_manifest(self, harness_name: str, title: str | None = None) -> Path:
-        manifest = self.manifest_for_harness(harness_name, title=title)
+    def write_harness_manifest(
+        self,
+        harness_name: str,
+        title: str | None = None,
+        market_record: dict[str, Any] | None = None,
+    ) -> Path:
+        manifest = self.manifest_for_harness(harness_name, title=title, market_record=market_record)
         safe_name = sanitize_harness_name(harness_name)
         path = self.paths.manifests / f"cli-anything.{safe_name}.launch.json"
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -181,3 +226,36 @@ def sanitize_harness_name(name: str) -> str:
     if not normalized:
         raise ValueError("harness name cannot be empty")
     return normalized.lower()
+
+
+def _matches_sanitized_name(value: Any, expected: str) -> bool:
+    if value is None:
+        return False
+    try:
+        return sanitize_harness_name(str(value)) == expected
+    except ValueError:
+        return False
+
+
+def _market_labels(market_record: dict[str, Any]) -> dict[str, str]:
+    labels = {}
+    for key in MARKET_LABEL_KEYS:
+        value = market_record.get(key)
+        if value is None or value == "":
+            continue
+        labels[key.strip("_")] = str(value)
+    return labels
+
+
+def _market_annotations(market_record: dict[str, Any]) -> dict[str, str]:
+    annotations = {}
+    for key in MARKET_ANNOTATION_KEYS:
+        value = market_record.get(key)
+        if value is None or value == "":
+            continue
+        annotation_key = f"cli-anything.{key}"
+        if isinstance(value, (dict, list)):
+            annotations[annotation_key] = json.dumps(value, ensure_ascii=False, sort_keys=True)
+        else:
+            annotations[annotation_key] = str(value)
+    return annotations

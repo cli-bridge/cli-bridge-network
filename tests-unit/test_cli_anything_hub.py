@@ -6,7 +6,23 @@ import unittest
 from pathlib import Path
 
 from cbn_core.manifest import CapabilityManifest
-from cbn_plugins.cli_anything import CliAnythingHub, sanitize_harness_name
+from cbn_plugins.cli_anything import CliAnythingHub, CliHubCommandResult, sanitize_harness_name
+
+
+SAMPLE_MARKET_RECORD = {
+    "name": "gimp",
+    "display_name": "GIMP",
+    "version": "1.0.0",
+    "description": "Raster image processing via gimp -i -b (batch mode)",
+    "requires": "gimp (apt install gimp)",
+    "homepage": "https://www.gimp.org",
+    "install_cmd": "pip install git+https://github.com/HKUDS/CLI-Anything.git#subdirectory=gimp/agent-harness",
+    "entry_point": "cli-anything-gimp",
+    "skill_md": "skills/cli-anything-gimp/SKILL.md",
+    "category": "image",
+    "contributors": [{"name": "CLI-Anything-Team", "url": "https://github.com/HKUDS/CLI-Anything"}],
+    "_source": "harness",
+}
 
 
 class CliAnythingHubTests(unittest.TestCase):
@@ -29,6 +45,23 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(result.exit_code, 127)
         self.assertIn("not installed", result.stderr)
 
+    def test_market_record_lookup_handles_missing_cli_hub(self):
+        hub = CliAnythingHub(entrypoint="cbn-cli-hub-that-does-not-exist")
+        self.assertIsNone(hub.market_record_for_harness("gimp"))
+
+    def test_market_record_lookup_skips_bad_market_records(self):
+        class FakeHub(CliAnythingHub):
+            def search_market(self, query: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "search", query),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[{"name": ""}, SAMPLE_MARKET_RECORD],
+                )
+
+        self.assertEqual(FakeHub().market_record_for_harness("gimp")["name"], "gimp")
+
     def test_manifest_for_harness_uses_stdio_launch_boundary(self):
         manifest = CliAnythingHub().manifest_for_harness("gimp")
         self.assertEqual(manifest["metadata"]["id"], "cli-anything.gimp.launch")
@@ -42,6 +75,16 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(manifest.labels["plugin"], "cli-anything")
         self.assertEqual(manifest.labels["harness"], "gimp")
         self.assertEqual(manifest.as_record()["labels"]["harness"], "gimp")
+
+    def test_manifest_for_harness_keeps_market_metadata(self):
+        manifest = CliAnythingHub().manifest_for_harness("gimp", market_record=SAMPLE_MARKET_RECORD)
+        metadata = manifest["metadata"]
+        self.assertEqual(metadata["title"], "CLI-Anything GIMP")
+        self.assertEqual(metadata["labels"]["category"], "image")
+        self.assertEqual(metadata["labels"]["source"], "harness")
+        self.assertEqual(metadata["annotations"]["cli-anything.version"], "1.0.0")
+        self.assertEqual(metadata["annotations"]["cli-anything.entry_point"], "cli-anything-gimp")
+        self.assertIn("CLI-Anything-Team", metadata["annotations"]["cli-anything.contributors"])
 
     def test_harness_plan_uses_cli_hub_lifecycle_command(self):
         plan = CliAnythingHub().harness_plan("install", "gimp")
