@@ -16,6 +16,7 @@ from urllib.parse import parse_qs, urlparse
 from api_server.routes.health import health_payload
 from cbn_core.manifest import validate_manifest_path
 from cbn_execution.graph import WorkflowGraph
+from cbn_parsers.registry import ParserRegistry
 from cbn_protocol.envelope import bridge_args_from_selectors, select_bridge_value, validate_bridge_message
 from cbn_protocol.exports import export_all_protocols, export_protocol, list_protocol_exports
 from cbn_runtime.context import build_runtime
@@ -95,7 +96,7 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/registry/validate":
             path = Path(query.get("path", ["manifests"])[0])
-            result = validate_manifest_path(path)
+            result = validate_manifest_path(path, known_parser_refs=_known_parser_refs())
             self._send(200 if result["valid"] else 422, result)
             return
         runtime = build_runtime()
@@ -351,3 +352,7 @@ def serve(host: str = "127.0.0.1", port: int = 8787) -> None:
         print("CBN daemon API stopped")
     finally:
         server.server_close()
+
+
+def _known_parser_refs() -> set[str]:
+    return {item["parser_ref"] for item in ParserRegistry.builtins().list()}

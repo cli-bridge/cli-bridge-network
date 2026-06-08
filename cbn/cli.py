@@ -12,6 +12,7 @@ from cbn.paths import resolve_project_paths
 from cbn.version import __version__
 from cbn_core.manifest import validate_manifest_path
 from cbn_execution.graph import WorkflowGraph
+from cbn_parsers.registry import ParserRegistry
 from cbn_plugins.cli_anything import CliAnythingHub
 from cbn_plugins.manager import PluginManager
 from cbn_protocol.envelope import bridge_args_from_selectors, select_bridge_value, validate_bridge_message
@@ -53,7 +54,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "registry":
         if args.registry_command == "validate":
-            result = validate_manifest_path(Path(args.path))
+            result = validate_manifest_path(Path(args.path), known_parser_refs=_known_parser_refs())
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0 if result["valid"] else 7
         runtime = build_runtime()
@@ -397,3 +398,7 @@ def _read_json_arg(path: str) -> dict:
     if path == "-":
         return json.loads(sys.stdin.read())
     return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def _known_parser_refs() -> set[str]:
+    return {item["parser_ref"] for item in ParserRegistry.builtins().list()}

@@ -91,6 +91,44 @@ class MvpRuntimeTests(unittest.TestCase):
         self.assertFalse(payload["valid"])
         self.assertIn("unknown spec.policy.risk", payload["reports"][0]["errors"][0])
 
+    def test_cli_registry_validate_reports_unknown_parser_ref(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "bad-parser.json"
+            path.write_text(
+                json.dumps(_manifest_dict("bad.parser", parser_ref="missing.parser")),
+                encoding="utf-8",
+            )
+            proc = subprocess.run(
+                [sys.executable, "-m", "cbn", "registry", "validate", str(path)],
+                text=True,
+                encoding="utf-8",
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+        self.assertEqual(proc.returncode, 7)
+        payload = json.loads(proc.stdout)
+        self.assertFalse(payload["valid"])
+        self.assertIn("unknown spec.output.parserRef", payload["reports"][0]["errors"][0])
+
+    def test_cli_registry_validate_reports_duplicate_capability_ids(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "one.json").write_text(json.dumps(_manifest_dict("dupe.id")), encoding="utf-8")
+            (root / "two.json").write_text(json.dumps(_manifest_dict("dupe.id")), encoding="utf-8")
+            proc = subprocess.run(
+                [sys.executable, "-m", "cbn", "registry", "validate", str(root)],
+                text=True,
+                encoding="utf-8",
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+        self.assertEqual(proc.returncode, 7)
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["error_count"], 2)
+        self.assertTrue(
+            all("duplicate capability_id" in report["errors"][0] for report in payload["reports"])
+        )
+
     def test_cli_call_dry_run_outputs_command_without_real_execution(self):
         proc = subprocess.run(
             [sys.executable, "-m", "cbn", "call", "git.version", "--dry-run"],
@@ -281,6 +319,24 @@ def _danger_manifest() -> CapabilityManifest:
             },
         }
     )
+
+
+def _manifest_dict(capability_id: str, parser_ref: str = "raw.text") -> dict:
+    return {
+        "apiVersion": "bridge.dev/v1alpha1",
+        "kind": "ToolManifest",
+        "metadata": {"id": capability_id, "title": capability_id},
+        "spec": {
+            "transport": {
+                "kind": "stdio",
+                "command": "python",
+                "argsTemplate": ["--version"],
+                "cwdPolicy": "workspace",
+            },
+            "policy": {"risk": "read", "requiresConfirmation": False, "network": "deny"},
+            "output": {"parserRef": parser_ref, "verified": True},
+        },
+    }
 
 
 if __name__ == "__main__":

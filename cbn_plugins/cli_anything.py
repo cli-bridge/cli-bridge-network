@@ -17,6 +17,7 @@ from typing import Any
 
 from cbn.paths import resolve_project_paths
 from cbn_core.manifest import validate_manifest_dict
+from cbn_parsers.registry import ParserRegistry
 from cbn_plugins.manager import PluginCommand, PluginPlan
 
 
@@ -306,7 +307,11 @@ class CliAnythingHub:
             "written": str(written) if written else None,
             "manifest_path": str(manifest_path),
             "manifest": manifest,
-            "validation": validate_manifest_dict(manifest, source_path=manifest_path),
+            "validation": validate_manifest_dict(
+                manifest,
+                source_path=manifest_path,
+                known_parser_refs=_known_parser_refs(),
+            ),
             "status": self.harness_status(harness_name, from_market=from_market),
             "next_commands": [
                 f"python -m cbn plugin harness cli-anything status {harness_name} --from-market",
@@ -367,7 +372,11 @@ class CliAnythingHub:
             if write:
                 written = self.write_harness_manifest(harness_name, market_record=record)
                 path = written
-            validation = validate_manifest_dict(manifest, source_path=path)
+            validation = validate_manifest_dict(
+                manifest,
+                source_path=path,
+                known_parser_refs=_known_parser_refs(),
+            )
             manifests.append(
                 {
                     "ok": True,
@@ -572,3 +581,7 @@ def _max_risk(left: str, right: str) -> str:
     except ValueError as exc:
         raise ValueError(f"unknown risk level for CLI-Anything policy inference: {exc}") from exc
     return left if left_rank >= right_rank else right
+
+
+def _known_parser_refs() -> set[str]:
+    return {item["parser_ref"] for item in ParserRegistry.builtins().list()}

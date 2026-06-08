@@ -196,11 +196,15 @@ class ManifestRegistry:
         return manifest
 
 
-def validate_manifest_path(path: Path) -> dict[str, Any]:
+def validate_manifest_path(
+    path: Path,
+    known_parser_refs: set[str] | None = None,
+) -> dict[str, Any]:
     if path.is_dir():
-        reports = [validate_manifest_file(item) for item in sorted(path.glob("*.json"))]
+        reports = [validate_manifest_file(item, known_parser_refs=known_parser_refs) for item in sorted(path.glob("*.json"))]
+        _mark_duplicate_capability_ids(reports)
     else:
-        reports = [validate_manifest_file(path)]
+        reports = [validate_manifest_file(path, known_parser_refs=known_parser_refs)]
     error_count = sum(len(report["errors"]) for report in reports)
     warning_count = sum(len(report["warnings"]) for report in reports)
     return {
@@ -213,17 +217,24 @@ def validate_manifest_path(path: Path) -> dict[str, Any]:
     }
 
 
-def validate_manifest_file(path: Path) -> dict[str, Any]:
+def validate_manifest_file(
+    path: Path,
+    known_parser_refs: set[str] | None = None,
+) -> dict[str, Any]:
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except OSError as exc:
         return _manifest_report(path, None, [f"cannot read manifest: {exc}"], [])
     except json.JSONDecodeError as exc:
         return _manifest_report(path, None, [f"invalid JSON: {exc.msg} at line {exc.lineno} column {exc.colno}"], [])
-    return validate_manifest_dict(raw, source_path=path)
+    return validate_manifest_dict(raw, source_path=path, known_parser_refs=known_parser_refs)
 
 
-def validate_manifest_dict(raw: dict[str, Any], source_path: Path | None = None) -> dict[str, Any]:
+def validate_manifest_dict(
+    raw: dict[str, Any],
+    source_path: Path | None = None,
+    known_parser_refs: set[str] | None = None,
+) -> dict[str, Any]:
     errors: list[str] = []
     warnings: list[str] = []
     capability_id = None
@@ -255,7 +266,7 @@ def validate_manifest_dict(raw: dict[str, Any], source_path: Path | None = None)
         spec = {}
     _validate_transport(spec.get("transport"), errors, warnings)
     _validate_policy(spec.get("policy"), errors)
-    _validate_output(spec.get("output", {}), errors, warnings)
+    _validate_output(spec.get("output", {}), errors, warnings, known_parser_refs)
 
     if not errors:
         try:
@@ -303,19 +314,40 @@ def _validate_policy(raw: Any, errors: list[str]) -> None:
         errors.append("external-network risk must use network=requires-confirmation")
 
 
-def _validate_output(raw: Any, errors: list[str], warnings: list[str]) -> None:
+def _validate_output(
+    raw: Any,
+    errors: list[str],
+    warnings: list[str],
+    known_parser_refs: set[str] | None,
+) -> None:
     if not isinstance(raw, dict):
         errors.append("spec.output must be an object when present")
         return
     parser_ref = raw.get("parserRef")
     if parser_ref is not None and not isinstance(parser_ref, str):
         errors.append("spec.output.parserRef must be a string when present")
+    if isinstance(parser_ref, str) and known_parser_refs is not None and parser_ref not in known_parser_refs:
+        errors.append(f"unknown spec.output.parserRef: {parser_ref}")
     if parser_ref is None:
         warnings.append("spec.output.parserRef is missing; raw.text parser will be used")
     if "verified" in raw and not isinstance(raw.get("verified"), bool):
         errors.append("spec.output.verified must be a boolean when present")
     if raw.get("verified") is False:
         warnings.append("spec.output.verified=false; parser/output contract is not verified")
+
+
+def _mark_duplicate_capability_ids(reports: list[dict[str, Any]]) -> None:
+    by_id: dict[str, list[dict[str, Any]]] = {}
+    for report in reports:
+        capability_id = report.get("capability_id")
+        if isinstance(capability_id, str) and capability_id:
+            by_id.setdefault(capability_id, []).append(report)
+    for capability_id, matches in by_id.items():
+        if len(matches) < 2:
+            continue
+        for report in matches:
+            report["errors"].append(f"duplicate capability_id in validation set: {capability_id}")
+            report["valid"] = False
 
 
 def _manifest_report(
