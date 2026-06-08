@@ -185,6 +185,14 @@ if (!html.includes('data-api-path="/protocols/check?target=all&amp;capability_id
   throw new Error("Dashboard does not wire protocol compatibility checks to the daemon API.");
 }
 
+if (!html.includes("python -m cbn mcp serve --stdio")) {
+  throw new Error("Dashboard does not expose the MCP stdio server command.");
+}
+
+if (!html.includes("python -m cbn mcp smoke --capability-id git.version")) {
+  throw new Error("Dashboard does not expose the MCP stdio smoke command.");
+}
+
 if (!html.includes("python -m cbn message validate")) {
   throw new Error("Dashboard does not expose the BridgeMessage validate command.");
 }

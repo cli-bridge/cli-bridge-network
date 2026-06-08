@@ -315,7 +315,8 @@
           <button data-command="python -m cbn message validate &lt;message.json&gt;">Validate Message</button>
           <button data-command="python -m cbn message select &lt;message.json&gt; payload.data.stdout">Select Message Field</button>
           <button data-command="python -m cbn message args &lt;message.json&gt; payload.data.stdout artifacts[0].artifact_id">Message Args</button>
-          <button data-command="cbn mcp serve --stdio">MCP stdio</button>
+          <button data-command="python -m cbn mcp serve --stdio">MCP stdio</button>
+          <button data-command="python -m cbn mcp smoke --capability-id git.version">MCP Smoke</button>
           <button data-command="cbn mcp serve --http --host 127.0.0.1">MCP HTTP</button>
           <button data-command="cbn a2a serve">A2A Serve</button>
           <button data-command="cbn acp bridge">ACP Bridge</button>

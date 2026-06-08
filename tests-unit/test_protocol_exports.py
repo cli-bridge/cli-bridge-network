@@ -55,11 +55,12 @@ class ProtocolExportTests(unittest.TestCase):
         self.assertGreaterEqual(mcp["status_counts"]["present"], 3)
         self.assertTrue(
             any(
-                item["requirement"] == "MCP initialize/tools/list/tools/call wire lifecycle"
-                and item["status"] == "missing"
+                item["requirement"] == "MCP stdio initialize/tools/list/tools/call smoke"
+                and item["status"] == "partial"
                 for item in mcp["checks"]
             )
         )
+        self.assertTrue(any(item["requirement"] == "MCP full conformance" for item in mcp["checks"]))
         self.assertIn("modelcontextprotocol.io", mcp["source"]["url"])
 
     def test_cli_protocol_export(self):

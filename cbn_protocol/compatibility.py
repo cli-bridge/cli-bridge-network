@@ -16,7 +16,7 @@ PROTOCOL_SOURCES: dict[str, dict[str, str]] = {
     "mcp": {
         "name": "Model Context Protocol Schema Reference",
         "url": "https://modelcontextprotocol.io/specification/2025-11-25/schema",
-        "notes": "MCP is JSON-RPC based and exposes lifecycle methods plus tools/list and tools/call.",
+        "notes": "MCP is JSON-RPC based and exposes initialize plus tools/list and tools/call.",
     },
     "a2a": {
         "name": "Agent2Agent Core Protocol Specification",
@@ -99,9 +99,13 @@ def _check_mcp(descriptor: dict[str, Any]) -> list[dict[str, str]]:
             isinstance(cbn, dict) and cbn.get("output", {}).get("message_kind") == "BridgeMessage",
             "tool _meta.cbn carries the BridgeMessage output contract",
         ),
+        _partial(
+            "MCP stdio initialize/tools/list/tools/call smoke",
+            "python -m cbn mcp smoke exercises initialize, notifications/initialized, tools/list, and tools/call over newline-delimited stdio JSON-RPC",
+        ),
         _gap(
-            "MCP initialize/tools/list/tools/call wire lifecycle",
-            "no MCP JSON-RPC server is implemented in this MVP; descriptor export is not a wire endpoint",
+            "MCP full conformance",
+            "MCP stdio is an MVP facade; official SDK/conformance coverage, pagination, cancellation, progress, and HTTP transport are not implemented yet",
         ),
     ]
 
@@ -188,6 +192,14 @@ def _gap(requirement: str, evidence: str) -> dict[str, str]:
     }
 
 
+def _partial(requirement: str, evidence: str) -> dict[str, str]:
+    return {
+        "requirement": requirement,
+        "status": "partial",
+        "evidence": evidence,
+    }
+
+
 def _status_counts(checks: list[dict[str, str]]) -> dict[str, int]:
     counts = {"present": 0, "partial": 0, "missing": 0}
     for item in checks:
@@ -199,8 +211,8 @@ def _status_counts(checks: list[dict[str, str]]) -> dict[str, int]:
 def _next_steps(protocol: str) -> list[str]:
     if protocol == "mcp":
         return [
-            "Implement an MCP stdio JSON-RPC server with initialize, tools/list, and tools/call.",
-            "Map tools/call arguments into CapabilityExecutor.call and return BridgeMessage content safely.",
+            "Run MCP smoke for each verified capability that will be exposed to clients.",
+            "Add official SDK/conformance coverage before setting wire_compatible=true.",
         ]
     if protocol == "a2a":
         return [

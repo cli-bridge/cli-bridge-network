@@ -68,6 +68,15 @@ def build_parser() -> argparse.ArgumentParser:
     protocol_check.add_argument("target", choices=["mcp", "a2a", "acp", "all"])
     protocol_check.add_argument("--capability-id")
 
+    mcp_parser = subcommands.add_parser("mcp", help="Run or test the MCP stdio facade.")
+    mcp_subcommands = mcp_parser.add_subparsers(dest="mcp_command")
+    mcp_serve = mcp_subcommands.add_parser("serve", help="Serve MCP over stdio.")
+    mcp_serve.add_argument("--stdio", action="store_true", help="Use newline-delimited stdio JSON-RPC.")
+    mcp_smoke = mcp_subcommands.add_parser("smoke", help="Run a local MCP stdio smoke test.")
+    mcp_smoke.add_argument("--capability-id", default="git.version")
+    mcp_smoke.add_argument("--extra-arg", action="append", default=[])
+    mcp_smoke.add_argument("--dry-run", action="store_true")
+
     message_parser = subcommands.add_parser("message", help="Validate and inspect BridgeMessage envelopes.")
     message_subcommands = message_parser.add_subparsers(dest="message_command")
     message_validate = message_subcommands.add_parser("validate", help="Validate one BridgeMessage JSON file.")
