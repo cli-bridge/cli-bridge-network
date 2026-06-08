@@ -17,6 +17,7 @@ def cbn_descriptor(manifest: CapabilityManifest) -> dict[str, Any]:
             "command": manifest.transport.command,
             "args_template": list(manifest.transport.args_template),
             "cwd_policy": manifest.transport.cwd_policy,
+            "timeout_seconds": manifest.transport.timeout_seconds,
         },
         "policy": {
             "risk": manifest.policy.risk,

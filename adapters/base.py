@@ -12,6 +12,7 @@ class ToolCall:
     argv: tuple[str, ...]
     cwd: str | None = None
     dry_run: bool = False
+    timeout_seconds: int = 30
 
 
 @dataclass(frozen=True)
@@ -27,4 +28,3 @@ class ToolResult:
 class ToolAdapter(Protocol):
     def call(self, request: ToolCall) -> ToolResult:
         ...
-

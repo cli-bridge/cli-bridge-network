@@ -26,6 +26,7 @@ class ProtocolExportTests(unittest.TestCase):
         self.assertEqual(cbn["output"]["parser_ref"], "git.status.short")
         self.assertEqual(cbn["output"]["message_kind"], "BridgeMessage")
         self.assertEqual(cbn["policy"]["network"], "deny")
+        self.assertEqual(cbn["transport"]["timeout_seconds"], 30)
 
     def test_a2a_and_acp_exports_include_git_status(self):
         payload = export_all_protocols(self.registry, capability_id="git.status")

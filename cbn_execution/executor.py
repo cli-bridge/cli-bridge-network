@@ -198,6 +198,7 @@ class CapabilityExecutor:
             argv=manifest.transport.argv(extra_args),
             cwd=str(cwd) if cwd else None,
             dry_run=dry_run,
+            timeout_seconds=manifest.transport.timeout_seconds,
         )
 
     def _dispatch(self, manifest: CapabilityManifest, request: ToolCall) -> ToolResult:

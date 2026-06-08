@@ -322,6 +322,7 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(manifest["metadata"]["labels"]["plugin"], "cli-anything")
         self.assertEqual(manifest["spec"]["transport"]["kind"], "stdio")
         self.assertEqual(manifest["spec"]["transport"]["argsTemplate"], ["launch", "gimp"])
+        self.assertEqual(manifest["spec"]["transport"]["timeoutSeconds"], 600)
         self.assertFalse(manifest["spec"]["output"]["verified"])
 
     def test_manifest_for_harness_infers_write_workspace_policy(self):

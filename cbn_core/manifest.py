@@ -21,6 +21,7 @@ class TransportSpec:
     command: str
     args_template: tuple[str, ...]
     cwd_policy: str = "workspace"
+    timeout_seconds: int = 30
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "TransportSpec":
@@ -29,6 +30,7 @@ class TransportSpec:
             command=raw["command"],
             args_template=tuple(raw.get("argsTemplate", [])),
             cwd_policy=raw.get("cwdPolicy", "workspace"),
+            timeout_seconds=_parse_timeout_seconds(raw.get("timeoutSeconds", 30)),
         )
 
     def argv(self, extra_args: tuple[str, ...] = ()) -> tuple[str, ...]:
@@ -104,6 +106,7 @@ class CapabilityManifest:
             "capability_id": self.capability_id,
             "title": self.title,
             "transport": self.transport.kind,
+            "timeout_seconds": self.transport.timeout_seconds,
             "risk": self.policy.risk,
             "requires_confirmation": self.policy.requires_confirmation,
             "parser_ref": self.output.parser_ref,
@@ -296,6 +299,15 @@ def _validate_transport(raw: Any, errors: list[str], warnings: list[str]) -> Non
     cwd_policy = raw.get("cwdPolicy", "workspace")
     if not isinstance(cwd_policy, str) or not cwd_policy:
         errors.append("spec.transport.cwdPolicy must be a string when present")
+    timeout = raw.get("timeoutSeconds", 30)
+    if not isinstance(timeout, int) or isinstance(timeout, bool) or timeout <= 0:
+        errors.append("spec.transport.timeoutSeconds must be a positive integer when present")
+
+
+def _parse_timeout_seconds(value: Any) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        raise ValueError("spec.transport.timeoutSeconds must be a positive integer")
+    return value
 
 
 def _validate_policy(raw: Any, errors: list[str]) -> None:

@@ -249,6 +249,7 @@ class CliAnythingHub:
                     "command": self.entrypoint,
                     "argsTemplate": ["launch", market_name],
                     "cwdPolicy": "workspace",
+                    "timeoutSeconds": 600,
                 },
                 "policy": {
                     "risk": policy["risk"],

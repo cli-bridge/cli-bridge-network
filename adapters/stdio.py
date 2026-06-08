@@ -18,16 +18,39 @@ class StdioAdapter:
                 reason="dry-run",
             )
 
-        proc = subprocess.run(
-            list(request.argv),
-            cwd=request.cwd,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=30,
-        )
+        try:
+            proc = subprocess.run(
+                list(request.argv),
+                cwd=request.cwd,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=request.timeout_seconds,
+            )
+        except subprocess.TimeoutExpired as exc:
+            stdout = _timeout_text(exc.stdout)
+            stderr = _timeout_text(exc.stderr)
+            if stderr:
+                stderr = f"{stderr}\n"
+            stderr = f"{stderr}command timed out after {request.timeout_seconds} seconds"
+            return ToolResult(
+                capability_id=request.capability_id,
+                allowed=True,
+                exit_code=124,
+                stdout=stdout,
+                stderr=stderr,
+                reason="timeout",
+            )
+        except OSError as exc:
+            return ToolResult(
+                capability_id=request.capability_id,
+                allowed=True,
+                exit_code=127,
+                stderr=f"{request.argv[0]} failed to start: {exc}",
+                reason="spawn-failed",
+            )
         return ToolResult(
             capability_id=request.capability_id,
             allowed=True,
@@ -36,3 +59,10 @@ class StdioAdapter:
             stderr=proc.stderr,
         )
 
+
+def _timeout_text(value: str | bytes | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value

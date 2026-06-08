@@ -110,6 +110,24 @@ class MvpRuntimeTests(unittest.TestCase):
         self.assertFalse(payload["valid"])
         self.assertIn("unknown spec.output.parserRef", payload["reports"][0]["errors"][0])
 
+    def test_cli_registry_validate_reports_bad_timeout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest = _manifest_dict("bad.timeout")
+            manifest["spec"]["transport"]["timeoutSeconds"] = 0
+            path = Path(tmp) / "bad-timeout.json"
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            proc = subprocess.run(
+                [sys.executable, "-m", "cbn", "registry", "validate", str(path)],
+                text=True,
+                encoding="utf-8",
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+        self.assertEqual(proc.returncode, 7)
+        payload = json.loads(proc.stdout)
+        self.assertFalse(payload["valid"])
+        self.assertIn("timeoutSeconds", payload["reports"][0]["errors"][0])
+
     def test_cli_registry_validate_reports_duplicate_capability_ids(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -265,6 +283,53 @@ class MvpRuntimeTests(unittest.TestCase):
             self.assertTrue(result["artifacts"])
             events = audit.tail(limit=5)
             self.assertTrue(any(event["type"] == "tool_call.completed" for event in events))
+
+    def test_executor_returns_structured_result_for_stdio_timeout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            registry = ManifestRegistry()
+            registry.register(
+                CapabilityManifest.from_dict(
+                    {
+                        "apiVersion": "bridge.dev/v1alpha1",
+                        "kind": "ToolManifest",
+                        "metadata": {"id": "test.timeout", "title": "Timeout"},
+                        "spec": {
+                            "transport": {
+                                "kind": "stdio",
+                                "command": sys.executable,
+                                "argsTemplate": [
+                                    "-c",
+                                    "import time; print('before sleep'); time.sleep(5)",
+                                ],
+                                "cwdPolicy": "workspace",
+                                "timeoutSeconds": 1,
+                            },
+                            "policy": {
+                                "risk": "read",
+                                "requiresConfirmation": False,
+                                "network": "deny",
+                            },
+                            "output": {"parserRef": "raw.text", "verified": False},
+                        },
+                    }
+                )
+            )
+            audit = AuditLog(Path(tmp) / "audit.jsonl")
+            events = EventBus(Path(tmp) / "events.jsonl")
+            executor = CapabilityExecutor(
+                registry,
+                audit,
+                event_bus=events,
+                artifact_store=ArtifactStore(Path(tmp) / "artifacts"),
+            )
+            result = executor.call("test.timeout")
+            self.assertTrue(result["allowed"])
+            self.assertEqual(result["exit_code"], 124)
+            self.assertEqual(result["reason"], "timeout")
+            self.assertIn("timed out", result["stderr"])
+            self.assertTrue(result["artifacts"])
+            self.assertTrue(any(event["type"] == "tool_call.completed" for event in audit.tail(limit=10)))
+            self.assertTrue(any(event["type"] == "tool_call.completed" for event in events.tail(limit=10)))
 
     def test_executor_publishes_events_for_dry_run(self):
         with tempfile.TemporaryDirectory() as tmp:
