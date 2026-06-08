@@ -13,6 +13,7 @@ class DaemonApiTests(unittest.TestCase):
     def test_route_summary_exposes_cli_anything_evaluation(self):
         routes = {(route["method"], route["path"]) for route in ROUTE_SUMMARY}
         self.assertIn(("POST", "/plugins/cli-anything/evaluate-harness"), routes)
+        self.assertIn(("POST", "/plugins/cli-anything/candidates"), routes)
         self.assertIn(("GET", "/protocols/check"), routes)
         self.assertIn(("GET", "/protocols/workflows"), routes)
         self.assertIn(("GET", "/.well-known/agent-card.json"), routes)

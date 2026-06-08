@@ -353,6 +353,94 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertFalse(gate["ok"])
         self.assertIn("harness is not installed", gate["blockers"])
 
+    def test_candidate_harnesses_ranks_low_dependency_market_records(self):
+        class FakeHub(CliAnythingHub):
+            def search_market(self, query: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "search", query, "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[SAMPLE_MARKET_RECORD, SAMPLE_MERMAID_RECORD],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result = FakeHub(root=Path(tmp)).candidate_harnesses(query="image", limit=10)
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["selected_count"], 2)
+            self.assertEqual(result["install_candidate_count"], 1)
+            self.assertEqual(result["blocked_count"], 1)
+            first = result["candidates"][0]
+            self.assertEqual(first["harness_name"], "mermaid")
+            self.assertTrue(first["install_candidate"])
+            self.assertEqual(first["rank"], 1)
+            blocked = result["candidates"][1]
+            self.assertEqual(blocked["harness_name"], "gimp")
+            self.assertFalse(blocked["install_candidate"])
+            self.assertIn("declared requirements need external app, account, token, or service", blocked["blockers"])
+            self.assertEqual(blocked["recommended_next_action"], "resolve_blockers")
+
+    def test_candidate_harnesses_reports_market_failures_without_crashing(self):
+        hub = CliAnythingHub(entrypoint="cbn-cli-hub-that-does-not-exist")
+        result = hub.candidate_harnesses(query="image")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"], "CLI-Anything market command failed")
+        self.assertEqual(result["candidates"], [])
+
+    def test_candidate_harnesses_marks_capability_collisions(self):
+        class FakeHub(CliAnythingHub):
+            def list_market(self) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "list", "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[
+                        {"name": "gimp", "display_name": "GIMP", "_source": "harness"},
+                        {"name": "GIMP!", "display_name": "GIMP duplicate", "_source": "public"},
+                    ],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result = FakeHub(root=Path(tmp)).candidate_harnesses()
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["install_candidate_count"], 0)
+            self.assertEqual(result["blocked_count"], 2)
+            self.assertTrue(
+                all(
+                    "duplicate capability_id generated from market records" in item["blockers"]
+                    for item in result["candidates"]
+                )
+            )
+
+    def test_candidate_harnesses_blocks_generic_declared_requirements(self):
+        class FakeHub(CliAnythingHub):
+            def list_market(self) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "list", "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[
+                        {
+                            "name": "krita",
+                            "display_name": "Krita",
+                            "description": "Digital painting and raster image editing",
+                            "requires": "krita (krita.org)",
+                            "entry_point": "cli-anything-krita",
+                        }
+                    ],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result = FakeHub(root=Path(tmp)).candidate_harnesses()
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["install_candidate_count"], 0)
+            candidate = result["candidates"][0]
+            self.assertFalse(candidate["install_candidate"])
+            self.assertEqual(candidate["requirements"]["signals"], ["declared requirement"])
+            self.assertIn("declared requirements need external app, account, token, or service", candidate["blockers"])
+
     def test_sync_market_previews_multiple_harness_manifests(self):
         class FakeHub(CliAnythingHub):
             def search_market(self, query: str) -> CliHubCommandResult:
@@ -684,6 +772,31 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(payload["harness_name"], "mermaid")
         self.assertIn("install_candidate", payload)
         self.assertIn("recommended_next_action", payload)
+
+    def test_cli_candidates_handles_missing_cli_hub_without_crashing(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "plugin",
+                "candidates",
+                "cli-anything",
+                "--query",
+                "image",
+                "--limit",
+                "5",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertIn(proc.returncode, {0, 6})
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["plugin_id"], "cli-anything")
+        self.assertIn("candidates", payload)
+        self.assertIn("install_candidate_count", payload)
 
     def test_cli_sync_market_handles_missing_cli_hub_without_crashing(self):
         proc = subprocess.run(

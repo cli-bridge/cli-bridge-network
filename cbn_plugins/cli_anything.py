@@ -535,6 +535,152 @@ class CliAnythingHub:
             ],
         }
 
+    def candidate_harnesses(
+        self,
+        query: str | None = None,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        result = self.search_market(query) if query else self.list_market()
+        records = _market_records_from_result(result.parsed_json)
+        if result.exit_code != 0:
+            return {
+                "ok": False,
+                "plugin_id": PLUGIN_ID,
+                "query": query,
+                "limit": max(0, min(limit, 500)),
+                "error": "CLI-Anything market command failed",
+                "market": result.as_dict(),
+                "selected_count": 0,
+                "install_candidate_count": 0,
+                "blocked_count": 0,
+                "candidates": [],
+            }
+        if records is None:
+            return {
+                "ok": False,
+                "plugin_id": PLUGIN_ID,
+                "query": query,
+                "limit": max(0, min(limit, 500)),
+                "error": "CLI-Anything market command did not return a supported JSON list shape",
+                "market": result.as_dict(),
+                "selected_count": 0,
+                "install_candidate_count": 0,
+                "blocked_count": 0,
+                "candidates": [],
+            }
+        bounded_limit = max(0, min(limit, 500))
+        selected = records[:bounded_limit]
+        candidates = [
+            self._candidate_from_market_record(record, market_index=index)
+            for index, record in enumerate(selected)
+        ]
+        _mark_candidate_collisions(candidates)
+        candidates.sort(
+            key=lambda item: (
+                not bool(item.get("install_candidate")),
+                len(item.get("blockers", [])),
+                item.get("harness_name") or "",
+                item.get("market_index", 0),
+            )
+        )
+        for rank, item in enumerate(candidates, start=1):
+            item["rank"] = rank
+        install_candidate_count = sum(1 for item in candidates if item.get("install_candidate"))
+        blocked_count = sum(1 for item in candidates if not item.get("install_candidate"))
+        return {
+            "ok": True,
+            "plugin_id": PLUGIN_ID,
+            "query": query,
+            "limit": bounded_limit,
+            "market_count": len(records),
+            "selected_count": len(selected),
+            "install_candidate_count": install_candidate_count,
+            "blocked_count": blocked_count,
+            "market": result.as_dict(),
+            "candidates": candidates,
+            "next_commands": [
+                "python -m cbn plugin candidates cli-anything --query <query> --limit 20",
+                "python -m cbn plugin evaluate-harness cli-anything <harness>",
+                "python -m cbn plugin adapt-harness cli-anything <harness> --from-market --write",
+                "python -m cbn plugin harness cli-anything install <harness> --yes",
+            ],
+        }
+
+    def _candidate_from_market_record(
+        self,
+        record: dict[str, Any],
+        market_index: int,
+    ) -> dict[str, Any]:
+        harness_name = str(record.get("name") or record.get("display_name") or "").strip()
+        if not harness_name:
+            return {
+                "ok": False,
+                "market_index": market_index,
+                "harness_name": None,
+                "capability_id": None,
+                "install_candidate": False,
+                "recommended_next_action": "resolve_blockers",
+                "blockers": ["market record is missing name/display_name"],
+                "market_record": record,
+            }
+        try:
+            manifest = self.manifest_for_harness(harness_name, market_record=record)
+            capability_id = manifest["metadata"]["id"]
+            manifest_path = self.paths.manifests / f"{capability_id}.json"
+            validation = validate_manifest_dict(
+                manifest,
+                source_path=manifest_path,
+                known_parser_refs=_known_parser_refs(),
+            )
+        except (TypeError, ValueError) as exc:
+            manifest = None
+            capability_id = None
+            manifest_path = None
+            validation = {"valid": False, "errors": [str(exc)], "warnings": []}
+        requires = _declared_requires(record, {})
+        requirements = _requirement_assessment(requires)
+        platform = _platform_assessment(record, requires)
+        policy = manifest["spec"]["policy"] if manifest else infer_market_policy(record)
+        low_policy_risk = policy["risk"] in {"read", "write-workspace"} and not _policy_requires_confirmation(policy)
+        gates = {
+            "manifest_valid": bool(validation["valid"]),
+            "low_policy_risk": low_policy_risk,
+            "external_dependency_free": bool(requirements["external_dependency_free"]),
+            "platform_compatible": bool(platform["compatible"]),
+        }
+        blockers = []
+        if not gates["manifest_valid"]:
+            blockers.append("generated manifest is invalid")
+        if not gates["low_policy_risk"]:
+            blockers.append("policy requires elevated confirmation")
+        if not gates["external_dependency_free"]:
+            blockers.append("declared requirements need external app, account, token, or service")
+        if not gates["platform_compatible"]:
+            blockers.append("declared platform does not match this host")
+        install_candidate = len(blockers) == 0
+        return {
+            "ok": True,
+            "market_index": market_index,
+            "harness_name": harness_name,
+            "display_name": str(record.get("display_name") or harness_name),
+            "capability_id": capability_id,
+            "manifest_path": str(manifest_path) if manifest_path else None,
+            "install_candidate": install_candidate,
+            "recommended_next_action": "write_manifest" if install_candidate else "resolve_blockers",
+            "blockers": blockers,
+            "gates": gates,
+            "requirements": requirements,
+            "platform": platform,
+            "policy": policy,
+            "validation": validation,
+            "market_record": record,
+            "next_commands": [
+                f"python -m cbn plugin evaluate-harness cli-anything {harness_name}",
+                f"python -m cbn plugin adapt-harness cli-anything {harness_name} --from-market --write",
+                f"python -m cbn plugin harness cli-anything install {harness_name} --yes",
+            ],
+        }
+
     def sync_market(
         self,
         query: str | None = None,
@@ -802,6 +948,30 @@ def _mark_capability_collisions(manifests: list[dict[str, Any]]) -> None:
             }
 
 
+def _mark_candidate_collisions(candidates: list[dict[str, Any]]) -> None:
+    by_id: dict[str, list[dict[str, Any]]] = {}
+    for item in candidates:
+        capability_id = item.get("capability_id")
+        if isinstance(capability_id, str) and capability_id:
+            by_id.setdefault(capability_id, []).append(item)
+    for capability_id, matches in by_id.items():
+        if len(matches) < 2:
+            continue
+        sources = [_market_record_identity(item) for item in matches]
+        for item in matches:
+            item["install_candidate"] = False
+            item["recommended_next_action"] = "resolve_blockers"
+            item.setdefault("blockers", []).append("duplicate capability_id generated from market records")
+            item["collision"] = {
+                "capability_id": capability_id,
+                "market_records": sources,
+            }
+
+
+def _policy_requires_confirmation(policy: dict[str, Any]) -> bool:
+    return bool(policy.get("requiresConfirmation", policy.get("requires_confirmation", False)))
+
+
 def _market_record_identity(item: dict[str, Any]) -> dict[str, str | None]:
     record = item.get("market_record")
     if not isinstance(record, dict):
@@ -850,9 +1020,11 @@ def _requirement_assessment(requires: str | None) -> dict[str, Any]:
         "login",
     )
     signals = [marker.strip() for marker in blocking_markers if marker in text]
+    if not signals:
+        signals = ["declared requirement"]
     return {
         "declared": requires,
-        "external_dependency_free": len(signals) == 0,
+        "external_dependency_free": False,
         "signals": signals,
     }
 

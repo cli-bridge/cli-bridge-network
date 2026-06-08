@@ -238,6 +238,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Evaluate without requiring market metadata.",
     )
 
+    plugin_candidates = plugin_subcommands.add_parser(
+        "candidates",
+        help="Rank CLI-Anything market harnesses as install candidates without installing them.",
+    )
+    plugin_candidates.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
+    plugin_candidates.add_argument("--query", help="Optional CLI-Hub search query; omit to inspect list output.")
+    plugin_candidates.add_argument("--limit", type=int, default=50, help="Maximum market records to rank.")
+
     plugin_sync = plugin_subcommands.add_parser(
         "sync-market",
         help="Preview or write CBN manifests for CLI-Anything market records.",
