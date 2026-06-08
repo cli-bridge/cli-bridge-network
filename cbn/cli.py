@@ -72,6 +72,27 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(runtime.audit_log.tail(limit=args.limit), ensure_ascii=False, indent=2))
             return 0
 
+    if args.command == "event":
+        runtime = build_runtime()
+        if args.event_command == "tail":
+            print(json.dumps(runtime.event_bus.tail(limit=args.limit), ensure_ascii=False, indent=2))
+            return 0
+
+    if args.command == "artifact":
+        runtime = build_runtime()
+        if args.artifact_command == "list":
+            print(json.dumps(runtime.artifact_store.list(limit=args.limit), ensure_ascii=False, indent=2))
+            return 0
+        if args.artifact_command == "inspect":
+            print(
+                json.dumps(
+                    runtime.artifact_store.inspect(args.artifact_id),
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 0
+
     if args.command == "daemon":
         if args.daemon_command == "routes":
             print(json.dumps(ROUTE_SUMMARY, ensure_ascii=False, indent=2))

@@ -6,7 +6,9 @@ import unittest
 from pathlib import Path
 
 from cbn_audit.log import AuditLog
+from cbn_artifacts.store import ArtifactStore
 from cbn_core.manifest import ManifestRegistry
+from cbn_events.bus import EventBus
 from cbn_execution.executor import CapabilityExecutor
 from cbn_policy.engine import PolicyEngine
 from cbn_runtime.context import build_runtime
@@ -78,11 +80,64 @@ class MvpRuntimeTests(unittest.TestCase):
             registry = ManifestRegistry()
             registry.load_dir(Path("manifests"))
             audit = AuditLog(Path(tmp) / "audit.jsonl")
-            executor = CapabilityExecutor(registry, audit)
+            executor = CapabilityExecutor(
+                registry,
+                audit,
+                event_bus=EventBus(Path(tmp) / "events.jsonl"),
+                artifact_store=ArtifactStore(Path(tmp) / "artifacts"),
+            )
             result = executor.call("git.version", dry_run=True)
             self.assertTrue(result["allowed"])
+            self.assertTrue(result["artifacts"])
             events = audit.tail(limit=5)
             self.assertTrue(any(event["type"] == "tool_call.completed" for event in events))
+
+    def test_executor_publishes_events_for_dry_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            registry = ManifestRegistry()
+            registry.load_dir(Path("manifests"))
+            event_bus = EventBus(Path(tmp) / "events.jsonl")
+            executor = CapabilityExecutor(
+                registry,
+                AuditLog(Path(tmp) / "audit.jsonl"),
+                event_bus=event_bus,
+                artifact_store=ArtifactStore(Path(tmp) / "artifacts"),
+            )
+            result = executor.call("git.version", dry_run=True)
+            event_tail = event_bus.tail(limit=10)
+            event_types = [event["type"] for event in event_tail]
+            self.assertIn("tool_call.started", event_types)
+            self.assertIn("artifact.created", event_types)
+            self.assertIn("tool_call.completed", event_types)
+            self.assertEqual(event_tail[-1]["correlation_id"], result["call_id"])
+
+    def test_cli_artifact_and_event_commands_are_available(self):
+        subprocess.run(
+            [sys.executable, "-m", "cbn", "call", "git.version", "--dry-run"],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        events = subprocess.run(
+            [sys.executable, "-m", "cbn", "event", "tail", "--limit", "5"],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        artifacts = subprocess.run(
+            [sys.executable, "-m", "cbn", "artifact", "list", "--limit", "5"],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        self.assertTrue(json.loads(events.stdout))
+        self.assertTrue(json.loads(artifacts.stdout))
 
     def test_daemon_routes_are_listed(self):
         proc = subprocess.run(
@@ -95,8 +150,9 @@ class MvpRuntimeTests(unittest.TestCase):
         )
         payload = json.loads(proc.stdout)
         self.assertTrue(any(route["path"] == "/plugins/plan" for route in payload))
+        self.assertTrue(any(route["path"] == "/events" for route in payload))
+        self.assertTrue(any(route["path"] == "/artifacts" for route in payload))
 
 
 if __name__ == "__main__":
     unittest.main()
-

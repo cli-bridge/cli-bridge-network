@@ -31,6 +31,18 @@ def build_parser() -> argparse.ArgumentParser:
     audit_tail = audit_subcommands.add_parser("tail", help="Print recent audit events.")
     audit_tail.add_argument("--limit", type=int, default=20)
 
+    event_parser = subcommands.add_parser("event", help="Inspect the local runtime event bus.")
+    event_subcommands = event_parser.add_subparsers(dest="event_command")
+    event_tail = event_subcommands.add_parser("tail", help="Print recent runtime events.")
+    event_tail.add_argument("--limit", type=int, default=20)
+
+    artifact_parser = subcommands.add_parser("artifact", help="Inspect local runtime artifacts.")
+    artifact_subcommands = artifact_parser.add_subparsers(dest="artifact_command")
+    artifact_list = artifact_subcommands.add_parser("list", help="List recent artifacts.")
+    artifact_list.add_argument("--limit", type=int, default=20)
+    artifact_inspect = artifact_subcommands.add_parser("inspect", help="Inspect one artifact.")
+    artifact_inspect.add_argument("artifact_id")
+
     daemon_parser = subcommands.add_parser("daemon", help="Run or inspect the local daemon API.")
     daemon_subcommands = daemon_parser.add_subparsers(dest="daemon_command")
     daemon_subcommands.add_parser("routes", help="List MVP daemon routes.")

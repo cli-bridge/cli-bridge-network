@@ -15,6 +15,7 @@ const required = [
   "Update",
   "Approval Queue",
   "Artifact Bus",
+  "Tail Events",
   "Workflow DAG",
   "MCP",
   "A2A",
@@ -36,6 +37,14 @@ if (!html.includes("python -m cbn plugin market cli-anything list")) {
 
 if (!html.includes("python -m cbn plugin import-harness cli-anything gimp")) {
   throw new Error("Dashboard does not expose the CLI-Anything harness import command.");
+}
+
+if (!html.includes("python -m cbn event tail")) {
+  throw new Error("Dashboard does not expose the event bus tail command.");
+}
+
+if (!html.includes("python -m cbn artifact list")) {
+  throw new Error("Dashboard does not expose the runtime artifact list command.");
 }
 
 if (!js.includes("stageCommand")) {

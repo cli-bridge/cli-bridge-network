@@ -1,0 +1,1 @@
+"""CBN artifact bus primitives."""

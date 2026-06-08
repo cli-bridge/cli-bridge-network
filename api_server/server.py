@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 from api_server.routes.health import health_payload
 from cbn_runtime.context import build_runtime
@@ -23,6 +24,8 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/plugins"},
     {"method": "GET", "path": "/plugins/cli-anything/status"},
     {"method": "GET", "path": "/audit"},
+    {"method": "GET", "path": "/events"},
+    {"method": "GET", "path": "/artifacts"},
     {"method": "POST", "path": "/call"},
     {"method": "POST", "path": "/plugins/plan"},
     {"method": "POST", "path": "/plugins/cli-anything/market"},
@@ -54,20 +57,34 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         runtime = build_runtime()
-        if self.path == "/health":
+        parsed = urlparse(self.path)
+        query = parse_qs(parsed.query)
+        if parsed.path == "/health":
             self._send(200, health_payload())
             return
-        if self.path == "/registry":
+        if parsed.path == "/registry":
             self._send(200, [manifest.as_record() for manifest in runtime.registry.list()])
             return
-        if self.path == "/plugins":
+        if parsed.path == "/plugins":
             self._send(200, PluginManager().list_plugins())
             return
-        if self.path == "/plugins/cli-anything/status":
+        if parsed.path == "/plugins/cli-anything/status":
             self._send(200, CliAnythingHub().status())
             return
-        if self.path == "/audit":
+        if parsed.path == "/audit":
             self._send(200, runtime.audit_log.tail())
+            return
+        if parsed.path == "/events":
+            limit = int(query.get("limit", ["50"])[0])
+            self._send(200, runtime.event_bus.tail(limit=limit))
+            return
+        if parsed.path == "/artifacts":
+            artifact_id = query.get("artifact_id", [None])[0]
+            if artifact_id:
+                self._send(200, runtime.artifact_store.inspect(artifact_id))
+            else:
+                limit = int(query.get("limit", ["50"])[0])
+                self._send(200, runtime.artifact_store.list(limit=limit))
             return
         self._send(404, {"error": "not found", "routes": ROUTE_SUMMARY})
 

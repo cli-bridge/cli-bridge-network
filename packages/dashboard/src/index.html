@@ -127,8 +127,8 @@
 
         <section class="panel">
           <h2>Artifact Bus</h2>
-          <button data-command="cbn artifact list">List Artifacts</button>
-          <button data-command="cbn artifact inspect &lt;id&gt;">Inspect</button>
+          <button data-command="python -m cbn artifact list">List Artifacts</button>
+          <button data-command="python -m cbn artifact inspect &lt;id&gt;">Inspect</button>
           <button data-command="cbn artifact open &lt;id&gt;">Open</button>
           <button data-command="cbn artifact export &lt;id&gt;">Export</button>
           <button data-command="cbn artifact prune --dry-run">Prune Preview</button>
@@ -138,6 +138,7 @@
         <section class="panel">
           <h2>Audit</h2>
           <button data-command="python -m cbn audit tail">Tail Audit</button>
+          <button data-command="python -m cbn event tail">Tail Events</button>
           <button data-command="cbn audit search cli-anything">Search CLI-Anything</button>
           <button data-command="cbn audit export report\\audit.jsonl">Export</button>
           <button data-command="Get-Content -Raw -Encoding UTF8 report\\logs\\audit.jsonl">Prototype Audit</button>
