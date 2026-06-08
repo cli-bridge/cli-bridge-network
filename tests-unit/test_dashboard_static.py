@@ -30,6 +30,7 @@ class DashboardStaticTests(unittest.TestCase):
         self.assertIn("python -m cbn protocol check all --capability-id cli-anything.mermaid.set-diagram", self.html)
         self.assertIn("python -m cbn mcp smoke --capability-id git.version", self.html)
         self.assertIn("python -m cbn a2a smoke --capability-id git.version", self.html)
+        self.assertIn("python -m cbn acp smoke --capability-id git.version", self.html)
 
     def test_static_js_queues_commands(self):
         self.assertIn("stageCommand", self.js)

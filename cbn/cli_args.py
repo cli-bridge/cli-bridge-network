@@ -85,6 +85,15 @@ def build_parser() -> argparse.ArgumentParser:
     a2a_smoke.add_argument("--capability-id", default="git.version")
     a2a_smoke.add_argument("--extra-arg", action="append", default=[])
 
+    acp_parser = subcommands.add_parser("acp", help="Run or test the ACP stdio facade.")
+    acp_subcommands = acp_parser.add_subparsers(dest="acp_command")
+    acp_serve = acp_subcommands.add_parser("serve", help="Serve ACP over stdio.")
+    acp_serve.add_argument("--stdio", action="store_true", help="Use newline-delimited stdio JSON-RPC.")
+    acp_smoke = acp_subcommands.add_parser("smoke", help="Run a local ACP stdio smoke test.")
+    acp_smoke.add_argument("--capability-id", default="git.version")
+    acp_smoke.add_argument("--extra-arg", action="append", default=[])
+    acp_smoke.add_argument("--dry-run", action="store_true")
+
     message_parser = subcommands.add_parser("message", help="Validate and inspect BridgeMessage envelopes.")
     message_subcommands = message_parser.add_subparsers(dest="message_command")
     message_validate = message_subcommands.add_parser("validate", help="Validate one BridgeMessage JSON file.")

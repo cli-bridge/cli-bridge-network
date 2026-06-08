@@ -71,6 +71,17 @@ class ProtocolExportTests(unittest.TestCase):
         )
         self.assertTrue(any(item["requirement"] == "MCP full conformance" for item in mcp["checks"]))
         self.assertIn("modelcontextprotocol.io", mcp["source"]["url"])
+        acp = payload["checks"]["acp"]
+        self.assertFalse(acp["wire_compatible"])
+        self.assertTrue(
+            any(
+                item["requirement"] == "ACP stdio initialize/session/new/session/prompt smoke"
+                and item["status"] == "partial"
+                for item in acp["checks"]
+            )
+        )
+        self.assertTrue(any(item["requirement"] == "ACP full session lifecycle and conformance" for item in acp["checks"]))
+        self.assertIn("agentclientprotocol.com", acp["source"]["url"])
 
     def test_cli_protocol_export(self):
         proc = subprocess.run(

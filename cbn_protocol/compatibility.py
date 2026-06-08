@@ -173,9 +173,13 @@ def _check_acp(descriptor: dict[str, Any]) -> list[dict[str, str]]:
             and isinstance(cbn, dict),
             "tool output references BridgeMessage and embeds cbn metadata",
         ),
+        _partial(
+            "ACP stdio initialize/session/new/session/prompt smoke",
+            "python -m cbn acp smoke exercises initialize, session/new, and session/prompt over newline-delimited UTF-8 stdio JSON-RPC",
+        ),
         _gap(
-            "ACP initialize/session stdio wire lifecycle",
-            "no newline-delimited UTF-8 JSON-RPC ACP agent process is implemented yet",
+            "ACP full session lifecycle and conformance",
+            "ACP stdio is an MVP facade; authentication, session/load/list/delete/close/resume, streaming session/update notifications, cancellation, permission requests, client FS/terminal callbacks, and SDK/conformance coverage are not implemented yet",
         ),
     ]
 
@@ -224,6 +228,6 @@ def _next_steps(protocol: str) -> list[str]:
             "Add task polling, streaming, cancellation, authentication, and official SDK/conformance coverage before setting wire_compatible=true.",
         ]
     return [
-        "Implement an ACP stdio agent process using newline-delimited UTF-8 JSON-RPC messages.",
-        "Map initialize, session/new, session/prompt, cancellation, and permission requests to CBN runtime primitives.",
+        "Run ACP smoke for each verified capability that should be exposed to coding-agent clients.",
+        "Add streaming session/update notifications, cancellation, permission requests, client callbacks, authentication, and official SDK/conformance coverage before setting wire_compatible=true.",
     ]

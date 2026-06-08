@@ -16,6 +16,8 @@ from cbn_parsers.registry import ParserRegistry
 from cbn_plugins.cli_anything import CliAnythingHub
 from cbn_plugins.manager import PluginManager
 from cbn_protocol.a2a_http import agent_card, smoke_a2a_http
+from cbn_protocol.acp_stdio import serve_stdio as serve_acp_stdio
+from cbn_protocol.acp_stdio import smoke_acp_stdio
 from cbn_protocol.envelope import bridge_args_from_selectors, select_bridge_value, validate_bridge_message
 from cbn_protocol.compatibility import check_protocol
 from cbn_protocol.exports import export_all_protocols, export_protocol, list_protocol_exports
@@ -168,6 +170,20 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.a2a_command == "smoke":
             payload = smoke_a2a_http(args.capability_id, extra_args=args.extra_arg)
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0 if payload["ok"] else 9
+
+    if args.command == "acp":
+        if args.acp_command == "serve":
+            if not args.stdio:
+                parser.error("acp serve currently requires --stdio")
+            return serve_acp_stdio()
+        if args.acp_command == "smoke":
+            payload = smoke_acp_stdio(
+                args.capability_id,
+                extra_args=args.extra_arg,
+                dry_run=args.dry_run,
+            )
             print(json.dumps(payload, ensure_ascii=False, indent=2))
             return 0 if payload["ok"] else 9
 
