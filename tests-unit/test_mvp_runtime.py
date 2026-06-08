@@ -204,6 +204,7 @@ class MvpRuntimeTests(unittest.TestCase):
         self.assertTrue(any(route["path"] == "/plugins/execute" for route in payload))
         self.assertTrue(any(route["path"] == "/plugins/cli-anything/preflight" for route in payload))
         self.assertTrue(any(route["path"] == "/plugins/cli-anything/adapt-harness" for route in payload))
+        self.assertTrue(any(route["path"] == "/plugins/cli-anything/sync-market" for route in payload))
         self.assertTrue(any(route["path"] == "/plugins/cli-anything/harness" for route in payload))
         self.assertTrue(any(route["path"] == "/events" for route in payload))
         self.assertTrue(any(route["path"] == "/artifacts" for route in payload))

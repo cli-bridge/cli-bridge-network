@@ -268,6 +268,86 @@ class CliAnythingHub:
             ],
         }
 
+    def sync_market(
+        self,
+        query: str | None = None,
+        limit: int = 50,
+        write: bool = False,
+    ) -> dict[str, Any]:
+        result = self.search_market(query) if query else self.list_market()
+        records = _market_records_from_result(result.parsed_json)
+        if result.exit_code != 0:
+            return {
+                "ok": False,
+                "plugin_id": PLUGIN_ID,
+                "query": query,
+                "write": write,
+                "error": "CLI-Anything market command failed",
+                "market": result.as_dict(),
+                "records": [],
+                "manifests": [],
+            }
+        if records is None:
+            return {
+                "ok": False,
+                "plugin_id": PLUGIN_ID,
+                "query": query,
+                "write": write,
+                "error": "CLI-Anything market command did not return a supported JSON list shape",
+                "market": result.as_dict(),
+                "records": [],
+                "manifests": [],
+            }
+        bounded_limit = max(0, min(limit, 500))
+        selected = records[:bounded_limit]
+        manifests = []
+        for record in selected:
+            harness_name = str(record.get("name") or record.get("display_name") or "").strip()
+            if not harness_name:
+                manifests.append(
+                    {
+                        "ok": False,
+                        "error": "market record is missing name/display_name",
+                        "market_record": record,
+                    }
+                )
+                continue
+            manifest = self.manifest_for_harness(harness_name, market_record=record)
+            capability_id = manifest["metadata"]["id"]
+            path = self.paths.manifests / f"{capability_id}.json"
+            written = None
+            if write:
+                written = self.write_harness_manifest(harness_name, market_record=record)
+                path = written
+            manifests.append(
+                {
+                    "ok": True,
+                    "harness_name": harness_name,
+                    "capability_id": capability_id,
+                    "manifest_path": str(path),
+                    "written": str(written) if written else None,
+                    "manifest": manifest,
+                }
+            )
+        imported = [item for item in manifests if item.get("ok")]
+        return {
+            "ok": True,
+            "plugin_id": PLUGIN_ID,
+            "query": query,
+            "write": write,
+            "limit": bounded_limit,
+            "market_count": len(records),
+            "selected_count": len(selected),
+            "importable_count": len(imported),
+            "market": result.as_dict(),
+            "manifests": manifests,
+            "next_commands": [
+                "python -m cbn registry search cli-anything",
+                "python -m cbn protocol export all --capability-id <capability_id>",
+                "python -m cbn plugin harness cli-anything install <harness> --yes",
+            ],
+        }
+
     def _run(self, args: tuple[str, ...], parse_json: bool) -> CliHubCommandResult:
         executable = shutil.which(self.entrypoint)
         argv = (self.entrypoint, *args)
@@ -360,3 +440,20 @@ def _market_annotations(market_record: dict[str, Any]) -> dict[str, str]:
         else:
             annotations[annotation_key] = str(value)
     return annotations
+
+
+def _market_records_from_result(parsed_json: Any) -> list[dict[str, Any]] | None:
+    if isinstance(parsed_json, list):
+        records = parsed_json
+    elif isinstance(parsed_json, dict):
+        records = None
+        for key in ("items", "harnesses", "tools", "results", "data"):
+            value = parsed_json.get(key)
+            if isinstance(value, list):
+                records = value
+                break
+        if records is None:
+            return None
+    else:
+        return None
+    return [item for item in records if isinstance(item, dict)]

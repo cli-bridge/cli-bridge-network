@@ -153,6 +153,66 @@ class CliAnythingHubTests(unittest.TestCase):
             self.assertTrue(Path(result["written"]).exists())
             self.assertTrue(result["status"]["manifest_imported"])
 
+    def test_sync_market_previews_multiple_harness_manifests(self):
+        class FakeHub(CliAnythingHub):
+            def search_market(self, query: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "search", query, "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json={"items": [SAMPLE_MARKET_RECORD, {"display_name": "ffmpeg", "category": "video"}]},
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result = FakeHub(root=Path(tmp)).sync_market(query="image", limit=10)
+            self.assertTrue(result["ok"])
+            self.assertFalse(result["write"])
+            self.assertEqual(result["market_count"], 2)
+            self.assertEqual(result["importable_count"], 2)
+            ids = [item["capability_id"] for item in result["manifests"]]
+            self.assertEqual(ids, ["cli-anything.gimp.launch", "cli-anything.ffmpeg.launch"])
+            self.assertFalse(Path(result["manifests"][0]["manifest_path"]).exists())
+
+    def test_sync_market_write_imports_bounded_manifests(self):
+        class FakeHub(CliAnythingHub):
+            def list_market(self) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "list", "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[
+                        SAMPLE_MARKET_RECORD,
+                        {"name": "imagemagick", "display_name": "ImageMagick", "category": "image"},
+                    ],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result = FakeHub(root=Path(tmp)).sync_market(limit=1, write=True)
+            self.assertTrue(result["ok"])
+            self.assertTrue(result["write"])
+            self.assertEqual(result["selected_count"], 1)
+            written = Path(result["manifests"][0]["written"])
+            self.assertTrue(written.exists())
+            payload = json.loads(written.read_text(encoding="utf-8"))
+            self.assertEqual(payload["metadata"]["id"], "cli-anything.gimp.launch")
+
+    def test_sync_market_reports_unsupported_json_shape(self):
+        class FakeHub(CliAnythingHub):
+            def list_market(self) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "list", "--json"),
+                    exit_code=0,
+                    stdout="{}",
+                    stderr="",
+                    parsed_json={"unexpected": []},
+                )
+
+        result = FakeHub().sync_market()
+        self.assertFalse(result["ok"])
+        self.assertIn("supported JSON list shape", result["error"])
+
     def test_manifest_for_harness_uses_stdio_launch_boundary(self):
         manifest = CliAnythingHub().manifest_for_harness("gimp")
         self.assertEqual(manifest["metadata"]["id"], "cli-anything.gimp.launch")
@@ -276,6 +336,30 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(payload["manifest"]["metadata"]["id"], "cli-anything.gimp.launch")
         self.assertFalse(payload["write"])
         self.assertIn("next_commands", payload)
+
+    def test_cli_sync_market_handles_missing_cli_hub_without_crashing(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "plugin",
+                "sync-market",
+                "cli-anything",
+                "--query",
+                "image",
+                "--limit",
+                "5",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertIn(proc.returncode, {0, 6})
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["plugin_id"], "cli-anything")
+        self.assertIn("manifests", payload)
 
     def test_write_harness_manifest_writes_utf8_json(self):
         with tempfile.TemporaryDirectory() as tmp:

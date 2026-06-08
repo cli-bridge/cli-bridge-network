@@ -48,6 +48,7 @@ ROUTE_SUMMARY = [
     {"method": "POST", "path": "/plugins/cli-anything/market"},
     {"method": "POST", "path": "/plugins/cli-anything/import-harness"},
     {"method": "POST", "path": "/plugins/cli-anything/adapt-harness"},
+    {"method": "POST", "path": "/plugins/cli-anything/sync-market"},
     {"method": "POST", "path": "/plugins/cli-anything/harness"},
 ]
 
@@ -282,6 +283,18 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 payload["harness_name"],
                 title=payload.get("title"),
                 from_market=bool(payload.get("from_market", False)),
+                write=write,
+            )
+            self._send(200 if result["ok"] else 502, result)
+            return
+        if self.path == "/plugins/cli-anything/sync-market":
+            write = bool(payload.get("write", False))
+            if write and not bool(payload.get("confirmed", False)):
+                self._send(403, {"error": "manifest write requires confirmed=true"})
+                return
+            result = CliAnythingHub().sync_market(
+                query=payload.get("query"),
+                limit=int(payload.get("limit", 50)),
                 write=write,
             )
             self._send(200 if result["ok"] else 502, result)

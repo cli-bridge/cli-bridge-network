@@ -39,6 +39,10 @@ if (!html.includes("python -m cbn plugin market cli-anything list")) {
   throw new Error("Dashboard does not expose the CBN-managed CLI-Hub list command.");
 }
 
+if (!html.includes("python -m cbn plugin sync-market cli-anything --query image --limit 20")) {
+  throw new Error("Dashboard does not expose the CLI-Anything market sync preview command.");
+}
+
 if (!html.includes("python -m cbn plugin import-harness cli-anything gimp")) {
   throw new Error("Dashboard does not expose the CLI-Anything harness import command.");
 }

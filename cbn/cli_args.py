@@ -146,6 +146,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     plugin_adapt.add_argument("--write", action="store_true", help="Write manifest into manifests/.")
 
+    plugin_sync = plugin_subcommands.add_parser(
+        "sync-market",
+        help="Preview or write CBN manifests for CLI-Anything market records.",
+    )
+    plugin_sync.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
+    plugin_sync.add_argument("--query", help="Optional CLI-Hub search query; omit to sync list output.")
+    plugin_sync.add_argument("--limit", type=int, default=50, help="Maximum market records to convert.")
+    plugin_sync.add_argument("--write", action="store_true", help="Write generated manifests into manifests/.")
+
     plugin_harness = plugin_subcommands.add_parser("harness", help="Plan or execute external harness operations.")
     plugin_harness.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
     plugin_harness.add_argument("harness_action", choices=["status", "install", "update", "uninstall", "launch"])
