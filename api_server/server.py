@@ -24,6 +24,8 @@ from cbn_plugins.manager import PluginManager
 ROUTE_SUMMARY = [
     {"method": "GET", "path": "/health"},
     {"method": "GET", "path": "/registry"},
+    {"method": "GET", "path": "/registry?capability_id=<id>"},
+    {"method": "GET", "path": "/registry?q=<query>"},
     {"method": "GET", "path": "/plugins"},
     {"method": "GET", "path": "/plugins/cli-anything/status"},
     {"method": "GET", "path": "/plugins/cli-anything/preflight"},
@@ -76,7 +78,15 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             self._send(200, health_payload())
             return
         if parsed.path == "/registry":
-            self._send(200, [manifest.as_record() for manifest in runtime.registry.list()])
+            capability_id = query.get("capability_id", [None])[0]
+            search_query = query.get("q", [None])[0]
+            if capability_id:
+                self._send(200, runtime.registry.require(capability_id).as_record())
+            elif search_query is not None:
+                limit = int(query.get("limit", ["20"])[0])
+                self._send(200, runtime.registry.search(search_query, limit=limit))
+            else:
+                self._send(200, [manifest.as_record() for manifest in runtime.registry.list()])
             return
         if parsed.path == "/plugins":
             self._send(200, PluginManager().list_plugins())

@@ -63,6 +63,8 @@ class CapabilityManifest:
     transport: TransportSpec
     policy: PolicySpec
     output: OutputSpec
+    labels: dict[str, str]
+    annotations: dict[str, str]
     source_path: Path | None = None
 
     @classmethod
@@ -83,6 +85,8 @@ class CapabilityManifest:
             transport=TransportSpec.from_dict(spec["transport"]),
             policy=PolicySpec.from_dict(spec["policy"]),
             output=OutputSpec.from_dict(spec.get("output", {})),
+            labels={str(key): str(value) for key, value in metadata.get("labels", {}).items()},
+            annotations={str(key): str(value) for key, value in metadata.get("annotations", {}).items()},
             source_path=source_path,
         )
 
@@ -100,7 +104,22 @@ class CapabilityManifest:
             "requires_confirmation": self.policy.requires_confirmation,
             "parser_ref": self.output.parser_ref,
             "verified": self.output.verified,
+            "labels": self.labels,
+            "annotations": self.annotations,
             "source_path": str(self.source_path) if self.source_path else None,
+        }
+
+    def search_text(self) -> dict[str, str]:
+        return {
+            "capability_id": self.capability_id,
+            "title": self.title,
+            "transport": self.transport.kind,
+            "command": " ".join(self.transport.argv()),
+            "risk": self.policy.risk,
+            "parser_ref": self.output.parser_ref or "",
+            "labels": " ".join(f"{key}:{value}" for key, value in sorted(self.labels.items())),
+            "annotations": " ".join(f"{key}:{value}" for key, value in sorted(self.annotations.items())),
+            "source_path": str(self.source_path) if self.source_path else "",
         }
 
 
@@ -122,6 +141,47 @@ class ManifestRegistry:
     def list(self) -> list[CapabilityManifest]:
         return [self._manifests[key] for key in sorted(self._manifests)]
 
+    def search(self, query: str, limit: int = 20) -> list[dict[str, Any]]:
+        limit = max(0, min(limit, 100))
+        tokens = [token for token in query.casefold().split() if token]
+        if not tokens:
+            return [
+                {"manifest": manifest.as_record(), "match": {"score": 0, "fields": []}}
+                for manifest in self.list()[:limit]
+            ]
+        matches = []
+        for manifest in self.list():
+            fields = manifest.search_text()
+            haystack = {field: value.casefold() for field, value in fields.items()}
+            if not all(any(token in value for value in haystack.values()) for token in tokens):
+                continue
+            matched_fields = sorted(
+                field
+                for field, value in haystack.items()
+                if any(token in value for token in tokens)
+            )
+            score = sum(
+                3 if value.startswith(token) else value.count(token)
+                for value in haystack.values()
+                for token in tokens
+            )
+            matches.append(
+                {
+                    "manifest": manifest.as_record(),
+                    "match": {
+                        "score": score,
+                        "fields": matched_fields,
+                    },
+                }
+            )
+        matches.sort(
+            key=lambda item: (
+                -item["match"]["score"],
+                item["manifest"]["capability_id"],
+            )
+        )
+        return matches[:limit]
+
     def get(self, capability_id: str) -> CapabilityManifest | None:
         return self._manifests.get(capability_id)
 
@@ -130,4 +190,3 @@ class ManifestRegistry:
         if manifest is None:
             raise KeyError(f"unknown capability: {capability_id}")
         return manifest
-

@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from cbn_core.manifest import CapabilityManifest
 from cbn_plugins.cli_anything import CliAnythingHub, sanitize_harness_name
 
 
@@ -35,6 +36,12 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(manifest["spec"]["transport"]["kind"], "stdio")
         self.assertEqual(manifest["spec"]["transport"]["argsTemplate"], ["launch", "gimp"])
         self.assertFalse(manifest["spec"]["output"]["verified"])
+
+    def test_manifest_ir_preserves_harness_labels(self):
+        manifest = CapabilityManifest.from_dict(CliAnythingHub().manifest_for_harness("gimp"))
+        self.assertEqual(manifest.labels["plugin"], "cli-anything")
+        self.assertEqual(manifest.labels["harness"], "gimp")
+        self.assertEqual(manifest.as_record()["labels"]["harness"], "gimp")
 
     def test_harness_plan_uses_cli_hub_lifecycle_command(self):
         plan = CliAnythingHub().harness_plan("install", "gimp")

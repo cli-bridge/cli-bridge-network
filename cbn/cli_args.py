@@ -17,6 +17,9 @@ def build_parser() -> argparse.ArgumentParser:
     registry_parser = subcommands.add_parser("registry", help="Inspect capability registry.")
     registry_subcommands = registry_parser.add_subparsers(dest="registry_command")
     registry_subcommands.add_parser("list", help="List loaded capability manifests.")
+    registry_search = registry_subcommands.add_parser("search", help="Search loaded capability manifests.")
+    registry_search.add_argument("query")
+    registry_search.add_argument("--limit", type=int, default=20)
     registry_inspect = registry_subcommands.add_parser("inspect", help="Inspect one capability.")
     registry_inspect.add_argument("capability_id")
 

@@ -35,6 +35,19 @@ class MvpRuntimeTests(unittest.TestCase):
         payload = json.loads(proc.stdout)
         self.assertTrue(any(item["capability_id"] == "git.version" for item in payload))
 
+    def test_cli_registry_search_outputs_ranked_matches(self):
+        proc = subprocess.run(
+            [sys.executable, "-m", "cbn", "registry", "search", "git status"],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload[0]["manifest"]["capability_id"], "git.status")
+        self.assertIn("capability_id", payload[0]["match"]["fields"])
+
     def test_cli_call_dry_run_outputs_command_without_real_execution(self):
         proc = subprocess.run(
             [sys.executable, "-m", "cbn", "call", "git.version", "--dry-run"],
@@ -185,6 +198,7 @@ class MvpRuntimeTests(unittest.TestCase):
         )
         payload = json.loads(proc.stdout)
         self.assertTrue(any(route["path"] == "/plugins/plan" for route in payload))
+        self.assertTrue(any(route["path"] == "/registry?q=<query>" for route in payload))
         self.assertTrue(any(route["path"] == "/plugins/execute" for route in payload))
         self.assertTrue(any(route["path"] == "/plugins/cli-anything/preflight" for route in payload))
         self.assertTrue(any(route["path"] == "/plugins/cli-anything/harness" for route in payload))

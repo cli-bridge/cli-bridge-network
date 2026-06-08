@@ -55,6 +55,9 @@ def main(argv: list[str] | None = None) -> int:
             payload = [manifest.as_record() for manifest in runtime.registry.list()]
             print(json.dumps(payload, ensure_ascii=False, indent=2))
             return 0
+        if args.registry_command == "search":
+            print(json.dumps(runtime.registry.search(args.query, limit=args.limit), ensure_ascii=False, indent=2))
+            return 0
         if args.registry_command == "inspect":
             manifest = runtime.registry.require(args.capability_id)
             print(json.dumps(manifest.as_record(), ensure_ascii=False, indent=2))
