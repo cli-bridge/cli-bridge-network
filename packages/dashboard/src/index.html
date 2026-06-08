@@ -77,16 +77,16 @@
           <button data-command="cbn discover cli-hub">Discover CLI-Hub</button>
           <button data-command="cbn import cli-anything">Import CLI-Anything</button>
           <button data-command="cbn import openapi &lt;spec&gt;">Import OpenAPI</button>
-          <button data-command="cbn registry refresh">Refresh Registry</button>
-          <button data-command="cbn registry inspect &lt;capability&gt;">Inspect Capability</button>
+          <button data-command="python -m cbn registry list">Refresh Registry</button>
+          <button data-command="python -m cbn registry inspect &lt;capability&gt;">Inspect Capability</button>
         </section>
 
         <section class="panel">
           <h2>Execution</h2>
-          <button data-command="cbn call &lt;capability&gt; --dry-run">Dry Run</button>
-          <button data-command="cbn call &lt;capability&gt; --yes">Execute</button>
-          <button data-command="cbn call git.status">Git Status</button>
-          <button data-command="cbn call ffprobe.inspect --file report/artifacts/sample.wav">ffprobe Inspect</button>
+          <button data-command="python -m cbn call &lt;capability&gt; --dry-run">Dry Run</button>
+          <button data-command="python -m cbn call &lt;capability&gt; --yes">Execute</button>
+          <button data-command="python -m cbn call git.status">Git Status</button>
+          <button data-command="python -m cbn call ffprobe.inspect report/artifacts/sample.wav">ffprobe Inspect</button>
           <button data-command="cbn queue list">Queue</button>
           <button data-command="cbn queue cancel &lt;id&gt;">Cancel</button>
           <button data-command="cbn runtime interrupt">Interrupt</button>
@@ -108,8 +108,8 @@
           <button data-command="cbn mcp serve --http --host 127.0.0.1">MCP HTTP</button>
           <button data-command="cbn a2a serve">A2A Serve</button>
           <button data-command="cbn acp bridge">ACP Bridge</button>
-          <button data-command="cbn rest serve --host 127.0.0.1">REST Gateway</button>
-          <button data-command="cbn exports list">List Exports</button>
+          <button data-command="python -m cbn daemon serve --host 127.0.0.1 --port 8787">REST Gateway</button>
+          <button data-command="python -m cbn daemon routes">List Exports</button>
         </section>
 
         <section class="panel">
@@ -134,7 +134,7 @@
 
         <section class="panel">
           <h2>Audit</h2>
-          <button data-command="cbn audit tail">Tail Audit</button>
+          <button data-command="python -m cbn audit tail">Tail Audit</button>
           <button data-command="cbn audit search cli-anything">Search CLI-Anything</button>
           <button data-command="cbn audit export report\\audit.jsonl">Export</button>
           <button data-command="Get-Content -Raw -Encoding UTF8 report\\logs\\audit.jsonl">Prototype Audit</button>

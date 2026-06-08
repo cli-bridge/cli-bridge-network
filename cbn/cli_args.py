@@ -14,6 +14,30 @@ def build_parser() -> argparse.ArgumentParser:
     subcommands.add_parser("paths", help="Print resolved project paths.")
     subcommands.add_parser("nodes", help="List built-in capability nodes.")
 
+    registry_parser = subcommands.add_parser("registry", help="Inspect capability registry.")
+    registry_subcommands = registry_parser.add_subparsers(dest="registry_command")
+    registry_subcommands.add_parser("list", help="List loaded capability manifests.")
+    registry_inspect = registry_subcommands.add_parser("inspect", help="Inspect one capability.")
+    registry_inspect.add_argument("capability_id")
+
+    call_parser = subcommands.add_parser("call", help="Call a capability through policy/audit.")
+    call_parser.add_argument("capability_id")
+    call_parser.add_argument("extra_args", nargs="*", help="Extra arguments appended to the manifest template.")
+    call_parser.add_argument("--dry-run", action="store_true", help="Return the command without executing it.")
+    call_parser.add_argument("--yes", action="store_true", help="Confirm high-risk calls.")
+
+    audit_parser = subcommands.add_parser("audit", help="Inspect local audit log.")
+    audit_subcommands = audit_parser.add_subparsers(dest="audit_command")
+    audit_tail = audit_subcommands.add_parser("tail", help="Print recent audit events.")
+    audit_tail.add_argument("--limit", type=int, default=20)
+
+    daemon_parser = subcommands.add_parser("daemon", help="Run or inspect the local daemon API.")
+    daemon_subcommands = daemon_parser.add_subparsers(dest="daemon_command")
+    daemon_subcommands.add_parser("routes", help="List MVP daemon routes.")
+    daemon_serve = daemon_subcommands.add_parser("serve", help="Serve the MVP daemon API.")
+    daemon_serve.add_argument("--host", default="127.0.0.1")
+    daemon_serve.add_argument("--port", type=int, default=8787)
+
     plugin_parser = subcommands.add_parser("plugin", help="Manage external CBN plugins.")
     plugin_subcommands = plugin_parser.add_subparsers(dest="plugin_command")
     plugin_subcommands.add_parser("list", help="List known external plugins.")

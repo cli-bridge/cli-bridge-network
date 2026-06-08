@@ -9,6 +9,8 @@ from cbn.cli_args import build_parser
 from cbn.paths import resolve_project_paths
 from cbn.version import __version__
 from cbn_plugins.manager import PluginManager
+from cbn_runtime.context import build_runtime
+from api_server.server import ROUTE_SUMMARY, serve
 from nodes import CAPABILITY_NODE_MAPPINGS, init_builtin_nodes
 
 
@@ -40,6 +42,42 @@ def main(argv: list[str] | None = None) -> int:
         }
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0
+
+    if args.command == "registry":
+        runtime = build_runtime()
+        if args.registry_command == "list":
+            payload = [manifest.as_record() for manifest in runtime.registry.list()]
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0
+        if args.registry_command == "inspect":
+            manifest = runtime.registry.require(args.capability_id)
+            print(json.dumps(manifest.as_record(), ensure_ascii=False, indent=2))
+            return 0
+
+    if args.command == "call":
+        runtime = build_runtime()
+        result = runtime.executor.call(
+            args.capability_id,
+            extra_args=tuple(args.extra_args),
+            dry_run=args.dry_run,
+            confirmed=args.yes,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0 if result.get("allowed") else 3
+
+    if args.command == "audit":
+        runtime = build_runtime()
+        if args.audit_command == "tail":
+            print(json.dumps(runtime.audit_log.tail(limit=args.limit), ensure_ascii=False, indent=2))
+            return 0
+
+    if args.command == "daemon":
+        if args.daemon_command == "routes":
+            print(json.dumps(ROUTE_SUMMARY, ensure_ascii=False, indent=2))
+            return 0
+        if args.daemon_command == "serve":
+            serve(host=args.host, port=args.port)
+            return 0
 
     if args.command == "plugin":
         manager = PluginManager()

@@ -1,0 +1,102 @@
+import json
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+from cbn_audit.log import AuditLog
+from cbn_core.manifest import ManifestRegistry
+from cbn_execution.executor import CapabilityExecutor
+from cbn_policy.engine import PolicyEngine
+from cbn_runtime.context import build_runtime
+
+
+class MvpRuntimeTests(unittest.TestCase):
+    def test_runtime_loads_builtin_manifests(self):
+        runtime = build_runtime()
+        ids = {manifest.capability_id for manifest in runtime.registry.list()}
+        self.assertIn("git.version", ids)
+        self.assertIn("git.status", ids)
+        self.assertIn("ffprobe.inspect", ids)
+
+    def test_cli_registry_list_outputs_manifest_records(self):
+        proc = subprocess.run(
+            [sys.executable, "-m", "cbn", "registry", "list"],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertTrue(any(item["capability_id"] == "git.version" for item in payload))
+
+    def test_cli_call_dry_run_outputs_command_without_real_execution(self):
+        proc = subprocess.run(
+            [sys.executable, "-m", "cbn", "call", "git.version", "--dry-run"],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertTrue(payload["allowed"])
+        self.assertEqual(payload["reason"], "dry-run")
+        self.assertIn("git --version", payload["stdout"])
+
+    def test_policy_blocks_privileged_without_confirmation(self):
+        runtime = build_runtime()
+        manifest_type = type(runtime.registry.require("git.version"))
+        danger = manifest_type.from_dict(
+            {
+                "apiVersion": "bridge.dev/v1alpha1",
+                "kind": "ToolManifest",
+                "metadata": {"id": "test.danger", "title": "Danger"},
+                "spec": {
+                    "transport": {
+                        "kind": "stdio",
+                        "command": "python",
+                        "argsTemplate": ["--version"],
+                        "cwdPolicy": "workspace",
+                    },
+                    "policy": {
+                        "risk": "privileged",
+                        "requiresConfirmation": True,
+                        "network": "deny",
+                    },
+                    "output": {"verified": False},
+                },
+            }
+        )
+        decision = PolicyEngine().evaluate(danger, confirmed=False)
+        self.assertFalse(decision.allowed)
+
+    def test_executor_writes_audit_for_dry_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            registry = ManifestRegistry()
+            registry.load_dir(Path("manifests"))
+            audit = AuditLog(Path(tmp) / "audit.jsonl")
+            executor = CapabilityExecutor(registry, audit)
+            result = executor.call("git.version", dry_run=True)
+            self.assertTrue(result["allowed"])
+            events = audit.tail(limit=5)
+            self.assertTrue(any(event["type"] == "tool_call.completed" for event in events))
+
+    def test_daemon_routes_are_listed(self):
+        proc = subprocess.run(
+            [sys.executable, "-m", "cbn", "daemon", "routes"],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertTrue(any(route["path"] == "/plugins/plan" for route in payload))
+
+
+if __name__ == "__main__":
+    unittest.main()
+
