@@ -48,6 +48,49 @@ class MvpRuntimeTests(unittest.TestCase):
         self.assertEqual(payload[0]["manifest"]["capability_id"], "git.status")
         self.assertIn("capability_id", payload[0]["match"]["fields"])
 
+    def test_cli_registry_validate_outputs_manifest_report(self):
+        proc = subprocess.run(
+            [sys.executable, "-m", "cbn", "registry", "validate", "manifests"],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertTrue(payload["valid"])
+        self.assertGreaterEqual(payload["checked_count"], 3)
+        self.assertEqual(payload["error_count"], 0)
+
+    def test_cli_registry_validate_reports_bad_manifest_without_runtime_load(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "bad.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "apiVersion": "bridge.dev/v1alpha1",
+                        "kind": "ToolManifest",
+                        "metadata": {"id": "bad"},
+                        "spec": {
+                            "transport": {"kind": "stdio", "command": "python"},
+                            "policy": {"risk": "unknown", "network": "deny"},
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            proc = subprocess.run(
+                [sys.executable, "-m", "cbn", "registry", "validate", str(path)],
+                text=True,
+                encoding="utf-8",
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+        self.assertEqual(proc.returncode, 7)
+        payload = json.loads(proc.stdout)
+        self.assertFalse(payload["valid"])
+        self.assertIn("unknown spec.policy.risk", payload["reports"][0]["errors"][0])
+
     def test_cli_call_dry_run_outputs_command_without_real_execution(self):
         proc = subprocess.run(
             [sys.executable, "-m", "cbn", "call", "git.version", "--dry-run"],
@@ -199,6 +242,7 @@ class MvpRuntimeTests(unittest.TestCase):
         payload = json.loads(proc.stdout)
         self.assertTrue(any(route["path"] == "/plugins/plan" for route in payload))
         self.assertTrue(any(route["path"] == "/registry?q=<query>" for route in payload))
+        self.assertTrue(any(route["path"] == "/registry/validate" for route in payload))
         self.assertTrue(any(route["path"] == "/messages/validate" for route in payload))
         self.assertTrue(any(route["path"] == "/messages/select" for route in payload))
         self.assertTrue(any(route["path"] == "/messages/args" for route in payload))

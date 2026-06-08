@@ -9,6 +9,10 @@ from typing import Any
 
 
 MANIFEST_API_VERSION = "bridge.dev/v1alpha1"
+VALID_MANIFEST_RISKS = {"read", "write-workspace", "privileged", "external-network"}
+VALID_NETWORK_POLICIES = {"deny", "localhost", "requires-confirmation", "allow"}
+KNOWN_TRANSPORT_KINDS = {"stdio", "pty"}
+CURRENT_EXECUTOR_TRANSPORTS = {"stdio"}
 
 
 @dataclass(frozen=True)
@@ -190,3 +194,140 @@ class ManifestRegistry:
         if manifest is None:
             raise KeyError(f"unknown capability: {capability_id}")
         return manifest
+
+
+def validate_manifest_path(path: Path) -> dict[str, Any]:
+    if path.is_dir():
+        reports = [validate_manifest_file(item) for item in sorted(path.glob("*.json"))]
+    else:
+        reports = [validate_manifest_file(path)]
+    error_count = sum(len(report["errors"]) for report in reports)
+    warning_count = sum(len(report["warnings"]) for report in reports)
+    return {
+        "valid": error_count == 0,
+        "path": str(path),
+        "checked_count": len(reports),
+        "error_count": error_count,
+        "warning_count": warning_count,
+        "reports": reports,
+    }
+
+
+def validate_manifest_file(path: Path) -> dict[str, Any]:
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        return _manifest_report(path, None, [f"cannot read manifest: {exc}"], [])
+    except json.JSONDecodeError as exc:
+        return _manifest_report(path, None, [f"invalid JSON: {exc.msg} at line {exc.lineno} column {exc.colno}"], [])
+    return validate_manifest_dict(raw, source_path=path)
+
+
+def validate_manifest_dict(raw: dict[str, Any], source_path: Path | None = None) -> dict[str, Any]:
+    errors: list[str] = []
+    warnings: list[str] = []
+    capability_id = None
+    if not isinstance(raw, dict):
+        return _manifest_report(source_path, None, ["manifest root must be an object"], [])
+    if raw.get("apiVersion") != MANIFEST_API_VERSION:
+        errors.append(f"unsupported apiVersion: {raw.get('apiVersion')}")
+    if raw.get("kind") != "ToolManifest":
+        errors.append(f"unsupported kind: {raw.get('kind')}")
+
+    metadata = raw.get("metadata")
+    if not isinstance(metadata, dict):
+        errors.append("metadata must be an object")
+        metadata = {}
+    capability_id = metadata.get("id")
+    if not isinstance(capability_id, str) or not capability_id.strip():
+        errors.append("metadata.id is required")
+        capability_id = None
+    if "title" in metadata and not isinstance(metadata.get("title"), str):
+        errors.append("metadata.title must be a string when present")
+    for field in ("labels", "annotations"):
+        value = metadata.get(field, {})
+        if not isinstance(value, dict):
+            errors.append(f"metadata.{field} must be an object when present")
+
+    spec = raw.get("spec")
+    if not isinstance(spec, dict):
+        errors.append("spec must be an object")
+        spec = {}
+    _validate_transport(spec.get("transport"), errors, warnings)
+    _validate_policy(spec.get("policy"), errors)
+    _validate_output(spec.get("output", {}), errors, warnings)
+
+    if not errors:
+        try:
+            CapabilityManifest.from_dict(raw, source_path=source_path)
+        except Exception as exc:
+            errors.append(f"manifest cannot be parsed: {exc}")
+    return _manifest_report(source_path, capability_id, errors, warnings)
+
+
+def _validate_transport(raw: Any, errors: list[str], warnings: list[str]) -> None:
+    if not isinstance(raw, dict):
+        errors.append("spec.transport must be an object")
+        return
+    kind = raw.get("kind")
+    if not isinstance(kind, str) or not kind:
+        errors.append("spec.transport.kind is required")
+    elif kind not in KNOWN_TRANSPORT_KINDS:
+        errors.append(f"unsupported spec.transport.kind: {kind}")
+    elif kind not in CURRENT_EXECUTOR_TRANSPORTS:
+        warnings.append(f"transport kind is recognized but not executable in current MVP: {kind}")
+    command = raw.get("command")
+    if not isinstance(command, str) or not command.strip():
+        errors.append("spec.transport.command is required")
+    args_template = raw.get("argsTemplate", [])
+    if not isinstance(args_template, list) or not all(isinstance(item, str) for item in args_template):
+        errors.append("spec.transport.argsTemplate must be a list of strings when present")
+    cwd_policy = raw.get("cwdPolicy", "workspace")
+    if not isinstance(cwd_policy, str) or not cwd_policy:
+        errors.append("spec.transport.cwdPolicy must be a string when present")
+
+
+def _validate_policy(raw: Any, errors: list[str]) -> None:
+    if not isinstance(raw, dict):
+        errors.append("spec.policy must be an object")
+        return
+    risk = raw.get("risk")
+    if risk not in VALID_MANIFEST_RISKS:
+        errors.append(f"unknown spec.policy.risk: {risk}")
+    if "requiresConfirmation" in raw and not isinstance(raw.get("requiresConfirmation"), bool):
+        errors.append("spec.policy.requiresConfirmation must be a boolean when present")
+    network = raw.get("network", "deny")
+    if network not in VALID_NETWORK_POLICIES:
+        errors.append(f"unknown spec.policy.network: {network}")
+    if risk == "external-network" and network != "requires-confirmation":
+        errors.append("external-network risk must use network=requires-confirmation")
+
+
+def _validate_output(raw: Any, errors: list[str], warnings: list[str]) -> None:
+    if not isinstance(raw, dict):
+        errors.append("spec.output must be an object when present")
+        return
+    parser_ref = raw.get("parserRef")
+    if parser_ref is not None and not isinstance(parser_ref, str):
+        errors.append("spec.output.parserRef must be a string when present")
+    if parser_ref is None:
+        warnings.append("spec.output.parserRef is missing; raw.text parser will be used")
+    if "verified" in raw and not isinstance(raw.get("verified"), bool):
+        errors.append("spec.output.verified must be a boolean when present")
+    if raw.get("verified") is False:
+        warnings.append("spec.output.verified=false; parser/output contract is not verified")
+
+
+def _manifest_report(
+    source_path: Path | None,
+    capability_id: Any,
+    errors: list[str],
+    warnings: list[str],
+) -> dict[str, Any]:
+    return {
+        "valid": not errors,
+        "source_path": str(source_path) if source_path else None,
+        "capability_id": capability_id,
+        "errors": errors,
+        "warnings": warnings,
+    }

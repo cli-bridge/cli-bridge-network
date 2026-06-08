@@ -22,6 +22,8 @@ def build_parser() -> argparse.ArgumentParser:
     registry_search.add_argument("--limit", type=int, default=20)
     registry_inspect = registry_subcommands.add_parser("inspect", help="Inspect one capability.")
     registry_inspect.add_argument("capability_id")
+    registry_validate = registry_subcommands.add_parser("validate", help="Validate manifest JSON files.")
+    registry_validate.add_argument("path", nargs="?", default="manifests", help="Manifest file or directory path.")
 
     call_parser = subcommands.add_parser("call", help="Call a capability through policy/audit.")
     call_parser.add_argument("capability_id")

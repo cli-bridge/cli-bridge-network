@@ -10,6 +10,7 @@ from api_server.routes.health import health_payload
 from cbn.cli_args import build_parser
 from cbn.paths import resolve_project_paths
 from cbn.version import __version__
+from cbn_core.manifest import validate_manifest_path
 from cbn_execution.graph import WorkflowGraph
 from cbn_plugins.cli_anything import CliAnythingHub
 from cbn_plugins.manager import PluginManager
@@ -51,6 +52,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "registry":
+        if args.registry_command == "validate":
+            result = validate_manifest_path(Path(args.path))
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["valid"] else 7
         runtime = build_runtime()
         if args.registry_command == "list":
             payload = [manifest.as_record() for manifest in runtime.registry.list()]

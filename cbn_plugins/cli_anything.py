@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from cbn.paths import resolve_project_paths
+from cbn_core.manifest import validate_manifest_dict
 from cbn_plugins.manager import PluginCommand, PluginPlan
 
 
@@ -305,6 +306,7 @@ class CliAnythingHub:
             "written": str(written) if written else None,
             "manifest_path": str(manifest_path),
             "manifest": manifest,
+            "validation": validate_manifest_dict(manifest, source_path=manifest_path),
             "status": self.harness_status(harness_name, from_market=from_market),
             "next_commands": [
                 f"python -m cbn plugin harness cli-anything status {harness_name} --from-market",
@@ -365,6 +367,7 @@ class CliAnythingHub:
             if write:
                 written = self.write_harness_manifest(harness_name, market_record=record)
                 path = written
+            validation = validate_manifest_dict(manifest, source_path=path)
             manifests.append(
                 {
                     "ok": True,
@@ -373,6 +376,7 @@ class CliAnythingHub:
                     "manifest_path": str(path),
                     "written": str(written) if written else None,
                     "manifest": manifest,
+                    "validation": validation,
                 }
             )
         imported = [item for item in manifests if item.get("ok")]

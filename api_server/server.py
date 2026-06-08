@@ -14,6 +14,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from api_server.routes.health import health_payload
+from cbn_core.manifest import validate_manifest_path
 from cbn_execution.graph import WorkflowGraph
 from cbn_protocol.envelope import bridge_args_from_selectors, select_bridge_value, validate_bridge_message
 from cbn_protocol.exports import export_all_protocols, export_protocol, list_protocol_exports
@@ -27,6 +28,7 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/registry"},
     {"method": "GET", "path": "/registry?capability_id=<id>"},
     {"method": "GET", "path": "/registry?q=<query>"},
+    {"method": "GET", "path": "/registry/validate"},
     {"method": "GET", "path": "/plugins"},
     {"method": "GET", "path": "/plugins/cli-anything/status"},
     {"method": "GET", "path": "/plugins/cli-anything/preflight"},
@@ -77,12 +79,26 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
         runtime.audit_log.append({"type": "daemon.http_log", "message": fmt % args})
 
     def do_GET(self) -> None:
-        runtime = build_runtime()
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
         if parsed.path == "/health":
             self._send(200, health_payload())
             return
+        if parsed.path == "/plugins":
+            self._send(200, PluginManager().list_plugins())
+            return
+        if parsed.path == "/plugins/cli-anything/status":
+            self._send(200, CliAnythingHub().status())
+            return
+        if parsed.path == "/plugins/cli-anything/preflight":
+            self._send(200, PluginManager().preflight("cli-anything"))
+            return
+        if parsed.path == "/registry/validate":
+            path = Path(query.get("path", ["manifests"])[0])
+            result = validate_manifest_path(path)
+            self._send(200 if result["valid"] else 422, result)
+            return
+        runtime = build_runtime()
         if parsed.path == "/registry":
             capability_id = query.get("capability_id", [None])[0]
             search_query = query.get("q", [None])[0]
@@ -93,15 +109,6 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 self._send(200, runtime.registry.search(search_query, limit=limit))
             else:
                 self._send(200, [manifest.as_record() for manifest in runtime.registry.list()])
-            return
-        if parsed.path == "/plugins":
-            self._send(200, PluginManager().list_plugins())
-            return
-        if parsed.path == "/plugins/cli-anything/status":
-            self._send(200, CliAnythingHub().status())
-            return
-        if parsed.path == "/plugins/cli-anything/preflight":
-            self._send(200, PluginManager().preflight("cli-anything"))
             return
         if parsed.path == "/audit":
             self._send(200, runtime.audit_log.tail())

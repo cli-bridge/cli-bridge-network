@@ -95,6 +95,10 @@ if (!html.includes("python -m cbn registry search")) {
   throw new Error("Dashboard does not expose the capability registry search command.");
 }
 
+if (!html.includes("python -m cbn registry validate manifests")) {
+  throw new Error("Dashboard does not expose manifest validation.");
+}
+
 if (!html.includes("python -m cbn protocol export all")) {
   throw new Error("Dashboard does not expose the protocol export command.");
 }

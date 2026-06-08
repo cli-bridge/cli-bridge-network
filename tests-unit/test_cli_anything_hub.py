@@ -129,6 +129,7 @@ class CliAnythingHubTests(unittest.TestCase):
             self.assertIsNone(result["written"])
             self.assertTrue(result["market_record_available"])
             self.assertEqual(result["manifest"]["metadata"]["id"], "cli-anything.gimp.launch")
+            self.assertTrue(result["validation"]["valid"])
             self.assertFalse(result["status"]["manifest_imported"])
             self.assertIn("python -m cbn call cli-anything.gimp.launch --dry-run", result["next_commands"])
 
@@ -177,6 +178,7 @@ class CliAnythingHubTests(unittest.TestCase):
             self.assertEqual(result["importable_count"], 2)
             ids = [item["capability_id"] for item in result["manifests"]]
             self.assertEqual(ids, ["cli-anything.gimp.launch", "cli-anything.ffmpeg.launch"])
+            self.assertTrue(all(item["validation"]["valid"] for item in result["manifests"]))
             self.assertFalse(Path(result["manifests"][0]["manifest_path"]).exists())
 
     def test_sync_market_write_imports_bounded_manifests(self):
