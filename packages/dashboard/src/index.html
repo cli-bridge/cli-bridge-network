@@ -391,6 +391,12 @@
             data-api-body='{"path":"workflows/message-routing.example.json","dry_run":true}'
           >Message Routing Dry Run</button>
           <button
+            data-command="python -m cbn workflow run workflows/artifact-id-routing.example.json"
+            data-api-method="POST"
+            data-api-path="/workflows/run"
+            data-api-body='{"path":"workflows/artifact-id-routing.example.json"}'
+          >Artifact ID Routing</button>
+          <button
             data-command="python -m cbn workflow run workflows/cli-anything-mermaid-routing.example.json"
             data-api-method="POST"
             data-api-path="/workflows/run"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import os
 
 from adapters.base import ToolCall, ToolResult
 
@@ -19,9 +20,14 @@ class StdioAdapter:
             )
 
         try:
+            env = None
+            if request.env:
+                env = os.environ.copy()
+                env.update(request.env)
             proc = subprocess.run(
                 list(request.argv),
                 cwd=request.cwd,
+                env=env,
                 text=True,
                 encoding="utf-8",
                 errors="replace",

@@ -193,12 +193,16 @@ class CapabilityExecutor:
         cwd: Path | None,
         dry_run: bool,
     ) -> ToolCall:
+        env = None
+        if self.artifact_store is not None:
+            env = {"CBN_ARTIFACT_ROOT": str(self.artifact_store.root)}
         return ToolCall(
             capability_id=manifest.capability_id,
             argv=manifest.transport.argv(extra_args),
             cwd=str(cwd) if cwd else None,
             dry_run=dry_run,
             timeout_seconds=manifest.transport.timeout_seconds,
+            env=env,
         )
 
     def _dispatch(self, manifest: CapabilityManifest, request: ToolCall) -> ToolResult:

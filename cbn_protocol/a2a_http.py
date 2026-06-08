@@ -294,12 +294,7 @@ def _send_workflow_message(message: dict[str, Any], workflow_path: str, cbn_meta
             "state": state,
             "message": agent_message,
         },
-        "artifacts": [
-            _artifact_from_cbn(artifact)
-            for task in result.get("tasks", [])
-            for artifact in task.get("result", {}).get("artifacts", [])
-            if isinstance(task, dict)
-        ],
+        "artifacts": artifacts,
         "history": [message, agent_message],
         "metadata": {
             "cbn": {

@@ -11,6 +11,7 @@ from cbn_core.manifest import ManifestRegistry
 from cbn_events.bus import EventBus
 from cbn_execution.executor import CapabilityExecutor
 from cbn_execution.graph import WorkflowGraph
+from cbn_tools.artifact_id_summary import summarize_artifact
 from cbn_workflow.catalog import inspect_workflow, list_workflows
 from cbn_workflow.runner import WorkflowRunner
 
@@ -72,6 +73,17 @@ class WorkflowRunnerTests(unittest.TestCase):
         self.assertEqual(
             consumer["argsFrom"],
             [{"task": "backend-diagram-source", "selector": "payload.data.stdout"}],
+        )
+
+    def test_artifact_id_workflow_routes_artifact_reference(self):
+        graph = WorkflowGraph.from_file(Path("workflows/artifact-id-routing.example.json"))
+        plan = graph.as_plan()
+        consumer = plan["tasks"][1]
+        self.assertEqual(plan["workflow_id"], "example.artifact-id-routing")
+        self.assertEqual(consumer["uses"], "cbn.sample.artifact-id-summary")
+        self.assertEqual(
+            consumer["argsFrom"],
+            [{"task": "artifact-source", "selector": "artifacts[0].artifact_id"}],
         )
 
     def test_workflow_catalog_lists_descriptors_with_capability_summaries(self):
@@ -185,6 +197,36 @@ class WorkflowRunnerTests(unittest.TestCase):
             self.assertEqual(consumer["resolved_args"], ["git --version"])
             self.assertEqual(consumer["result"]["stdout"], "git --version git --version")
 
+    def test_runner_routes_artifact_id_to_downstream_cli(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            registry = ManifestRegistry()
+            registry.load_dir(Path("manifests"))
+            executor = CapabilityExecutor(
+                registry,
+                AuditLog(Path(tmp) / "audit.jsonl"),
+                artifact_store=ArtifactStore(Path(tmp) / "artifacts"),
+            )
+            runner = WorkflowRunner(executor)
+            result = runner.run(WorkflowGraph.from_file(Path("workflows/artifact-id-routing.example.json")))
+            self.assertEqual(result["status"], "completed")
+            source = result["tasks"][0]
+            consumer = result["tasks"][1]
+            artifact_id = source["result"]["artifacts"][0]["artifact_id"]
+            summary = consumer["result"]["parsed"]["data"]["json"]
+            self.assertEqual(consumer["resolved_args"], [artifact_id])
+            self.assertEqual(summary["artifact_id"], artifact_id)
+            self.assertEqual(summary["kind"], "stdout")
+            self.assertIn("git version", summary["content_preview"])
+
+    def test_artifact_id_summary_reads_artifact_store(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = ArtifactStore(Path(tmp) / "artifacts")
+            record = store.create_text("sample.source", "call-1", "stdout", "artifact payload")
+            self.assertIsNotNone(record)
+            payload = summarize_artifact(record.artifact_id, root=store.root)
+            self.assertEqual(payload["artifact_id"], record.artifact_id)
+            self.assertEqual(payload["content_preview"], "artifact payload")
+
     def test_cli_workflow_validate_plan_and_run(self):
         for args in (
             ["workflow", "validate", "workflows/example.json"],
@@ -193,6 +235,7 @@ class WorkflowRunnerTests(unittest.TestCase):
             ["workflow", "plan", "workflows/example.json"],
             ["workflow", "run", "workflows/example.json", "--dry-run"],
             ["workflow", "run", "workflows/message-routing.example.json", "--dry-run"],
+            ["workflow", "validate", "workflows/artifact-id-routing.example.json"],
             ["workflow", "validate", "workflows/cli-anything-macrocli-mermaid-routing.example.json"],
         ):
             proc = subprocess.run(

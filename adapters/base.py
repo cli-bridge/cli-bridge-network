@@ -13,6 +13,7 @@ class ToolCall:
     cwd: str | None = None
     dry_run: bool = False
     timeout_seconds: int = 30
+    env: dict[str, str] | None = None
 
 
 @dataclass(frozen=True)

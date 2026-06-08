@@ -157,6 +157,10 @@ if (!html.includes("python -m cbn workflow run workflows/message-routing.example
   throw new Error("Dashboard does not expose the BridgeMessage routing workflow command.");
 }
 
+if (!html.includes("python -m cbn workflow run workflows/artifact-id-routing.example.json")) {
+  throw new Error("Dashboard does not expose the artifact id routing workflow command.");
+}
+
 if (!html.includes("python -m cbn workflow run workflows/cli-anything-mermaid-routing.example.json")) {
   throw new Error("Dashboard does not expose the CLI-Anything Mermaid routing workflow command.");
 }

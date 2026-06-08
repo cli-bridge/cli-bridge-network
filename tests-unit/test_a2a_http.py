@@ -61,6 +61,8 @@ class A2AHttpTests(unittest.TestCase):
         self.assertEqual(task["status"]["state"], "completed")
         self.assertEqual(task["metadata"]["cbn"]["workflow_id"], "example.git-check")
         self.assertEqual(task["metadata"]["cbn"]["status"], "completed")
+        self.assertTrue(task["artifacts"])
+        self.assertEqual(task["artifacts"][0]["metadata"]["cbn"]["kind"], "stdout")
 
     def test_smoke_runs_real_daemon_routes(self):
         payload = smoke_a2a_http("git.version")
