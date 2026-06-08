@@ -6,7 +6,13 @@ from pathlib import Path
 
 from cbn_core.manifest import ManifestRegistry
 from cbn_protocol.compatibility import check_protocol
-from cbn_protocol.exports import export_all_protocols, export_protocol, list_protocol_exports
+from cbn_protocol.exports import (
+    export_all_protocols,
+    export_all_workflow_protocols,
+    export_protocol,
+    export_workflow_protocol,
+    list_protocol_exports,
+)
 
 
 class ProtocolExportTests(unittest.TestCase):
@@ -46,6 +52,36 @@ class ProtocolExportTests(unittest.TestCase):
         self.assertEqual(cbn["labels"], {})
         self.assertEqual(cbn["output"]["parser_ref"], "ffprobe.json")
         self.assertIn("manifests", cbn["source_path"])
+
+    def test_workflow_protocol_exports_preserve_routing_descriptors(self):
+        payload = export_workflow_protocol(
+            self.registry,
+            "mcp",
+            workflow_path="workflows/cli-anything-macrocli-mermaid-routing.example.json",
+        )
+        self.assertFalse(payload["wire_compatible"])
+        workflow_tool = payload["workflowTools"][0]
+        self.assertEqual(workflow_tool["name"], "workflow:example.cli-anything-macrocli-mermaid-routing")
+        workflow = workflow_tool["_meta"]["cbn_workflow"]
+        self.assertEqual(workflow["task_count"], 3)
+        self.assertEqual(workflow["tasks"][0]["capability"]["parser_ref"], "cli-anything.macrocli.backends")
+        self.assertEqual(workflow["tasks"][1]["argsFrom"][0]["selector"], "payload.data")
+        self.assertEqual(workflow_tool["_meta"]["cbn"]["output"]["task_message_kind"], "BridgeMessage")
+
+    def test_all_workflow_protocol_exports_cover_a2a_and_acp(self):
+        payload = export_all_workflow_protocols(
+            self.registry,
+            workflow_path="workflows/cli-anything-macrocli-mermaid-routing.example.json",
+        )
+        self.assertEqual(set(payload["exports"]), {"a2a", "acp", "mcp"})
+        self.assertEqual(
+            payload["exports"]["a2a"]["agentCard"]["skills"][0]["id"],
+            "workflow:example.cli-anything-macrocli-mermaid-routing",
+        )
+        self.assertEqual(
+            payload["exports"]["acp"]["workflows"][0]["cbn"]["runner"],
+            "cbn.workflow.run",
+        )
 
     def test_protocol_check_reports_descriptor_evidence_and_wire_gaps(self):
         payload = check_protocol(self.registry, "all", capability_id="cli-anything.mermaid.set-diagram")
@@ -95,6 +131,30 @@ class ProtocolExportTests(unittest.TestCase):
         payload = json.loads(proc.stdout)
         self.assertEqual(payload["protocol"], "mcp")
         self.assertEqual(payload["tools"][0]["name"], "git.status")
+
+    def test_cli_protocol_export_workflows(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "protocol",
+                "export-workflows",
+                "all",
+                "--path",
+                "workflows/cli-anything-macrocli-mermaid-routing.example.json",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertEqual(
+            payload["exports"]["mcp"]["workflowTools"][0]["_meta"]["cbn"]["kind"],
+            "WorkflowDescriptor",
+        )
 
     def test_cli_protocol_check(self):
         proc = subprocess.run(

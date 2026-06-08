@@ -185,6 +185,14 @@ if (!html.includes("python -m cbn protocol export all")) {
   throw new Error("Dashboard does not expose the protocol export command.");
 }
 
+if (!html.includes("python -m cbn protocol export-workflows all")) {
+  throw new Error("Dashboard does not expose the protocol workflow export command.");
+}
+
+if (!html.includes('data-api-path="/protocols/workflows?target=all"')) {
+  throw new Error("Dashboard does not wire workflow protocol exports to the daemon API.");
+}
+
 if (!html.includes('data-api-path="/protocols?target=all"')) {
   throw new Error("Dashboard does not wire protocol export to the daemon API.");
 }

@@ -337,6 +337,11 @@
             data-api-method="GET"
             data-api-path="/protocols?target=mcp&amp;capability_id=git.status"
           >Export MCP Tool</button>
+          <button
+            data-command="python -m cbn protocol export-workflows all"
+            data-api-method="GET"
+            data-api-path="/protocols/workflows?target=all"
+          >Export Workflows</button>
           <button data-command="python -m cbn message validate &lt;message.json&gt;">Validate Message</button>
           <button data-command="python -m cbn message select &lt;message.json&gt; payload.data.stdout">Select Message Field</button>
           <button data-command="python -m cbn message args &lt;message.json&gt; payload.data.stdout artifacts[0].artifact_id">Message Args</button>

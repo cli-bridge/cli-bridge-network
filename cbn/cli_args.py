@@ -61,6 +61,12 @@ def build_parser() -> argparse.ArgumentParser:
     protocol_export = protocol_subcommands.add_parser("export", help="Export capability descriptors.")
     protocol_export.add_argument("target", choices=["mcp", "a2a", "acp", "all"])
     protocol_export.add_argument("--capability-id")
+    protocol_export_workflows = protocol_subcommands.add_parser(
+        "export-workflows",
+        help="Export workflow descriptors for protocol adapter design.",
+    )
+    protocol_export_workflows.add_argument("target", choices=["mcp", "a2a", "acp", "all"])
+    protocol_export_workflows.add_argument("--path", help="Optional workflow JSON path.")
     protocol_check = protocol_subcommands.add_parser(
         "check",
         help="Report descriptor evidence and remaining wire-compatibility gaps.",

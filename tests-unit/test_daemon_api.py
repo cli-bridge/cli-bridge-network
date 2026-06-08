@@ -14,6 +14,7 @@ class DaemonApiTests(unittest.TestCase):
         routes = {(route["method"], route["path"]) for route in ROUTE_SUMMARY}
         self.assertIn(("POST", "/plugins/cli-anything/evaluate-harness"), routes)
         self.assertIn(("GET", "/protocols/check"), routes)
+        self.assertIn(("GET", "/protocols/workflows"), routes)
         self.assertIn(("GET", "/.well-known/agent-card.json"), routes)
         self.assertIn(("POST", "/a2a"), routes)
         self.assertIn(("GET", "/workflows"), routes)
@@ -102,6 +103,18 @@ class DaemonApiTests(unittest.TestCase):
                 self.assertTrue(
                     any(item["status"] == "missing" for item in payload["checks"])
                 )
+
+    def test_protocol_workflows_route_returns_descriptor_exports(self):
+        with daemon_url() as base_url:
+            with urllib.request.urlopen(
+                f"{base_url}/protocols/workflows?target=mcp&path=workflows/cli-anything-macrocli-mermaid-routing.example.json",
+                timeout=5,
+            ) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(response.status, 200)
+                self.assertEqual(payload["protocol"], "mcp")
+                self.assertEqual(payload["workflowTools"][0]["_meta"]["cbn"]["kind"], "WorkflowDescriptor")
+                self.assertEqual(payload["workflowTools"][0]["_meta"]["cbn_workflow"]["task_count"], 3)
 
     def test_workflows_route_returns_catalog(self):
         with daemon_url() as base_url:

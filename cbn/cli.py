@@ -20,7 +20,13 @@ from cbn_protocol.acp_stdio import serve_stdio as serve_acp_stdio
 from cbn_protocol.acp_stdio import smoke_acp_stdio
 from cbn_protocol.envelope import bridge_args_from_selectors, select_bridge_value, validate_bridge_message
 from cbn_protocol.compatibility import check_protocol
-from cbn_protocol.exports import export_all_protocols, export_protocol, list_protocol_exports
+from cbn_protocol.exports import (
+    export_all_protocols,
+    export_all_workflow_protocols,
+    export_protocol,
+    export_workflow_protocol,
+    list_protocol_exports,
+)
 from cbn_protocol.mcp_stdio import serve_stdio, smoke_mcp_stdio
 from cbn_runtime.context import build_runtime
 from cbn_workflow.catalog import inspect_workflow, list_workflows
@@ -144,6 +150,13 @@ def main(argv: list[str] | None = None) -> int:
                     args.target,
                     capability_id=args.capability_id,
                 )
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0
+        if args.protocol_command == "export-workflows":
+            if args.target == "all":
+                payload = export_all_workflow_protocols(runtime.registry, workflow_path=args.path)
+            else:
+                payload = export_workflow_protocol(runtime.registry, args.target, workflow_path=args.path)
             print(json.dumps(payload, ensure_ascii=False, indent=2))
             return 0
         if args.protocol_command == "check":

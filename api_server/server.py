@@ -20,7 +20,13 @@ from cbn_parsers.registry import ParserRegistry
 from cbn_protocol.a2a_http import agent_card, handle_a2a_jsonrpc_request
 from cbn_protocol.envelope import bridge_args_from_selectors, select_bridge_value, validate_bridge_message
 from cbn_protocol.compatibility import check_protocol
-from cbn_protocol.exports import export_all_protocols, export_protocol, list_protocol_exports
+from cbn_protocol.exports import (
+    export_all_protocols,
+    export_all_workflow_protocols,
+    export_protocol,
+    export_workflow_protocol,
+    list_protocol_exports,
+)
 from cbn_runtime.context import build_runtime
 from cbn_workflow.catalog import inspect_workflow, list_workflows
 from cbn_plugins.cli_anything import CliAnythingHub
@@ -45,6 +51,7 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/parsers"},
     {"method": "GET", "path": "/.well-known/agent-card.json"},
     {"method": "GET", "path": "/protocols"},
+    {"method": "GET", "path": "/protocols/workflows"},
     {"method": "GET", "path": "/protocols/check"},
     {"method": "GET", "path": "/approvals"},
     {"method": "GET", "path": "/workflows"},
@@ -217,6 +224,14 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 )
             else:
                 self._send(200, list_protocol_exports())
+            return
+        if parsed.path == "/protocols/workflows":
+            target = query.get("target", ["all"])[0]
+            workflow_path = query.get("path", [None])[0]
+            if target == "all":
+                self._send(200, export_all_workflow_protocols(runtime.registry, workflow_path=workflow_path))
+            else:
+                self._send(200, export_workflow_protocol(runtime.registry, target, workflow_path=workflow_path))
             return
         if parsed.path == "/protocols/check":
             target = query.get("target", ["all"])[0]
