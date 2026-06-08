@@ -11,6 +11,7 @@ import json
 import re
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -381,6 +382,108 @@ class CliAnythingHub:
             ],
         }
 
+    def evaluate_harness(
+        self,
+        harness_name: str,
+        title: str | None = None,
+        from_market: bool = True,
+    ) -> dict[str, Any]:
+        adaptation = self.adapt_harness(
+            harness_name,
+            title=title,
+            from_market=from_market,
+            write=False,
+        )
+        if not adaptation["ok"]:
+            return {
+                "ok": False,
+                "plugin_id": PLUGIN_ID,
+                "harness_name": harness_name,
+                "from_market": from_market,
+                "error": adaptation["error"],
+                "adaptation": adaptation,
+            }
+        status = adaptation["status"]
+        manifest = adaptation["manifest"]
+        validation = adaptation["validation"]
+        market_record = status.get("market_record") if isinstance(status.get("market_record"), dict) else None
+        requires = _declared_requires(market_record, status)
+        requirements = _requirement_assessment(requires)
+        platform = _platform_assessment(market_record, requires)
+        policy = manifest["spec"]["policy"]
+        low_policy_risk = policy["risk"] in {"read", "write-workspace"} and not policy["requiresConfirmation"]
+        gates = {
+            "cli_hub_available": bool(status["cli_hub_available"]),
+            "market_record_available": bool(adaptation["market_record_available"]),
+            "market_required_satisfied": (not from_market) or bool(adaptation["market_record_available"]),
+            "manifest_valid": bool(validation["valid"]),
+            "manifest_imported": bool(status["manifest_imported"]),
+            "installed": bool(status["installed"]),
+            "launch_ready": bool(status["launch_ready"] and validation["valid"]),
+            "low_policy_risk": low_policy_risk,
+            "external_dependency_free": requirements["external_dependency_free"],
+            "platform_compatible": platform["compatible"],
+        }
+        blockers = []
+        if not gates["cli_hub_available"]:
+            blockers.append("cli-hub is not available")
+        if not gates["market_required_satisfied"]:
+            blockers.append("required market record is unavailable")
+        if not gates["manifest_valid"]:
+            blockers.append("generated manifest is invalid")
+        if not gates["low_policy_risk"]:
+            blockers.append("policy requires elevated confirmation")
+        if not gates["external_dependency_free"]:
+            blockers.append("declared requirements need external app, account, token, or service")
+        if not gates["platform_compatible"]:
+            blockers.append("declared platform does not match this host")
+        install_candidate = (
+            gates["cli_hub_available"]
+            and gates["market_required_satisfied"]
+            and gates["manifest_valid"]
+            and gates["low_policy_risk"]
+            and gates["external_dependency_free"]
+            and gates["platform_compatible"]
+        )
+        if gates["launch_ready"]:
+            recommended_next_action = "call_capability"
+        elif gates["installed"] and not gates["manifest_imported"]:
+            recommended_next_action = "write_manifest"
+        elif install_candidate and gates["manifest_imported"]:
+            recommended_next_action = "install_harness"
+        elif install_candidate:
+            recommended_next_action = "write_manifest"
+        else:
+            recommended_next_action = "resolve_blockers"
+        capability_id = manifest["metadata"]["id"]
+        return {
+            "ok": True,
+            "plugin_id": PLUGIN_ID,
+            "harness_name": harness_name,
+            "from_market": from_market,
+            "capability_id": capability_id,
+            "install_candidate": install_candidate,
+            "recommended_next_action": recommended_next_action,
+            "blockers": blockers,
+            "gates": gates,
+            "requirements": requirements,
+            "platform": platform,
+            "policy": policy,
+            "status": status,
+            "validation": validation,
+            "adaptation": adaptation,
+            "plans": {
+                "install": self.harness_plan("install", harness_name).as_dict(),
+                "launch": self.harness_plan("launch", harness_name).as_dict(),
+            },
+            "next_commands": [
+                f"python -m cbn plugin adapt-harness cli-anything {harness_name} --from-market --write",
+                f"python -m cbn plugin harness cli-anything install {harness_name} --yes",
+                "python -m cbn registry validate manifests",
+                f"python -m cbn call {capability_id} --dry-run",
+            ],
+        }
+
     def sync_market(
         self,
         query: str | None = None,
@@ -657,6 +760,73 @@ def _market_record_identity(item: dict[str, Any]) -> dict[str, str | None]:
         "display_name": str(record.get("display_name")) if record.get("display_name") is not None else None,
         "entry_point": str(record.get("entry_point")) if record.get("entry_point") is not None else None,
         "source": str(record.get("_source")) if record.get("_source") is not None else None,
+    }
+
+
+def _declared_requires(market_record: dict[str, Any] | None, status: dict[str, Any]) -> str | None:
+    if market_record and market_record.get("requires") not in {None, ""}:
+        return str(market_record["requires"])
+    fields = status.get("cli_hub_info", {}).get("fields", {})
+    if isinstance(fields, dict) and fields.get("requires") not in {None, ""}:
+        return str(fields["requires"])
+    return None
+
+
+def _requirement_assessment(requires: str | None) -> dict[str, Any]:
+    if not requires or requires.strip().casefold() in {"none", "nothing", "null", "n/a"}:
+        return {
+            "declared": requires,
+            "external_dependency_free": True,
+            "signals": [],
+        }
+    text = requires.casefold()
+    blocking_markers = (
+        "api key",
+        "token",
+        "account",
+        "desktop app",
+        "running",
+        "server",
+        "instance",
+        "licensed",
+        "installation",
+        "install ",
+        "apt ",
+        "brew ",
+        "set ",
+        "env ",
+        "extension",
+        "login",
+    )
+    signals = [marker.strip() for marker in blocking_markers if marker in text]
+    return {
+        "declared": requires,
+        "external_dependency_free": len(signals) == 0,
+        "signals": signals,
+    }
+
+
+def _platform_assessment(market_record: dict[str, Any] | None, requires: str | None) -> dict[str, Any]:
+    host_platform = sys.platform
+    text = "\n".join(
+        str(value)
+        for value in (
+            (market_record or {}).get("platform"),
+            requires,
+        )
+        if value
+    ).casefold()
+    incompatible = False
+    if "macos" in text or "darwin" in text:
+        incompatible = not host_platform.startswith("darwin")
+    if "linux" in text and not host_platform.startswith("linux"):
+        incompatible = True
+    if "windows" in text and not host_platform.startswith("win"):
+        incompatible = True
+    return {
+        "host": host_platform,
+        "compatible": not incompatible,
+        "signals": text.splitlines(),
     }
 
 

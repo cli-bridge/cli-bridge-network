@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import time
 import uuid
@@ -119,6 +120,7 @@ class PluginOperationRunner:
             proc = subprocess.run(
                 list(command.argv),
                 cwd=command.cwd,
+                env=_operation_env(),
                 text=True,
                 encoding="utf-8",
                 errors="replace",
@@ -265,3 +267,10 @@ def _timeout_text(value: str | bytes | None) -> str:
     if isinstance(value, bytes):
         return value.decode("utf-8", errors="replace")
     return value
+
+
+def _operation_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+    env.setdefault("PYTHONUTF8", "1")
+    return env

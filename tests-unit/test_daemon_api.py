@@ -6,10 +6,14 @@ import urllib.request
 from contextlib import contextmanager
 from http.server import ThreadingHTTPServer
 
-from api_server.server import CbnRequestHandler
+from api_server.server import CbnRequestHandler, ROUTE_SUMMARY
 
 
 class DaemonApiTests(unittest.TestCase):
+    def test_route_summary_exposes_cli_anything_evaluation(self):
+        routes = {(route["method"], route["path"]) for route in ROUTE_SUMMARY}
+        self.assertIn(("POST", "/plugins/cli-anything/evaluate-harness"), routes)
+
     def test_post_bad_json_returns_structured_error(self):
         with daemon_url() as base_url:
             request = urllib.request.Request(

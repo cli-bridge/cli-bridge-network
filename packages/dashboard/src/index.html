@@ -176,6 +176,12 @@
             data-api-body='{"harness_name":"gimp","from_market":true}'
           >Prepare Harness</button>
           <button
+            data-command="python -m cbn plugin evaluate-harness cli-anything mermaid"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/evaluate-harness"
+            data-api-body='{"harness_name":"mermaid","from_market":true}'
+          >Evaluate Mermaid</button>
+          <button
             data-command="python -m cbn plugin harness cli-anything install gimp"
             data-api-method="POST"
             data-api-path="/plugins/cli-anything/harness"

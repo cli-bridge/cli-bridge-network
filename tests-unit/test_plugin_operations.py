@@ -1,6 +1,7 @@
 import sys
 import tempfile
 import unittest
+import json
 from pathlib import Path
 
 from cbn_audit.log import AuditLog
@@ -100,6 +101,41 @@ class PluginOperationTests(unittest.TestCase):
             self.assertEqual(result["status"], "failed")
             self.assertEqual(result["results"][0]["exit_code"], 127)
             self.assertIn("cbn-command-that-does-not-exist", result["results"][0]["stderr"])
+
+    def test_plugin_operation_sets_utf8_child_environment(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            runner = PluginOperationRunner(
+                audit_log=AuditLog(root / "audit.jsonl"),
+                event_bus=EventBus(root / "events.jsonl"),
+                artifact_store=ArtifactStore(root / "artifacts"),
+            )
+            plan = PluginPlan(
+                plugin_id="test-plugin",
+                action="install",
+                plugin_dir=str(root / "external_plugins" / "test-plugin"),
+                commands=(
+                    PluginCommand(
+                        label="Print env",
+                        argv=(
+                            sys.executable,
+                            "-c",
+                            (
+                                "import json, os; "
+                                "print(json.dumps({"
+                                "'PYTHONIOENCODING': os.environ.get('PYTHONIOENCODING'), "
+                                "'PYTHONUTF8': os.environ.get('PYTHONUTF8')"
+                                "}))"
+                            ),
+                        ),
+                    ),
+                ),
+            )
+            result = runner.execute(plan)
+            self.assertEqual(result["status"], "completed")
+            env = json.loads(result["results"][0]["stdout"])
+            self.assertEqual(env["PYTHONIOENCODING"], "utf-8")
+            self.assertEqual(env["PYTHONUTF8"], "1")
 
     def test_plugin_plan_serializes_command_timeout(self):
         plan = PluginPlan(

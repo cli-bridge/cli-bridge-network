@@ -1,0 +1,45 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "ToolManifest",
+  "metadata": {
+    "id": "cli-anything.mermaid.launch",
+    "title": "CLI-Anything Mermaid",
+    "labels": {
+      "plugin": "cli-anything",
+      "harness": "mermaid",
+      "category": "diagrams",
+      "source": "harness"
+    },
+    "annotations": {
+      "cli-anything.display_name": "Mermaid",
+      "cli-anything.version": "1.0.0",
+      "cli-anything.description": "Mermaid Live Editor state files and renderer URLs",
+      "cli-anything.homepage": "https://mermaid.js.org",
+      "cli-anything.install_cmd": "pip install git+https://github.com/HKUDS/CLI-Anything.git#subdirectory=mermaid/agent-harness",
+      "cli-anything.entry_point": "cli-anything-mermaid",
+      "cli-anything.contributors": "[{\"name\": \"getmored-create\", \"url\": \"https://github.com/getmored-create\"}]",
+      "cli-anything.policy_inference": "[\"runtime appears to generate, edit, render, convert, or export artifacts\"]"
+    }
+  },
+  "spec": {
+    "transport": {
+      "kind": "stdio",
+      "command": "cli-hub",
+      "argsTemplate": [
+        "launch",
+        "mermaid"
+      ],
+      "cwdPolicy": "workspace",
+      "timeoutSeconds": 600
+    },
+    "policy": {
+      "risk": "write-workspace",
+      "requiresConfirmation": false,
+      "network": "deny"
+    },
+    "output": {
+      "parserRef": "cli-anything.raw",
+      "verified": false
+    }
+  }
+}

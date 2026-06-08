@@ -29,6 +29,19 @@ SAMPLE_MARKET_RECORD = {
     "_source": "harness",
 }
 
+SAMPLE_MERMAID_RECORD = {
+    "name": "mermaid",
+    "display_name": "Mermaid",
+    "version": "1.0.0",
+    "description": "Mermaid Live Editor state files and renderer URLs",
+    "requires": None,
+    "homepage": "https://mermaid.js.org",
+    "install_cmd": "pip install git+https://github.com/HKUDS/CLI-Anything.git#subdirectory=mermaid/agent-harness",
+    "entry_point": "cli-anything-mermaid",
+    "category": "diagrams",
+    "_source": "harness",
+}
+
 
 class CliAnythingHubTests(unittest.TestCase):
     def test_sanitize_harness_name_keeps_manifest_safe(self):
@@ -201,6 +214,71 @@ class CliAnythingHubTests(unittest.TestCase):
         result = FakeHub().prepare_harness("missing", from_market=True)
         self.assertFalse(result["ok"])
         self.assertIn("market record not found", result["error"])
+
+    def test_evaluate_harness_recommends_low_dependency_market_candidate(self):
+        class FakeHub(CliAnythingHub):
+            def info(self, harness_name: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "info", harness_name),
+                    exit_code=0,
+                    stdout="Entry point: cli-anything-mermaid\nRequires: nothing\nStatus: not installed\n",
+                    stderr="",
+                )
+
+            def search_market(self, query: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "search", query, "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[SAMPLE_MERMAID_RECORD],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result = FakeHub(root=Path(tmp)).evaluate_harness("mermaid", from_market=True)
+            self.assertTrue(result["ok"])
+            self.assertTrue(result["install_candidate"])
+            self.assertEqual(result["recommended_next_action"], "write_manifest")
+            self.assertTrue(result["gates"]["external_dependency_free"])
+            self.assertTrue(result["gates"]["low_policy_risk"])
+            self.assertFalse(result["gates"]["installed"])
+            self.assertEqual(result["requirements"]["signals"], [])
+            self.assertEqual(result["capability_id"], "cli-anything.mermaid.launch")
+
+    def test_evaluate_harness_blocks_account_or_token_requirements(self):
+        class FakeHub(CliAnythingHub):
+            def info(self, harness_name: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "info", harness_name),
+                    exit_code=0,
+                    stdout="Entry point: generate-veo\nRequires: GOOGLE_CLOUD_PROJECT and API key\nStatus: not installed\n",
+                    stderr="",
+                )
+
+            def search_market(self, query: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "search", query, "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[
+                        {
+                            "name": "generate-veo-video",
+                            "display_name": "Generate Veo Video",
+                            "description": "Generate videos with Google Veo via Vertex AI and Gemini",
+                            "requires": "GOOGLE_CLOUD_PROJECT env var and GEMINI_API_KEY optional",
+                            "entry_point": "generate-veo",
+                        }
+                    ],
+                )
+
+        result = FakeHub().evaluate_harness("generate-veo-video", from_market=True)
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["install_candidate"])
+        self.assertFalse(result["gates"]["external_dependency_free"])
+        self.assertFalse(result["gates"]["low_policy_risk"])
+        self.assertIn("policy requires elevated confirmation", result["blockers"])
+        self.assertIn("declared requirements need external app, account, token, or service", result["blockers"])
 
     def test_sync_market_previews_multiple_harness_manifests(self):
         class FakeHub(CliAnythingHub):
@@ -507,6 +585,29 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(payload["harness_name"], "gimp")
         self.assertTrue(payload["gates"]["manifest_valid"])
         self.assertIn("install", payload["plans"])
+
+    def test_cli_evaluate_harness_outputs_candidate_report(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "plugin",
+                "evaluate-harness",
+                "cli-anything",
+                "mermaid",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertIn(proc.returncode, {0, 6})
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["plugin_id"], "cli-anything")
+        self.assertEqual(payload["harness_name"], "mermaid")
+        self.assertIn("install_candidate", payload)
+        self.assertIn("recommended_next_action", payload)
 
     def test_cli_sync_market_handles_missing_cli_hub_without_crashing(self):
         proc = subprocess.run(

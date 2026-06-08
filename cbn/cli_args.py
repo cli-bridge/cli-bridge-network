@@ -164,6 +164,26 @@ def build_parser() -> argparse.ArgumentParser:
         help="Require a CLI-Hub market record and include its metadata in the preparation report.",
     )
 
+    plugin_evaluate = plugin_subcommands.add_parser(
+        "evaluate-harness",
+        help="Evaluate an external harness as a candidate for install and CBN adaptation.",
+    )
+    plugin_evaluate.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
+    plugin_evaluate.add_argument("harness_name", help="Harness name from the plugin market.")
+    plugin_evaluate.add_argument("--title", help="Optional manifest title.")
+    plugin_evaluate.add_argument(
+        "--from-market",
+        action="store_true",
+        default=True,
+        help="Require a CLI-Hub market record and include its metadata in the evaluation.",
+    )
+    plugin_evaluate.add_argument(
+        "--offline",
+        action="store_false",
+        dest="from_market",
+        help="Evaluate without requiring market metadata.",
+    )
+
     plugin_sync = plugin_subcommands.add_parser(
         "sync-market",
         help="Preview or write CBN manifests for CLI-Anything market records.",

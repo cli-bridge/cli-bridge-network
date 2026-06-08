@@ -327,6 +327,16 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0 if result["ok"] else 6
+        if args.plugin_command == "evaluate-harness":
+            if args.plugin_id != "cli-anything":
+                raise KeyError(f"evaluate-harness is not implemented for plugin: {args.plugin_id}")
+            result = CliAnythingHub().evaluate_harness(
+                args.harness_name,
+                title=args.title,
+                from_market=args.from_market,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["ok"] else 6
         if args.plugin_command == "sync-market":
             if args.plugin_id != "cli-anything":
                 raise KeyError(f"sync-market is not implemented for plugin: {args.plugin_id}")

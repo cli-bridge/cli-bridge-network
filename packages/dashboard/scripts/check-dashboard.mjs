@@ -89,6 +89,14 @@ if (!html.includes('data-api-path="/plugins/cli-anything/prepare-harness"')) {
   throw new Error("Dashboard does not wire CLI-Anything preparation to the daemon API.");
 }
 
+if (!html.includes("python -m cbn plugin evaluate-harness cli-anything mermaid")) {
+  throw new Error("Dashboard does not expose the CLI-Anything candidate evaluation command.");
+}
+
+if (!html.includes('data-api-path="/plugins/cli-anything/evaluate-harness"')) {
+  throw new Error("Dashboard does not wire CLI-Anything candidate evaluation to the daemon API.");
+}
+
 if (!html.includes("python -m cbn plugin harness cli-anything status gimp --from-market")) {
   throw new Error("Dashboard does not expose the CLI-Anything harness status command.");
 }
