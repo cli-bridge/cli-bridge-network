@@ -124,6 +124,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     plugin_import.add_argument("--write", action="store_true", help="Write manifest into manifests/.")
 
+    plugin_adapt = plugin_subcommands.add_parser(
+        "adapt-harness",
+        help="Preview or write the full CBN adaptation report for an external harness.",
+    )
+    plugin_adapt.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
+    plugin_adapt.add_argument("harness_name", help="Harness name from the plugin market.")
+    plugin_adapt.add_argument("--title", help="Optional manifest title.")
+    plugin_adapt.add_argument(
+        "--from-market",
+        action="store_true",
+        help="Require a CLI-Hub market record and include its metadata in the adaptation.",
+    )
+    plugin_adapt.add_argument("--write", action="store_true", help="Write manifest into manifests/.")
+
     plugin_harness = plugin_subcommands.add_parser("harness", help="Plan or execute external harness operations.")
     plugin_harness.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
     plugin_harness.add_argument("harness_action", choices=["status", "install", "update", "uninstall", "launch"])

@@ -90,12 +90,13 @@ class CliAnythingHub:
         return self._run(("info", harness_name), parse_json=False)
 
     def harness_status(self, harness_name: str, from_market: bool = False) -> dict[str, Any]:
-        safe_name = sanitize_harness_name(harness_name)
+        market_record = self.market_record_for_harness(harness_name) if from_market else None
+        market_name = str((market_record or {}).get("name") or harness_name)
+        safe_name = sanitize_harness_name(market_name)
         capability_id = f"cli-anything.{safe_name}.launch"
         manifest_path = self.paths.manifests / f"{capability_id}.json"
         info_result = self.info(harness_name)
         info_fields = _parse_info_fields(info_result.stdout)
-        market_record = self.market_record_for_harness(harness_name) if from_market else None
         entry_point = (
             info_fields.get("entry_point")
             or str((market_record or {}).get("entry_point") or "")
@@ -107,6 +108,7 @@ class CliAnythingHub:
         return {
             "plugin_id": PLUGIN_ID,
             "harness_name": harness_name,
+            "market_name": market_name,
             "safe_name": safe_name,
             "capability_id": capability_id,
             "manifest_path": str(manifest_path),
@@ -219,11 +221,52 @@ class CliAnythingHub:
         market_record: dict[str, Any] | None = None,
     ) -> Path:
         manifest = self.manifest_for_harness(harness_name, title=title, market_record=market_record)
-        safe_name = sanitize_harness_name(harness_name)
-        path = self.paths.manifests / f"cli-anything.{safe_name}.launch.json"
+        path = self.paths.manifests / f"{manifest['metadata']['id']}.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         return path
+
+    def adapt_harness(
+        self,
+        harness_name: str,
+        title: str | None = None,
+        from_market: bool = False,
+        write: bool = False,
+    ) -> dict[str, Any]:
+        market_record = self.market_record_for_harness(harness_name) if from_market else None
+        if from_market and market_record is None:
+            return {
+                "ok": False,
+                "error": "CLI-Anything market record not found",
+                "plugin_id": PLUGIN_ID,
+                "harness_name": harness_name,
+                "from_market": True,
+            }
+        manifest = self.manifest_for_harness(harness_name, title=title, market_record=market_record)
+        capability_id = manifest["metadata"]["id"]
+        manifest_path = self.paths.manifests / f"{capability_id}.json"
+        written = None
+        if write:
+            written = self.write_harness_manifest(harness_name, title=title, market_record=market_record)
+            manifest_path = written
+        return {
+            "ok": True,
+            "plugin_id": PLUGIN_ID,
+            "harness_name": harness_name,
+            "from_market": from_market,
+            "market_record_available": market_record is not None,
+            "write": write,
+            "written": str(written) if written else None,
+            "manifest_path": str(manifest_path),
+            "manifest": manifest,
+            "status": self.harness_status(harness_name, from_market=from_market),
+            "next_commands": [
+                f"python -m cbn plugin harness cli-anything status {harness_name} --from-market",
+                f"python -m cbn plugin harness cli-anything install {harness_name} --yes",
+                f"python -m cbn call {capability_id} --dry-run",
+                f"python -m cbn protocol export all --capability-id {capability_id}",
+            ],
+        }
 
     def _run(self, args: tuple[str, ...], parse_json: bool) -> CliHubCommandResult:
         executable = shutil.which(self.entrypoint)

@@ -98,6 +98,61 @@ class CliAnythingHubTests(unittest.TestCase):
             self.assertTrue(status["entrypoint_available"])
             self.assertTrue(status["market_record_available"])
 
+    def test_adapt_harness_previews_manifest_status_and_next_commands(self):
+        class FakeHub(CliAnythingHub):
+            def info(self, harness_name: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "info", harness_name),
+                    exit_code=0,
+                    stdout="Entry point: cli-anything-gimp\nStatus: not installed\n",
+                    stderr="",
+                )
+
+            def search_market(self, query: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "search", query),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[SAMPLE_MARKET_RECORD],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result = FakeHub(root=Path(tmp)).adapt_harness("gimp", from_market=True)
+            self.assertTrue(result["ok"])
+            self.assertFalse(result["write"])
+            self.assertIsNone(result["written"])
+            self.assertTrue(result["market_record_available"])
+            self.assertEqual(result["manifest"]["metadata"]["id"], "cli-anything.gimp.launch")
+            self.assertFalse(result["status"]["manifest_imported"])
+            self.assertIn("python -m cbn call cli-anything.gimp.launch --dry-run", result["next_commands"])
+
+    def test_adapt_harness_write_imports_manifest(self):
+        class FakeHub(CliAnythingHub):
+            def info(self, harness_name: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "info", harness_name),
+                    exit_code=0,
+                    stdout=f"Entry point: {sys.executable}\nStatus: installed\n",
+                    stderr="",
+                )
+
+            def search_market(self, query: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "search", query),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[SAMPLE_MARKET_RECORD],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result = FakeHub(root=Path(tmp)).adapt_harness("gimp", from_market=True, write=True)
+            self.assertTrue(result["ok"])
+            self.assertTrue(result["write"])
+            self.assertTrue(Path(result["written"]).exists())
+            self.assertTrue(result["status"]["manifest_imported"])
+
     def test_manifest_for_harness_uses_stdio_launch_boundary(self):
         manifest = CliAnythingHub().manifest_for_harness("gimp")
         self.assertEqual(manifest["metadata"]["id"], "cli-anything.gimp.launch")
@@ -198,6 +253,29 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(payload["plugin_id"], "cli-anything")
         self.assertEqual(payload["harness_name"], "gimp")
         self.assertIn("launch_ready", payload)
+
+    def test_cli_adapt_harness_outputs_adaptation_report(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "plugin",
+                "adapt-harness",
+                "cli-anything",
+                "gimp",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["manifest"]["metadata"]["id"], "cli-anything.gimp.launch")
+        self.assertFalse(payload["write"])
+        self.assertIn("next_commands", payload)
 
     def test_write_harness_manifest_writes_utf8_json(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -44,6 +44,7 @@ ROUTE_SUMMARY = [
     {"method": "POST", "path": "/plugins/execute"},
     {"method": "POST", "path": "/plugins/cli-anything/market"},
     {"method": "POST", "path": "/plugins/cli-anything/import-harness"},
+    {"method": "POST", "path": "/plugins/cli-anything/adapt-harness"},
     {"method": "POST", "path": "/plugins/cli-anything/harness"},
 ]
 
@@ -257,6 +258,20 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 self._send(200, {"written": str(path), "manifest": manifest})
             else:
                 self._send(200, manifest)
+            return
+        if self.path == "/plugins/cli-anything/adapt-harness":
+            hub = CliAnythingHub()
+            write = bool(payload.get("write", False))
+            if write and not bool(payload.get("confirmed", False)):
+                self._send(403, {"error": "manifest write requires confirmed=true"})
+                return
+            result = hub.adapt_harness(
+                payload["harness_name"],
+                title=payload.get("title"),
+                from_market=bool(payload.get("from_market", False)),
+                write=write,
+            )
+            self._send(200 if result["ok"] else 502, result)
             return
         if self.path == "/plugins/cli-anything/harness":
             hub = CliAnythingHub()
