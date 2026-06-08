@@ -507,6 +507,14 @@ class CliAnythingHub:
         else:
             recommended_next_action = "resolve_blockers"
         capability_id = manifest["metadata"]["id"]
+        lifecycle = _lifecycle_report(
+            harness_name=harness_name,
+            capability_id=capability_id,
+            recommended_next_action=recommended_next_action,
+            gates=gates,
+            blockers=blockers,
+            install_candidate=install_candidate,
+        )
         return {
             "ok": True,
             "plugin_id": PLUGIN_ID,
@@ -520,6 +528,7 @@ class CliAnythingHub:
             "requirements": requirements,
             "platform": platform,
             "policy": policy,
+            "lifecycle": lifecycle,
             "status": status,
             "validation": validation,
             "adaptation": adaptation,
@@ -575,6 +584,8 @@ class CliAnythingHub:
             for index, record in enumerate(selected)
         ]
         _mark_candidate_collisions(candidates)
+        for item in candidates:
+            _refresh_candidate_lifecycle(item)
         candidates.sort(
             key=lambda item: (
                 not bool(item.get("install_candidate")),
@@ -658,6 +669,15 @@ class CliAnythingHub:
         if not gates["platform_compatible"]:
             blockers.append("declared platform does not match this host")
         install_candidate = len(blockers) == 0
+        recommended_next_action = "write_manifest" if install_candidate else "resolve_blockers"
+        lifecycle = _lifecycle_report(
+            harness_name=harness_name,
+            capability_id=capability_id,
+            recommended_next_action=recommended_next_action,
+            gates=gates,
+            blockers=blockers,
+            install_candidate=install_candidate,
+        )
         return {
             "ok": True,
             "market_index": market_index,
@@ -666,12 +686,13 @@ class CliAnythingHub:
             "capability_id": capability_id,
             "manifest_path": str(manifest_path) if manifest_path else None,
             "install_candidate": install_candidate,
-            "recommended_next_action": "write_manifest" if install_candidate else "resolve_blockers",
+            "recommended_next_action": recommended_next_action,
             "blockers": blockers,
             "gates": gates,
             "requirements": requirements,
             "platform": platform,
             "policy": policy,
+            "lifecycle": lifecycle,
             "validation": validation,
             "market_record": record,
             "next_commands": [
@@ -968,6 +989,26 @@ def _mark_candidate_collisions(candidates: list[dict[str, Any]]) -> None:
             }
 
 
+def _refresh_candidate_lifecycle(item: dict[str, Any]) -> None:
+    harness_name = item.get("harness_name")
+    if not isinstance(harness_name, str) or not harness_name:
+        return
+    blockers = item.get("blockers")
+    if not isinstance(blockers, list):
+        blockers = []
+    gates = item.get("gates")
+    if not isinstance(gates, dict):
+        gates = {}
+    item["lifecycle"] = _lifecycle_report(
+        harness_name=harness_name,
+        capability_id=item.get("capability_id") if isinstance(item.get("capability_id"), str) else None,
+        recommended_next_action=str(item.get("recommended_next_action") or "resolve_blockers"),
+        gates=gates,
+        blockers=blockers,
+        install_candidate=bool(item.get("install_candidate")),
+    )
+
+
 def _policy_requires_confirmation(policy: dict[str, Any]) -> bool:
     return bool(policy.get("requiresConfirmation", policy.get("requires_confirmation", False)))
 
@@ -1086,6 +1127,91 @@ def _max_risk(left: str, right: str) -> str:
     except ValueError as exc:
         raise ValueError(f"unknown risk level for CLI-Anything policy inference: {exc}") from exc
     return left if left_rank >= right_rank else right
+
+
+def _lifecycle_report(
+    harness_name: str,
+    capability_id: str | None,
+    recommended_next_action: str,
+    gates: dict[str, Any],
+    blockers: list[str],
+    install_candidate: bool,
+) -> dict[str, Any]:
+    blocked = bool(blockers)
+    manifest_imported = bool(gates.get("manifest_imported", False))
+    installed = bool(gates.get("installed", False))
+    launch_ready = bool(gates.get("launch_ready", False))
+    ready_for_install = bool(install_candidate and not installed and not blocked)
+    requires_override = blocked or not bool(gates.get("external_dependency_free", True))
+    if launch_ready:
+        state = "launch_ready"
+    elif blocked:
+        state = "blocked"
+    elif installed and not manifest_imported:
+        state = "installed_needs_manifest"
+    elif installed:
+        state = "installed"
+    elif manifest_imported and ready_for_install:
+        state = "manifest_ready"
+    elif install_candidate:
+        state = "market_candidate"
+    else:
+        state = "needs_review"
+
+    stages = [
+        {
+            "id": "evaluate",
+            "status": "completed",
+            "command": f"python -m cbn plugin evaluate-harness cli-anything {harness_name}",
+        },
+        {
+            "id": "write_manifest",
+            "status": _stage_status(
+                done=manifest_imported,
+                ready=recommended_next_action == "write_manifest" and not blocked,
+                blocked=blocked,
+            ),
+            "command": f"python -m cbn plugin adapt-harness cli-anything {harness_name} --from-market --write",
+        },
+        {
+            "id": "install_harness",
+            "status": _stage_status(
+                done=installed,
+                ready=recommended_next_action == "install_harness" and not blocked,
+                blocked=blocked,
+            ),
+            "command": f"python -m cbn plugin harness cli-anything install {harness_name} --yes",
+        },
+        {
+            "id": "dry_run_call",
+            "status": _stage_status(
+                done=False,
+                ready=launch_ready,
+                blocked=blocked or not capability_id,
+            ),
+            "command": f"python -m cbn call {capability_id} --dry-run" if capability_id else None,
+        },
+    ]
+    return {
+        "state": state,
+        "recommended_next_action": recommended_next_action,
+        "blocked": blocked,
+        "requires_override": requires_override,
+        "ready_for_install": ready_for_install,
+        "ready_for_call": launch_ready,
+        "blockers": blockers,
+        "stages": stages,
+    }
+
+
+def _stage_status(done: bool, ready: bool, blocked: bool) -> str:
+    if done:
+        return "completed"
+    if blocked:
+        return "blocked"
+    if ready:
+        return "ready"
+    return "pending"
 
 
 def _known_parser_refs() -> set[str]:

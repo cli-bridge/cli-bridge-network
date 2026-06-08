@@ -244,6 +244,12 @@ class CliAnythingHubTests(unittest.TestCase):
             self.assertFalse(result["gates"]["installed"])
             self.assertEqual(result["requirements"]["signals"], [])
             self.assertEqual(result["capability_id"], "cli-anything.mermaid.launch")
+            self.assertEqual(result["lifecycle"]["state"], "market_candidate")
+            self.assertTrue(result["lifecycle"]["ready_for_install"])
+            self.assertFalse(result["lifecycle"]["requires_override"])
+            stages = {item["id"]: item["status"] for item in result["lifecycle"]["stages"]}
+            self.assertEqual(stages["write_manifest"], "ready")
+            self.assertEqual(stages["install_harness"], "pending")
 
     def test_evaluate_harness_blocks_account_or_token_requirements(self):
         class FakeHub(CliAnythingHub):
@@ -279,6 +285,8 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertFalse(result["gates"]["low_policy_risk"])
         self.assertIn("policy requires elevated confirmation", result["blockers"])
         self.assertIn("declared requirements need external app, account, token, or service", result["blockers"])
+        self.assertEqual(result["lifecycle"]["state"], "blocked")
+        self.assertTrue(result["lifecycle"]["requires_override"])
 
     def test_harness_operation_gate_allows_low_dependency_install(self):
         class FakeHub(CliAnythingHub):
@@ -374,11 +382,15 @@ class CliAnythingHubTests(unittest.TestCase):
             self.assertEqual(first["harness_name"], "mermaid")
             self.assertTrue(first["install_candidate"])
             self.assertEqual(first["rank"], 1)
+            self.assertEqual(first["lifecycle"]["state"], "market_candidate")
+            self.assertEqual(first["lifecycle"]["stages"][1]["status"], "ready")
             blocked = result["candidates"][1]
             self.assertEqual(blocked["harness_name"], "gimp")
             self.assertFalse(blocked["install_candidate"])
             self.assertIn("declared requirements need external app, account, token, or service", blocked["blockers"])
             self.assertEqual(blocked["recommended_next_action"], "resolve_blockers")
+            self.assertEqual(blocked["lifecycle"]["state"], "blocked")
+            self.assertTrue(blocked["lifecycle"]["requires_override"])
 
     def test_candidate_harnesses_reports_market_failures_without_crashing(self):
         hub = CliAnythingHub(entrypoint="cbn-cli-hub-that-does-not-exist")
@@ -412,6 +424,7 @@ class CliAnythingHubTests(unittest.TestCase):
                     for item in result["candidates"]
                 )
             )
+            self.assertTrue(all(item["lifecycle"]["state"] == "blocked" for item in result["candidates"]))
 
     def test_candidate_harnesses_blocks_generic_declared_requirements(self):
         class FakeHub(CliAnythingHub):
