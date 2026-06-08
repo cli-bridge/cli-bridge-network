@@ -159,6 +159,49 @@ class CliAnythingHubTests(unittest.TestCase):
             self.assertTrue(Path(result["written"]).exists())
             self.assertTrue(result["status"]["manifest_imported"])
 
+    def test_prepare_harness_returns_gates_and_lifecycle_plans(self):
+        class FakeHub(CliAnythingHub):
+            def info(self, harness_name: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "info", harness_name),
+                    exit_code=0,
+                    stdout=f"Entry point: {sys.executable}\nStatus: installed\n",
+                    stderr="",
+                )
+
+            def search_market(self, query: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "search", query, "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[SAMPLE_MARKET_RECORD],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result = FakeHub(root=Path(tmp)).prepare_harness("gimp", from_market=True)
+            self.assertTrue(result["ok"])
+            self.assertTrue(result["gates"]["manifest_valid"])
+            self.assertTrue(result["gates"]["market_required_satisfied"])
+            self.assertTrue(result["gates"]["launch_ready"])
+            self.assertEqual(result["plans"]["install"]["commands"][0]["argv"], ["cli-hub", "install", "gimp"])
+            self.assertEqual(result["plans"]["launch"]["commands"][0]["argv"], ["cli-hub", "launch", "gimp"])
+
+    def test_prepare_harness_reports_missing_required_market_record(self):
+        class FakeHub(CliAnythingHub):
+            def search_market(self, query: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "search", query, "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[],
+                )
+
+        result = FakeHub().prepare_harness("missing", from_market=True)
+        self.assertFalse(result["ok"])
+        self.assertIn("market record not found", result["error"])
+
     def test_sync_market_previews_multiple_harness_manifests(self):
         class FakeHub(CliAnythingHub):
             def search_market(self, query: str) -> CliHubCommandResult:
@@ -387,6 +430,29 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(payload["manifest"]["metadata"]["id"], "cli-anything.gimp.launch")
         self.assertFalse(payload["write"])
         self.assertIn("next_commands", payload)
+
+    def test_cli_prepare_harness_outputs_preparation_report(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "plugin",
+                "prepare-harness",
+                "cli-anything",
+                "gimp",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["plugin_id"], "cli-anything")
+        self.assertEqual(payload["harness_name"], "gimp")
+        self.assertTrue(payload["gates"]["manifest_valid"])
+        self.assertIn("install", payload["plans"])
 
     def test_cli_sync_market_handles_missing_cli_hub_without_crashing(self):
         proc = subprocess.run(

@@ -321,6 +321,65 @@ class CliAnythingHub:
             ],
         }
 
+    def prepare_harness(
+        self,
+        harness_name: str,
+        title: str | None = None,
+        from_market: bool = False,
+    ) -> dict[str, Any]:
+        adaptation = self.adapt_harness(
+            harness_name,
+            title=title,
+            from_market=from_market,
+            write=False,
+        )
+        if not adaptation["ok"]:
+            return {
+                "ok": False,
+                "plugin_id": PLUGIN_ID,
+                "harness_name": harness_name,
+                "from_market": from_market,
+                "error": adaptation["error"],
+                "adaptation": adaptation,
+            }
+        status = adaptation["status"]
+        validation = adaptation["validation"]
+        install_plan = self.harness_plan("install", harness_name).as_dict()
+        update_plan = self.harness_plan("update", harness_name).as_dict()
+        launch_plan = self.harness_plan("launch", harness_name).as_dict()
+        gates = {
+            "cli_hub_available": bool(status["cli_hub_available"]),
+            "market_record_available": bool(adaptation["market_record_available"]),
+            "market_required_satisfied": (not from_market) or bool(adaptation["market_record_available"]),
+            "manifest_valid": bool(validation["valid"]),
+            "manifest_imported": bool(status["manifest_imported"]),
+            "installed": bool(status["installed"]),
+            "entrypoint_available": bool(status["entrypoint_available"]),
+            "launch_ready": bool(status["launch_ready"] and validation["valid"]),
+        }
+        return {
+            "ok": gates["market_required_satisfied"] and gates["manifest_valid"],
+            "plugin_id": PLUGIN_ID,
+            "harness_name": harness_name,
+            "from_market": from_market,
+            "capability_id": adaptation["manifest"]["metadata"]["id"],
+            "gates": gates,
+            "status": status,
+            "validation": validation,
+            "adaptation": adaptation,
+            "plans": {
+                "install": install_plan,
+                "update": update_plan,
+                "launch": launch_plan,
+            },
+            "next_commands": [
+                f"python -m cbn plugin harness cli-anything install {harness_name} --yes",
+                f"python -m cbn plugin adapt-harness cli-anything {harness_name} --from-market --write",
+                "python -m cbn registry validate manifests",
+                f"python -m cbn call {adaptation['manifest']['metadata']['id']} --dry-run",
+            ],
+        }
+
     def sync_market(
         self,
         query: str | None = None,

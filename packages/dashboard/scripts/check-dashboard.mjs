@@ -55,6 +55,10 @@ if (!html.includes("python -m cbn plugin adapt-harness cli-anything gimp --from-
   throw new Error("Dashboard does not expose the CLI-Anything adaptation report command.");
 }
 
+if (!html.includes("python -m cbn plugin prepare-harness cli-anything gimp --from-market")) {
+  throw new Error("Dashboard does not expose the CLI-Anything harness preparation report command.");
+}
+
 if (!html.includes("python -m cbn plugin harness cli-anything status gimp --from-market")) {
   throw new Error("Dashboard does not expose the CLI-Anything harness status command.");
 }
