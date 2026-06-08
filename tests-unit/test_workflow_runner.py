@@ -19,6 +19,28 @@ class WorkflowRunnerTests(unittest.TestCase):
         graph = WorkflowGraph.from_file(Path("workflows/example.json"))
         self.assertEqual([task.task_id for task in graph.topological_order()], ["git-version", "git-status"])
 
+    def test_workflow_graph_keeps_args_from_in_plan(self):
+        graph = WorkflowGraph.from_dict(
+            {
+                "apiVersion": "bridge.dev/v1alpha1",
+                "kind": "Workflow",
+                "metadata": {"id": "message-route"},
+                "spec": {
+                    "tasks": [
+                        {"id": "source", "uses": "git.version"},
+                        {
+                            "id": "consumer",
+                            "uses": "git.version",
+                            "needs": ["source"],
+                            "argsFrom": [{"task": "source", "selector": "payload.data.stdout"}],
+                        },
+                    ]
+                },
+            }
+        )
+        plan = graph.as_plan()
+        self.assertEqual(plan["tasks"][1]["argsFrom"][0]["selector"], "payload.data.stdout")
+
     def test_workflow_graph_rejects_cycles(self):
         graph = WorkflowGraph.from_dict(
             {
@@ -34,6 +56,27 @@ class WorkflowRunnerTests(unittest.TestCase):
             }
         )
         with self.assertRaises(ValueError):
+            graph.validate()
+
+    def test_workflow_graph_requires_args_from_dependency(self):
+        graph = WorkflowGraph.from_dict(
+            {
+                "apiVersion": "bridge.dev/v1alpha1",
+                "kind": "Workflow",
+                "metadata": {"id": "missing-arg-dep"},
+                "spec": {
+                    "tasks": [
+                        {"id": "source", "uses": "git.version"},
+                        {
+                            "id": "consumer",
+                            "uses": "git.version",
+                            "argsFrom": [{"task": "source", "selector": "payload.data.stdout"}],
+                        },
+                    ]
+                },
+            }
+        )
+        with self.assertRaisesRegex(ValueError, "must also be listed in needs"):
             graph.validate()
 
     def test_runner_executes_example_workflow_as_dry_run(self):
@@ -55,11 +98,45 @@ class WorkflowRunnerTests(unittest.TestCase):
             self.assertIn("workflow.started", event_types)
             self.assertIn("workflow.completed", event_types)
 
+    def test_runner_resolves_args_from_bridge_message_selector(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            registry = ManifestRegistry()
+            registry.load_dir(Path("manifests"))
+            executor = CapabilityExecutor(
+                registry,
+                AuditLog(Path(tmp) / "audit.jsonl"),
+                artifact_store=ArtifactStore(Path(tmp) / "artifacts"),
+            )
+            runner = WorkflowRunner(executor)
+            graph = WorkflowGraph.from_dict(
+                {
+                    "apiVersion": "bridge.dev/v1alpha1",
+                    "kind": "Workflow",
+                    "metadata": {"id": "message-route"},
+                    "spec": {
+                        "tasks": [
+                            {"id": "source", "uses": "git.version"},
+                            {
+                                "id": "consumer",
+                                "uses": "git.version",
+                                "needs": ["source"],
+                                "argsFrom": [{"task": "source", "selector": "payload.data.stdout"}],
+                            },
+                        ]
+                    },
+                }
+            )
+            result = runner.run(graph, dry_run=True)
+            consumer = result["tasks"][1]
+            self.assertEqual(consumer["resolved_args"], ["git --version"])
+            self.assertEqual(consumer["result"]["stdout"], "git --version git --version")
+
     def test_cli_workflow_validate_plan_and_run(self):
         for args in (
             ["workflow", "validate", "workflows/example.json"],
             ["workflow", "plan", "workflows/example.json"],
             ["workflow", "run", "workflows/example.json", "--dry-run"],
+            ["workflow", "run", "workflows/message-routing.example.json", "--dry-run"],
         ):
             proc = subprocess.run(
                 [sys.executable, "-m", "cbn", *args],

@@ -79,6 +79,10 @@ if (!html.includes("python -m cbn workflow run workflows/example.json --dry-run"
   throw new Error("Dashboard does not expose the runnable workflow dry-run command.");
 }
 
+if (!html.includes("python -m cbn workflow run workflows/message-routing.example.json --dry-run")) {
+  throw new Error("Dashboard does not expose the BridgeMessage routing workflow command.");
+}
+
 if (!html.includes("python -m cbn parser list")) {
   throw new Error("Dashboard does not expose the parser registry list command.");
 }

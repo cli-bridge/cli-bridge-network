@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from typing import Any
 
 from cbn_audit.log import AuditLog
 from cbn_events.bus import EventBus
 from cbn_execution.executor import CapabilityExecutor
-from cbn_execution.graph import WorkflowGraph
+from cbn_execution.graph import TaskNode, WorkflowGraph
+from cbn_protocol.envelope import select_bridge_value
 from protocol import EventType
 
 
@@ -37,18 +39,20 @@ class WorkflowRunner:
         self._audit("workflow.started", run_id, graph.workflow_id, {"dry_run": dry_run})
         self._publish(EventType.WORKFLOW_STARTED, graph.workflow_id, {"dry_run": dry_run}, run_id)
         task_results: list[dict[str, Any]] = []
+        results_by_task: dict[str, dict[str, Any]] = {}
         status = "completed"
 
         for task in graph.topological_order():
+            resolved_args = self._resolve_args(task, results_by_task)
             self._publish(
                 EventType.WORKFLOW_TASK_STARTED,
                 graph.workflow_id,
-                {"task": task.as_dict()},
+                {"task": task.as_dict(), "resolved_args": list(resolved_args)},
                 run_id,
             )
             result = self.executor.call(
                 task.uses,
-                extra_args=task.args,
+                extra_args=resolved_args,
                 dry_run=dry_run or task.dry_run,
                 confirmed=confirmed,
                 approval_id=task.approval_id,
@@ -56,9 +60,11 @@ class WorkflowRunner:
             task_result = {
                 "task_id": task.task_id,
                 "uses": task.uses,
+                "resolved_args": list(resolved_args),
                 "result": result,
             }
             task_results.append(task_result)
+            results_by_task[task.task_id] = task_result
             self._publish(
                 EventType.WORKFLOW_TASK_COMPLETED,
                 graph.workflow_id,
@@ -81,6 +87,18 @@ class WorkflowRunner:
         self._audit("workflow.completed", run_id, graph.workflow_id, payload)
         self._publish(EventType.WORKFLOW_COMPLETED, graph.workflow_id, payload, run_id)
         return payload
+
+    def _resolve_args(
+        self,
+        task: TaskNode,
+        results_by_task: dict[str, dict[str, Any]],
+    ) -> tuple[str, ...]:
+        args = list(task.args)
+        for arg_from in task.args_from:
+            source = results_by_task[arg_from.task_id]["result"]["message"]
+            selected = select_bridge_value(source, arg_from.selector)["value"]
+            args.append(_stringify_arg(selected))
+        return tuple(args)
 
     def _publish(
         self,
@@ -110,3 +128,13 @@ class WorkflowRunner:
                 "payload": payload,
             }
         )
+
+
+def _stringify_arg(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if value is None:
+        return ""
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+    return str(value)

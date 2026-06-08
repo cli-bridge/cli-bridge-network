@@ -9,10 +9,27 @@ from typing import Any
 
 
 @dataclass(frozen=True)
+class TaskArgFrom:
+    task_id: str
+    selector: str
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any]) -> "TaskArgFrom":
+        return cls(task_id=raw["task"], selector=raw["selector"])
+
+    def as_dict(self) -> dict[str, str]:
+        return {
+            "task": self.task_id,
+            "selector": self.selector,
+        }
+
+
+@dataclass(frozen=True)
 class TaskNode:
     task_id: str
     uses: str
     args: tuple[str, ...] = ()
+    args_from: tuple[TaskArgFrom, ...] = ()
     needs: tuple[str, ...] = ()
     dry_run: bool = False
     approval_id: str | None = None
@@ -23,6 +40,7 @@ class TaskNode:
             task_id=raw["id"],
             uses=raw["uses"],
             args=tuple(str(arg) for arg in raw.get("args", [])),
+            args_from=tuple(TaskArgFrom.from_dict(item) for item in raw.get("argsFrom", [])),
             needs=tuple(raw.get("needs", [])),
             dry_run=bool(raw.get("dryRun", False)),
             approval_id=raw.get("approvalId"),
@@ -33,6 +51,7 @@ class TaskNode:
             "id": self.task_id,
             "uses": self.uses,
             "args": list(self.args),
+            "argsFrom": [item.as_dict() for item in self.args_from],
             "needs": list(self.needs),
             "dryRun": self.dry_run,
             "approvalId": self.approval_id,
@@ -75,6 +94,13 @@ class WorkflowGraph:
             missing = [dep for dep in task.needs if dep not in seen]
             if missing:
                 raise ValueError(f"task {task.task_id} depends on missing tasks: {missing}")
+            for arg_from in task.args_from:
+                if arg_from.task_id not in seen:
+                    raise ValueError(f"task {task.task_id} argsFrom references missing task: {arg_from.task_id}")
+                if arg_from.task_id not in task.needs:
+                    raise ValueError(
+                        f"task {task.task_id} argsFrom {arg_from.task_id} must also be listed in needs"
+                    )
         self.topological_order()
 
     def topological_order(self) -> list[TaskNode]:

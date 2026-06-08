@@ -1,0 +1,27 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "Workflow",
+  "metadata": {
+    "id": "example.message-routing",
+    "title": "Example BridgeMessage Routing"
+  },
+  "spec": {
+    "tasks": [
+      {
+        "id": "source",
+        "uses": "git.version"
+      },
+      {
+        "id": "consumer",
+        "uses": "git.version",
+        "needs": ["source"],
+        "argsFrom": [
+          {
+            "task": "source",
+            "selector": "payload.data.stdout"
+          }
+        ]
+      }
+    ]
+  }
+}
