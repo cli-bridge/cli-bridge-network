@@ -15,6 +15,7 @@ const required = [
   "Check Updates",
   "Update",
   "Daemon API",
+  "Candidate Summary",
   "Approval Queue",
   "Artifact Bus",
   "Tail Events",
@@ -305,6 +306,22 @@ if (!js.includes("stageCommand")) {
   throw new Error("Dashboard script does not stage commands.");
 }
 
+if (!js.includes("renderCandidateSummary")) {
+  throw new Error("Dashboard script does not render compact CLI-Anything candidates.");
+}
+
+if (!js.includes("displayPayload")) {
+  throw new Error("Dashboard script does not normalize large candidate API payloads for display.");
+}
+
+if (!js.includes("candidateSummaryFromCandidates")) {
+  throw new Error("Dashboard script does not fall back from candidates when candidate_summary is absent.");
+}
+
+if (!js.includes("candidateAction")) {
+  throw new Error("Dashboard script does not expose candidate follow-up actions.");
+}
+
 if (!js.includes("fetch(apiUrl(path), options)")) {
   throw new Error("Dashboard script does not call the daemon API.");
 }
@@ -315,6 +332,10 @@ if (!js.includes("data-api-path")) {
 
 if (!css.includes(".control-grid")) {
   throw new Error("Dashboard stylesheet is missing the control grid.");
+}
+
+if (!css.includes(".candidate-summary")) {
+  throw new Error("Dashboard stylesheet is missing candidate summary styling.");
 }
 
 if (!css.includes("input")) {

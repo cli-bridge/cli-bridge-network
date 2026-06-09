@@ -11,6 +11,9 @@ class DashboardStaticTests(unittest.TestCase):
     def test_cli_anything_lifecycle_buttons_exist(self):
         for label in ["Download / Clone", "Install", "Check Updates", "Update", "Install PTY Backend"]:
             self.assertIn(label, self.html)
+        self.assertIn("Candidate Summary", self.html)
+        self.assertIn("candidateSummary", self.html)
+        self.assertIn("clearCandidates", self.html)
 
     def test_cli_anything_commands_are_staged(self):
         self.assertIn("python -m cbn plugin plan cli-anything", self.html)
@@ -64,6 +67,13 @@ class DashboardStaticTests(unittest.TestCase):
     def test_static_js_queues_commands(self):
         self.assertIn("stageCommand", self.js)
         self.assertIn("commandQueue", self.js)
+        self.assertIn("renderCandidateSummary", self.js)
+        self.assertIn("displayPayload", self.js)
+        self.assertIn("candidateSummaryFromCandidates", self.js)
+        self.assertIn("candidateAction", self.js)
+        self.assertIn("/plugins/cli-anything/evaluate-harness", self.js)
+        self.assertIn("/plugins/cli-anything/prepare-harness", self.js)
+        self.assertIn("/plugins/cli-anything/harness", self.js)
 
 
 if __name__ == "__main__":

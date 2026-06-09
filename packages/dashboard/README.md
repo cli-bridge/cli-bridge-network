@@ -43,3 +43,8 @@ the remote update check queries upstream state but still does not execute
 harness lifecycle buttons ask for browser confirmation before sending
 `confirmed=true`. Serving from `127.0.0.1` keeps the dashboard inside the
 daemon's local Origin allowlist.
+
+`Rank Candidates` and `Rank + Probe` call the compact CLI-Anything candidates
+API and render `candidate_summary` into the sidecar. Candidate actions use
+read-only evaluate/prepare calls or an unconfirmed install plan, so scanning a
+market list does not install a harness.
