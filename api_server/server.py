@@ -22,6 +22,7 @@ from cbn_protocol.acceptance import cli_to_cli_acceptance_report
 from cbn_protocol.acceptance_queue import cli_to_cli_acceptance_queue
 from cbn_protocol.a2a_http import agent_card, handle_a2a_jsonrpc_request
 from cbn_protocol.bridge_contract import workflow_bridge_contract_report
+from cbn_protocol.bridge_lab import bridge_lab_report
 from cbn_protocol.envelope import bridge_args_from_selectors, select_bridge_value, validate_bridge_message
 from cbn_protocol.compatibility import check_protocol, protocol_matrix
 from cbn_protocol.conformance import protocol_conformance_plan
@@ -70,8 +71,10 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/protocols/lifecycle-suite"},
     {"method": "GET", "path": "/protocols/smoke-suite"},
     {"method": "GET", "path": "/protocols/acceptance-queue"},
+    {"method": "GET", "path": "/protocols/bridge-lab"},
     {"method": "POST", "path": "/protocols/accept-workflow"},
     {"method": "POST", "path": "/protocols/acceptance-queue"},
+    {"method": "POST", "path": "/protocols/bridge-lab"},
     {"method": "GET", "path": "/approvals"},
     {"method": "GET", "path": "/workflows"},
     {"method": "GET", "path": "/runtime/transports"},
@@ -366,6 +369,20 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             )
             self._send(200 if result["ok"] else 422, result)
             return
+        if parsed.path == "/protocols/bridge-lab":
+            result = bridge_lab_report(
+                runtime.registry,
+                runtime.workflow_runner,
+                workflow_paths=tuple(query.get("workflow_path") or query.get("path") or ()),
+                max_workflows=int(query.get("max_workflows", ["10"])[0]),
+                run=False,
+                dry_run=True,
+                confirmed=False,
+                include_payloads=False,
+                run_smoke_suite=query.get("smoke_suite", ["false"])[0].lower() in {"1", "true", "yes"},
+            )
+            self._send(200 if result["ok"] else 422, result)
+            return
         if parsed.path == "/approvals":
             approval_id = query.get("approval_id", [None])[0]
             if approval_id:
@@ -456,6 +473,26 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 dry_run=bool(payload.get("dry_run", False)),
                 confirmed=bool(payload.get("confirmed", False)),
                 include_payloads=bool(payload.get("include_payloads", False)),
+            )
+            self._send(200 if result["ok"] else 422, result)
+            return
+        if self.path == "/protocols/bridge-lab":
+            workflow_paths = payload.get("workflow_paths", payload.get("workflow_path", []))
+            if isinstance(workflow_paths, str):
+                workflow_paths = [workflow_paths]
+            if not isinstance(workflow_paths, list) or not all(isinstance(item, str) for item in workflow_paths):
+                self._send(400, {"error": "workflow_paths must be a list of strings"})
+                return
+            result = bridge_lab_report(
+                runtime.registry,
+                runtime.workflow_runner,
+                workflow_paths=tuple(workflow_paths),
+                max_workflows=int(payload.get("max_workflows", 10)),
+                run=bool(payload.get("run", False)),
+                dry_run=bool(payload.get("dry_run", True)),
+                confirmed=bool(payload.get("confirmed", False)),
+                include_payloads=bool(payload.get("include_payloads", False)),
+                run_smoke_suite=bool(payload.get("smoke_suite", payload.get("run_smoke_suite", False))),
             )
             self._send(200 if result["ok"] else 422, result)
             return

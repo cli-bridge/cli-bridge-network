@@ -78,6 +78,8 @@ class DashboardStaticTests(unittest.TestCase):
         self.assertIn("/protocols/lifecycle-suite", self.html)
         self.assertIn("python -m cbn protocol acceptance-queue", self.html)
         self.assertIn("/protocols/acceptance-queue", self.html)
+        self.assertIn("python -m cbn protocol bridge-lab --workflow-path workflows/cli-anything-macrocli-mermaid-routing.example.json --run --dry-run", self.html)
+        self.assertIn("/protocols/bridge-lab", self.html)
         self.assertIn("python -m cbn message contract", self.html)
         self.assertIn("/messages/contract", self.html)
         self.assertIn("python -m cbn plugin evaluate-harness cli-anything macrocli", self.html)

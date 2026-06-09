@@ -15,6 +15,7 @@ from cbn_protocol.exports import (
     list_protocol_exports,
 )
 from cbn_protocol.acceptance_queue import cli_to_cli_acceptance_queue
+from cbn_protocol.bridge_lab import bridge_lab_report
 from cbn_protocol.lifecycle_suite import protocol_lifecycle_suite
 from cbn_protocol.mcp_stdio import McpStdioServer
 from cbn_protocol.readiness import protocol_readiness_report
@@ -366,6 +367,48 @@ class ProtocolExportTests(unittest.TestCase):
         self.assertEqual(payload["summary"]["runtime_route_count"], 1)
         self.assertEqual(payload["summary"]["runtime_route_failed_count"], 0)
         self.assertEqual(payload["rows"][0]["recommended_next_action"], "use_as_runtime_cli_to_cli_fixture")
+
+    def test_bridge_lab_report_summarizes_cli_to_cli_protocol_baseline(self):
+        runtime = build_runtime()
+        payload = bridge_lab_report(
+            runtime.registry,
+            runtime.workflow_runner,
+            workflow_paths=("workflows/cli-anything-macrocli-mermaid-routing.example.json",),
+            run=True,
+            dry_run=True,
+        )
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["kind"], "BridgeMessageProtocolLab")
+        self.assertFalse(payload["wire_compatible"])
+        self.assertEqual(payload["summary"]["route_count"], 2)
+        self.assertEqual(payload["summary"]["runtime_route_failed_count"], 0)
+        self.assertEqual(payload["summary"]["recommended_next_action"], "run_protocol_smoke_suite")
+        self.assertEqual(len(payload["route_catalog"]), 2)
+        self.assertIn("protocol_lifecycle_suite", payload["reports"])
+
+    def test_cli_protocol_bridge_lab_outputs_report(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "protocol",
+                "bridge-lab",
+                "--workflow-path",
+                "workflows/message-routing.example.json",
+                "--run",
+                "--dry-run",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["kind"], "BridgeMessageProtocolLab")
+        self.assertEqual(payload["summary"]["runtime_route_failed_count"], 0)
+        self.assertTrue(payload["reports"]["acceptance_queue"]["ok"])
 
     def test_cli_protocol_export(self):
         proc = subprocess.run(

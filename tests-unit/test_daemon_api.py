@@ -31,7 +31,9 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("GET", "/protocols/lifecycle-suite"), routes)
         self.assertIn(("GET", "/protocols/smoke-suite"), routes)
         self.assertIn(("GET", "/protocols/acceptance-queue"), routes)
+        self.assertIn(("GET", "/protocols/bridge-lab"), routes)
         self.assertIn(("POST", "/protocols/acceptance-queue"), routes)
+        self.assertIn(("POST", "/protocols/bridge-lab"), routes)
         self.assertIn(("GET", "/protocols/workflows"), routes)
         self.assertIn(("GET", "/.well-known/agent-card.json"), routes)
         self.assertIn(("POST", "/a2a"), routes)
@@ -276,6 +278,29 @@ class DaemonApiTests(unittest.TestCase):
                 self.assertEqual(payload["summary"]["workflow_count"], 1)
                 self.assertEqual(payload["summary"]["runtime_route_failed_count"], 0)
                 self.assertEqual(payload["rows"][0]["workflow_path"], "workflows/message-routing.example.json")
+
+    def test_protocol_bridge_lab_route_returns_protocol_baseline(self):
+        with daemon_url() as base_url:
+            request = urllib.request.Request(
+                f"{base_url}/protocols/bridge-lab",
+                data=json.dumps(
+                    {
+                        "workflow_paths": ["workflows/message-routing.example.json"],
+                        "run": True,
+                        "dry_run": True,
+                    }
+                ).encode("utf-8"),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(request, timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(response.status, 200)
+                self.assertEqual(payload["kind"], "BridgeMessageProtocolLab")
+                self.assertTrue(payload["ok"])
+                self.assertEqual(payload["summary"]["workflow_count"], 1)
+                self.assertEqual(payload["summary"]["runtime_route_failed_count"], 0)
+                self.assertFalse(payload["wire_compatible"])
 
     def test_message_contract_route_returns_workflow_routes(self):
         with daemon_url() as base_url:

@@ -191,6 +191,26 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Include task messages and raw run result payloads.",
     )
+    protocol_bridge_lab = protocol_subcommands.add_parser(
+        "bridge-lab",
+        help="Build a BridgeMessage CLI-to-CLI protocol research baseline.",
+    )
+    protocol_bridge_lab.add_argument(
+        "--workflow-path",
+        action="append",
+        default=[],
+        help="Workflow JSON path to include; repeatable. Defaults to the workflow catalog.",
+    )
+    protocol_bridge_lab.add_argument("--max-workflows", type=int, default=10)
+    protocol_bridge_lab.add_argument("--run", action="store_true", help="Execute selected workflows for route evidence.")
+    protocol_bridge_lab.add_argument("--dry-run", action="store_true", help="Dry-run workflow execution.")
+    protocol_bridge_lab.add_argument("--yes", action="store_true", help="Confirm workflow tasks when needed.")
+    protocol_bridge_lab.add_argument("--include-payloads", action="store_true")
+    protocol_bridge_lab.add_argument(
+        "--smoke-suite",
+        action="store_true",
+        help="Run protocol facade smoke checks as part of the lab report.",
+    )
 
     mcp_parser = subcommands.add_parser("mcp", help="Run or test the MCP stdio facade.")
     mcp_subcommands = mcp_parser.add_subparsers(dest="mcp_command")

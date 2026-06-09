@@ -592,6 +592,12 @@
             data-api-body='{"workflow_paths":["workflows/message-routing.example.json"],"run":true,"dry_run":true,"max_workflows":10}'
           >Runtime Acceptance Queue</button>
           <button
+            data-command="python -m cbn protocol bridge-lab --workflow-path workflows/cli-anything-macrocli-mermaid-routing.example.json --run --dry-run"
+            data-api-method="POST"
+            data-api-path="/protocols/bridge-lab"
+            data-api-body='{"workflow_paths":["workflows/cli-anything-macrocli-mermaid-routing.example.json"],"run":true,"dry_run":true,"max_workflows":10}'
+          >Bridge Lab</button>
+          <button
             data-command="python -m cbn protocol smoke-suite --capability-id git.version --workflow-path workflows/example.json --workflow-dry-run"
             data-api-method="GET"
             data-api-path="/protocols/smoke-suite?capability_id=git.version&amp;workflow_path=workflows/example.json&amp;workflow_dry_run=true"
