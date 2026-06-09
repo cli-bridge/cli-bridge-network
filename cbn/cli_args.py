@@ -509,6 +509,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Extra arg passed to harness capabilities when --smoke-suite is used; repeatable.",
     )
 
+    plugin_mvp_plan = plugin_subcommands.add_parser(
+        "mvp-plan",
+        help="Return the read-only CLI-Anything install, adaptation, and protocol MVP plan.",
+    )
+    plugin_mvp_plan.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
+    plugin_mvp_plan.add_argument("--query", default="file", help="Market query used for the install queue.")
+    plugin_mvp_plan.add_argument("--limit", type=int, default=20, help="Maximum market records to rank.")
+    plugin_mvp_plan.add_argument("--max-harnesses", type=int, default=5, help="Maximum harnesses to gate.")
+    plugin_mvp_plan.add_argument("--no-blocked", action="store_false", dest="include_blocked")
+    plugin_mvp_plan.set_defaults(include_blocked=True)
+    plugin_mvp_plan.add_argument(
+        "--workflow-path",
+        action="append",
+        default=[],
+        help="Workflow JSON path to include in the acceptance queue; repeatable.",
+    )
+    plugin_mvp_plan.add_argument("--max-workflows", type=int, default=10)
+
     plugin_candidates = plugin_subcommands.add_parser(
         "candidates",
         help="Rank CLI-Anything market harnesses as install candidates without installing them.",

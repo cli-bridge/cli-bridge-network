@@ -243,6 +243,12 @@
             data-api-body='{"harnesses":["mermaid","macrocli","3mf"],"candidate_query":"file","candidate_limit":10,"include_candidates":true,"include_workflows":true}'
           >Live Verification</button>
           <button
+            data-command="python -m cbn plugin mvp-plan cli-anything --query file --limit 20 --max-harnesses 5"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/mvp-plan"
+            data-api-body='{"query":"file","limit":20,"max_harnesses":5,"include_blocked":true,"max_workflows":10}'
+          >MVP Plan</button>
+          <button
             data-command="python -m cbn plugin verify-harness cli-anything 3mf --smoke-suite --smoke-extra-arg=--help --no-workflows"
             data-api-method="POST"
             data-api-path="/plugins/cli-anything/verify-harness"

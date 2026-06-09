@@ -97,6 +97,7 @@ ROUTE_SUMMARY = [
     {"method": "POST", "path": "/plugins/cli-anything/verify-harness"},
     {"method": "POST", "path": "/plugins/cli-anything/onboard-harness"},
     {"method": "POST", "path": "/plugins/cli-anything/live-verification"},
+    {"method": "POST", "path": "/plugins/cli-anything/mvp-plan"},
     {"method": "POST", "path": "/plugins/cli-anything/candidates"},
     {"method": "POST", "path": "/plugins/cli-anything/install-queue"},
     {"method": "POST", "path": "/plugins/cli-anything/blocked-plan"},
@@ -663,6 +664,25 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 include_workflows=bool(payload.get("include_workflows", True)),
                 run_smoke_suite=bool(payload.get("run_smoke_suite", False)),
                 smoke_extra_args=tuple(payload.get("smoke_extra_args", [])),
+            )
+            self._send(200 if result["ok"] else 502, result)
+            return
+        if self.path == "/plugins/cli-anything/mvp-plan":
+            workflow_paths = payload.get("workflow_paths", payload.get("workflow_path", []))
+            if isinstance(workflow_paths, str):
+                workflow_paths = [workflow_paths]
+            if not isinstance(workflow_paths, list) or not all(isinstance(item, str) for item in workflow_paths):
+                self._send(400, {"error": "workflow_paths must be a list of strings"})
+                return
+            result = CliAnythingHub().mvp_plan(
+                query=payload.get("query", "file"),
+                limit=int(payload.get("limit", 20)),
+                max_harnesses=int(payload.get("max_harnesses", 5)),
+                include_blocked=bool(payload.get("include_blocked", True)),
+                workflow_paths=tuple(workflow_paths),
+                max_workflows=int(payload.get("max_workflows", 10)),
+                registry=runtime.registry,
+                workflow_runner=runtime.workflow_runner,
             )
             self._send(200 if result["ok"] else 502, result)
             return

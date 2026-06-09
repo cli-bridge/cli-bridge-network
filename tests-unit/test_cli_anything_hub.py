@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from cbn_core.manifest import CapabilityManifest
+from cbn_core.manifest import CapabilityManifest, ManifestRegistry
 from cbn_plugins.cli_anything import (
     CliAnythingHub,
     CliHubCommandResult,
@@ -1096,6 +1096,75 @@ class CliAnythingHubTests(unittest.TestCase):
             self.assertEqual(result["harnesses"][0]["harness_name"], "mermaid")
             self.assertIn("candidate_summary", result["candidate_scan"])
             self.assertIsNone(result["workflow_readiness"])
+
+    def test_mvp_plan_summarizes_install_adaptation_and_protocol_queues(self):
+        class FakeHub(CliAnythingHub):
+            def _environment_verification(self):
+                return {
+                    "ok": True,
+                    "source_downloaded": True,
+                    "source_trusted": True,
+                    "entrypoints": [{"name": "cli-hub", "available": True}],
+                }
+
+            def market_install_queue(self, query=None, limit=50, max_installs=10, include_blocked=True):
+                return {
+                    "ok": True,
+                    "kind": "CliAnythingMarketInstallQueue",
+                    "query": query,
+                    "limit": limit,
+                    "max_installs": max_installs,
+                    "include_blocked": include_blocked,
+                    "summary": {"queued_count": 1, "blocked_count": 1, "skipped_count": 0},
+                    "queue": [{"harness_name": "queued"}],
+                    "blocked": [{"harness_name": "blocked"}],
+                    "skipped": [],
+                }
+
+            def adaptation_queue(
+                self,
+                harnesses=(),
+                query=None,
+                limit=20,
+                max_harnesses=5,
+                include_blocked=True,
+                require_smoke=True,
+                run_smoke=False,
+                confirmed=False,
+                smoke_args=("--help",),
+                smoke_timeout_seconds=10,
+            ):
+                return {
+                    "ok": True,
+                    "kind": "CliAnythingHarnessAdaptationQueue",
+                    "summary": {
+                        "harness_count": 2,
+                        "native_ready_count": 0,
+                        "ready_for_repair_write_count": 1,
+                        "smoke_ready_count": 1,
+                        "blocked_count": 0,
+                    },
+                    "gates": [],
+                }
+
+        result = FakeHub().mvp_plan(
+            query="file",
+            limit=20,
+            max_harnesses=2,
+            include_blocked=True,
+            registry=ManifestRegistry(),
+            workflow_runner=None,
+        )
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["kind"], "CliAnythingMvpPlan")
+        self.assertEqual(result["summary"]["queued_harness_count"], 1)
+        self.assertTrue(result["summary"]["ready_for_next_market_download"])
+        self.assertTrue(result["summary"]["ready_for_harness_adaptation"])
+        self.assertEqual(result["summary"]["recommended_next_action"], "install_next_market_harness")
+        self.assertTrue(result["reports"]["acceptance_queue"]["skipped"])
+        stages = {stage["id"]: stage for stage in result["stages"]}
+        self.assertEqual(stages["install_market_harnesses"]["status"], "next")
+        self.assertTrue(stages["adapt_harnesses"]["ready"])
 
     def test_verify_harness_blocks_runtime_when_pty_backend_missing(self):
         class FakeHub(CliAnythingHub):

@@ -18,6 +18,7 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("POST", "/plugins/cli-anything/probe-harness"), routes)
         self.assertIn(("POST", "/plugins/cli-anything/verify-harness"), routes)
         self.assertIn(("POST", "/plugins/cli-anything/live-verification"), routes)
+        self.assertIn(("POST", "/plugins/cli-anything/mvp-plan"), routes)
         self.assertIn(("GET", "/plugins/cli-anything/provenance"), routes)
         self.assertIn(("GET", "/plugins/cli-anything/update-check"), routes)
         self.assertIn(("POST", "/plugins/gate"), routes)
@@ -1068,6 +1069,61 @@ class DaemonApiTests(unittest.TestCase):
                     self.assertEqual(payload["kind"], "CliAnythingLiveVerification")
                     self.assertEqual(payload["harnesses"][0]["harness_name"], "mermaid")
                     self.assertEqual(payload["candidate_scan"]["selected_count"], 2)
+
+    def test_cli_anything_mvp_plan_route_returns_control_plan(self):
+        class FakeHub:
+            def mvp_plan(
+                self,
+                query="file",
+                limit=20,
+                max_harnesses=5,
+                include_blocked=True,
+                workflow_paths=(),
+                max_workflows=10,
+                registry=None,
+                workflow_runner=None,
+            ):
+                return {
+                    "ok": True,
+                    "plugin_id": "cli-anything",
+                    "kind": "CliAnythingMvpPlan",
+                    "query": query,
+                    "limit": limit,
+                    "max_harnesses": max_harnesses,
+                    "include_blocked": include_blocked,
+                    "workflow_paths": list(workflow_paths),
+                    "max_workflows": max_workflows,
+                    "summary": {"recommended_next_action": "install_next_market_harness"},
+                    "stages": [{"id": "install_market_harnesses", "ready": True}],
+                }
+
+        with patch("api_server.server.CliAnythingHub", FakeHub):
+            with daemon_url() as base_url:
+                request = urllib.request.Request(
+                    f"{base_url}/plugins/cli-anything/mvp-plan",
+                    data=json.dumps(
+                        {
+                            "query": "file",
+                            "limit": 12,
+                            "max_harnesses": 3,
+                            "include_blocked": False,
+                            "workflow_paths": ["workflows/example.json"],
+                            "max_workflows": 4,
+                        }
+                    ).encode("utf-8"),
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(payload["kind"], "CliAnythingMvpPlan")
+                    self.assertEqual(payload["query"], "file")
+                    self.assertEqual(payload["limit"], 12)
+                    self.assertEqual(payload["max_harnesses"], 3)
+                    self.assertFalse(payload["include_blocked"])
+                    self.assertEqual(payload["workflow_paths"], ["workflows/example.json"])
+                    self.assertEqual(payload["max_workflows"], 4)
 
     def test_a2a_routes_return_agent_card_and_task(self):
         with daemon_url() as base_url:

@@ -588,6 +588,22 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0 if result["ok"] else 6
+        if args.plugin_command == "mvp-plan":
+            if args.plugin_id != "cli-anything":
+                raise KeyError(f"mvp-plan is not implemented for plugin: {args.plugin_id}")
+            runtime = build_runtime()
+            result = CliAnythingHub().mvp_plan(
+                query=args.query,
+                limit=args.limit,
+                max_harnesses=args.max_harnesses,
+                include_blocked=args.include_blocked,
+                workflow_paths=tuple(args.workflow_path),
+                max_workflows=args.max_workflows,
+                registry=runtime.registry,
+                workflow_runner=runtime.workflow_runner,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["ok"] else 6
         if args.plugin_command == "candidates":
             if args.plugin_id != "cli-anything":
                 raise KeyError(f"candidates is not implemented for plugin: {args.plugin_id}")
