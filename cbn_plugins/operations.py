@@ -162,6 +162,7 @@ class PluginOperationRunner:
                 "cwd": command.cwd,
                 "optional": command.optional,
                 "timeout_seconds": command.timeout_seconds,
+                "env_overrides": sorted((command.env or {}).keys()),
             },
         )
         self._publish(
@@ -179,7 +180,7 @@ class PluginOperationRunner:
             proc = subprocess.run(
                 list(command.argv),
                 cwd=command.cwd,
-                env=_operation_env(),
+                env=_operation_env(command.env),
                 text=True,
                 encoding="utf-8",
                 errors="replace",
@@ -328,10 +329,12 @@ def _timeout_text(value: str | bytes | None) -> str:
     return value
 
 
-def _operation_env() -> dict[str, str]:
+def _operation_env(overrides: dict[str, str] | None = None) -> dict[str, str]:
     env = os.environ.copy()
     env.setdefault("PYTHONIOENCODING", "utf-8")
     env.setdefault("PYTHONUTF8", "1")
+    if overrides:
+        env.update({str(key): str(value) for key, value in overrides.items()})
     return env
 
 

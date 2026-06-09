@@ -25,9 +25,13 @@ from typing import Any
 
 from adapters.pty import pty_backend_status
 from cbn.paths import resolve_project_paths
+from cbn_audit.log import AuditLog
+from cbn_artifacts.store import ArtifactStore
 from cbn_core.manifest import CapabilityManifest, ManifestRegistry, validate_manifest_dict
+from cbn_events.bus import EventBus
 from cbn_parsers.registry import ParserRegistry
 from cbn_plugins.manager import PluginCommand, PluginManager, PluginPlan
+from cbn_plugins.operations import PluginOperationRunner
 from cbn_protocol.acceptance_queue import cli_to_cli_acceptance_queue
 from cbn_protocol.compatibility import check_all_protocols
 from cbn_protocol.lifecycle_suite import protocol_lifecycle_suite
@@ -118,9 +122,19 @@ class CliHubCommandResult:
 
 
 class CliAnythingHub:
-    def __init__(self, root: Path | None = None, entrypoint: str = "cli-hub") -> None:
+    def __init__(
+        self,
+        root: Path | None = None,
+        entrypoint: str = "cli-hub",
+        operation_runner: PluginOperationRunner | None = None,
+    ) -> None:
         self.paths = resolve_project_paths(root)
         self.entrypoint = entrypoint
+        self.operation_runner = operation_runner or PluginOperationRunner(
+            audit_log=AuditLog(self.paths.logs / "cbn-audit.jsonl"),
+            event_bus=EventBus(self.paths.logs / "cbn-events.jsonl"),
+            artifact_store=ArtifactStore(self.paths.artifacts),
+        )
 
     def status(self) -> dict[str, Any]:
         executable = shutil.which(self.entrypoint)
@@ -1534,6 +1548,10 @@ class CliAnythingHub:
             timeout_seconds=timeout_seconds,
             run=run,
             confirmed=confirmed,
+            operation_runner=self.operation_runner,
+            plugin_dir=self.paths.external_plugins / PLUGIN_ID,
+            harness_name=harness_name,
+            module=module,
         )
         return {
             "ok": True,
@@ -3724,6 +3742,10 @@ def _adapter_target_smoke_execution(
     timeout_seconds: int,
     run: bool,
     confirmed: bool,
+    operation_runner: PluginOperationRunner,
+    plugin_dir: Path,
+    harness_name: str,
+    module: str,
 ) -> dict[str, Any]:
     bounded_timeout = max(1, min(int(timeout_seconds), 120))
     if not run:
@@ -3748,56 +3770,58 @@ def _adapter_target_smoke_execution(
             "stdout_summary": "",
             "stderr_summary": "",
         }
-    env = os.environ.copy()
-    env["PYTHONIOENCODING"] = "utf-8"
-    env["CBN_ADAPTER_SMOKE"] = "1"
     smoke_root = cwd / "runtime" / "adapter-smoke"
     smoke_root.mkdir(parents=True, exist_ok=True)
-    try:
-        with tempfile.TemporaryDirectory(prefix="run-", dir=smoke_root) as smoke_cwd:
-            proc = subprocess.run(
-                list(argv),
-                cwd=smoke_cwd,
-                env=env,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                timeout=bounded_timeout,
-            )
-            smoke_cwd_value = smoke_cwd
-    except subprocess.TimeoutExpired as exc:
-        return {
-            "status": "timeout",
-            "requires_confirmation": True,
-            "confirmed": True,
-            "exit_code": 124,
-            "reason": f"command timed out after {bounded_timeout} seconds",
-            "cwd": str(smoke_root),
-            "stdout_summary": _clip_text(_timeout_text(exc.stdout), 2000),
-            "stderr_summary": _clip_text(_timeout_text(exc.stderr), 2000),
-        }
-    except OSError as exc:
-        return {
-            "status": "spawn_failed",
-            "requires_confirmation": True,
-            "confirmed": True,
-            "exit_code": 127,
-            "reason": str(exc),
-            "cwd": str(smoke_root),
-            "stdout_summary": "",
-            "stderr_summary": "",
-        }
+    with tempfile.TemporaryDirectory(prefix="run-", dir=smoke_root) as smoke_cwd:
+        plan = PluginPlan(
+            plugin_id=PLUGIN_ID,
+            action=f"adapter-smoke-{sanitize_harness_name(harness_name)}",
+            plugin_dir=str(plugin_dir),
+            commands=(
+                PluginCommand(
+                    label=f"Adapter smoke: {harness_name} -> {module}",
+                    argv=argv,
+                    cwd=smoke_cwd,
+                    timeout_seconds=bounded_timeout,
+                    env={"CBN_ADAPTER_SMOKE": "1"},
+                ),
+            ),
+            notes=(
+                "Executable adapter smoke runs through the plugin operation boundary.",
+                f"Harness: {harness_name}",
+                f"Module: {module}",
+            ),
+        )
+        operation = operation_runner.execute(plan)
+        smoke_cwd_value = smoke_cwd
+    command = operation["results"][0] if operation.get("results") else {}
+    exit_code = command.get("exit_code")
+    if operation.get("status") == "blocked":
+        status = "blocked"
+        reason = "; ".join(operation.get("blockers", [])) or "plugin operation blocked"
+    elif command.get("timed_out"):
+        status = "timeout"
+        reason = f"command timed out after {bounded_timeout} seconds"
+    elif exit_code == 127:
+        status = "spawn_failed"
+        reason = command.get("stderr") or "command failed to start"
+    else:
+        status = "completed" if exit_code == 0 else "failed"
+        reason = "completed" if exit_code == 0 else "nonzero_exit"
     return {
-        "status": "completed" if proc.returncode == 0 else "failed",
+        "status": status,
         "requires_confirmation": True,
         "confirmed": True,
-        "exit_code": proc.returncode,
-        "reason": "completed" if proc.returncode == 0 else "nonzero_exit",
+        "exit_code": exit_code,
+        "reason": reason,
         "cwd": smoke_cwd_value,
-        "stdout_summary": _clip_text(proc.stdout, 2000),
-        "stderr_summary": _clip_text(proc.stderr, 2000),
+        "stdout_summary": _clip_text(str(command.get("stdout") or ""), 2000),
+        "stderr_summary": _clip_text(str(command.get("stderr") or ""), 2000),
+        "operation_id": operation.get("operation_id"),
+        "operation_status": operation.get("status"),
+        "command_id": command.get("command_id"),
+        "artifact_ids": command.get("artifact_ids", []),
+        "operation": operation,
     }
 
 

@@ -190,6 +190,43 @@ class PluginOperationTests(unittest.TestCase):
             self.assertEqual(env["PYTHONIOENCODING"], "utf-8")
             self.assertEqual(env["PYTHONUTF8"], "1")
 
+    def test_plugin_operation_applies_command_env_overrides(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            audit = AuditLog(root / "audit.jsonl")
+            runner = PluginOperationRunner(
+                audit_log=audit,
+                event_bus=EventBus(root / "events.jsonl"),
+                artifact_store=ArtifactStore(root / "artifacts"),
+            )
+            plan = PluginPlan(
+                plugin_id="test-plugin",
+                action="adapter-smoke",
+                plugin_dir=str(root / "external_plugins" / "test-plugin"),
+                commands=(
+                    PluginCommand(
+                        label="Print smoke env",
+                        argv=(
+                            sys.executable,
+                            "-c",
+                            "import os; print(os.environ.get('CBN_ADAPTER_SMOKE'))",
+                        ),
+                        env={"CBN_ADAPTER_SMOKE": "1"},
+                    ),
+                ),
+            )
+
+            result = runner.execute(plan)
+
+            self.assertEqual(result["status"], "completed")
+            self.assertEqual(result["results"][0]["stdout"].strip(), "1")
+            started = [
+                event
+                for event in audit.tail(limit=10)
+                if event["type"] == "plugin.command.started"
+            ][0]
+            self.assertEqual(started["payload"]["env_overrides"], ["CBN_ADAPTER_SMOKE"])
+
     def test_plugin_plan_serializes_command_timeout(self):
         plan = PluginPlan(
             plugin_id="test-plugin",

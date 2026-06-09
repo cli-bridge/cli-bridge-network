@@ -29,6 +29,7 @@ class PluginCommand:
     cwd: str | None = None
     optional: bool = False
     timeout_seconds: int = 600
+    env: dict[str, str] | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -37,6 +38,7 @@ class PluginCommand:
             "cwd": self.cwd,
             "optional": self.optional,
             "timeout_seconds": self.timeout_seconds,
+            "env_overrides": sorted((self.env or {}).keys()),
         }
 
 
