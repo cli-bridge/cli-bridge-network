@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -159,6 +160,59 @@ class PluginManager:
             ],
             "errors": validation["errors"],
             "warnings": validation["warnings"],
+        }
+
+    def operation_plan(
+        self,
+        plugin_id: str,
+        operation_id: str,
+        inputs: dict[str, Any] | None = None,
+        confirmed: bool = False,
+    ) -> dict[str, Any]:
+        catalog = self.operation_catalog(plugin_id)
+        operation = next(
+            (item for item in catalog["operations"] if item.get("id") == operation_id),
+            None,
+        )
+        if operation is None:
+            raise KeyError(f"unknown plugin operation: {plugin_id}/{operation_id}")
+        provided_inputs = dict(inputs or {})
+        command, command_missing = _resolve_string_template(str(operation.get("command") or ""), provided_inputs)
+        payload, payload_missing = _resolve_value_template(operation.get("payload_template", {}), provided_inputs)
+        blockers = sorted({f"missing input: {name}" for name in [*command_missing, *payload_missing]})
+        validation = catalog["validation"]
+        if not validation["ok"]:
+            blockers.extend(f"catalog invalid: {error}" for error in validation["errors"])
+        side_effecting = operation.get("kind") in {"execute", "write"}
+        if side_effecting and not confirmed:
+            blockers.append("operation requires confirmed=true before dispatch")
+        if side_effecting and confirmed and isinstance(payload, dict):
+            payload.setdefault("confirmed", True)
+        api = operation.get("api") if isinstance(operation.get("api"), dict) else None
+        api_request = _operation_api_request(api, payload)
+        return {
+            "ok": not blockers,
+            "kind": "PluginProviderOperationPlan",
+            "plugin_api_version": catalog["plugin_api_version"],
+            "plugin_id": plugin_id,
+            "provider": catalog["provider"],
+            "operation_id": operation_id,
+            "operation_kind": operation.get("kind"),
+            "confirmed": confirmed,
+            "dispatch_ready": not blockers,
+            "requires_confirmation": bool(operation.get("requires_confirmation")),
+            "side_effects": operation.get("side_effects", []),
+            "inputs": provided_inputs,
+            "blockers": blockers,
+            "operation": operation,
+            "resolved_command": command,
+            "resolved_payload": payload,
+            "api_request": api_request,
+            "validation": validation,
+            "next_commands": [
+                f"python -m cbn plugin operation-plan {plugin_id} {operation_id}",
+                command,
+            ],
         }
 
     def provenance(self, plugin_id: str) -> dict[str, Any]:
@@ -1245,3 +1299,63 @@ def _catalog_list_validation(catalogs: list[dict[str, Any]]) -> dict[str, Any]:
         "errors": errors,
         "warnings": warnings,
     }
+
+
+_PLACEHOLDER_RE = re.compile(r"<([A-Za-z_][A-Za-z0-9_]*)>")
+
+
+def _resolve_string_template(template: str, inputs: dict[str, Any]) -> tuple[str, list[str]]:
+    missing: list[str] = []
+
+    def replace(match: re.Match[str]) -> str:
+        key = match.group(1)
+        if key not in inputs:
+            missing.append(key)
+            return match.group(0)
+        return str(inputs[key])
+
+    return _PLACEHOLDER_RE.sub(replace, template), missing
+
+
+def _resolve_value_template(value: Any, inputs: dict[str, Any]) -> tuple[Any, list[str]]:
+    if isinstance(value, str):
+        exact = _PLACEHOLDER_RE.fullmatch(value)
+        if exact:
+            key = exact.group(1)
+            if key not in inputs:
+                return value, [key]
+            return inputs[key], []
+        return _resolve_string_template(value, inputs)
+    if isinstance(value, list):
+        resolved_items = []
+        missing: list[str] = []
+        for item in value:
+            resolved, item_missing = _resolve_value_template(item, inputs)
+            resolved_items.append(resolved)
+            missing.extend(item_missing)
+        return resolved_items, missing
+    if isinstance(value, dict):
+        resolved_dict: dict[str, Any] = {}
+        missing: list[str] = []
+        for key, item in value.items():
+            resolved, item_missing = _resolve_value_template(item, inputs)
+            resolved_dict[key] = resolved
+            missing.extend(item_missing)
+        return resolved_dict, missing
+    return value, []
+
+
+def _operation_api_request(api: dict[str, Any] | None, payload: Any) -> dict[str, Any] | None:
+    if not api:
+        return None
+    method = api.get("method")
+    path = api.get("path")
+    request = {
+        "method": method,
+        "path": path,
+    }
+    if method == "POST":
+        request["json"] = payload if isinstance(payload, dict) else {}
+    else:
+        request["query"] = payload if isinstance(payload, dict) else {}
+    return request

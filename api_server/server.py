@@ -98,6 +98,7 @@ ROUTE_SUMMARY = [
     {"method": "POST", "path": "/runtime/transports/install"},
     {"method": "POST", "path": "/plugins/gate"},
     {"method": "POST", "path": "/plugins/check-update"},
+    {"method": "POST", "path": "/plugins/operation-plan"},
     {"method": "POST", "path": "/plugins/plan"},
     {"method": "POST", "path": "/plugins/execute"},
     {"method": "POST", "path": "/plugins/cli-anything/market"},
@@ -608,6 +609,20 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 remote=bool(payload.get("remote", False)),
             )
             self._send(200 if result["ready_for_update"] else 409, result)
+            return
+        if self.path == "/plugins/operation-plan":
+            inputs = payload.get("inputs", {})
+            if not isinstance(inputs, dict):
+                self._send(400, {"error": "inputs must be an object"})
+                return
+            manager = PluginManager()
+            result = manager.operation_plan(
+                payload["plugin_id"],
+                payload["operation_id"],
+                inputs=inputs,
+                confirmed=bool(payload.get("confirmed", False)),
+            )
+            self._send(200 if result["ok"] else 409, result)
             return
         if self.path == "/plugins/execute":
             if not bool(payload.get("confirmed", False)):

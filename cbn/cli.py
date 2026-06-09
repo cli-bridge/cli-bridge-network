@@ -472,6 +472,15 @@ def main(argv: list[str] | None = None) -> int:
             result = manager.validate_operation_catalog(args.plugin_id)
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0 if result["ok"] else 13
+        if args.plugin_command == "operation-plan":
+            result = manager.operation_plan(
+                args.plugin_id,
+                args.operation_id,
+                inputs=_parse_operation_inputs(args.input),
+                confirmed=args.yes,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["ok"] else 13
         if args.plugin_command == "preflight":
             result = manager.preflight(args.plugin_id)
             print(json.dumps(result, ensure_ascii=False, indent=2))
@@ -888,6 +897,22 @@ def _read_json_arg(path: str) -> dict:
 
 def _known_parser_refs() -> set[str]:
     return {item["parser_ref"] for item in ParserRegistry.builtins().list()}
+
+
+def _parse_operation_inputs(values: list[str]) -> dict:
+    parsed: dict[str, object] = {}
+    for value in values:
+        if "=" not in value:
+            raise ValueError(f"operation input must use KEY=VALUE: {value}")
+        key, raw = value.split("=", 1)
+        key = key.strip()
+        if not key:
+            raise ValueError(f"operation input key is empty: {value}")
+        try:
+            parsed[key] = json.loads(raw)
+        except json.JSONDecodeError:
+            parsed[key] = raw
+    return parsed
 
 
 def _operation_exit_code(result: dict) -> int:

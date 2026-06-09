@@ -12,6 +12,7 @@ class DashboardStaticTests(unittest.TestCase):
         for label in [
             "Provider Operations",
             "Validate Operations",
+            "Plan Candidate Op",
             "Download / Clone",
             "Install",
             "Check Updates",
@@ -36,6 +37,8 @@ class DashboardStaticTests(unittest.TestCase):
         self.assertIn("/plugins/operations?plugin_id=cli-anything", self.html)
         self.assertIn("python -m cbn plugin validate-operations cli-anything", self.html)
         self.assertIn("/plugins/operations/validate?plugin_id=cli-anything", self.html)
+        self.assertIn("python -m cbn plugin operation-plan cli-anything candidates", self.html)
+        self.assertIn("/plugins/operation-plan", self.html)
         self.assertIn("python -m cbn plugin preflight cli-anything", self.html)
         self.assertIn("python -m cbn plugin install cli-anything --yes", self.html)
         self.assertIn("python -m cbn plugin install cli-anything --yes --allow-failed-preflight", self.html)
@@ -121,6 +124,7 @@ class DashboardStaticTests(unittest.TestCase):
         self.assertIn("ready_for_promotion", self.js)
         self.assertIn("operationCommands", self.js)
         self.assertIn('path.startsWith("/plugins/operations")', self.js)
+        self.assertIn('path.startsWith("/plugins/operation-plan")', self.js)
         self.assertIn("CBN_DAEMON_TOKEN_KEY", self.js)
         self.assertIn("localStorage", self.js)
         self.assertIn("daemonHeaders", self.js)

@@ -27,6 +27,7 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("GET", "/plugins/operations/validate"), routes)
         self.assertIn(("POST", "/plugins/gate"), routes)
         self.assertIn(("POST", "/plugins/check-update"), routes)
+        self.assertIn(("POST", "/plugins/operation-plan"), routes)
         self.assertIn(("GET", "/protocols/check"), routes)
         self.assertIn(("GET", "/protocols/matrix"), routes)
         self.assertIn(("GET", "/protocols/readiness"), routes)
@@ -75,6 +76,32 @@ class DaemonApiTests(unittest.TestCase):
             self.assertTrue(payload["ok"])
             self.assertEqual(payload["kind"], "PluginProviderOperationCatalogValidation")
             self.assertEqual(payload["summary"]["error_count"], 0)
+
+    def test_plugin_operation_plan_route_resolves_descriptor(self):
+        with daemon_url() as base_url:
+            request = urllib.request.Request(
+                f"{base_url}/plugins/operation-plan",
+                data=json.dumps(
+                    {
+                        "plugin_id": "cli-anything",
+                        "operation_id": "repair-entrypoint",
+                        "inputs": {
+                            "harness": "py4csr",
+                            "module": "py4csr.tables.rtf_formatter",
+                        },
+                        "confirmed": True,
+                    }
+                ).encode("utf-8"),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(request, timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+
+            self.assertEqual(response.status, 200)
+            self.assertTrue(payload["dispatch_ready"])
+            self.assertEqual(payload["api_request"]["path"], "/plugins/cli-anything/repair-entrypoint")
+            self.assertTrue(payload["api_request"]["json"]["confirmed"])
 
     def test_post_bad_json_returns_structured_error(self):
         with daemon_url() as base_url:

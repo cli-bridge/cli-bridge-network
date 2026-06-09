@@ -84,6 +84,12 @@
             data-api-path="/plugins/operations/validate?plugin_id=cli-anything"
           >Validate Operations</button>
           <button
+            data-command="python -m cbn plugin operation-plan cli-anything candidates"
+            data-api-method="POST"
+            data-api-path="/plugins/operation-plan"
+            data-api-body='{"plugin_id":"cli-anything","operation_id":"candidates"}'
+          >Plan Candidate Op</button>
+          <button
             data-command="python -m cbn plugin preflight cli-anything"
             data-api-method="GET"
             data-api-path="/plugins/cli-anything/preflight"

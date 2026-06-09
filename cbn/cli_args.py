@@ -331,6 +331,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     plugin_validate_operations.add_argument("plugin_id", nargs="?", help="Plugin id, for example cli-anything.")
 
+    plugin_operation_plan = plugin_subcommands.add_parser(
+        "operation-plan",
+        help="Resolve one provider operation descriptor into a dispatch-ready plan.",
+    )
+    plugin_operation_plan.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
+    plugin_operation_plan.add_argument("operation_id", help="Operation id from plugin operations.")
+    plugin_operation_plan.add_argument(
+        "--input",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="Input value used to resolve descriptor placeholders; repeatable.",
+    )
+    plugin_operation_plan.add_argument("--yes", action="store_true", help="Confirm side-effecting operation dispatch.")
+
     plugin_preflight = plugin_subcommands.add_parser("preflight", help="Run install readiness checks.")
     plugin_preflight.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
 

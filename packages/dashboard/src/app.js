@@ -251,7 +251,10 @@ function candidateSummaryFromCandidates(candidates) {
 }
 
 function renderOperationDetail(path, payload) {
-  const isPluginOperationPath = path.startsWith("/plugins/cli-anything/") || path.startsWith("/plugins/operations");
+  const isPluginOperationPath =
+    path.startsWith("/plugins/cli-anything/") ||
+    path.startsWith("/plugins/operations") ||
+    path.startsWith("/plugins/operation-plan");
   if (!isPluginOperationPath || path === "/plugins/cli-anything/candidates") {
     return;
   }

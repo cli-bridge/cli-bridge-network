@@ -96,6 +96,46 @@ class PluginManagerTests(unittest.TestCase):
             any("side_effects must be non-empty" in error for error in result["errors"])
         )
 
+    def test_operation_plan_resolves_read_only_descriptor(self):
+        result = PluginManager().operation_plan("cli-anything", "candidates")
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["dispatch_ready"])
+        self.assertEqual(result["operation_kind"], "report")
+        self.assertEqual(result["api_request"]["path"], "/plugins/cli-anything/candidates")
+        self.assertEqual(result["api_request"]["json"]["query"], "file")
+        self.assertIn("plugin candidates cli-anything", result["resolved_command"])
+
+    def test_operation_plan_blocks_side_effect_without_confirmation(self):
+        result = PluginManager().operation_plan(
+            "cli-anything",
+            "repair-entrypoint",
+            inputs={"harness": "py4csr", "module": "py4csr.tables.rtf_formatter"},
+        )
+        self.assertFalse(result["ok"])
+        self.assertFalse(result["dispatch_ready"])
+        self.assertIn("operation requires confirmed=true before dispatch", result["blockers"])
+        self.assertEqual(result["resolved_payload"]["harness_name"], "py4csr")
+        self.assertEqual(result["resolved_payload"]["module"], "py4csr.tables.rtf_formatter")
+
+    def test_operation_plan_resolves_confirmed_side_effect_descriptor(self):
+        result = PluginManager().operation_plan(
+            "cli-anything",
+            "repair-entrypoint",
+            inputs={"harness": "py4csr", "module": "py4csr.tables.rtf_formatter"},
+            confirmed=True,
+        )
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["dispatch_ready"])
+        self.assertEqual(result["operation_kind"], "write")
+        self.assertEqual(result["api_request"]["method"], "POST")
+        self.assertTrue(result["api_request"]["json"]["confirmed"])
+        self.assertIn("py4csr.tables.rtf_formatter", result["resolved_command"])
+
+    def test_operation_plan_reports_missing_inputs(self):
+        result = PluginManager().operation_plan("cli-anything", "adapter-smoke", inputs={"harness": "py4csr"})
+        self.assertFalse(result["ok"])
+        self.assertIn("missing input: module", result["blockers"])
+
     def test_operation_catalog_supports_manifest_declared_fake_provider(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -139,6 +179,33 @@ class PluginManagerTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["kind"], "PluginProviderOperationCatalogValidation")
         self.assertEqual(payload["summary"]["error_count"], 0)
+
+    def test_cli_operation_plan_command_outputs_resolved_plan(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "plugin",
+                "operation-plan",
+                "cli-anything",
+                "repair-entrypoint",
+                "--input",
+                "harness=py4csr",
+                "--input",
+                "module=py4csr.tables.rtf_formatter",
+                "--yes",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["kind"], "PluginProviderOperationPlan")
+        self.assertTrue(payload["dispatch_ready"])
+        self.assertTrue(payload["resolved_payload"]["confirmed"])
 
     def test_provenance_handles_not_downloaded_plugin(self):
         with tempfile.TemporaryDirectory() as tmp:
