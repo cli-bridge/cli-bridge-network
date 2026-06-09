@@ -9,6 +9,8 @@ const apiMode = document.getElementById("apiMode");
 const apiResult = document.getElementById("apiResult");
 const candidateSummary = document.getElementById("candidateSummary");
 const clearCandidates = document.getElementById("clearCandidates");
+const operationDetail = document.getElementById("operationDetail");
+const clearOperationDetail = document.getElementById("clearOperationDetail");
 
 let activeCommand = "";
 let logLines = ["Dashboard loaded. Daemon API calls are available when cbn daemon is running."];
@@ -218,6 +220,151 @@ function candidateSummaryFromCandidates(candidates) {
   });
 }
 
+function renderOperationDetail(path, payload) {
+  if (!path.startsWith("/plugins/cli-anything/") || path === "/plugins/cli-anything/candidates") {
+    return;
+  }
+  operationDetail.replaceChildren();
+  const card = document.createElement("article");
+  card.className = `operation-card ${operationBlockers(payload).length > 0 || payload?.ok === false ? "operation-blocked" : "operation-ok"}`;
+
+  const title = document.createElement("h3");
+  title.textContent = operationTitle(path, payload);
+  card.appendChild(title);
+
+  const summary = document.createElement("p");
+  summary.textContent = operationSummary(payload);
+  card.appendChild(summary);
+
+  const badges = document.createElement("div");
+  badges.className = "candidate-badges";
+  operationBadges(payload).forEach((label) => {
+    const badge = document.createElement("span");
+    badge.textContent = label;
+    badges.appendChild(badge);
+  });
+  card.appendChild(badges);
+
+  const blockers = operationBlockers(payload);
+  if (blockers.length > 0) {
+    card.appendChild(listSection("Blockers", blockers, "candidate-blockers"));
+  }
+
+  const gates = operationGates(payload);
+  if (gates.length > 0) {
+    card.appendChild(listSection("Gates", gates, "operation-list"));
+  }
+
+  const commands = operationCommands(payload);
+  if (commands.length > 0) {
+    card.appendChild(listSection("Plan Commands", commands, "operation-list mono-list"));
+  }
+
+  operationDetail.appendChild(card);
+}
+
+function operationTitle(path, payload) {
+  const harness = payload?.harness_name ? `: ${payload.harness_name}` : "";
+  if (path.endsWith("/evaluate-harness")) {
+    return `Evaluation${harness}`;
+  }
+  if (path.endsWith("/prepare-harness")) {
+    return `Preparation${harness}`;
+  }
+  if (path.endsWith("/harness")) {
+    return payload?.action ? harnessActionTitle(payload.action) : `Harness Plan${harness}`;
+  }
+  return payload?.plugin_id ? `${payload.plugin_id}${harness}` : "Operation";
+}
+
+function harnessActionTitle(action) {
+  const parts = String(action).split("-");
+  if (parts.length >= 3 && parts[0] === "harness") {
+    const verb = parts[1][0].toUpperCase() + parts[1].slice(1);
+    return `Harness ${verb}: ${parts.slice(2).join("-")}`;
+  }
+  return `Harness ${action}`;
+}
+
+function operationSummary(payload) {
+  const parts = [
+    payload?.recommended_next_action ? `next ${payload.recommended_next_action}` : null,
+    payload?.lifecycle?.state ? `state ${payload.lifecycle.state}` : null,
+    payload?.install_candidate !== undefined ? `install candidate ${Boolean(payload.install_candidate)}` : null,
+    payload?.requires_confirmation !== undefined ? `confirmation ${Boolean(payload.requires_confirmation)}` : null,
+  ];
+  return parts.filter(Boolean).join(" | ") || "Operation response received.";
+}
+
+function operationBadges(payload) {
+  const gates = payload?.gates || {};
+  const badges = [];
+  if (payload?.ok !== undefined) {
+    badges.push(payload.ok ? "ok" : "not ok");
+  }
+  if (gates.manifest_valid !== undefined) {
+    badges.push(gates.manifest_valid ? "manifest valid" : "manifest invalid");
+  }
+  if (gates.installed !== undefined) {
+    badges.push(gates.installed ? "installed" : "not installed");
+  }
+  if (gates.launch_ready !== undefined) {
+    badges.push(gates.launch_ready ? "launch ready" : "launch blocked");
+  }
+  if (payload?.commands) {
+    badges.push(`${payload.commands.length} command plan`);
+  }
+  return badges;
+}
+
+function operationBlockers(payload) {
+  if (Array.isArray(payload?.blockers)) {
+    return payload.blockers;
+  }
+  if (Array.isArray(payload?.evaluation?.blockers)) {
+    return payload.evaluation.blockers;
+  }
+  return [];
+}
+
+function operationGates(payload) {
+  const gates = payload?.gates || payload?.evaluation?.gates || {};
+  return Object.entries(gates).map(([key, value]) => `${key}: ${value}`);
+}
+
+function operationCommands(payload) {
+  const commands = [];
+  const planCommands = payload?.commands || payload?.plans?.install?.commands || payload?.plans?.launch?.commands;
+  if (Array.isArray(planCommands)) {
+    planCommands.forEach((command) => {
+      if (Array.isArray(command.argv)) {
+        commands.push(command.argv.join(" "));
+      }
+    });
+  }
+  if (Array.isArray(payload?.next_commands)) {
+    commands.push(...payload.next_commands);
+  }
+  return commands;
+}
+
+function listSection(title, items, className) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "operation-section";
+  const heading = document.createElement("h4");
+  heading.textContent = title;
+  wrapper.appendChild(heading);
+  const list = document.createElement("ul");
+  list.className = className;
+  items.forEach((value) => {
+    const item = document.createElement("li");
+    item.textContent = value;
+    list.appendChild(item);
+  });
+  wrapper.appendChild(list);
+  return wrapper;
+}
+
 async function callApi(button) {
   const method = button.dataset.apiMethod || "GET";
   const path = button.dataset.apiPath;
@@ -248,6 +395,7 @@ async function callApi(button) {
     if (path === "/plugins/cli-anything/candidates") {
       renderCandidateSummary(payload);
     }
+    renderOperationDetail(path, payload);
     setApiStatus(response.ok ? "Connected" : `HTTP ${response.status}`);
     appendLog(`${label}: HTTP ${response.status}`);
   } catch (error) {
@@ -292,6 +440,11 @@ clearQueue.addEventListener("click", () => {
 clearCandidates.addEventListener("click", () => {
   candidateSummary.textContent = "Run Rank Candidates to inspect CLI-Anything market harnesses.";
   appendLog("Cleared candidate summary.");
+});
+
+clearOperationDetail.addEventListener("click", () => {
+  operationDetail.textContent = "Select a candidate action to inspect gates, blockers, and plans.";
+  appendLog("Cleared operation detail.");
 });
 
 document.querySelectorAll("button[data-api-path]:not([data-command])").forEach((button) => {

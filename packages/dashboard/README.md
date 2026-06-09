@@ -48,3 +48,8 @@ daemon's local Origin allowlist.
 API and render `candidate_summary` into the sidecar. Candidate actions use
 read-only evaluate/prepare calls or an unconfirmed install plan, so scanning a
 market list does not install a harness.
+
+Follow-up candidate actions render into `Operation Detail`. The panel extracts
+the next action, lifecycle state, gates, blockers, and plan commands from the
+API response so a user can decide whether to write a manifest or install a
+harness without reading the full JSON payload.

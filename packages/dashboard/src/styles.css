@@ -228,6 +228,61 @@ input {
   color: var(--danger);
 }
 
+.operation-detail {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.operation-card {
+  border: 1px solid var(--line);
+  background: #ffffff;
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.operation-card h3,
+.operation-card h4 {
+  margin: 0;
+  line-height: 1.25;
+}
+
+.operation-card h3 {
+  font-size: 13px;
+}
+
+.operation-card h4 {
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.operation-ok {
+  border-left: 4px solid var(--accent);
+}
+
+.operation-blocked {
+  border-left: 4px solid var(--danger);
+}
+
+.operation-section {
+  display: grid;
+  gap: 4px;
+}
+
+.operation-list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--ink);
+}
+
+.mono-list {
+  font-family: Consolas, "Courier New", monospace;
+  overflow-wrap: anywhere;
+}
+
 pre {
   margin: 8px 0 0;
   min-height: 80px;

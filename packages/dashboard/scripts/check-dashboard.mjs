@@ -16,6 +16,7 @@ const required = [
   "Update",
   "Daemon API",
   "Candidate Summary",
+  "Operation Detail",
   "Approval Queue",
   "Artifact Bus",
   "Tail Events",
@@ -322,6 +323,18 @@ if (!js.includes("candidateAction")) {
   throw new Error("Dashboard script does not expose candidate follow-up actions.");
 }
 
+if (!js.includes("renderOperationDetail")) {
+  throw new Error("Dashboard script does not render CLI-Anything operation details.");
+}
+
+if (!js.includes("operationBlockers")) {
+  throw new Error("Dashboard script does not surface operation blockers.");
+}
+
+if (!js.includes("operationCommands")) {
+  throw new Error("Dashboard script does not surface operation plan commands.");
+}
+
 if (!js.includes("fetch(apiUrl(path), options)")) {
   throw new Error("Dashboard script does not call the daemon API.");
 }
@@ -336,6 +349,10 @@ if (!css.includes(".control-grid")) {
 
 if (!css.includes(".candidate-summary")) {
   throw new Error("Dashboard stylesheet is missing candidate summary styling.");
+}
+
+if (!css.includes(".operation-detail")) {
+  throw new Error("Dashboard stylesheet is missing operation detail styling.");
 }
 
 if (!css.includes("input")) {

@@ -14,6 +14,9 @@ class DashboardStaticTests(unittest.TestCase):
         self.assertIn("Candidate Summary", self.html)
         self.assertIn("candidateSummary", self.html)
         self.assertIn("clearCandidates", self.html)
+        self.assertIn("Operation Detail", self.html)
+        self.assertIn("operationDetail", self.html)
+        self.assertIn("clearOperationDetail", self.html)
 
     def test_cli_anything_commands_are_staged(self):
         self.assertIn("python -m cbn plugin plan cli-anything", self.html)
@@ -71,6 +74,9 @@ class DashboardStaticTests(unittest.TestCase):
         self.assertIn("displayPayload", self.js)
         self.assertIn("candidateSummaryFromCandidates", self.js)
         self.assertIn("candidateAction", self.js)
+        self.assertIn("renderOperationDetail", self.js)
+        self.assertIn("operationBlockers", self.js)
+        self.assertIn("operationCommands", self.js)
         self.assertIn("/plugins/cli-anything/evaluate-harness", self.js)
         self.assertIn("/plugins/cli-anything/prepare-harness", self.js)
         self.assertIn("/plugins/cli-anything/harness", self.js)
