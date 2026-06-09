@@ -57,6 +57,7 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/protocols/matrix"},
     {"method": "GET", "path": "/approvals"},
     {"method": "GET", "path": "/workflows"},
+    {"method": "GET", "path": "/runtime/transports"},
     {"method": "POST", "path": "/call"},
     {"method": "POST", "path": "/a2a"},
     {"method": "POST", "path": "/messages/validate"},
@@ -66,6 +67,9 @@ ROUTE_SUMMARY = [
     {"method": "POST", "path": "/workflows/validate"},
     {"method": "POST", "path": "/workflows/plan"},
     {"method": "POST", "path": "/workflows/run"},
+    {"method": "POST", "path": "/runtime/transports/gate"},
+    {"method": "POST", "path": "/runtime/transports/plan"},
+    {"method": "POST", "path": "/runtime/transports/install"},
     {"method": "POST", "path": "/plugins/gate"},
     {"method": "POST", "path": "/plugins/plan"},
     {"method": "POST", "path": "/plugins/execute"},
@@ -181,6 +185,11 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/plugins/cli-anything/provenance":
             self._send(200, PluginManager().provenance("cli-anything"))
+            return
+        if parsed.path == "/runtime/transports":
+            kind = query.get("kind", ["pty"])[0]
+            status = PluginManager().runtime_transport_status(kind)
+            self._send(200, status)
             return
         if parsed.path == "/registry/validate":
             path = Path(query.get("path", ["manifests"])[0])
@@ -350,6 +359,29 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 confirmed=bool(payload.get("confirmed", False)),
             )
             self._send(200 if result["status"] == "completed" else 409, result)
+            return
+        if self.path == "/runtime/transports/gate":
+            manager = PluginManager()
+            result = manager.runtime_transport_gate(payload.get("kind", "pty"))
+            self._send(200, result)
+            return
+        if self.path == "/runtime/transports/plan":
+            manager = PluginManager()
+            plan = manager.runtime_transport_plan(payload.get("kind", "pty"))
+            self._send(200, plan.as_dict())
+            return
+        if self.path == "/runtime/transports/install":
+            if not bool(payload.get("confirmed", False)):
+                self._send(403, {"error": "runtime transport install requires confirmed=true"})
+                return
+            manager = PluginManager()
+            kind = payload.get("kind", "pty")
+            gate = manager.runtime_transport_gate(kind)
+            if not gate["ok"]:
+                self._send(409, gate)
+                return
+            plan = manager.runtime_transport_plan(kind)
+            self._send(200, runtime.plugin_runner.execute(plan))
             return
         if self.path == "/plugins/plan":
             manager = PluginManager()

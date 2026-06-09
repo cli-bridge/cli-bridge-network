@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from cbn_plugins.manager import PluginManager
 
@@ -142,6 +143,59 @@ class PluginManagerTests(unittest.TestCase):
         self.assertTrue(payload["gated"])
         self.assertIn("preflight", payload)
         self.assertIn("provenance", payload)
+
+    def test_runtime_transport_status_reports_pty_backend(self):
+        result = PluginManager().runtime_transport_status("pty")
+        self.assertEqual(result["kind"], "pty")
+        self.assertIn("backend", result)
+        self.assertIn("available", result)
+        self.assertEqual(result["ready"], result["available"])
+        self.assertIn("next_commands", result)
+
+    def test_runtime_transport_plan_installs_pywinpty_on_missing_windows_backend(self):
+        with patch(
+            "cbn_plugins.manager.pty_backend_status",
+            return_value={
+                "kind": "pty",
+                "platform": "win32",
+                "backend": "pywinpty",
+                "available": False,
+                "install_hint": "pip install cli-bridge-network[pty]",
+            },
+        ), patch("cbn_plugins.manager.os.name", "nt"):
+            plan = PluginManager().runtime_transport_plan("pty")
+
+        payload = plan.as_dict()
+        self.assertEqual(payload["plugin_id"], "runtime.pty")
+        self.assertEqual(payload["action"], "install-runtime-pty")
+        self.assertTrue(payload["requires_confirmation"])
+        self.assertEqual(payload["commands"][0]["argv"][-1], "pywinpty>=2.0")
+
+    def test_cli_runtime_transport_status_outputs_json(self):
+        proc = subprocess.run(
+            [sys.executable, "-m", "cbn", "runtime", "transport", "pty"],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertIn(proc.returncode, {0, 5})
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["kind"], "pty")
+        self.assertIn("ready", payload)
+
+    def test_cli_runtime_transport_install_without_yes_returns_plan(self):
+        proc = subprocess.run(
+            [sys.executable, "-m", "cbn", "runtime", "transport", "pty", "--install"],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertEqual(proc.returncode, 2)
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["plugin_id"], "runtime.pty")
+        self.assertTrue(payload["requires_confirmation"])
 
 def write_example_plugin_manifest(root: Path) -> None:
     registry = root / "plugins" / "registry"

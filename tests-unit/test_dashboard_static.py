@@ -9,7 +9,7 @@ class DashboardStaticTests(unittest.TestCase):
         self.js = (self.root / "app.js").read_text(encoding="utf-8")
 
     def test_cli_anything_lifecycle_buttons_exist(self):
-        for label in ["Download / Clone", "Install", "Check Updates", "Update"]:
+        for label in ["Download / Clone", "Install", "Check Updates", "Update", "Install PTY Backend"]:
             self.assertIn(label, self.html)
 
     def test_cli_anything_commands_are_staged(self):
@@ -20,6 +20,11 @@ class DashboardStaticTests(unittest.TestCase):
         self.assertIn("python -m cbn plugin update cli-anything --yes", self.html)
         self.assertIn("python -m cbn plugin update cli-anything --yes --allow-failed-preflight", self.html)
         self.assertIn("python -m cbn plugin status cli-anything", self.html)
+        self.assertIn("python -m cbn runtime transport pty", self.html)
+        self.assertIn("python -m cbn runtime transport pty --plan", self.html)
+        self.assertIn("python -m cbn runtime transport pty --install --yes", self.html)
+        self.assertIn("/runtime/transports?kind=pty", self.html)
+        self.assertIn("/runtime/transports/install", self.html)
         self.assertIn("python -m cbn plugin provenance cli-anything", self.html)
         self.assertIn("python -m cbn plugin gate cli-anything --action install", self.html)
         self.assertIn("python -m cbn plugin gate cli-anything --action update", self.html)

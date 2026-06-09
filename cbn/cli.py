@@ -327,6 +327,29 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0 if result["status"] == "completed" else 4
 
+    if args.command == "runtime":
+        manager = PluginManager()
+        if args.runtime_command == "transport":
+            if args.install:
+                gate = manager.runtime_transport_gate(args.kind)
+                if not gate["ok"]:
+                    print(json.dumps(gate, ensure_ascii=False, indent=2))
+                    return 13
+                plan = manager.runtime_transport_plan(args.kind)
+                if not args.yes:
+                    print(json.dumps(plan.as_dict(), ensure_ascii=False, indent=2))
+                    return 2
+                runtime = build_runtime()
+                print(json.dumps(runtime.plugin_runner.execute(plan), ensure_ascii=False, indent=2))
+                return 0
+            if args.plan:
+                plan = manager.runtime_transport_plan(args.kind)
+                print(json.dumps(plan.as_dict(), ensure_ascii=False, indent=2))
+                return 0
+            result = manager.runtime_transport_status(args.kind)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["ready"] else 5
+
     if args.command == "daemon":
         if args.daemon_command == "routes":
             print(json.dumps(ROUTE_SUMMARY, ensure_ascii=False, indent=2))

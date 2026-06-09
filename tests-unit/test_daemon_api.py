@@ -25,6 +25,10 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("GET", "/.well-known/agent-card.json"), routes)
         self.assertIn(("POST", "/a2a"), routes)
         self.assertIn(("GET", "/workflows"), routes)
+        self.assertIn(("GET", "/runtime/transports"), routes)
+        self.assertIn(("POST", "/runtime/transports/gate"), routes)
+        self.assertIn(("POST", "/runtime/transports/plan"), routes)
+        self.assertIn(("POST", "/runtime/transports/install"), routes)
 
     def test_post_bad_json_returns_structured_error(self):
         with daemon_url() as base_url:
@@ -187,6 +191,41 @@ class DaemonApiTests(unittest.TestCase):
                 self.assertEqual(response.status, 200)
                 self.assertEqual(payload["action"], "harness-install-gimp")
                 self.assertIn("evaluate-harness", payload["notes"][0])
+
+    def test_runtime_transport_status_and_plan_routes(self):
+        with daemon_url() as base_url:
+            with urllib.request.urlopen(f"{base_url}/runtime/transports?kind=pty", timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(response.status, 200)
+                self.assertEqual(payload["kind"], "pty")
+                self.assertIn("ready", payload)
+
+            request = urllib.request.Request(
+                f"{base_url}/runtime/transports/plan",
+                data=json.dumps({"kind": "pty"}).encode("utf-8"),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(request, timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(response.status, 200)
+                self.assertEqual(payload["plugin_id"], "runtime.pty")
+                self.assertTrue(payload["requires_confirmation"])
+
+    def test_runtime_transport_install_requires_confirmation(self):
+        with daemon_url() as base_url:
+            request = urllib.request.Request(
+                f"{base_url}/runtime/transports/install",
+                data=json.dumps({"kind": "pty"}).encode("utf-8"),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with self.assertRaises(urllib.error.HTTPError) as raised:
+                urllib.request.urlopen(request, timeout=5)
+
+            self.assertEqual(raised.exception.code, 403)
+            payload = json.loads(raised.exception.read().decode("utf-8"))
+            self.assertIn("confirmed=true", payload["error"])
 
     def test_plugin_execute_route_rejects_failed_operation_gate(self):
         class FakeManager:

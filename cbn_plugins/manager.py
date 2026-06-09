@@ -8,6 +8,7 @@ is cloned or installed into an ignored local directory and updated separately.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -16,6 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from adapters.pty import pty_backend_status
 from cbn.paths import resolve_project_paths
 from cbn_plugins.manifest import PluginManifest
 
@@ -216,6 +218,80 @@ class PluginManager:
             "provenance": provenance,
             "override_flag": "--allow-failed-preflight",
         }
+
+    def runtime_transport_status(self, kind: str) -> dict[str, Any]:
+        if kind != "pty":
+            raise ValueError(f"unsupported runtime transport: {kind}")
+        status = dict(pty_backend_status())
+        status["ready"] = bool(status["available"])
+        status["managed_dependency"] = _runtime_transport_dependency(kind)
+        status["next_commands"] = _runtime_transport_next_commands(kind, status)
+        return status
+
+    def runtime_transport_gate(self, kind: str) -> dict[str, Any]:
+        status = self.runtime_transport_status(kind)
+        blockers: list[str] = []
+        checks: list[dict[str, Any]] = []
+
+        if status["ready"]:
+            return {
+                "ok": True,
+                "kind": kind,
+                "gated": True,
+                "blockers": [],
+                "status": status,
+                "checks": checks,
+            }
+
+        if kind == "pty" and os.name == "nt":
+            pip_check = self._check_pip()
+            checks.append(pip_check.as_dict())
+            if not pip_check.ok:
+                blockers.append("preflight failed: python.pip")
+        else:
+            blockers.append(f"runtime transport is not installable by CBN: {kind}")
+
+        return {
+            "ok": len(blockers) == 0,
+            "kind": kind,
+            "gated": True,
+            "blockers": blockers,
+            "status": status,
+            "checks": checks,
+            "override_flag": None,
+        }
+
+    def runtime_transport_plan(self, kind: str) -> PluginPlan:
+        status = self.runtime_transport_status(kind)
+        plugin_dir = self.paths.external_plugins / ".runtime" / kind
+        dependency = status["managed_dependency"]
+        commands: list[PluginCommand] = []
+        notes: list[str] = [
+            f"Runtime transport: {kind}",
+            f"Backend: {status['backend']}",
+        ]
+
+        if status["ready"]:
+            notes.append("Runtime transport backend is already available; no install command is needed.")
+        elif kind == "pty" and os.name == "nt" and dependency:
+            commands.append(
+                PluginCommand(
+                    label=f"Install optional runtime backend {dependency}",
+                    argv=(sys.executable, "-m", "pip", "install", "--upgrade", dependency),
+                    timeout_seconds=600,
+                )
+            )
+            notes.append("Windows PTY launch support requires pywinpty.")
+        else:
+            notes.append("No managed install command is available for this platform.")
+
+        return PluginPlan(
+            plugin_id=f"runtime.{kind}",
+            action=f"install-runtime-{kind}",
+            plugin_dir=str(plugin_dir),
+            commands=tuple(commands),
+            notes=tuple(notes),
+        )
 
     def plan(
         self,
@@ -605,3 +681,19 @@ def _normalize_git_remote(value: str) -> str:
     if normalized.endswith(".git"):
         normalized = normalized[:-4]
     return normalized.rstrip("/")
+
+
+def _runtime_transport_dependency(kind: str) -> str | None:
+    if kind == "pty" and os.name == "nt":
+        return "pywinpty>=2.0"
+    return None
+
+
+def _runtime_transport_next_commands(kind: str, status: dict[str, Any]) -> list[str]:
+    commands = [
+        f"python -m cbn runtime transport {kind}",
+        f"python -m cbn runtime transport {kind} --plan",
+    ]
+    if not status["ready"] and _runtime_transport_dependency(kind):
+        commands.append(f"python -m cbn runtime transport {kind} --install --yes")
+    return commands

@@ -32,6 +32,30 @@
           <button data-command="python -m cbn paths">Paths</button>
           <button data-command="python -m cbn nodes">Nodes</button>
           <button data-command="python -m cbn --version">Version</button>
+          <button
+            data-command="python -m cbn runtime transport pty"
+            data-api-method="GET"
+            data-api-path="/runtime/transports?kind=pty"
+          >PTY Status</button>
+          <button
+            data-command="python -m cbn runtime transport pty --plan"
+            data-api-method="POST"
+            data-api-path="/runtime/transports/plan"
+            data-api-body='{"kind":"pty"}'
+          >PTY Install Plan</button>
+          <button
+            data-command="python -m cbn runtime transport pty --install"
+            data-api-method="POST"
+            data-api-path="/runtime/transports/gate"
+            data-api-body='{"kind":"pty"}'
+          >PTY Install Gate</button>
+          <button
+            data-command="python -m cbn runtime transport pty --install --yes"
+            data-api-method="POST"
+            data-api-path="/runtime/transports/install"
+            data-api-body='{"kind":"pty","confirmed":true}'
+            data-api-confirm="Install the optional PTY backend now?"
+          >Install PTY Backend</button>
           <button data-command="python -m unittest discover tests-unit">Run Unit Tests</button>
           <button data-command="python -m compileall -q cbn cbn_plugins app api_server adapters">Compile Python</button>
         </section>

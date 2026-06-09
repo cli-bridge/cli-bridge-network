@@ -161,6 +161,17 @@ def build_parser() -> argparse.ArgumentParser:
     workflow_run.add_argument("--dry-run", action="store_true")
     workflow_run.add_argument("--yes", action="store_true", help="Confirm high-risk workflow tasks.")
 
+    runtime_parser = subcommands.add_parser("runtime", help="Inspect or prepare local runtime dependencies.")
+    runtime_subcommands = runtime_parser.add_subparsers(dest="runtime_command")
+    runtime_transport = runtime_subcommands.add_parser(
+        "transport",
+        help="Inspect or install an optional runtime transport backend.",
+    )
+    runtime_transport.add_argument("kind", choices=["pty"], help="Runtime transport kind.")
+    runtime_transport.add_argument("--plan", action="store_true", help="Render the install plan without executing.")
+    runtime_transport.add_argument("--install", action="store_true", help="Install the missing backend.")
+    runtime_transport.add_argument("--yes", action="store_true", help="Confirm runtime dependency installation.")
+
     daemon_parser = subcommands.add_parser("daemon", help="Run or inspect the local daemon API.")
     daemon_subcommands = daemon_parser.add_subparsers(dest="daemon_command")
     daemon_subcommands.add_parser("routes", help="List MVP daemon routes.")
