@@ -56,6 +56,52 @@ class PluginManagerTests(unittest.TestCase):
         self.assertIn("source_downloaded", result)
         self.assertIn("next_commands", result)
 
+    def test_cli_anything_operation_catalog_exposes_provider_abi(self):
+        result = PluginManager().operation_catalog("cli-anything")
+        self.assertEqual(result["kind"], "PluginProviderOperationCatalog")
+        self.assertEqual(result["plugin_api_version"], "cbn.plugin.v1")
+        self.assertEqual(result["provider"], "cli-anything")
+        operation_ids = {operation["id"] for operation in result["operations"]}
+        self.assertIn("install-gate", operation_ids)
+        self.assertIn("adaptation-queue", operation_ids)
+        self.assertIn("repair-entrypoint", operation_ids)
+        repair = next(operation for operation in result["operations"] if operation["id"] == "repair-entrypoint")
+        self.assertEqual(repair["kind"], "write")
+        self.assertTrue(repair["requires_confirmation"])
+        self.assertIn("runtime/manifests", repair["side_effects"])
+        self.assertGreater(result["summary"]["by_kind"]["gate"], 0)
+        self.assertGreater(result["summary"]["write_or_execute_count"], 0)
+
+    def test_operation_catalog_supports_manifest_declared_fake_provider(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_example_plugin_manifest(root)
+
+            result = PluginManager(root=root).operation_catalog("example")
+
+        self.assertEqual(result["provider"], "fake")
+        operation_ids = {operation["id"] for operation in result["operations"]}
+        self.assertIn("fake-report", operation_ids)
+        self.assertIn("install-plan", operation_ids)
+        fake = next(operation for operation in result["operations"] if operation["id"] == "fake-report")
+        self.assertEqual(fake["kind"], "report")
+        self.assertEqual(fake["api"]["path"], "/plugins/example/fake-report")
+        self.assertNotIn("adaptation-queue", operation_ids)
+
+    def test_cli_operations_command_outputs_catalog(self):
+        proc = subprocess.run(
+            [sys.executable, "-m", "cbn", "plugin", "operations", "cli-anything"],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["kind"], "PluginProviderOperationCatalog")
+        self.assertEqual(payload["plugin_id"], "cli-anything")
+        self.assertTrue(payload["operations"])
+
     def test_provenance_handles_not_downloaded_plugin(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -266,11 +312,24 @@ def write_example_plugin_manifest(root: Path) -> None:
         json.dumps(
             {
                 "id": "example",
+                "plugin_api_version": "cbn.plugin.v1",
+                "provider": "fake",
                 "title": "Example",
                 "description": "Example plugin",
                 "source": {"repository": "https://example.com/example.git"},
-                "install": {"pip_packages": []},
+                "install": {"pip_packages": [], "modes": ["fake"]},
                 "entrypoints": [],
+                "permissions": ["fake.read"],
+                "operations": [
+                    {
+                        "id": "fake-report",
+                        "title": "Fake Report",
+                        "kind": "report",
+                        "command": "python -m cbn plugin fake-report example",
+                        "api": {"method": "GET", "path": "/plugins/example/fake-report"},
+                        "input_schema": {},
+                    }
+                ],
             }
         ),
         encoding="utf-8",

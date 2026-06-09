@@ -319,6 +319,12 @@ def build_parser() -> argparse.ArgumentParser:
     plugin_info = plugin_subcommands.add_parser("info", help="Show plugin metadata.")
     plugin_info.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
 
+    plugin_operations = plugin_subcommands.add_parser(
+        "operations",
+        help="List provider operation descriptors for WebUI/API dispatch.",
+    )
+    plugin_operations.add_argument("plugin_id", nargs="?", help="Plugin id, for example cli-anything.")
+
     plugin_preflight = plugin_subcommands.add_parser("preflight", help="Run install readiness checks.")
     plugin_preflight.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
 

@@ -1,5 +1,7 @@
 {
   "id": "cli-anything",
+  "plugin_api_version": "cbn.plugin.v1",
+  "provider": "cli-anything",
   "title": "CLI-Anything / CLI-Hub",
   "description": "External integration for CLI-Anything and its cli-hub package manager. CBN stores only this manifest; third-party source and installed harnesses stay outside the repository.",
   "source": {
@@ -8,10 +10,22 @@
     "hub": "https://clianything.cc/"
   },
   "install": {
+    "modes": [
+      "pip",
+      "git-clone",
+      "launcher"
+    ],
     "pip_packages": [
       "cli-anything-hub"
     ]
   },
+  "permissions": [
+    "external_plugins.write",
+    "subprocess.spawn",
+    "pip.install",
+    "git.clone",
+    "network.download"
+  ],
   "entrypoints": [
     "cli-hub"
   ],
@@ -30,4 +44,3 @@
     "cli-hub launch <name> [args...]"
   ]
 }
-

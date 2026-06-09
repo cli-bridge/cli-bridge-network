@@ -251,7 +251,8 @@ function candidateSummaryFromCandidates(candidates) {
 }
 
 function renderOperationDetail(path, payload) {
-  if (!path.startsWith("/plugins/cli-anything/") || path === "/plugins/cli-anything/candidates") {
+  const isPluginOperationPath = path.startsWith("/plugins/cli-anything/") || path.startsWith("/plugins/operations");
+  if (!isPluginOperationPath || path === "/plugins/cli-anything/candidates") {
     return;
   }
   operationDetail.replaceChildren();

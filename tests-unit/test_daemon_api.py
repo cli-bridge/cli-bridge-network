@@ -23,6 +23,7 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("POST", "/plugins/cli-anything/bootstrap-plan"), routes)
         self.assertIn(("GET", "/plugins/cli-anything/provenance"), routes)
         self.assertIn(("GET", "/plugins/cli-anything/update-check"), routes)
+        self.assertIn(("GET", "/plugins/operations"), routes)
         self.assertIn(("POST", "/plugins/gate"), routes)
         self.assertIn(("POST", "/plugins/check-update"), routes)
         self.assertIn(("GET", "/protocols/check"), routes)
@@ -45,6 +46,21 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("POST", "/runtime/transports/gate"), routes)
         self.assertIn(("POST", "/runtime/transports/plan"), routes)
         self.assertIn(("POST", "/runtime/transports/install"), routes)
+
+    def test_plugin_operations_route_returns_provider_catalog(self):
+        with daemon_url() as base_url:
+            with urllib.request.urlopen(
+                f"{base_url}/plugins/operations?plugin_id=cli-anything",
+                timeout=5,
+            ) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+
+            self.assertEqual(response.status, 200)
+            self.assertEqual(payload["kind"], "PluginProviderOperationCatalog")
+            self.assertEqual(payload["plugin_id"], "cli-anything")
+            operation_ids = {operation["id"] for operation in payload["operations"]}
+            self.assertIn("adaptation-queue", operation_ids)
+            self.assertIn("repair-entrypoint", operation_ids)
 
     def test_post_bad_json_returns_structured_error(self):
         with daemon_url() as base_url:

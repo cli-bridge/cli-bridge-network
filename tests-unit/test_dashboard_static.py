@@ -9,7 +9,7 @@ class DashboardStaticTests(unittest.TestCase):
         self.js = (self.root / "app.js").read_text(encoding="utf-8")
 
     def test_cli_anything_lifecycle_buttons_exist(self):
-        for label in ["Download / Clone", "Install", "Check Updates", "Update", "Install PTY Backend"]:
+        for label in ["Provider Operations", "Download / Clone", "Install", "Check Updates", "Update", "Install PTY Backend"]:
             self.assertIn(label, self.html)
         self.assertIn("Candidate Summary", self.html)
         self.assertIn("candidateSummary", self.html)
@@ -24,6 +24,8 @@ class DashboardStaticTests(unittest.TestCase):
 
     def test_cli_anything_commands_are_staged(self):
         self.assertIn("python -m cbn plugin plan cli-anything", self.html)
+        self.assertIn("python -m cbn plugin operations cli-anything", self.html)
+        self.assertIn("/plugins/operations?plugin_id=cli-anything", self.html)
         self.assertIn("python -m cbn plugin preflight cli-anything", self.html)
         self.assertIn("python -m cbn plugin install cli-anything --yes", self.html)
         self.assertIn("python -m cbn plugin install cli-anything --yes --allow-failed-preflight", self.html)
@@ -108,6 +110,7 @@ class DashboardStaticTests(unittest.TestCase):
         self.assertIn("promotion_blockers", self.js)
         self.assertIn("ready_for_promotion", self.js)
         self.assertIn("operationCommands", self.js)
+        self.assertIn('path.startsWith("/plugins/operations")', self.js)
         self.assertIn("CBN_DAEMON_TOKEN_KEY", self.js)
         self.assertIn("localStorage", self.js)
         self.assertIn("daemonHeaders", self.js)

@@ -109,6 +109,26 @@ class PluginManager:
         data["plugin_dir"] = str(self.paths.external_plugins / manifest.plugin_id)
         return data
 
+    def operation_catalog(self, plugin_id: str | None = None) -> dict[str, Any]:
+        manifests = [self.load_manifest(plugin_id)] if plugin_id else [
+            self.load_manifest(path.stem)
+            for path in sorted(self.paths.plugin_registry.glob("*.json"))
+        ]
+        catalogs = [self._operation_catalog_for_manifest(manifest) for manifest in manifests]
+        if plugin_id:
+            return catalogs[0]
+        return {
+            "ok": True,
+            "kind": "PluginProviderOperationCatalogList",
+            "plugin_api_version": "cbn.plugin.v1",
+            "plugin_count": len(catalogs),
+            "catalogs": catalogs,
+            "summary": {
+                "operation_count": sum(item["summary"]["operation_count"] for item in catalogs),
+                "provider_count": len({item["provider"] for item in catalogs}),
+            },
+        }
+
     def provenance(self, plugin_id: str) -> dict[str, Any]:
         manifest = self.load_manifest(plugin_id)
         plugin_dir = self.paths.external_plugins / manifest.plugin_id
@@ -486,6 +506,45 @@ class PluginManager:
                 break
         return {"plugin_id": plan.plugin_id, "action": plan.action, "results": results}
 
+    def _operation_catalog_for_manifest(self, manifest: PluginManifest) -> dict[str, Any]:
+        operations = _dedupe_operations(
+            [
+                *_generic_plugin_operations(manifest),
+                *[operation.as_dict() for operation in manifest.operations],
+                *_provider_operations(manifest),
+            ]
+        )
+        by_kind: dict[str, int] = {}
+        for operation in operations:
+            kind = str(operation.get("kind", "unknown"))
+            by_kind[kind] = by_kind.get(kind, 0) + 1
+        return {
+            "ok": True,
+            "kind": "PluginProviderOperationCatalog",
+            "plugin_api_version": manifest.plugin_api_version,
+            "plugin_id": manifest.plugin_id,
+            "provider": manifest.provider,
+            "title": manifest.title,
+            "installed": self._is_installed(manifest),
+            "operation_kinds": ["report", "gate", "plan", "execute", "write"],
+            "operations": operations,
+            "summary": {
+                "operation_count": len(operations),
+                "by_kind": by_kind,
+                "requires_confirmation_count": sum(
+                    1 for operation in operations if operation.get("requires_confirmation")
+                ),
+                "write_or_execute_count": sum(
+                    1 for operation in operations if operation.get("kind") in {"execute", "write"}
+                ),
+            },
+            "next_commands": [
+                f"python -m cbn plugin operations {manifest.plugin_id}",
+                f"python -m cbn plugin gate {manifest.plugin_id} --action install",
+                f"python -m cbn plugin plan {manifest.plugin_id}",
+            ],
+        }
+
     def _is_installed(self, manifest: PluginManifest) -> bool:
         repo_exists = manifest.repo_dir(self.paths.external_plugins).exists()
         entrypoints_exist = all(shutil.which(entrypoint) for entrypoint in manifest.entrypoints)
@@ -795,3 +854,275 @@ def _runtime_transport_next_commands(kind: str, status: dict[str, Any]) -> list[
     if not status["ready"] and _runtime_transport_dependency(kind):
         commands.append(f"python -m cbn runtime transport {kind} --install --yes")
     return commands
+
+
+def _generic_plugin_operations(manifest: PluginManifest) -> list[dict[str, Any]]:
+    plugin_id = manifest.plugin_id
+    return [
+        _operation("info", "Plugin Metadata", "report", f"python -m cbn plugin info {plugin_id}"),
+        _operation(
+            "preflight",
+            "Install Preflight",
+            "report",
+            f"python -m cbn plugin preflight {plugin_id}",
+            api={"method": "GET", "path": f"/plugins/{plugin_id}/preflight"} if plugin_id == "cli-anything" else None,
+        ),
+        _operation(
+            "provenance",
+            "Source Provenance",
+            "report",
+            f"python -m cbn plugin provenance {plugin_id}",
+            api={"method": "GET", "path": f"/plugins/{plugin_id}/provenance"} if plugin_id == "cli-anything" else None,
+        ),
+        _operation(
+            "check-update",
+            "Check Updates",
+            "report",
+            f"python -m cbn plugin check-update {plugin_id}",
+            api={"method": "POST", "path": "/plugins/check-update"},
+            payload_template={"plugin_id": plugin_id, "remote": False},
+            input_schema={"remote": "boolean"},
+        ),
+        _operation(
+            "install-gate",
+            "Install Gate",
+            "gate",
+            f"python -m cbn plugin gate {plugin_id} --action install",
+            api={"method": "POST", "path": "/plugins/gate"},
+            payload_template={"plugin_id": plugin_id, "action": "install"},
+        ),
+        _operation(
+            "update-gate",
+            "Update Gate",
+            "gate",
+            f"python -m cbn plugin gate {plugin_id} --action update",
+            api={"method": "POST", "path": "/plugins/gate"},
+            payload_template={"plugin_id": plugin_id, "action": "update"},
+        ),
+        _operation(
+            "install-plan",
+            "Install Plan",
+            "plan",
+            f"python -m cbn plugin plan {plugin_id}",
+            api={"method": "POST", "path": "/plugins/plan"},
+            payload_template={"plugin_id": plugin_id, "action": "install"},
+        ),
+        _operation(
+            "update-plan",
+            "Update Plan",
+            "plan",
+            f"python -m cbn plugin plan {plugin_id} --action update",
+            api={"method": "POST", "path": "/plugins/plan"},
+            payload_template={"plugin_id": plugin_id, "action": "update"},
+        ),
+        _operation(
+            "install-execute",
+            "Install",
+            "execute",
+            f"python -m cbn plugin install {plugin_id} --yes",
+            api={"method": "POST", "path": "/plugins/execute"},
+            requires_confirmation=True,
+            side_effects=("subprocess", "external_plugins", "pip", "git"),
+            payload_template={"plugin_id": plugin_id, "action": "install", "confirmed": True},
+        ),
+        _operation(
+            "update-execute",
+            "Update",
+            "execute",
+            f"python -m cbn plugin update {plugin_id} --yes",
+            api={"method": "POST", "path": "/plugins/execute"},
+            requires_confirmation=True,
+            side_effects=("subprocess", "external_plugins", "pip", "git"),
+            payload_template={"plugin_id": plugin_id, "action": "update", "confirmed": True},
+        ),
+    ]
+
+
+def _provider_operations(manifest: PluginManifest) -> list[dict[str, Any]]:
+    if manifest.provider != "cli-anything" and manifest.plugin_id != "cli-anything":
+        return []
+    plugin_id = manifest.plugin_id
+    return [
+        _operation(
+            "status",
+            "CLI-Hub Status",
+            "report",
+            f"python -m cbn plugin status {plugin_id}",
+            api={"method": "GET", "path": f"/plugins/{plugin_id}/status"},
+        ),
+        _operation(
+            "market-list",
+            "Market List",
+            "report",
+            f"python -m cbn plugin market {plugin_id} list",
+            api={"method": "POST", "path": f"/plugins/{plugin_id}/market"},
+            payload_template={"command": "list"},
+        ),
+        _operation(
+            "candidates",
+            "Rank Candidates",
+            "report",
+            f"python -m cbn plugin candidates {plugin_id} --query file --limit 20 --compact",
+            api={"method": "POST", "path": f"/plugins/{plugin_id}/candidates"},
+            payload_template={"query": "file", "limit": 20, "compact": True},
+            input_schema={"query": "string", "limit": "integer", "compact": "boolean"},
+        ),
+        _operation(
+            "install-queue",
+            "Install Queue",
+            "gate",
+            f"python -m cbn plugin install-queue {plugin_id} --query file --limit 20 --max-installs 5",
+            api={"method": "POST", "path": f"/plugins/{plugin_id}/install-queue"},
+            payload_template={"query": "file", "limit": 20, "max_installs": 5, "include_blocked": True},
+        ),
+        _operation(
+            "blocked-plan",
+            "Blocked Plan",
+            "gate",
+            f"python -m cbn plugin blocked-plan {plugin_id} --query file --limit 20",
+            api={"method": "POST", "path": f"/plugins/{plugin_id}/blocked-plan"},
+            payload_template={"query": "file", "limit": 20},
+        ),
+        _operation(
+            "repair-plan",
+            "Repair Plan",
+            "report",
+            f"python -m cbn plugin repair-plan {plugin_id} <harness>",
+            api={"method": "POST", "path": f"/plugins/{plugin_id}/repair-plan"},
+            payload_template={"harness_name": "<harness>", "from_market": True},
+        ),
+        _operation(
+            "adapter-targets",
+            "Adapter Targets",
+            "report",
+            f"python -m cbn plugin adapter-targets {plugin_id} <harness> --from-market",
+            api={"method": "POST", "path": f"/plugins/{plugin_id}/adapter-targets"},
+            payload_template={"harness_name": "<harness>", "from_market": True, "limit": 20},
+        ),
+        _operation(
+            "adapter-smoke",
+            "Adapter Smoke",
+            "execute",
+            f"python -m cbn plugin adapter-smoke {plugin_id} <harness> --module <module> --run --yes",
+            api={"method": "POST", "path": f"/plugins/{plugin_id}/adapter-smoke"},
+            requires_confirmation=True,
+            side_effects=("subprocess", "runtime/artifacts"),
+            payload_template={
+                "harness_name": "<harness>",
+                "module": "<module>",
+                "run": True,
+                "confirmed": True,
+                "smoke_args": ["--help"],
+            },
+        ),
+        _operation(
+            "repair-entrypoint",
+            "Repair Entrypoint",
+            "write",
+            f"python -m cbn plugin repair-entrypoint {plugin_id} <harness> --module <module> --write --yes",
+            api={"method": "POST", "path": f"/plugins/{plugin_id}/repair-entrypoint"},
+            requires_confirmation=True,
+            side_effects=("external_plugins/entrypoints", "runtime/manifests", "audit", "events"),
+            payload_template={
+                "harness_name": "<harness>",
+                "module": "<module>",
+                "write": True,
+                "confirmed": True,
+                "smoke_args": ["--help"],
+            },
+        ),
+        _operation(
+            "adaptation-gate",
+            "Adaptation Gate",
+            "gate",
+            f"python -m cbn plugin adaptation-gate {plugin_id} <harness> --from-market",
+            api={"method": "POST", "path": f"/plugins/{plugin_id}/adaptation-gate"},
+            payload_template={"harness_name": "<harness>", "from_market": True, "require_smoke": True},
+        ),
+        _operation(
+            "adaptation-queue",
+            "Adaptation Queue",
+            "gate",
+            f"python -m cbn plugin adaptation-queue {plugin_id} --query file --max-harnesses 5",
+            api={"method": "POST", "path": f"/plugins/{plugin_id}/adaptation-queue"},
+            payload_template={"query": "file", "limit": 20, "max_harnesses": 5, "include_blocked": True},
+        ),
+        _operation(
+            "promotion-gate",
+            "Promotion Gate",
+            "gate",
+            f"python -m cbn plugin promotion-gate {plugin_id} <harness> --from-market",
+            api={"method": "POST", "path": f"/plugins/{plugin_id}/promotion-gate"},
+            payload_template={"harness_name": "<harness>", "from_market": True},
+        ),
+        _operation(
+            "live-verification",
+            "Live Verification",
+            "report",
+            f"python -m cbn plugin live-verification {plugin_id}",
+            api={"method": "POST", "path": f"/plugins/{plugin_id}/live-verification"},
+            payload_template={"harnesses": ["mermaid", "macrocli"], "candidate_query": "file"},
+        ),
+        _operation(
+            "mvp-plan",
+            "MVP Plan",
+            "report",
+            f"python -m cbn plugin mvp-plan {plugin_id} --query file --limit 20 --max-harnesses 5",
+            api={"method": "POST", "path": f"/plugins/{plugin_id}/mvp-plan"},
+            payload_template={"query": "file", "limit": 20, "max_harnesses": 5, "include_blocked": True},
+        ),
+        _operation(
+            "bootstrap-plan",
+            "Bootstrap Plan",
+            "plan",
+            f"python -m cbn plugin bootstrap-plan {plugin_id} --harness mermaid --query file",
+            api={"method": "POST", "path": f"/plugins/{plugin_id}/bootstrap-plan"},
+            payload_template={"harness_name": "mermaid", "query": "file", "include_workflows": True},
+        ),
+        _operation(
+            "harness-install",
+            "Harness Install",
+            "execute",
+            f"python -m cbn plugin harness {plugin_id} install <harness> --yes",
+            api={"method": "POST", "path": f"/plugins/{plugin_id}/harness"},
+            requires_confirmation=True,
+            side_effects=("subprocess", "pip", "cli-hub"),
+            payload_template={"action": "install", "harness_name": "<harness>", "confirmed": True},
+        ),
+    ]
+
+
+def _operation(
+    operation_id: str,
+    title: str,
+    kind: str,
+    command: str,
+    api: dict[str, str] | None = None,
+    requires_confirmation: bool = False,
+    side_effects: tuple[str, ...] = (),
+    input_schema: dict[str, Any] | None = None,
+    payload_template: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        "id": operation_id,
+        "title": title,
+        "kind": kind,
+        "command": command,
+        "api": api,
+        "requires_confirmation": requires_confirmation,
+        "side_effects": list(side_effects),
+        "input_schema": input_schema or {},
+        "payload_template": payload_template or {},
+    }
+
+
+def _dedupe_operations(operations: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    selected: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for operation in operations:
+        operation_id = str(operation.get("id", ""))
+        if not operation_id or operation_id in seen:
+            continue
+        selected.append(operation)
+        seen.add(operation_id)
+    return selected
