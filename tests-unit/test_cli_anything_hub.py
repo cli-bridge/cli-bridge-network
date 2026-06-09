@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -52,6 +53,30 @@ SAMPLE_3MF_RECORD = {
     "install_cmd": "pip install git+https://github.com/HKUDS/CLI-Anything.git#subdirectory=3mf/agent-harness",
     "entry_point": "cli-anything-3mf",
     "category": "file",
+    "_source": "harness",
+}
+
+SAMPLE_BLENDER_RECORD = {
+    "name": "blender",
+    "display_name": "Blender",
+    "version": "1.0.0",
+    "description": "3D modeling, animation, and rendering via blender --background --python",
+    "requires": "blender >= 4.2",
+    "install_cmd": "pip install git+https://github.com/HKUDS/CLI-Anything.git#subdirectory=blender/agent-harness",
+    "entry_point": "cli-anything-blender",
+    "category": "3d",
+    "_source": "harness",
+}
+
+SAMPLE_LIBREOFFICE_RECORD = {
+    "name": "libreoffice",
+    "display_name": "LibreOffice",
+    "version": "1.0.1",
+    "description": "Create and manipulate ODF documents, export to PDF/DOCX/XLSX/PPTX via headless mode",
+    "requires": "libreoffice",
+    "install_cmd": "pip install git+https://github.com/HKUDS/CLI-Anything.git#subdirectory=libreoffice/agent-harness",
+    "entry_point": "cli-anything-libreoffice",
+    "category": "office",
     "_source": "harness",
 }
 
@@ -339,6 +364,43 @@ class CliAnythingHubTests(unittest.TestCase):
             self.assertIn("python-runtime", result["requirements"]["signals"])
             self.assertIn("managed-packages", result["requirements"]["signals"])
             self.assertNotIn(
+                "declared requirements need external app, account, token, or service",
+                result["blockers"],
+            )
+
+    def test_evaluate_harness_blocks_external_desktop_app_requirements(self):
+        class FakeHub(CliAnythingHub):
+            def info(self, harness_name: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "info", harness_name),
+                    exit_code=0,
+                    stdout=(
+                        "Entry point: cli-anything-blender\n"
+                        "Requires: blender >= 4.2\n"
+                        "Status: not installed\n"
+                    ),
+                    stderr="",
+                )
+
+            def search_market(self, query: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "search", query, "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[SAMPLE_BLENDER_RECORD],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result = FakeHub(root=Path(tmp)).evaluate_harness("blender", from_market=True)
+            self.assertTrue(result["ok"])
+            self.assertFalse(result["install_candidate"])
+            self.assertFalse(result["gates"]["external_dependency_free"])
+            self.assertEqual(result["requirements"]["dependency_class"], "manual-or-external")
+            self.assertFalse(result["requirements"]["managed_dependency_only"])
+            self.assertTrue(result["requirements"]["manual_dependency_required"])
+            self.assertIn("external-app:blender", result["requirements"]["signals"])
+            self.assertIn(
                 "declared requirements need external app, account, token, or service",
                 result["blockers"],
             )
@@ -1167,6 +1229,79 @@ class CliAnythingHubTests(unittest.TestCase):
             self.assertEqual(declared["severity"], "info")
             self.assertEqual(declared["dependency_class"], "managed-package")
 
+    def test_candidate_harnesses_blocks_external_desktop_app_requirements(self):
+        class FakeHub(CliAnythingHub):
+            def list_market(self) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "list", "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[SAMPLE_BLENDER_RECORD, SAMPLE_LIBREOFFICE_RECORD, SAMPLE_3MF_RECORD],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp, patch("cbn_plugins.cli_anything.shutil.which", return_value=None):
+            result = FakeHub(root=Path(tmp)).candidate_harnesses(limit=10, with_probes=True)
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["install_candidate_count"], 1)
+            by_name = {candidate["harness_name"]: candidate for candidate in result["candidates"]}
+            self.assertTrue(by_name["3mf"]["install_candidate"])
+            for name, signal in {
+                "blender": "external-app:blender",
+                "libreoffice": "external-app:libreoffice",
+            }.items():
+                candidate = by_name[name]
+                self.assertFalse(candidate["install_candidate"])
+                self.assertFalse(candidate["requirements"]["external_dependency_free"])
+                self.assertEqual(candidate["requirements"]["dependency_class"], "manual-or-external")
+                self.assertIn(signal, candidate["requirements"]["signals"])
+                self.assertIn(
+                    "declared requirements need external app, account, token, or service",
+                    candidate["blockers"],
+                )
+
+    def test_candidate_harnesses_probe_blockers_downgrade_install_candidate(self):
+        api_key_record = {
+            "name": "mailchimp",
+            "display_name": "Mailchimp",
+            "version": "1.0.0",
+            "description": "Mailchimp campaign operations",
+            "requires": "CBN_TEST_MAILCHIMP_API_KEY",
+            "install_cmd": "pip install cli-anything-mailchimp",
+            "entry_point": "cli-anything-mailchimp",
+            "category": "marketing",
+            "_source": "harness",
+        }
+
+        class FakeHub(CliAnythingHub):
+            def list_market(self) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "list", "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[api_key_record, SAMPLE_3MF_RECORD],
+                )
+
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch("cbn_plugins.cli_anything.shutil.which", return_value=None),
+            patch.dict(os.environ, {}, clear=True),
+        ):
+            result = FakeHub(root=Path(tmp)).candidate_harnesses(limit=10, with_probes=True)
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["install_candidate_count"], 1)
+            self.assertEqual(result["probe_ready_count"], 1)
+            self.assertEqual(result["probe_blocked_count"], 1)
+            by_name = {candidate["harness_name"]: candidate for candidate in result["candidates"]}
+            candidate = by_name["mailchimp"]
+            self.assertFalse(candidate["install_candidate"])
+            self.assertFalse(candidate["readiness"]["ready"])
+            self.assertFalse(candidate["gates"]["external_dependency_free"])
+            self.assertEqual(candidate["recommended_next_action"], "resolve_blockers")
+            self.assertIn("dependency probe failed: env:CBN_TEST_MAILCHIMP_API_KEY", candidate["blockers"])
+            self.assertEqual(candidate["lifecycle"]["state"], "blocked")
+
     def test_candidate_harnesses_limits_after_ranking_full_market(self):
         class FakeHub(CliAnythingHub):
             def list_market(self) -> CliHubCommandResult:
@@ -1330,7 +1465,7 @@ class CliAnythingHubTests(unittest.TestCase):
             self.assertEqual(result["install_candidate_count"], 0)
             candidate = result["candidates"][0]
             self.assertFalse(candidate["install_candidate"])
-            self.assertEqual(candidate["requirements"]["signals"], ["declared requirement"])
+            self.assertEqual(candidate["requirements"]["signals"], ["external-app:krita"])
             self.assertIn("declared requirements need external app, account, token, or service", candidate["blockers"])
 
     def test_sync_market_previews_multiple_harness_manifests(self):

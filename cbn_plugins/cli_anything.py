@@ -1609,13 +1609,31 @@ def _refresh_candidate_lifecycle(item: dict[str, Any]) -> None:
 
 def _attach_candidate_readiness(item: dict[str, Any]) -> None:
     record = item.get("market_record") if isinstance(item.get("market_record"), dict) else {}
-    item["readiness"] = _readiness_summary(
+    readiness = _readiness_summary(
         probes=_dependency_probes(
             requires=_declared_requires(record, {}),
             entry_point=record.get("entry_point"),
         ),
         install_candidate=bool(item.get("install_candidate")),
     )
+    item["readiness"] = readiness
+    blocker_probes = _readiness_blocker_probes(readiness)
+    if blocker_probes:
+        blockers = item.setdefault("blockers", [])
+        if not isinstance(blockers, list):
+            blockers = []
+            item["blockers"] = blockers
+        for probe in blocker_probes:
+            probe_id = probe.get("id") or probe.get("kind") or "unknown"
+            blocker = f"dependency probe failed: {probe_id}"
+            if blocker not in blockers:
+                blockers.append(blocker)
+        gates = item.get("gates")
+        if isinstance(gates, dict):
+            gates["external_dependency_free"] = False
+        item["install_candidate"] = False
+        item["recommended_next_action"] = "resolve_blockers"
+        _refresh_candidate_lifecycle(item)
 
 
 def _readiness_from_evaluation(evaluation: dict[str, Any]) -> dict[str, Any]:
@@ -1642,6 +1660,22 @@ def _readiness_summary(probes: list[dict[str, Any]], install_candidate: bool) ->
         "probe_blocker_count": len(blockers),
         "probes": probes,
     }
+
+
+def _readiness_blocker_probes(readiness: dict[str, Any]) -> list[dict[str, Any]]:
+    probes = readiness.get("probes")
+    if not isinstance(probes, list):
+        return []
+    blockers = []
+    for probe in probes:
+        if not isinstance(probe, dict):
+            continue
+        if (
+            probe.get("status") in {"missing", "unavailable", "manual_required"}
+            and probe.get("severity") == "blocker"
+        ):
+            blockers.append(probe)
+    return blockers
 
 
 def _parser_contract_report(manifest: dict[str, Any]) -> dict[str, Any]:
@@ -2151,7 +2185,10 @@ def _requirement_assessment(requires: str | None) -> dict[str, Any]:
         "extension",
         "login",
     )
-    signals = [marker.strip() for marker in blocking_markers if marker in text]
+    signals = [
+        *[marker.strip() for marker in blocking_markers if marker in text],
+        *_external_app_requirement_signals(requires),
+    ]
     managed_signals = _managed_requirement_signals(requires)
     if not signals and managed_signals:
         return {
@@ -2210,6 +2247,40 @@ def _managed_requirement_signals(requires: str) -> list[str]:
     if signals and not leftovers:
         return sorted(set(signals))
     return []
+
+
+def _external_app_requirement_signals(requires: str) -> list[str]:
+    text = requires.casefold()
+    app_markers = (
+        "blender",
+        "libreoffice",
+        "ffmpeg",
+        "gimp",
+        "inkscape",
+        "sketch",
+        "stata",
+        "wavetone",
+        "chrome",
+        "chromium",
+        "calibre",
+        "comfyui",
+        "draw.io",
+        "drawio",
+        "freecad",
+        "godot",
+        "joplin",
+        "kdenlive",
+        "krita",
+        "musescore",
+        "obsidian",
+        "ollama",
+    )
+    signals = []
+    for marker in app_markers:
+        pattern = r"(?<![a-z0-9_.-])" + re.escape(marker) + r"(?![a-z0-9_.-])"
+        if re.search(pattern, text):
+            signals.append(f"external-app:{marker}")
+    return signals
 
 
 def _platform_assessment(market_record: dict[str, Any] | None, requires: str | None) -> dict[str, Any]:
