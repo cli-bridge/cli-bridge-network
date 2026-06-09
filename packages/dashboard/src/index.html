@@ -249,6 +249,12 @@
             data-api-body='{"query":"file","limit":20,"max_harnesses":5,"include_blocked":true,"max_workflows":10}'
           >MVP Plan</button>
           <button
+            data-command="python -m cbn plugin bootstrap-plan cli-anything --harness mermaid --query file"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/bootstrap-plan"
+            data-api-body='{"harness_name":"mermaid","query":"file","include_workflows":true}'
+          >Bootstrap Plan</button>
+          <button
             data-command="python -m cbn plugin verify-harness cli-anything 3mf --smoke-suite --smoke-extra-arg=--help --no-workflows"
             data-api-method="POST"
             data-api-path="/plugins/cli-anything/verify-harness"

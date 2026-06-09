@@ -540,6 +540,26 @@ def build_parser() -> argparse.ArgumentParser:
     )
     plugin_mvp_plan.add_argument("--max-workflows", type=int, default=10)
 
+    plugin_bootstrap_plan = plugin_subcommands.add_parser(
+        "bootstrap-plan",
+        help="Return the read-only CLI-Anything plugin bootstrap runbook before first download/install.",
+    )
+    plugin_bootstrap_plan.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
+    plugin_bootstrap_plan.add_argument("--harness", default="mermaid", help="First harness to prepare after bootstrap.")
+    plugin_bootstrap_plan.add_argument("--query", default="file", help="Market query used after cli-hub is installed.")
+    plugin_bootstrap_plan.add_argument(
+        "--workflow-path",
+        default="workflows/cli-anything-macrocli-mermaid-routing.example.json",
+        help="Workflow used by the protocol lifecycle runbook stage.",
+    )
+    plugin_bootstrap_plan.add_argument(
+        "--no-workflows",
+        action="store_false",
+        dest="include_workflows",
+        help="Skip workflow readiness from the first harness onboarding preview.",
+    )
+    plugin_bootstrap_plan.set_defaults(include_workflows=True)
+
     plugin_candidates = plugin_subcommands.add_parser(
         "candidates",
         help="Rank CLI-Anything market harnesses as install candidates without installing them.",

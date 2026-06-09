@@ -30,6 +30,7 @@ from cbn_parsers.registry import ParserRegistry
 from cbn_plugins.manager import PluginCommand, PluginManager, PluginPlan
 from cbn_protocol.acceptance_queue import cli_to_cli_acceptance_queue
 from cbn_protocol.compatibility import check_all_protocols
+from cbn_protocol.lifecycle_suite import protocol_lifecycle_suite
 from cbn_protocol.readiness import protocol_readiness_report
 from cbn_protocol.smoke_suite import protocol_smoke_suite
 from cbn_workflow.catalog import list_workflows
@@ -1915,6 +1916,107 @@ class CliAnythingHub:
                 "python -m cbn protocol acceptance-queue --run --dry-run",
                 "python -m cbn protocol readiness --include-workflows",
                 "python -m cbn protocol smoke-suite --workflow-dry-run",
+            ],
+        }
+
+    def bootstrap_plan(
+        self,
+        harness_name: str = "mermaid",
+        query: str | None = "file",
+        include_workflows: bool = True,
+        workflow_path: str = "workflows/cli-anything-macrocli-mermaid-routing.example.json",
+    ) -> dict[str, Any]:
+        """Return the read-only bootstrap runbook for installing CLI-Anything."""
+
+        manager = PluginManager(root=self.paths.root)
+        environment = self._environment_verification()
+        install_plan = _safe_plugin_report(lambda: manager.plan(PLUGIN_ID, "install").as_dict())
+        update_plan = _safe_plugin_report(lambda: manager.plan(PLUGIN_ID, "update").as_dict())
+        install_gate = _safe_plugin_report(lambda: manager.operation_gate(PLUGIN_ID, "install"))
+        update_gate = _safe_plugin_report(lambda: manager.operation_gate(PLUGIN_ID, "update"))
+        entrypoint_available = bool(
+            any(item.get("available") for item in environment.get("entrypoints", []) if isinstance(item, dict))
+        )
+        market_scan = (
+            self.candidate_harnesses(query=query, limit=10, with_probes=True, compact=True)
+            if entrypoint_available
+            else {
+                "ok": False,
+                "skipped": True,
+                "reason": "cli-hub entrypoint is not available yet",
+                "query": query,
+                "candidate_summary": [],
+            }
+        )
+        onboarding = self.onboard_harness(
+            harness_name,
+            from_market=entrypoint_available,
+            write=False,
+            confirmed=False,
+            install=False,
+            include_workflows=include_workflows,
+            run_smoke_suite=False,
+        )
+        lifecycle_suite = protocol_lifecycle_suite(
+            capability_id="git.version",
+            workflow_path=workflow_path,
+        )
+        source_downloaded = bool(environment.get("source_downloaded"))
+        source_trusted = environment.get("source_trusted")
+        summary = {
+            "source_downloaded": source_downloaded,
+            "source_trusted": source_trusted,
+            "entrypoint_available": entrypoint_available,
+            "install_gate_ok": bool(install_gate.get("ok")),
+            "update_gate_ok": bool(update_gate.get("ok")),
+            "market_scan_ok": bool(market_scan.get("ok")),
+            "market_scan_skipped": bool(market_scan.get("skipped")),
+            "onboarding_ok": bool(onboarding.get("ok")),
+            "onboarding_stage_count": len(onboarding.get("stage_results", []))
+            if isinstance(onboarding.get("stage_results"), list)
+            else 0,
+            "protocol_lifecycle_ok": bool(lifecycle_suite.get("ok")),
+            "recommended_next_action": _bootstrap_next_action(
+                source_downloaded=source_downloaded,
+                source_trusted=source_trusted,
+                entrypoint_available=entrypoint_available,
+                install_gate_ok=bool(install_gate.get("ok")),
+                market_scan_ok=bool(market_scan.get("ok")),
+                onboarding_ok=bool(onboarding.get("ok")),
+                protocol_lifecycle_ok=bool(lifecycle_suite.get("ok")),
+            ),
+        }
+        return {
+            "ok": True,
+            "plugin_id": PLUGIN_ID,
+            "kind": "CliAnythingBootstrapPlan",
+            "harness_name": harness_name,
+            "query": query,
+            "include_workflows": include_workflows,
+            "workflow_path": workflow_path,
+            "summary": summary,
+            "stages": _bootstrap_stages(summary, harness_name, query, workflow_path),
+            "plans": {
+                "install": install_plan,
+                "update": update_plan,
+            },
+            "reports": {
+                "environment": environment,
+                "install_gate": install_gate,
+                "update_gate": update_gate,
+                "market_scan": market_scan,
+                "onboarding": onboarding,
+                "protocol_lifecycle_suite": lifecycle_suite,
+            },
+            "next_commands": [
+                "python -m cbn plugin bootstrap-plan cli-anything",
+                "python -m cbn plugin preflight cli-anything",
+                "python -m cbn plugin install cli-anything --yes",
+                "python -m cbn plugin provenance cli-anything",
+                "python -m cbn plugin check-update cli-anything --remote",
+                f"python -m cbn plugin candidates cli-anything --query {query or '<query>'} --limit 10 --with-probes --compact",
+                f"python -m cbn plugin onboard-harness cli-anything {harness_name} --from-market",
+                f"python -m cbn protocol lifecycle-suite --capability-id git.version --workflow-path {workflow_path}",
             ],
         }
 
@@ -4102,6 +4204,104 @@ def _mvp_plan_stages(summary: dict[str, Any]) -> list[dict[str, Any]]:
             "ready": bool(summary["protocol_internal_bridge_ready"]),
             "wire_compatible": bool(summary["external_protocol_wire_compatible"]),
             "recommended_next_action": "run_protocol_smoke_then_add_conformance_coverage",
+        },
+    ]
+
+
+def _bootstrap_next_action(
+    source_downloaded: bool,
+    source_trusted: Any,
+    entrypoint_available: bool,
+    install_gate_ok: bool,
+    market_scan_ok: bool,
+    onboarding_ok: bool,
+    protocol_lifecycle_ok: bool,
+) -> str:
+    if not source_downloaded:
+        return "install_cli_anything_external_plugin"
+    if source_trusted is False:
+        return "fix_cli_anything_source_provenance"
+    if not entrypoint_available:
+        return "repair_or_reinstall_cli_hub_entrypoint"
+    if not install_gate_ok:
+        return "fix_cli_anything_install_gate"
+    if not market_scan_ok:
+        return "inspect_cli_hub_market"
+    if not onboarding_ok:
+        return "inspect_harness_onboarding"
+    if not protocol_lifecycle_ok:
+        return "fix_protocol_lifecycle_suite"
+    return "onboard_first_market_harness"
+
+
+def _bootstrap_stages(
+    summary: dict[str, Any],
+    harness_name: str,
+    query: str | None,
+    workflow_path: str,
+) -> list[dict[str, Any]]:
+    query_arg = query or "<query>"
+    return [
+        {
+            "id": "preflight",
+            "title": "Preflight CLI-Anything Plugin",
+            "status": "complete" if summary["install_gate_ok"] else "blocked",
+            "ready": bool(summary["install_gate_ok"]),
+            "command": "python -m cbn plugin preflight cli-anything",
+        },
+        {
+            "id": "download_plugin",
+            "title": "Download External Plugin Source",
+            "status": "complete" if summary["source_downloaded"] else "next",
+            "ready": bool(summary["install_gate_ok"]),
+            "command": "python -m cbn plugin install cli-anything --yes",
+        },
+        {
+            "id": "verify_provenance",
+            "title": "Verify Source And Entrypoint Provenance",
+            "status": (
+                "complete"
+                if summary["source_trusted"] is not False and summary["entrypoint_available"]
+                else "blocked"
+                if summary["source_trusted"] is False
+                else "pending"
+            ),
+            "ready": bool(summary["source_downloaded"]),
+            "command": "python -m cbn plugin provenance cli-anything",
+        },
+        {
+            "id": "check_updates",
+            "title": "Check External Plugin Updates",
+            "status": "ready" if summary["source_downloaded"] else "pending",
+            "ready": bool(summary["source_downloaded"]),
+            "command": "python -m cbn plugin check-update cli-anything --remote",
+        },
+        {
+            "id": "sync_market",
+            "title": "Inspect CLI-Anything Market",
+            "status": (
+                "complete"
+                if summary["market_scan_ok"]
+                else "pending"
+                if summary["market_scan_skipped"]
+                else "blocked"
+            ),
+            "ready": bool(summary["entrypoint_available"]),
+            "command": f"python -m cbn plugin candidates cli-anything --query {query_arg} --limit 10 --with-probes --compact",
+        },
+        {
+            "id": "onboard_harness",
+            "title": "Onboard First Market Harness",
+            "status": "ready" if summary["onboarding_ok"] else "blocked",
+            "ready": bool(summary["entrypoint_available"] and summary["market_scan_ok"]),
+            "command": f"python -m cbn plugin onboard-harness cli-anything {harness_name} --from-market",
+        },
+        {
+            "id": "protocol_lifecycle",
+            "title": "Run Local Protocol Lifecycle Gate",
+            "status": "complete" if summary["protocol_lifecycle_ok"] else "blocked",
+            "ready": True,
+            "command": f"python -m cbn protocol lifecycle-suite --capability-id git.version --workflow-path {workflow_path}",
         },
     ]
 

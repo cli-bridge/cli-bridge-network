@@ -19,6 +19,7 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("POST", "/plugins/cli-anything/verify-harness"), routes)
         self.assertIn(("POST", "/plugins/cli-anything/live-verification"), routes)
         self.assertIn(("POST", "/plugins/cli-anything/mvp-plan"), routes)
+        self.assertIn(("POST", "/plugins/cli-anything/bootstrap-plan"), routes)
         self.assertIn(("GET", "/plugins/cli-anything/provenance"), routes)
         self.assertIn(("GET", "/plugins/cli-anything/update-check"), routes)
         self.assertIn(("POST", "/plugins/gate"), routes)
@@ -1152,6 +1153,51 @@ class DaemonApiTests(unittest.TestCase):
                     self.assertFalse(payload["include_blocked"])
                     self.assertEqual(payload["workflow_paths"], ["workflows/example.json"])
                     self.assertEqual(payload["max_workflows"], 4)
+
+    def test_cli_anything_bootstrap_plan_route_returns_runbook(self):
+        class FakeHub:
+            def bootstrap_plan(
+                self,
+                harness_name="mermaid",
+                query="file",
+                include_workflows=True,
+                workflow_path="workflows/cli-anything-macrocli-mermaid-routing.example.json",
+            ):
+                return {
+                    "ok": True,
+                    "plugin_id": "cli-anything",
+                    "kind": "CliAnythingBootstrapPlan",
+                    "harness_name": harness_name,
+                    "query": query,
+                    "include_workflows": include_workflows,
+                    "workflow_path": workflow_path,
+                    "summary": {"recommended_next_action": "install_cli_anything_external_plugin"},
+                    "stages": [{"id": "download_plugin", "status": "next"}],
+                }
+
+        with patch("api_server.server.CliAnythingHub", FakeHub):
+            with daemon_url() as base_url:
+                request = urllib.request.Request(
+                    f"{base_url}/plugins/cli-anything/bootstrap-plan",
+                    data=json.dumps(
+                        {
+                            "harness_name": "mermaid",
+                            "query": "diagram",
+                            "include_workflows": False,
+                            "workflow_path": "workflows/example.json",
+                        }
+                    ).encode("utf-8"),
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(payload["kind"], "CliAnythingBootstrapPlan")
+                    self.assertEqual(payload["harness_name"], "mermaid")
+                    self.assertEqual(payload["query"], "diagram")
+                    self.assertFalse(payload["include_workflows"])
+                    self.assertEqual(payload["workflow_path"], "workflows/example.json")
 
     def test_a2a_routes_return_agent_card_and_task(self):
         with daemon_url() as base_url:

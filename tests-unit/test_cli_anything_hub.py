@@ -2959,6 +2959,54 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertIn("summary", payload)
         self.assertIn("harnesses", payload)
 
+    def test_bootstrap_plan_returns_first_run_runbook_without_cli_hub(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = CliAnythingHub(
+                root=Path(tmp),
+                entrypoint="cbn-cli-hub-that-does-not-exist",
+            ).bootstrap_plan(
+                harness_name="mermaid",
+                query="file",
+                include_workflows=False,
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["kind"], "CliAnythingBootstrapPlan")
+        self.assertEqual(result["summary"]["recommended_next_action"], "install_cli_anything_external_plugin")
+        self.assertTrue(result["reports"]["market_scan"]["skipped"])
+        self.assertIn("install", result["plans"])
+        self.assertIn("update", result["plans"])
+        stages = {stage["id"]: stage for stage in result["stages"]}
+        self.assertEqual(stages["download_plugin"]["status"], "next")
+        self.assertTrue(result["reports"]["protocol_lifecycle_suite"]["ok"])
+
+    def test_cli_bootstrap_plan_outputs_runbook(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "plugin",
+                "bootstrap-plan",
+                "cli-anything",
+                "--harness",
+                "mermaid",
+                "--query",
+                "file",
+                "--no-workflows",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["plugin_id"], "cli-anything")
+        self.assertEqual(payload["kind"], "CliAnythingBootstrapPlan")
+        self.assertEqual(payload["harness_name"], "mermaid")
+        self.assertIn("download_plugin", {stage["id"] for stage in payload["stages"]})
+
     def test_cli_candidates_handles_missing_cli_hub_without_crashing(self):
         proc = subprocess.run(
             [

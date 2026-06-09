@@ -102,6 +102,7 @@ ROUTE_SUMMARY = [
     {"method": "POST", "path": "/plugins/cli-anything/onboard-harness"},
     {"method": "POST", "path": "/plugins/cli-anything/live-verification"},
     {"method": "POST", "path": "/plugins/cli-anything/mvp-plan"},
+    {"method": "POST", "path": "/plugins/cli-anything/bootstrap-plan"},
     {"method": "POST", "path": "/plugins/cli-anything/candidates"},
     {"method": "POST", "path": "/plugins/cli-anything/install-queue"},
     {"method": "POST", "path": "/plugins/cli-anything/blocked-plan"},
@@ -706,6 +707,18 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 max_workflows=int(payload.get("max_workflows", 10)),
                 registry=runtime.registry,
                 workflow_runner=runtime.workflow_runner,
+            )
+            self._send(200 if result["ok"] else 502, result)
+            return
+        if self.path == "/plugins/cli-anything/bootstrap-plan":
+            result = CliAnythingHub().bootstrap_plan(
+                harness_name=payload.get("harness_name", payload.get("harness", "mermaid")),
+                query=payload.get("query", "file"),
+                include_workflows=bool(payload.get("include_workflows", True)),
+                workflow_path=payload.get(
+                    "workflow_path",
+                    "workflows/cli-anything-macrocli-mermaid-routing.example.json",
+                ),
             )
             self._send(200 if result["ok"] else 502, result)
             return
