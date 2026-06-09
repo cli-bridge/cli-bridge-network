@@ -34,6 +34,7 @@ from cbn_protocol.exports import (
     export_workflow_protocol,
     list_protocol_exports,
 )
+from cbn_protocol.lifecycle_suite import protocol_lifecycle_suite
 from cbn_protocol.readiness import protocol_readiness_report
 from cbn_protocol.mcp_stdio import serve_stdio, smoke_mcp_stdio
 from cbn_protocol.mcp_stdio import smoke_mcp_workflow_stdio
@@ -210,6 +211,13 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(json.dumps(payload, ensure_ascii=False, indent=2))
             return 0 if payload["ok"] else 7
+        if args.protocol_command == "lifecycle-suite":
+            payload = protocol_lifecycle_suite(
+                capability_id=args.capability_id,
+                workflow_path=args.workflow_path,
+            )
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0 if payload["ok"] else 9
         if args.protocol_command == "smoke-suite":
             payload = protocol_smoke_suite(
                 runtime.registry,

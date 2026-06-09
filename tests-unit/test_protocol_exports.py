@@ -15,6 +15,8 @@ from cbn_protocol.exports import (
     list_protocol_exports,
 )
 from cbn_protocol.acceptance_queue import cli_to_cli_acceptance_queue
+from cbn_protocol.lifecycle_suite import protocol_lifecycle_suite
+from cbn_protocol.mcp_stdio import McpStdioServer
 from cbn_protocol.readiness import protocol_readiness_report
 from cbn_protocol.smoke_suite import protocol_smoke_suite
 from cbn_runtime.context import build_runtime
@@ -238,6 +240,30 @@ class ProtocolExportTests(unittest.TestCase):
         self.assertEqual(payload["protocols"]["mcp"]["gates"][0]["status"], "present")
         self.assertFalse(payload["protocols"]["mcp"]["ready_to_claim_wire_compatibility"])
 
+    def test_protocol_lifecycle_suite_runs_mvp_boundaries(self):
+        payload = protocol_lifecycle_suite(
+            capability_id="git.version",
+            workflow_path="workflows/example.json",
+        )
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["kind"], "ProtocolLifecycleSuiteReport")
+        self.assertFalse(payload["wire_compatible"])
+        self.assertEqual(set(payload["protocols"]), {"a2a", "acp", "mcp"})
+        self.assertEqual(payload["summary"]["failed_count"], 0)
+        self.assertTrue(
+            any(check["id"] == "mcp.ping" and check["ok"] for check in payload["protocols"]["mcp"]["checks"])
+        )
+        self.assertTrue(
+            any(check["id"] == "a2a.unknown_method_error" and check["ok"] for check in payload["protocols"]["a2a"]["checks"])
+        )
+        self.assertTrue(
+            any(check["id"] == "acp.session_cancel" and check["ok"] for check in payload["protocols"]["acp"]["checks"])
+        )
+
+    def test_mcp_stdio_ping_returns_empty_result(self):
+        payload = McpStdioServer().handle_line('{"jsonrpc":"2.0","id":"ping-1","method":"ping"}')
+        self.assertEqual(payload["result"], {})
+
     def test_cli_protocol_conformance_plan_outputs_report(self):
         proc = subprocess.run(
             [sys.executable, "-m", "cbn", "protocol", "conformance-plan", "all", "--capability-id", "git.version"],
@@ -251,6 +277,30 @@ class ProtocolExportTests(unittest.TestCase):
         self.assertEqual(payload["kind"], "ProtocolConformancePlan")
         self.assertFalse(payload["wire_compatible"])
         self.assertGreater(payload["summary"]["missing_gate_count"], 0)
+
+    def test_cli_protocol_lifecycle_suite_outputs_report(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "protocol",
+                "lifecycle-suite",
+                "--capability-id",
+                "git.version",
+                "--workflow-path",
+                "workflows/example.json",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["kind"], "ProtocolLifecycleSuiteReport")
+        self.assertTrue(payload["ok"])
+        self.assertFalse(payload["wire_compatible"])
 
     def test_protocol_smoke_suite_runs_all_mvp_facades(self):
         payload = protocol_smoke_suite(

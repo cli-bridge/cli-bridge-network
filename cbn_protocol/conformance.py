@@ -100,9 +100,9 @@ def _mcp_gates(checks: list[dict[str, str]]) -> list[dict[str, Any]]:
         _gate(
             "jsonrpc_lifecycle",
             "MCP JSON-RPC lifecycle",
-            "missing",
-            "Add broader request id, error, cancellation, pagination, progress, and notification coverage.",
-            "Add MCP lifecycle fixtures before changing wire_compatible.",
+            "partial",
+            "protocol lifecycle-suite covers initialize, initialized notification, ping, tools/list, and JSON-RPC error boundaries; cancellation, pagination, progress, and HTTP lifecycle remain missing.",
+            "Expand MCP lifecycle fixtures before changing wire_compatible.",
         ),
         _gate(
             "http_transport",

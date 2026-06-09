@@ -32,6 +32,7 @@ from cbn_protocol.exports import (
     export_workflow_protocol,
     list_protocol_exports,
 )
+from cbn_protocol.lifecycle_suite import protocol_lifecycle_suite
 from cbn_protocol.readiness import protocol_readiness_report
 from cbn_protocol.smoke_suite import protocol_smoke_suite
 from cbn_runtime.context import build_runtime
@@ -66,6 +67,7 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/protocols/matrix"},
     {"method": "GET", "path": "/protocols/readiness"},
     {"method": "GET", "path": "/protocols/conformance-plan"},
+    {"method": "GET", "path": "/protocols/lifecycle-suite"},
     {"method": "GET", "path": "/protocols/smoke-suite"},
     {"method": "GET", "path": "/protocols/acceptance-queue"},
     {"method": "POST", "path": "/protocols/accept-workflow"},
@@ -327,6 +329,13 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 target=target,
                 capability_id=capability_id,
                 workflow_path=workflow_path,
+            )
+            self._send(200 if result["ok"] else 422, result)
+            return
+        if parsed.path == "/protocols/lifecycle-suite":
+            result = protocol_lifecycle_suite(
+                capability_id=query.get("capability_id", ["git.version"])[0],
+                workflow_path=query.get("workflow_path", query.get("path", ["workflows/example.json"]))[0],
             )
             self._send(200 if result["ok"] else 422, result)
             return

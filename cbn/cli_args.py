@@ -110,6 +110,12 @@ def build_parser() -> argparse.ArgumentParser:
     protocol_conformance.add_argument("target", choices=["mcp", "a2a", "acp", "all"], nargs="?", default="all")
     protocol_conformance.add_argument("--capability-id")
     protocol_conformance.add_argument("--workflow-path", help="Plan conformance around one workflow descriptor.")
+    protocol_lifecycle = protocol_subcommands.add_parser(
+        "lifecycle-suite",
+        help="Run MVP protocol lifecycle and error-boundary checks for MCP/A2A/ACP facades.",
+    )
+    protocol_lifecycle.add_argument("--capability-id", default="git.version")
+    protocol_lifecycle.add_argument("--workflow-path", default="workflows/example.json")
     protocol_smoke_suite = protocol_subcommands.add_parser(
         "smoke-suite",
         help="Run the MVP MCP/A2A/ACP smoke suite for selected capabilities and workflows.",

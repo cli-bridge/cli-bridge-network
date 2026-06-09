@@ -557,6 +557,11 @@
             data-api-path="/protocols/conformance-plan?target=all&amp;workflow_path=workflows/cli-anything-macrocli-mermaid-routing.example.json"
           >Workflow Conformance</button>
           <button
+            data-command="python -m cbn protocol lifecycle-suite --capability-id git.version --workflow-path workflows/example.json"
+            data-api-method="GET"
+            data-api-path="/protocols/lifecycle-suite?capability_id=git.version&amp;workflow_path=workflows/example.json"
+          >Lifecycle Suite</button>
+          <button
             data-command="python -m cbn protocol accept-workflow workflows/cli-anything-macrocli-mermaid-routing.example.json"
             data-api-method="POST"
             data-api-path="/protocols/accept-workflow"

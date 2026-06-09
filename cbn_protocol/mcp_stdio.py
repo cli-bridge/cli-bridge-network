@@ -70,6 +70,8 @@ class McpStdioServer:
     def _dispatch(self, method: str, params: Any) -> dict[str, Any]:
         if method == "initialize":
             return _initialize_result(params)
+        if method == "ping":
+            return {}
         if method == "tools/list":
             descriptor = export_capabilities(self.runtime.registry.list())
             workflow_descriptor = export_workflow_protocol(self.runtime.registry, "mcp")

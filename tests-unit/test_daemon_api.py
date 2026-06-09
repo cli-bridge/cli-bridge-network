@@ -27,6 +27,7 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("GET", "/protocols/matrix"), routes)
         self.assertIn(("GET", "/protocols/readiness"), routes)
         self.assertIn(("GET", "/protocols/conformance-plan"), routes)
+        self.assertIn(("GET", "/protocols/lifecycle-suite"), routes)
         self.assertIn(("GET", "/protocols/smoke-suite"), routes)
         self.assertIn(("GET", "/protocols/acceptance-queue"), routes)
         self.assertIn(("POST", "/protocols/acceptance-queue"), routes)
@@ -194,6 +195,19 @@ class DaemonApiTests(unittest.TestCase):
                 self.assertFalse(payload["wire_compatible"])
                 self.assertIn("mcp", payload["protocols"])
                 self.assertGreater(payload["summary"]["missing_gate_count"], 0)
+
+    def test_protocol_lifecycle_suite_route_returns_report(self):
+        with daemon_url() as base_url:
+            with urllib.request.urlopen(
+                f"{base_url}/protocols/lifecycle-suite?capability_id=git.version&workflow_path=workflows/example.json",
+                timeout=5,
+            ) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(response.status, 200)
+                self.assertEqual(payload["kind"], "ProtocolLifecycleSuiteReport")
+                self.assertTrue(payload["ok"])
+                self.assertFalse(payload["wire_compatible"])
+                self.assertEqual(payload["summary"]["failed_count"], 0)
 
     def test_protocol_smoke_suite_route_returns_batch_gate(self):
         def fake_suite(

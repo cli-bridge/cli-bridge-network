@@ -71,6 +71,8 @@ class DashboardStaticTests(unittest.TestCase):
         self.assertIn("/protocols/readiness", self.html)
         self.assertIn("python -m cbn protocol conformance-plan all", self.html)
         self.assertIn("/protocols/conformance-plan", self.html)
+        self.assertIn("python -m cbn protocol lifecycle-suite --capability-id git.version --workflow-path workflows/example.json", self.html)
+        self.assertIn("/protocols/lifecycle-suite", self.html)
         self.assertIn("python -m cbn protocol acceptance-queue", self.html)
         self.assertIn("/protocols/acceptance-queue", self.html)
         self.assertIn("python -m cbn message contract", self.html)
