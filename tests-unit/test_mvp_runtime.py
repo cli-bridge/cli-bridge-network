@@ -339,6 +339,12 @@ class MvpRuntimeTests(unittest.TestCase):
             self.assertEqual(allowed["approval_id"], approval_id)
             self.assertEqual(approvals.inspect(approval_id)["status"], "used")
 
+            reused = executor.call("test.danger", dry_run=True, approval_id=approval_id)
+            self.assertFalse(reused["allowed"])
+            self.assertIn("not approved", reused["approval_error"])
+            self.assertNotEqual(reused["approval"]["approval_id"], approval_id)
+            self.assertEqual(approvals.inspect(approval_id)["status"], "used")
+
     def test_executor_rejects_approval_for_different_request_scope(self):
         with tempfile.TemporaryDirectory() as tmp:
             registry = ManifestRegistry()

@@ -57,15 +57,19 @@ class CapabilityExecutor:
         request = self._request_from_manifest(manifest, extra_args, cwd, dry_run)
         approval_scope = _approval_scope(manifest, request)
         approval_confirmed = False
-        if approval_id and self.approval_store:
-            approval_confirmed = self.approval_store.is_approved(
-                approval_id,
-                capability_id,
-                scope_hash=approval_scope["scope_hash"],
-            )
+        approval_error = None
         decision = self.policy.evaluate(manifest, confirmed=confirmed)
-        if not decision.allowed and approval_confirmed:
-            decision = self.policy.evaluate(manifest, confirmed=True)
+        if not decision.allowed and approval_id and self.approval_store:
+            try:
+                self.approval_store.use(
+                    approval_id,
+                    capability_id,
+                    scope_hash=approval_scope["scope_hash"],
+                )
+                approval_confirmed = True
+                decision = self.policy.evaluate(manifest, confirmed=True)
+            except (KeyError, ValueError) as exc:
+                approval_error = str(exc)
         if not decision.allowed:
             approval = None
             if decision.requires_confirmation and self.approval_store is not None:
@@ -87,6 +91,8 @@ class CapabilityExecutor:
                     "capability_id": capability_id,
                     "decision": decision.as_dict(),
                     "approval_id": approval["approval_id"] if approval else None,
+                    "requested_approval_id": approval_id,
+                    "approval_error": approval_error,
                     "dry_run": dry_run,
                     "approval_scope_hash": approval_scope["scope_hash"],
                 }
@@ -104,6 +110,8 @@ class CapabilityExecutor:
                 {
                     "decision": decision.as_dict(),
                     "approval_id": approval["approval_id"] if approval else None,
+                    "requested_approval_id": approval_id,
+                    "approval_error": approval_error,
                     "dry_run": dry_run,
                 },
                 call_id,
@@ -115,15 +123,10 @@ class CapabilityExecutor:
                 "allowed": False,
                 "decision": decision.as_dict(),
                 "approval": approval,
+                "approval_error": approval_error,
                 "audit_event_id": event["event_id"],
             }
 
-        if approval_id and approval_confirmed and self.approval_store:
-            self.approval_store.use(
-                approval_id,
-                capability_id,
-                scope_hash=approval_scope["scope_hash"],
-            )
         self.audit_log.append(
             {
                 "type": "tool_call.started",
@@ -176,6 +179,7 @@ class CapabilityExecutor:
                 "parser_ok": parsed["payload"].get("ok"),
                 "artifact_ids": [artifact["artifact_id"] for artifact in artifacts],
                 "dry_run": dry_run,
+                "approval_scope_hash": approval_scope["scope_hash"] if approval_confirmed else None,
             }
         )
         self._publish(
