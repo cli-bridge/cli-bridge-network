@@ -715,6 +715,7 @@ class CliAnythingHub:
         query: str | None = None,
         limit: int = 50,
         with_probes: bool = False,
+        compact: bool = False,
     ) -> dict[str, Any]:
         result = self.search_market(query) if query else self.list_market()
         records = _market_records_from_result(result.parsed_json)
@@ -725,12 +726,14 @@ class CliAnythingHub:
                 "query": query,
                 "limit": max(0, min(limit, 500)),
                 "with_probes": with_probes,
+                "compact": compact,
                 "error": "CLI-Anything market command failed",
-                "market": result.as_dict(),
+                "market": _market_command_payload(result, compact=compact),
                 "selected_count": 0,
                 "install_candidate_count": 0,
                 "blocked_count": 0,
                 "candidates": [],
+                "candidate_summary": [],
             }
         if records is None:
             return {
@@ -739,12 +742,14 @@ class CliAnythingHub:
                 "query": query,
                 "limit": max(0, min(limit, 500)),
                 "with_probes": with_probes,
+                "compact": compact,
                 "error": "CLI-Anything market command did not return a supported JSON list shape",
-                "market": result.as_dict(),
+                "market": _market_command_payload(result, compact=compact),
                 "selected_count": 0,
                 "install_candidate_count": 0,
                 "blocked_count": 0,
                 "candidates": [],
+                "candidate_summary": [],
             }
         bounded_limit = max(0, min(limit, 500))
         candidates = [
@@ -785,6 +790,7 @@ class CliAnythingHub:
             "query": query,
             "limit": bounded_limit,
             "with_probes": with_probes,
+            "compact": compact,
             "market_count": len(records),
             "evaluated_count": len(candidates),
             "selected_count": len(selected),
@@ -792,11 +798,12 @@ class CliAnythingHub:
             "blocked_count": blocked_count,
             "probe_ready_count": probe_ready_count if with_probes else None,
             "probe_blocked_count": probe_blocked_count if with_probes else None,
-            "market": result.as_dict(),
+            "market": _market_command_payload(result, compact=compact),
             "candidates": selected,
+            "candidate_summary": _candidate_summary(selected),
             "next_commands": [
-                "python -m cbn plugin candidates cli-anything --query <query> --limit 20",
-                "python -m cbn plugin candidates cli-anything --query <query> --limit 20 --with-probes",
+                "python -m cbn plugin candidates cli-anything --query <query> --limit 20 --compact",
+                "python -m cbn plugin candidates cli-anything --query <query> --limit 20 --with-probes --compact",
                 "python -m cbn plugin evaluate-harness cli-anything <harness>",
                 "python -m cbn plugin adapt-harness cli-anything <harness> --from-market --write",
                 "python -m cbn plugin harness cli-anything install <harness> --yes",
@@ -1428,6 +1435,55 @@ def _verification_stages(
 
 def _policy_requires_confirmation(policy: dict[str, Any]) -> bool:
     return bool(policy.get("requiresConfirmation", policy.get("requires_confirmation", False)))
+
+
+def _market_command_payload(result: CliHubCommandResult, compact: bool) -> dict[str, Any]:
+    if not compact:
+        return result.as_dict()
+    parsed = result.parsed_json
+    payload: dict[str, Any] = {
+        "argv": list(result.argv),
+        "exit_code": result.exit_code,
+        "stdout_chars": len(result.stdout or ""),
+        "stderr_chars": len(result.stderr or ""),
+        "stdout_omitted": bool(result.stdout),
+        "parsed_json_omitted": parsed is not None,
+        "parsed_json_type": type(parsed).__name__ if parsed is not None else None,
+    }
+    if isinstance(parsed, list):
+        payload["parsed_json_count"] = len(parsed)
+    elif isinstance(parsed, dict):
+        payload["parsed_json_keys"] = sorted(str(key) for key in parsed.keys())
+    if result.stderr:
+        payload["stderr_tail"] = result.stderr[-4000:]
+    return payload
+
+
+def _candidate_summary(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    summary: list[dict[str, Any]] = []
+    for item in candidates:
+        readiness = item.get("readiness") if isinstance(item.get("readiness"), dict) else {}
+        lifecycle = item.get("lifecycle") if isinstance(item.get("lifecycle"), dict) else {}
+        local_status = item.get("local_status") if isinstance(item.get("local_status"), dict) else {}
+        summary.append(
+            {
+                "rank": item.get("rank"),
+                "harness_name": item.get("harness_name"),
+                "display_name": item.get("display_name"),
+                "capability_id": item.get("capability_id"),
+                "install_candidate": bool(item.get("install_candidate")),
+                "recommended_next_action": item.get("recommended_next_action"),
+                "lifecycle_state": lifecycle.get("state"),
+                "blocker_count": len(item.get("blockers", [])),
+                "blockers": item.get("blockers", []),
+                "launch_ready": bool(local_status.get("launch_ready")),
+                "manifest_imported": bool(local_status.get("manifest_imported")),
+                "entrypoint_available": bool(local_status.get("entrypoint_available")),
+                "readiness_ready": readiness.get("ready"),
+                "probe_blocker_count": readiness.get("probe_blocker_count"),
+            }
+        )
+    return summary
 
 
 def _market_record_identity(item: dict[str, Any]) -> dict[str, str | None]:

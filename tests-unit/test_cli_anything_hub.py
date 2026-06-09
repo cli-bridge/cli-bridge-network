@@ -664,6 +664,38 @@ class CliAnythingHubTests(unittest.TestCase):
             self.assertEqual(result["install_candidate_count"], 1)
             self.assertEqual(result["candidates"][0]["harness_name"], "mermaid")
 
+    def test_candidate_harnesses_compact_payload_omits_raw_market_stdout(self):
+        market_stdout = "x" * 5000
+
+        class FakeHub(CliAnythingHub):
+            def list_market(self) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "list", "--json"),
+                    exit_code=0,
+                    stdout=market_stdout,
+                    stderr="warning line",
+                    parsed_json=[SAMPLE_MERMAID_RECORD],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp, patch("cbn_plugins.cli_anything.shutil.which", return_value=None):
+            full = FakeHub(root=Path(tmp)).candidate_harnesses(limit=1)
+            compact = FakeHub(root=Path(tmp)).candidate_harnesses(limit=1, compact=True)
+
+            self.assertFalse(full["compact"])
+            self.assertEqual(full["market"]["stdout"], market_stdout)
+            self.assertTrue(compact["compact"])
+            self.assertNotIn("stdout", compact["market"])
+            self.assertNotIn("parsed_json", compact["market"])
+            self.assertEqual(compact["market"]["stdout_chars"], len(market_stdout))
+            self.assertTrue(compact["market"]["stdout_omitted"])
+            self.assertTrue(compact["market"]["parsed_json_omitted"])
+            self.assertEqual(compact["market"]["parsed_json_type"], "list")
+            self.assertEqual(compact["market"]["parsed_json_count"], 1)
+            self.assertEqual(compact["market"]["stderr_tail"], "warning line")
+            self.assertEqual(compact["candidate_summary"][0]["harness_name"], "mermaid")
+            self.assertEqual(compact["candidate_summary"][0]["rank"], 1)
+            self.assertEqual(compact["candidate_summary"][0]["lifecycle_state"], "market_candidate")
+
     def test_candidate_harnesses_reports_local_launch_ready_status(self):
         local_record = dict(SAMPLE_MERMAID_RECORD)
         local_record["entry_point"] = sys.executable

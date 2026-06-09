@@ -171,16 +171,16 @@
             data-api-body='{"command":"search","query":"image"}'
           >CLI-Hub Search</button>
           <button
-            data-command="python -m cbn plugin candidates cli-anything --query image --limit 20"
+            data-command="python -m cbn plugin candidates cli-anything --query image --limit 20 --compact"
             data-api-method="POST"
             data-api-path="/plugins/cli-anything/candidates"
-            data-api-body='{"query":"image","limit":20}'
+            data-api-body='{"query":"image","limit":20,"compact":true}'
           >Rank Candidates</button>
           <button
-            data-command="python -m cbn plugin candidates cli-anything --query image --limit 20 --with-probes"
+            data-command="python -m cbn plugin candidates cli-anything --query image --limit 20 --with-probes --compact"
             data-api-method="POST"
             data-api-path="/plugins/cli-anything/candidates"
-            data-api-body='{"query":"image","limit":20,"with_probes":true}'
+            data-api-body='{"query":"image","limit":20,"with_probes":true,"compact":true}'
           >Rank + Probe</button>
           <button
             data-command="python -m cbn plugin market cli-anything info gimp"

@@ -500,6 +500,7 @@ def main(argv: list[str] | None = None) -> int:
                 query=args.query,
                 limit=args.limit,
                 with_probes=args.with_probes,
+                compact=args.compact,
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0 if result["ok"] else 6

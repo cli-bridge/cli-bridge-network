@@ -65,6 +65,22 @@ if (!html.includes("python -m cbn plugin market cli-anything list")) {
   throw new Error("Dashboard does not expose the CBN-managed CLI-Hub list command.");
 }
 
+if (!html.includes("python -m cbn plugin candidates cli-anything --query image --limit 20 --compact")) {
+  throw new Error("Dashboard does not expose compact CLI-Anything candidate ranking.");
+}
+
+if (!html.includes("python -m cbn plugin candidates cli-anything --query image --limit 20 --with-probes --compact")) {
+  throw new Error("Dashboard does not expose compact probed CLI-Anything candidate ranking.");
+}
+
+if (!html.includes('data-api-body=\'{"query":"image","limit":20,"compact":true}\'')) {
+  throw new Error("Dashboard candidate ranking API body is not compact.");
+}
+
+if (!html.includes('data-api-body=\'{"query":"image","limit":20,"with_probes":true,"compact":true}\'')) {
+  throw new Error("Dashboard probed candidate ranking API body is not compact.");
+}
+
 if (!html.includes('data-api-path="/plugins/cli-anything/market"')) {
   throw new Error("Dashboard does not wire CLI-Hub market calls to the daemon API.");
 }

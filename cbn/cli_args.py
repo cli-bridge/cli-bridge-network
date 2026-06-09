@@ -334,6 +334,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Attach read-only local dependency probe summaries to each candidate.",
     )
+    plugin_candidates.add_argument(
+        "--compact",
+        action="store_true",
+        help="Omit raw CLI-Hub market stdout and include a concise candidate summary for WebUI/API use.",
+    )
 
     plugin_sync = plugin_subcommands.add_parser(
         "sync-market",

@@ -207,6 +207,45 @@ class DaemonApiTests(unittest.TestCase):
                 self.assertEqual(payload["action"], "harness-install-gimp")
                 self.assertIn("evaluate-harness", payload["notes"][0])
 
+    def test_cli_anything_candidates_route_accepts_compact_payload(self):
+        class FakeHub:
+            def candidate_harnesses(self, query=None, limit=50, with_probes=False, compact=False):
+                return {
+                    "ok": True,
+                    "plugin_id": "cli-anything",
+                    "query": query,
+                    "limit": limit,
+                    "with_probes": with_probes,
+                    "compact": compact,
+                    "market": {"stdout_omitted": compact},
+                    "candidates": [],
+                    "candidate_summary": [],
+                }
+
+        with patch("api_server.server.CliAnythingHub", FakeHub):
+            with daemon_url() as base_url:
+                request = urllib.request.Request(
+                    f"{base_url}/plugins/cli-anything/candidates",
+                    data=json.dumps(
+                        {
+                            "query": "image",
+                            "limit": 2,
+                            "with_probes": True,
+                            "compact": True,
+                        }
+                    ).encode("utf-8"),
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(payload["query"], "image")
+                    self.assertEqual(payload["limit"], 2)
+                    self.assertTrue(payload["with_probes"])
+                    self.assertTrue(payload["compact"])
+                    self.assertTrue(payload["market"]["stdout_omitted"])
+
     def test_runtime_transport_status_and_plan_routes(self):
         with daemon_url() as base_url:
             with urllib.request.urlopen(f"{base_url}/runtime/transports?kind=pty", timeout=5) as response:
