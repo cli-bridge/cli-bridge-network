@@ -25,6 +25,7 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("GET", "/protocols/check"), routes)
         self.assertIn(("GET", "/protocols/matrix"), routes)
         self.assertIn(("GET", "/protocols/readiness"), routes)
+        self.assertIn(("GET", "/protocols/smoke-suite"), routes)
         self.assertIn(("GET", "/protocols/workflows"), routes)
         self.assertIn(("GET", "/.well-known/agent-card.json"), routes)
         self.assertIn(("POST", "/a2a"), routes)
@@ -176,6 +177,50 @@ class DaemonApiTests(unittest.TestCase):
                 self.assertFalse(payload["readiness"]["external_protocol_wire_compatible"])
                 self.assertEqual(payload["summary"]["route_count"], 1)
                 self.assertIn("mcp", payload["protocol_gaps"])
+
+    def test_protocol_smoke_suite_route_returns_batch_gate(self):
+        def fake_suite(
+            registry,
+            capability_ids=None,
+            workflow_paths=None,
+            extra_args=(),
+            dry_run=False,
+            workflow_dry_run=False,
+            workflow_confirmed=False,
+            include_payloads=False,
+        ):
+            return {
+                "ok": True,
+                "kind": "ProtocolSmokeSuiteReport",
+                "capability_ids": list(capability_ids or []),
+                "workflow_paths": list(workflow_paths or []),
+                "dry_run": dry_run,
+                "workflow_dry_run": workflow_dry_run,
+                "workflow_confirmed": workflow_confirmed,
+                "include_payloads": include_payloads,
+                "extra_args": list(extra_args),
+                "summary": {"check_count": 6, "failed_count": 0},
+                "wire_compatible": False,
+            }
+
+        with patch("api_server.server.protocol_smoke_suite", fake_suite):
+            with daemon_url() as base_url:
+                with urllib.request.urlopen(
+                    (
+                        f"{base_url}/protocols/smoke-suite"
+                        "?capability_id=git.version"
+                        "&workflow_path=workflows/example.json"
+                        "&workflow_dry_run=true"
+                    ),
+                    timeout=5,
+                ) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(payload["kind"], "ProtocolSmokeSuiteReport")
+                    self.assertEqual(payload["capability_ids"], ["git.version"])
+                    self.assertEqual(payload["workflow_paths"], ["workflows/example.json"])
+                    self.assertTrue(payload["workflow_dry_run"])
+                    self.assertFalse(payload["wire_compatible"])
 
     def test_message_contract_route_returns_workflow_routes(self):
         with daemon_url() as base_url:

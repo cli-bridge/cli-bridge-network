@@ -267,6 +267,14 @@ if (!html.includes('data-api-path="/protocols/readiness"')) {
   throw new Error("Dashboard does not wire protocol readiness to the daemon API.");
 }
 
+if (!html.includes("python -m cbn protocol smoke-suite --capability-id git.version --workflow-path workflows/example.json --workflow-dry-run")) {
+  throw new Error("Dashboard does not expose the protocol smoke suite command.");
+}
+
+if (!html.includes('data-api-path="/protocols/smoke-suite?capability_id=git.version&amp;workflow_path=workflows/example.json&amp;workflow_dry_run=true"')) {
+  throw new Error("Dashboard does not wire protocol smoke suite to the daemon API.");
+}
+
 if (!html.includes("python -m cbn mcp serve --stdio")) {
   throw new Error("Dashboard does not expose the MCP stdio server command.");
 }

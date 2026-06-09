@@ -14,6 +14,7 @@ from cbn_protocol.exports import (
     list_protocol_exports,
 )
 from cbn_protocol.readiness import protocol_readiness_report
+from cbn_protocol.smoke_suite import protocol_smoke_suite
 
 
 class ProtocolExportTests(unittest.TestCase):
@@ -193,6 +194,23 @@ class ProtocolExportTests(unittest.TestCase):
         self.assertEqual(payload["selected_workflow_protocols"]["mcp"]["scope"], "workflow")
         self.assertIn("missing", payload["protocol_gaps"]["mcp"])
 
+    def test_protocol_smoke_suite_runs_all_mvp_facades(self):
+        payload = protocol_smoke_suite(
+            self.registry,
+            capability_ids=("git.version",),
+            workflow_paths=("workflows/example.json",),
+            workflow_dry_run=True,
+        )
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["kind"], "ProtocolSmokeSuiteReport")
+        self.assertFalse(payload["wire_compatible"])
+        self.assertEqual(payload["summary"]["check_count"], 6)
+        self.assertEqual(payload["summary"]["failed_count"], 0)
+        self.assertEqual(set(payload["summary"]["by_protocol"]), {"a2a", "acp", "mcp"})
+        self.assertTrue(payload["readiness"]["internal_bridge_ready"])
+        self.assertTrue(payload["bridge_contract"]["ok"])
+        self.assertEqual(payload["failures"], [])
+
     def test_cli_protocol_export(self):
         proc = subprocess.run(
             [sys.executable, "-m", "cbn", "protocol", "export", "mcp", "--capability-id", "git.status"],
@@ -349,6 +367,31 @@ class ProtocolExportTests(unittest.TestCase):
         self.assertEqual(payload["kind"], "ProtocolReadinessReport")
         self.assertEqual(payload["scope"], "workflow")
         self.assertEqual(payload["summary"]["route_count"], 1)
+        self.assertFalse(payload["wire_compatible"])
+
+    def test_cli_protocol_smoke_suite(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "protocol",
+                "smoke-suite",
+                "--capability-id",
+                "git.version",
+                "--workflow-path",
+                "workflows/example.json",
+                "--workflow-dry-run",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["summary"]["check_count"], 6)
         self.assertFalse(payload["wire_compatible"])
 
 

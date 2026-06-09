@@ -455,6 +455,11 @@
             data-api-path="/protocols/readiness?workflow_path=workflows/cli-anything-macrocli-mermaid-routing.example.json"
           >Workflow Readiness</button>
           <button
+            data-command="python -m cbn protocol smoke-suite --capability-id git.version --workflow-path workflows/example.json --workflow-dry-run"
+            data-api-method="GET"
+            data-api-path="/protocols/smoke-suite?capability_id=git.version&amp;workflow_path=workflows/example.json&amp;workflow_dry_run=true"
+          >Protocol Smoke Suite</button>
+          <button
             data-command="python -m cbn protocol export mcp --capability-id git.status"
             data-api-method="GET"
             data-api-path="/protocols?target=mcp&amp;capability_id=git.status"

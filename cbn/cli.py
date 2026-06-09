@@ -34,6 +34,7 @@ from cbn_protocol.exports import (
 from cbn_protocol.readiness import protocol_readiness_report
 from cbn_protocol.mcp_stdio import serve_stdio, smoke_mcp_stdio
 from cbn_protocol.mcp_stdio import smoke_mcp_workflow_stdio
+from cbn_protocol.smoke_suite import protocol_smoke_suite
 from cbn_runtime.context import build_runtime
 from cbn_workflow.catalog import inspect_workflow, list_workflows
 from api_server.server import ROUTE_SUMMARY, serve
@@ -197,6 +198,19 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(json.dumps(payload, ensure_ascii=False, indent=2))
             return 0 if payload["ok"] else 7
+        if args.protocol_command == "smoke-suite":
+            payload = protocol_smoke_suite(
+                runtime.registry,
+                capability_ids=tuple(args.capability_id) or None,
+                workflow_paths=tuple(args.workflow_path) or None,
+                extra_args=tuple(args.extra_arg),
+                dry_run=args.dry_run,
+                workflow_dry_run=args.workflow_dry_run,
+                workflow_confirmed=args.yes,
+                include_payloads=args.include_payloads,
+            )
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0 if payload["ok"] else 9
 
     if args.command == "mcp":
         if args.mcp_command == "serve":

@@ -103,6 +103,36 @@ def build_parser() -> argparse.ArgumentParser:
         dest="include_workflows",
         help="Skip workflow routing contract evidence.",
     )
+    protocol_smoke_suite = protocol_subcommands.add_parser(
+        "smoke-suite",
+        help="Run the MVP MCP/A2A/ACP smoke suite for selected capabilities and workflows.",
+    )
+    protocol_smoke_suite.add_argument(
+        "--capability-id",
+        action="append",
+        default=[],
+        help="Capability to smoke through MCP/A2A/ACP; repeatable. Defaults to git.version.",
+    )
+    protocol_smoke_suite.add_argument(
+        "--workflow-path",
+        action="append",
+        default=[],
+        help="Workflow to smoke through MCP/A2A/ACP; repeatable. Defaults to workflows/example.json.",
+    )
+    protocol_smoke_suite.add_argument(
+        "--extra-arg",
+        action="append",
+        default=[],
+        help="Extra capability arg passed to every selected capability smoke; repeatable.",
+    )
+    protocol_smoke_suite.add_argument("--dry-run", action="store_true", help="Dry-run capability calls.")
+    protocol_smoke_suite.add_argument("--workflow-dry-run", action="store_true", help="Dry-run workflow calls.")
+    protocol_smoke_suite.add_argument("--yes", action="store_true", help="Confirm workflow tasks when needed.")
+    protocol_smoke_suite.add_argument(
+        "--include-payloads",
+        action="store_true",
+        help="Include raw per-protocol smoke payloads in the JSON report.",
+    )
 
     mcp_parser = subcommands.add_parser("mcp", help="Run or test the MCP stdio facade.")
     mcp_subcommands = mcp_parser.add_subparsers(dest="mcp_command")

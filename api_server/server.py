@@ -30,6 +30,7 @@ from cbn_protocol.exports import (
     list_protocol_exports,
 )
 from cbn_protocol.readiness import protocol_readiness_report
+from cbn_protocol.smoke_suite import protocol_smoke_suite
 from cbn_runtime.context import build_runtime
 from cbn_workflow.catalog import inspect_workflow, list_workflows
 from cbn_plugins.cli_anything import CliAnythingHub
@@ -61,6 +62,7 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/protocols/check"},
     {"method": "GET", "path": "/protocols/matrix"},
     {"method": "GET", "path": "/protocols/readiness"},
+    {"method": "GET", "path": "/protocols/smoke-suite"},
     {"method": "GET", "path": "/approvals"},
     {"method": "GET", "path": "/workflows"},
     {"method": "GET", "path": "/runtime/transports"},
@@ -296,6 +298,19 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 runtime.registry,
                 workflow_path=workflow_path,
                 include_workflows=include_workflows,
+            )
+            self._send(200 if result["ok"] else 422, result)
+            return
+        if parsed.path == "/protocols/smoke-suite":
+            result = protocol_smoke_suite(
+                runtime.registry,
+                capability_ids=query.get("capability_id") or None,
+                workflow_paths=query.get("workflow_path") or query.get("path") or None,
+                extra_args=query.get("extra_arg", []),
+                dry_run=query.get("dry_run", ["false"])[0].lower() in {"1", "true", "yes"},
+                workflow_dry_run=query.get("workflow_dry_run", ["false"])[0].lower() in {"1", "true", "yes"},
+                workflow_confirmed=query.get("confirmed", ["false"])[0].lower() in {"1", "true", "yes"},
+                include_payloads=query.get("include_payloads", ["false"])[0].lower() in {"1", "true", "yes"},
             )
             self._send(200 if result["ok"] else 422, result)
             return

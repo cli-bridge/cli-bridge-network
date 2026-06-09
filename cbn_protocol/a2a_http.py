@@ -65,7 +65,11 @@ def handle_a2a_jsonrpc_request(payload: dict[str, Any]) -> dict[str, Any]:
     return {"jsonrpc": "2.0", "id": request_id, "result": task}
 
 
-def smoke_a2a_http(capability_id: str = "git.version", extra_args: list[str] | None = None) -> dict[str, Any]:
+def smoke_a2a_http(
+    capability_id: str = "git.version",
+    extra_args: list[str] | None = None,
+    dry_run: bool = False,
+) -> dict[str, Any]:
     from api_server.server import CbnRequestHandler
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), CbnRequestHandler)
@@ -95,6 +99,7 @@ def smoke_a2a_http(capability_id: str = "git.version", extra_args: list[str] | N
                             "cbn": {
                                 "capability_id": capability_id,
                                 "extra_args": extra_args or [],
+                                "dry_run": dry_run,
                             }
                         },
                     },
@@ -218,7 +223,11 @@ def _send_message(params: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(extra_args, list) or not all(isinstance(item, str) for item in extra_args):
         raise ValueError("params.metadata.cbn.extra_args must be a list of strings")
     runtime = build_runtime()
-    result = runtime.executor.call(capability_id, extra_args=tuple(extra_args))
+    result = runtime.executor.call(
+        capability_id,
+        extra_args=tuple(extra_args),
+        dry_run=bool(cbn_meta.get("dry_run", False)),
+    )
     task_id = str(uuid.uuid4())
     context_id = message.get("contextId") if isinstance(message.get("contextId"), str) else str(uuid.uuid4())
     state = _task_state(result)
