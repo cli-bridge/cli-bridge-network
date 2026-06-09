@@ -69,6 +69,53 @@ class PluginManagerTests(unittest.TestCase):
             self.assertEqual(result["entrypoints"], [])
             self.assertEqual(result["blockers"], [])
 
+    def test_update_check_reports_not_downloaded_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_example_plugin_manifest(root)
+
+            result = PluginManager(root=root).update_check("example")
+            self.assertFalse(result["ready_for_update"])
+            self.assertFalse(result["source_downloaded"])
+            self.assertIn("plugin source repository is not downloaded", result["blockers"])
+            self.assertFalse(result["repository"]["remote_probe"]["requested"])
+
+    def test_update_check_compares_remote_head_when_requested(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_example_plugin_manifest(root)
+            provenance = {
+                "plugin_id": "example",
+                "title": "Example",
+                "installed": True,
+                "repo_dir": str(root / "external_plugins" / "example" / "repo"),
+                "source_downloaded": True,
+                "source_trusted": True,
+                "repository": {
+                    "exists": True,
+                    "is_git": True,
+                    "remote_url": "https://example.com/example.git",
+                    "remote_matches_expected": True,
+                    "branch": "main",
+                    "head": "local-head",
+                    "dirty": False,
+                },
+                "pip_packages": [],
+                "entrypoints": [],
+                "warnings": [],
+            }
+
+            with patch.object(PluginManager, "provenance", return_value=provenance), patch(
+                "cbn_plugins.manager._run_command",
+                return_value={"exit_code": 0, "stdout": "remote-head\tHEAD\n", "stderr": ""},
+            ):
+                result = PluginManager(root=root).update_check("example", remote=True)
+
+            self.assertTrue(result["ready_for_update"])
+            self.assertTrue(result["repository"]["remote_probe"]["checked"])
+            self.assertEqual(result["repository"]["remote_probe"]["head"], "remote-head")
+            self.assertTrue(result["repository"]["update_available"])
+
     def test_operation_gate_allows_clean_install_before_source_download(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -127,6 +174,21 @@ class PluginManagerTests(unittest.TestCase):
         self.assertEqual(payload["plugin_id"], "cli-anything")
         self.assertIn("repository", payload)
         self.assertIn("entrypoints", payload)
+
+    def test_cli_check_update_command_outputs_json(self):
+        proc = subprocess.run(
+            [sys.executable, "-m", "cbn", "plugin", "check-update", "cli-anything"],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertIn(proc.returncode, {0, 13})
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["plugin_id"], "cli-anything")
+        self.assertIn("ready_for_update", payload)
+        self.assertIn("repository", payload)
+        self.assertFalse(payload["repository"]["remote_probe"]["requested"])
 
     def test_cli_gate_command_outputs_json(self):
         proc = subprocess.run(

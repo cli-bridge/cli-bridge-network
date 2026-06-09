@@ -200,6 +200,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     plugin_provenance.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
 
+    plugin_check_update = plugin_subcommands.add_parser(
+        "check-update",
+        help="Check local and optional remote update state without executing update.",
+    )
+    plugin_check_update.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
+    plugin_check_update.add_argument(
+        "--remote",
+        action="store_true",
+        help="Query the source repository remote HEAD with git ls-remote.",
+    )
+
     plugin_gate = plugin_subcommands.add_parser(
         "gate",
         help="Preview install/update preflight and provenance gates without executing.",

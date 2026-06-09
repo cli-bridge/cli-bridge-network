@@ -18,7 +18,9 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("POST", "/plugins/cli-anything/probe-harness"), routes)
         self.assertIn(("POST", "/plugins/cli-anything/verify-harness"), routes)
         self.assertIn(("GET", "/plugins/cli-anything/provenance"), routes)
+        self.assertIn(("GET", "/plugins/cli-anything/update-check"), routes)
         self.assertIn(("POST", "/plugins/gate"), routes)
+        self.assertIn(("POST", "/plugins/check-update"), routes)
         self.assertIn(("GET", "/protocols/check"), routes)
         self.assertIn(("GET", "/protocols/matrix"), routes)
         self.assertIn(("GET", "/protocols/workflows"), routes)
@@ -308,6 +310,29 @@ class DaemonApiTests(unittest.TestCase):
                 self.assertIn("repository", payload)
                 self.assertIn("pip_packages", payload)
                 self.assertIn("entrypoints", payload)
+
+    def test_plugin_update_check_route_returns_read_only_report(self):
+        with daemon_url() as base_url:
+            request = urllib.request.Request(
+                f"{base_url}/plugins/check-update",
+                data=json.dumps({"plugin_id": "cli-anything"}).encode("utf-8"),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            try:
+                response = urllib.request.urlopen(request, timeout=5)
+            except urllib.error.HTTPError as exc:
+                self.assertEqual(exc.code, 409)
+                payload = json.loads(exc.read().decode("utf-8"))
+            else:
+                with response:
+                    self.assertEqual(response.status, 200)
+                    payload = json.loads(response.read().decode("utf-8"))
+
+            self.assertEqual(payload["plugin_id"], "cli-anything")
+            self.assertIn("ready_for_update", payload)
+            self.assertIn("repository", payload)
+            self.assertFalse(payload["repository"]["remote_probe"]["requested"])
 
     def test_cli_anything_verify_harness_route_returns_protocol_plan(self):
         with daemon_url() as base_url:

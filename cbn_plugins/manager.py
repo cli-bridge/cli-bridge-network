@@ -158,6 +158,94 @@ class PluginManager:
             ],
         }
 
+    def update_check(self, plugin_id: str, remote: bool = False) -> dict[str, Any]:
+        manifest = self.load_manifest(plugin_id)
+        provenance = self.provenance(plugin_id)
+        repository = dict(provenance["repository"])
+        remote_probe: dict[str, Any] = {
+            "requested": remote,
+            "checked": False,
+            "available": None,
+            "head": None,
+            "exit_code": None,
+            "stderr": "",
+        }
+        update_available: bool | None = None
+        blockers: list[str] = []
+        warnings = list(provenance["warnings"])
+
+        if not repository["exists"]:
+            blockers.append("plugin source repository is not downloaded")
+        elif not repository["is_git"]:
+            blockers.append("plugin repo directory exists but is not a git checkout")
+        elif repository.get("remote_matches_expected") is False:
+            blockers.append("plugin source repository is not trusted")
+
+        if remote and repository["exists"] and repository["is_git"]:
+            repo_dir = manifest.repo_dir(self.paths.external_plugins)
+            probe = _run_command(("git", "-C", str(repo_dir), "ls-remote", "origin", "HEAD"), timeout_seconds=30)
+            remote_probe["checked"] = True
+            remote_probe["exit_code"] = probe["exit_code"]
+            remote_probe["stderr"] = probe["stderr"]
+            if probe["exit_code"] == 0:
+                remote_head = _parse_ls_remote_head(probe["stdout"])
+                remote_probe["head"] = remote_head
+                remote_probe["available"] = remote_head is not None
+                if remote_head and repository.get("head"):
+                    update_available = remote_head != repository["head"]
+            else:
+                remote_probe["available"] = False
+                warnings.append("remote update check failed")
+
+        package_checks = [
+            {
+                "package": package["package"],
+                "installed": package["installed"],
+                "current_version": package.get("version"),
+                "latest_version": None,
+                "update_available": None,
+                "note": "PyPI latest-version probing is intentionally not performed by default.",
+            }
+            for package in provenance["pip_packages"]
+        ]
+        entrypoint_checks = [
+            {
+                "entrypoint": entrypoint["entrypoint"],
+                "available": entrypoint["available"],
+                "path": entrypoint.get("path"),
+                "version": entrypoint.get("version"),
+            }
+            for entrypoint in provenance["entrypoints"]
+        ]
+        ready_for_update = len(blockers) == 0
+        return {
+            "plugin_id": manifest.plugin_id,
+            "title": manifest.title,
+            "installed": provenance["installed"],
+            "ready_for_update": ready_for_update,
+            "source_downloaded": provenance["source_downloaded"],
+            "source_trusted": provenance["source_trusted"],
+            "repository": {
+                "repo_dir": provenance["repo_dir"],
+                "remote_url": repository.get("remote_url"),
+                "branch": repository.get("branch"),
+                "head": repository.get("head"),
+                "dirty": repository.get("dirty"),
+                "remote_matches_expected": repository.get("remote_matches_expected"),
+                "remote_probe": remote_probe,
+                "update_available": update_available,
+            },
+            "packages": package_checks,
+            "entrypoints": entrypoint_checks,
+            "blockers": blockers,
+            "warnings": warnings,
+            "next_commands": [
+                f"python -m cbn plugin check-update {manifest.plugin_id} --remote",
+                f"python -m cbn plugin gate {manifest.plugin_id} --action update",
+                f"python -m cbn plugin update {manifest.plugin_id} --yes",
+            ],
+        }
+
     def preflight(self, plugin_id: str) -> dict[str, Any]:
         manifest = self.load_manifest(plugin_id)
         plugin_dir = self.paths.external_plugins / manifest.plugin_id
@@ -668,6 +756,14 @@ def _parse_key_value_lines(text: str) -> dict[str, str]:
         if key:
             fields[key] = value.strip()
     return fields
+
+
+def _parse_ls_remote_head(text: str) -> str | None:
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[1] == "HEAD":
+            return parts[0]
+    return None
 
 
 def _same_git_remote(left: str | None, right: str | None) -> bool:

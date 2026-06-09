@@ -47,6 +47,7 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/plugins/cli-anything/status"},
     {"method": "GET", "path": "/plugins/cli-anything/preflight"},
     {"method": "GET", "path": "/plugins/cli-anything/provenance"},
+    {"method": "GET", "path": "/plugins/cli-anything/update-check"},
     {"method": "GET", "path": "/audit"},
     {"method": "GET", "path": "/events"},
     {"method": "GET", "path": "/artifacts"},
@@ -73,6 +74,7 @@ ROUTE_SUMMARY = [
     {"method": "POST", "path": "/runtime/transports/plan"},
     {"method": "POST", "path": "/runtime/transports/install"},
     {"method": "POST", "path": "/plugins/gate"},
+    {"method": "POST", "path": "/plugins/check-update"},
     {"method": "POST", "path": "/plugins/plan"},
     {"method": "POST", "path": "/plugins/execute"},
     {"method": "POST", "path": "/plugins/cli-anything/market"},
@@ -187,6 +189,11 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/plugins/cli-anything/provenance":
             self._send(200, PluginManager().provenance("cli-anything"))
+            return
+        if parsed.path == "/plugins/cli-anything/update-check":
+            remote = query.get("remote", ["false"])[0].lower() in {"1", "true", "yes"}
+            result = PluginManager().update_check("cli-anything", remote=remote)
+            self._send(200 if result["ready_for_update"] else 409, result)
             return
         if parsed.path == "/runtime/transports":
             kind = query.get("kind", ["pty"])[0]
@@ -406,6 +413,14 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 action=payload.get("action", "install"),
             )
             self._send(200, result)
+            return
+        if self.path == "/plugins/check-update":
+            manager = PluginManager()
+            result = manager.update_check(
+                payload["plugin_id"],
+                remote=bool(payload.get("remote", False)),
+            )
+            self._send(200 if result["ready_for_update"] else 409, result)
             return
         if self.path == "/plugins/execute":
             if not bool(payload.get("confirmed", False)):

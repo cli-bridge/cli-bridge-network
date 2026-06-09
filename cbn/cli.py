@@ -379,6 +379,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.plugin_command == "provenance":
             print(json.dumps(manager.provenance(args.plugin_id), ensure_ascii=False, indent=2))
             return 0
+        if args.plugin_command == "check-update":
+            result = manager.update_check(args.plugin_id, remote=args.remote)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["ready_for_update"] else 13
         if args.plugin_command == "gate":
             result = manager.operation_gate(args.plugin_id, args.action)
             print(json.dumps(result, ensure_ascii=False, indent=2))
