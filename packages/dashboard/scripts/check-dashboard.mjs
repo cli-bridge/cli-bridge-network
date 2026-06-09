@@ -83,6 +83,14 @@ if (!html.includes('data-api-path="/plugins/cli-anything/install-queue"')) {
   throw new Error("Dashboard does not wire the CLI-Anything market install queue to the daemon API.");
 }
 
+if (!html.includes("python -m cbn plugin blocked-plan cli-anything --harness n8n --harness py4csr --harness unimol_tools")) {
+  throw new Error("Dashboard does not expose the CLI-Anything blocked harness plan.");
+}
+
+if (!html.includes('data-api-path="/plugins/cli-anything/blocked-plan"')) {
+  throw new Error("Dashboard does not wire the CLI-Anything blocked harness plan to the daemon API.");
+}
+
 if (!html.includes("python -m cbn plugin live-verification cli-anything")) {
   throw new Error("Dashboard does not expose the CLI-Anything live verification command.");
 }
@@ -133,6 +141,10 @@ if (!html.includes('data-api-body=\'{"query":"file","limit":20,"with_probes":tru
 
 if (!html.includes('data-api-body=\'{"query":"file","limit":20,"max_installs":5,"include_blocked":true}\'')) {
   throw new Error("Dashboard install queue API body is not stable.");
+}
+
+if (!html.includes('data-api-body=\'{"harnesses":["n8n","py4csr","unimol_tools"]}\'')) {
+  throw new Error("Dashboard blocked plan API body is not stable.");
 }
 
 if (!html.includes('data-api-path="/plugins/cli-anything/market"')) {

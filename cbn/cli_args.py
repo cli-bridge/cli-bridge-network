@@ -519,6 +519,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Omit blocked candidates from the queue report.",
     )
 
+    plugin_blocked_plan = plugin_subcommands.add_parser(
+        "blocked-plan",
+        help="Build a read-only decision report for blocked CLI-Anything market harnesses.",
+    )
+    plugin_blocked_plan.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
+    plugin_blocked_plan.add_argument(
+        "--harness",
+        action="append",
+        default=[],
+        help="Specific harness to inspect; repeatable. Defaults to blocked market install queue entries.",
+    )
+    plugin_blocked_plan.add_argument("--query", help="Optional CLI-Hub search query when no --harness is provided.")
+    plugin_blocked_plan.add_argument("--limit", type=int, default=50, help="Maximum market records to inspect.")
+
     plugin_sync = plugin_subcommands.add_parser(
         "sync-market",
         help="Preview or write CBN manifests for CLI-Anything market records.",

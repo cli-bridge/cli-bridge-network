@@ -189,6 +189,12 @@
             data-api-body='{"query":"file","limit":20,"max_installs":5,"include_blocked":true}'
           >Install Queue</button>
           <button
+            data-command="python -m cbn plugin blocked-plan cli-anything --harness n8n --harness py4csr --harness unimol_tools"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/blocked-plan"
+            data-api-body='{"harnesses":["n8n","py4csr","unimol_tools"]}'
+          >Blocked Plan</button>
+          <button
             data-command="python -m cbn plugin live-verification cli-anything"
             data-api-method="POST"
             data-api-path="/plugins/cli-anything/live-verification"

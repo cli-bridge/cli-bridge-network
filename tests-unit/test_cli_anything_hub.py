@@ -1525,6 +1525,39 @@ class CliAnythingHubTests(unittest.TestCase):
             self.assertEqual(result["summary"]["skipped_count"], 1)
             self.assertEqual(result["skipped"][0]["reason"], "max_installs limit reached")
 
+    def test_blocked_harness_plan_classifies_override_and_repair_paths(self):
+        class FakeHub(CliAnythingHub):
+            def evaluate_harness(self, harness_name, title=None, from_market=True):
+                blockers = {
+                    "n8n": ["policy requires elevated confirmation"],
+                    "py4csr": ["installed harness entrypoint is missing from PATH"],
+                    "unimol_tools": ["declared requirements need external app, account, token, or service"],
+                }[harness_name]
+                return {
+                    "ok": True,
+                    "harness_name": harness_name,
+                    "capability_id": f"cli-anything.{harness_name}.launch",
+                    "install_candidate": False,
+                    "recommended_next_action": "resolve_blockers",
+                    "blockers": blockers,
+                    "gates": {"launch_ready": False},
+                }
+
+        result = FakeHub().blocked_harness_plan(harnesses=("n8n", "py4csr", "unimol_tools"))
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["kind"], "CliAnythingBlockedHarnessPlan")
+        self.assertEqual(result["summary"]["blocked_count"], 3)
+        self.assertEqual(result["summary"]["manual_resolution_count"], 2)
+        by_name = {item["harness_name"]: item for item in result["blocked"]}
+        self.assertIn("external-network-or-risk", by_name["n8n"]["categories"])
+        self.assertTrue(by_name["n8n"]["override"]["available"])
+        self.assertEqual(by_name["n8n"]["override"]["mode"], "explicit_risk_acceptance")
+        self.assertIn("installed-entrypoint-missing", by_name["py4csr"]["categories"])
+        self.assertFalse(by_name["py4csr"]["override"]["available"])
+        self.assertEqual(by_name["py4csr"]["recommended_next_action"], "repair_entrypoint_or_market_metadata")
+        self.assertIn("manual-dependency", by_name["unimol_tools"]["categories"])
+        self.assertIn("--allow-blocked", by_name["unimol_tools"]["commands"]["onboard_install_override"])
+
     def test_candidate_harnesses_limits_after_ranking_full_market(self):
         class FakeHub(CliAnythingHub):
             def list_market(self) -> CliHubCommandResult:
@@ -2177,6 +2210,30 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(payload["plugin_id"], "cli-anything")
         self.assertEqual(payload["kind"], "CliAnythingMarketInstallQueue")
         self.assertIn("queue", payload)
+        self.assertIn("summary", payload)
+
+    def test_cli_blocked_plan_outputs_decision_report(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "plugin",
+                "blocked-plan",
+                "cli-anything",
+                "--harness",
+                "py4csr",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertIn(proc.returncode, {0, 6})
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["plugin_id"], "cli-anything")
+        self.assertEqual(payload["kind"], "CliAnythingBlockedHarnessPlan")
+        self.assertIn("blocked", payload)
         self.assertIn("summary", payload)
 
     def test_cli_sync_market_handles_missing_cli_hub_without_crashing(self):

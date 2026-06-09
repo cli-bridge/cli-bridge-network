@@ -96,6 +96,7 @@ ROUTE_SUMMARY = [
     {"method": "POST", "path": "/plugins/cli-anything/live-verification"},
     {"method": "POST", "path": "/plugins/cli-anything/candidates"},
     {"method": "POST", "path": "/plugins/cli-anything/install-queue"},
+    {"method": "POST", "path": "/plugins/cli-anything/blocked-plan"},
     {"method": "POST", "path": "/plugins/cli-anything/sync-market"},
     {"method": "POST", "path": "/plugins/cli-anything/harness"},
 ]
@@ -639,6 +640,18 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 limit=int(payload.get("limit", 50)),
                 max_installs=int(payload.get("max_installs", 10)),
                 include_blocked=bool(payload.get("include_blocked", True)),
+            )
+            self._send(200 if result["ok"] else 502, result)
+            return
+        if self.path == "/plugins/cli-anything/blocked-plan":
+            harnesses = payload.get("harnesses", [])
+            if not isinstance(harnesses, list) or not all(isinstance(item, str) for item in harnesses):
+                self._send(400, {"error": "harnesses must be a list of strings"})
+                return
+            result = CliAnythingHub().blocked_harness_plan(
+                harnesses=tuple(harnesses),
+                query=payload.get("query"),
+                limit=int(payload.get("limit", 50)),
             )
             self._send(200 if result["ok"] else 502, result)
             return

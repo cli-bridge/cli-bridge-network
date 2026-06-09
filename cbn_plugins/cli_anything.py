@@ -1212,6 +1212,83 @@ class CliAnythingHub:
             ],
         }
 
+    def blocked_harness_plan(
+        self,
+        harnesses: tuple[str, ...] = (),
+        query: str | None = None,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        bounded_limit = max(0, min(limit, 500))
+        source = "explicit_harnesses" if harnesses else "market_install_queue"
+        source_report: dict[str, Any] | None = None
+        blocked_entries: list[dict[str, Any]] = []
+
+        if harnesses:
+            for harness_name in harnesses:
+                evaluation = self.evaluate_harness(harness_name, from_market=True)
+                blocked_entries.append(_blocked_entry_from_evaluation(harness_name, evaluation))
+        else:
+            source_report = self.market_install_queue(
+                query=query,
+                limit=bounded_limit,
+                max_installs=100,
+                include_blocked=True,
+            )
+            if not source_report.get("ok"):
+                return {
+                    "ok": False,
+                    "plugin_id": PLUGIN_ID,
+                    "kind": "CliAnythingBlockedHarnessPlan",
+                    "source": source,
+                    "query": query,
+                    "limit": bounded_limit,
+                    "error": source_report.get("error", "CLI-Anything install queue failed"),
+                    "summary": {
+                        "blocked_count": 0,
+                        "override_candidate_count": 0,
+                        "manual_resolution_count": 0,
+                        "unresolved_count": 0,
+                    },
+                    "blocked": [],
+                    "source_report": source_report,
+                }
+            blocked_raw = source_report.get("blocked", [])
+            if isinstance(blocked_raw, list):
+                blocked_entries = [item for item in blocked_raw if isinstance(item, dict)]
+
+        decisions = [_blocked_harness_decision(item) for item in blocked_entries]
+        category_counts: dict[str, int] = {}
+        for decision in decisions:
+            for category in decision.get("categories", []):
+                category_counts[category] = category_counts.get(category, 0) + 1
+        override_candidate_count = sum(1 for item in decisions if item.get("override", {}).get("available"))
+        manual_resolution_count = sum(1 for item in decisions if item.get("manual_resolution_required"))
+        unresolved_count = sum(1 for item in decisions if not item.get("decision_ready"))
+        return {
+            "ok": True,
+            "plugin_id": PLUGIN_ID,
+            "kind": "CliAnythingBlockedHarnessPlan",
+            "source": source,
+            "query": query,
+            "limit": bounded_limit,
+            "harnesses": list(harnesses),
+            "summary": {
+                "blocked_count": len(decisions),
+                "override_candidate_count": override_candidate_count,
+                "manual_resolution_count": manual_resolution_count,
+                "unresolved_count": unresolved_count,
+                "category_counts": category_counts,
+            },
+            "blocked": decisions,
+            "source_report": source_report,
+            "next_commands": [
+                "python -m cbn plugin blocked-plan cli-anything --harness <harness>",
+                "python -m cbn plugin evaluate-harness cli-anything <harness> --from-market",
+                "python -m cbn plugin probe-harness cli-anything <harness> --from-market",
+                "python -m cbn plugin onboard-harness cli-anything <harness> --from-market --write --install --yes --allow-blocked --smoke-suite --smoke-extra-arg=--help --no-workflows",
+            ],
+        }
+
     def live_verification(
         self,
         harnesses: tuple[str, ...] = ("mermaid", "macrocli"),
@@ -2240,6 +2317,122 @@ def _install_queue_skipped_entry(
         "readiness": item.get("readiness"),
         "evaluation": evaluation,
     }
+
+
+def _blocked_entry_from_evaluation(harness_name: str, evaluation: dict[str, Any]) -> dict[str, Any]:
+    capability_id = evaluation.get("capability_id")
+    return {
+        "rank": None,
+        "harness_name": harness_name,
+        "display_name": harness_name,
+        "capability_id": capability_id,
+        "state": "blocked" if not evaluation.get("install_candidate") else "review",
+        "ready_for_install": bool(evaluation.get("install_candidate")),
+        "reason": "harness evaluation blockers must be resolved first"
+        if not evaluation.get("install_candidate")
+        else "harness is not blocked by evaluation",
+        "blockers": evaluation.get("blockers", []),
+        "recommended_next_action": evaluation.get("recommended_next_action"),
+        "lifecycle": evaluation.get("lifecycle"),
+        "gates": evaluation.get("gates"),
+        "readiness": None,
+        "evaluation": evaluation,
+    }
+
+
+def _blocked_harness_decision(item: dict[str, Any]) -> dict[str, Any]:
+    harness_name = item.get("harness_name")
+    capability_id = item.get("capability_id")
+    blockers = [str(blocker) for blocker in item.get("blockers", [])]
+    categories = _blocker_categories(blockers)
+    entrypoint_missing = "installed-entrypoint-missing" in categories
+    manual_resolution_required = bool(
+        {"manual-dependency", "installed-entrypoint-missing", "platform", "manifest"}
+        & set(categories)
+    )
+    override_available = bool(categories) and not entrypoint_missing
+    override_mode = (
+        "repair_required"
+        if entrypoint_missing
+        else "explicit_risk_acceptance"
+        if "external-network-or-risk" in categories
+        else "manual_dependency_acknowledgement"
+        if "manual-dependency" in categories
+        else "explicit_override"
+    )
+    decision_ready = bool(categories)
+    commands = {
+        "evaluate": f"python -m cbn plugin evaluate-harness cli-anything {harness_name} --from-market",
+        "probe": f"python -m cbn plugin probe-harness cli-anything {harness_name} --from-market",
+        "onboard_preview": f"python -m cbn plugin onboard-harness cli-anything {harness_name} --from-market --smoke-suite --smoke-extra-arg=--help --no-workflows",
+        "onboard_write": f"python -m cbn plugin onboard-harness cli-anything {harness_name} --from-market --write --yes",
+        "onboard_install_override": (
+            f"python -m cbn plugin onboard-harness cli-anything {harness_name} "
+            "--from-market --write --install --yes --allow-blocked "
+            "--smoke-suite --smoke-extra-arg=--help --no-workflows"
+        ),
+        "harness_install_override": f"python -m cbn plugin harness cli-anything install {harness_name} --yes --allow-blocked",
+        "dry_run_call": f"python -m cbn call {capability_id} --dry-run" if capability_id else None,
+    }
+    return {
+        "rank": item.get("rank"),
+        "harness_name": harness_name,
+        "display_name": item.get("display_name"),
+        "capability_id": capability_id,
+        "reason": item.get("reason"),
+        "blockers": blockers,
+        "categories": categories,
+        "decision_ready": decision_ready,
+        "manual_resolution_required": manual_resolution_required,
+        "override": {
+            "available": override_available,
+            "mode": override_mode,
+            "requires_confirmation": True,
+            "recommended": False,
+            "blocked_reason": "repair entrypoint before reinstalling" if entrypoint_missing else None,
+        },
+        "recommended_next_action": _blocked_recommended_next_action(categories),
+        "commands": commands,
+        "evidence": {
+            "gates": item.get("gates"),
+            "readiness": item.get("readiness"),
+            "evaluation": item.get("evaluation"),
+            "lifecycle": item.get("lifecycle"),
+        },
+    }
+
+
+def _blocker_categories(blockers: list[str]) -> list[str]:
+    categories = []
+    text = "\n".join(blockers).casefold()
+    mapping = (
+        ("installed-entrypoint-missing", ("entrypoint is missing", "entrypoint missing", "not found on path")),
+        ("external-network-or-risk", ("policy requires elevated confirmation", "external-network")),
+        ("manual-dependency", ("declared requirements need external app", "dependency probe failed", "backend")),
+        ("platform", ("platform",)),
+        ("manifest", ("manifest", "duplicate capability_id")),
+        ("tooling", ("cli-hub is not available", "market record")),
+    )
+    for category, markers in mapping:
+        if any(marker in text for marker in markers):
+            categories.append(category)
+    if not categories and blockers:
+        categories.append("unknown")
+    return categories
+
+
+def _blocked_recommended_next_action(categories: list[str]) -> str:
+    if "installed-entrypoint-missing" in categories:
+        return "repair_entrypoint_or_market_metadata"
+    if "external-network-or-risk" in categories:
+        return "review_and_accept_external_network_risk"
+    if "manual-dependency" in categories:
+        return "install_or_configure_manual_dependency"
+    if "platform" in categories:
+        return "use_compatible_platform"
+    if "manifest" in categories:
+        return "fix_manifest_or_market_metadata"
+    return "inspect_blockers"
 
 
 def _safe_plugin_report(builder: Any) -> dict[str, Any]:

@@ -366,6 +366,42 @@ class DaemonApiTests(unittest.TestCase):
                     self.assertFalse(payload["include_blocked"])
                     self.assertEqual(payload["queue"][0]["harness_name"], "3mf")
 
+    def test_cli_anything_blocked_plan_route_returns_decision_report(self):
+        class FakeHub:
+            def blocked_harness_plan(self, harnesses=(), query=None, limit=50):
+                return {
+                    "ok": True,
+                    "plugin_id": "cli-anything",
+                    "kind": "CliAnythingBlockedHarnessPlan",
+                    "harnesses": list(harnesses),
+                    "query": query,
+                    "limit": limit,
+                    "summary": {"blocked_count": 1},
+                    "blocked": [{"harness_name": "n8n", "categories": ["external-network-or-risk"]}],
+                }
+
+        with patch("api_server.server.CliAnythingHub", FakeHub):
+            with daemon_url() as base_url:
+                request = urllib.request.Request(
+                    f"{base_url}/plugins/cli-anything/blocked-plan",
+                    data=json.dumps(
+                        {
+                            "harnesses": ["n8n"],
+                            "query": "automation",
+                            "limit": 20,
+                        }
+                    ).encode("utf-8"),
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(payload["harnesses"], ["n8n"])
+                    self.assertEqual(payload["query"], "automation")
+                    self.assertEqual(payload["limit"], 20)
+                    self.assertEqual(payload["blocked"][0]["categories"], ["external-network-or-risk"])
+
     def test_runtime_transport_status_and_plan_routes(self):
         with daemon_url() as base_url:
             with urllib.request.urlopen(f"{base_url}/runtime/transports?kind=pty", timeout=5) as response:
