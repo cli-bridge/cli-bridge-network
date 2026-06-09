@@ -400,6 +400,16 @@ def build_parser() -> argparse.ArgumentParser:
     plugin_onboard.add_argument("--write", action="store_true", help="Write the generated harness manifest.")
     plugin_onboard.add_argument("--yes", action="store_true", help="Confirm manifest write when --write is set.")
     plugin_onboard.add_argument(
+        "--install",
+        action="store_true",
+        help="Execute the gated harness install operation when paired with --yes.",
+    )
+    plugin_onboard.add_argument(
+        "--allow-blocked",
+        action="store_true",
+        help="Execute install even when harness evaluation reports blockers.",
+    )
+    plugin_onboard.add_argument(
         "--no-workflows",
         action="store_false",
         dest="include_workflows",

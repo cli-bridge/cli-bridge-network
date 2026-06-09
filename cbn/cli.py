@@ -530,15 +530,19 @@ def main(argv: list[str] | None = None) -> int:
         if args.plugin_command == "onboard-harness":
             if args.plugin_id != "cli-anything":
                 raise KeyError(f"onboard-harness is not implemented for plugin: {args.plugin_id}")
+            runtime = build_runtime() if args.install and args.yes else None
             result = CliAnythingHub().onboard_harness(
                 args.harness_name,
                 title=args.title,
                 from_market=args.from_market,
                 write=args.write,
                 confirmed=args.yes,
+                install=args.install,
+                allow_blocked=args.allow_blocked,
                 include_workflows=args.include_workflows,
                 run_smoke_suite=args.smoke_suite,
                 smoke_extra_args=tuple(args.smoke_extra_arg),
+                operation_runner=runtime.plugin_runner if runtime else None,
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0 if result["ok"] else 6

@@ -535,9 +535,12 @@ class DaemonApiTests(unittest.TestCase):
                 from_market=True,
                 write=False,
                 confirmed=False,
+                install=False,
+                allow_blocked=False,
                 include_workflows=True,
                 run_smoke_suite=False,
                 smoke_extra_args=(),
+                operation_runner=None,
             ):
                 return {
                     "ok": True,
@@ -548,6 +551,9 @@ class DaemonApiTests(unittest.TestCase):
                     "from_market": from_market,
                     "write": write,
                     "confirmed": confirmed,
+                    "install": install,
+                    "allow_blocked": allow_blocked,
+                    "runner_available": operation_runner is not None,
                     "include_workflows": include_workflows,
                     "run_smoke_suite": run_smoke_suite,
                     "smoke_extra_args": list(smoke_extra_args),
@@ -566,6 +572,8 @@ class DaemonApiTests(unittest.TestCase):
                             "from_market": True,
                             "write": True,
                             "confirmed": True,
+                            "install": True,
+                            "allow_blocked": True,
                             "include_workflows": False,
                             "run_smoke_suite": True,
                             "smoke_extra_args": ["--help"],
@@ -581,6 +589,9 @@ class DaemonApiTests(unittest.TestCase):
                     self.assertEqual(payload["harness_name"], "3mf")
                     self.assertTrue(payload["write"])
                     self.assertTrue(payload["confirmed"])
+                    self.assertTrue(payload["install"])
+                    self.assertTrue(payload["allow_blocked"])
+                    self.assertTrue(payload["runner_available"])
                     self.assertFalse(payload["include_workflows"])
                     self.assertTrue(payload["run_smoke_suite"])
                     self.assertEqual(payload["smoke_extra_args"], ["--help"])

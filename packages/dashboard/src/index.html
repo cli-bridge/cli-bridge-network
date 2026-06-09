@@ -208,6 +208,13 @@
             data-api-confirm="Write the gimp onboarding manifest now?"
           >Onboard + Write Manifest</button>
           <button
+            data-command="python -m cbn plugin onboard-harness cli-anything 3mf --from-market --write --install --yes --smoke-suite --smoke-extra-arg=--help --no-workflows"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/onboard-harness"
+            data-api-body='{"harness_name":"3mf","from_market":true,"write":true,"install":true,"confirmed":true,"include_workflows":false,"run_smoke_suite":true,"smoke_extra_args":["--help"]}'
+            data-api-confirm="Write, install, and verify the 3mf harness now?"
+          >Onboard + Install 3MF</button>
+          <button
             data-command="python -m cbn plugin onboard-harness cli-anything 3mf --from-market --smoke-suite --smoke-extra-arg=--help --no-workflows"
             data-api-method="POST"
             data-api-path="/plugins/cli-anything/onboard-harness"

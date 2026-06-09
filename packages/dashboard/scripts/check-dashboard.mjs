@@ -103,6 +103,14 @@ if (!html.includes("python -m cbn plugin onboard-harness cli-anything gimp --fro
   throw new Error("Dashboard does not expose confirmed CLI-Anything onboarding manifest write.");
 }
 
+if (!html.includes("python -m cbn plugin onboard-harness cli-anything 3mf --from-market --write --install --yes --smoke-suite --smoke-extra-arg=--help --no-workflows")) {
+  throw new Error("Dashboard does not expose confirmed CLI-Anything onboarding install.");
+}
+
+if (!html.includes('data-api-body=\'{"harness_name":"3mf","from_market":true,"write":true,"install":true,"confirmed":true,"include_workflows":false,"run_smoke_suite":true,"smoke_extra_args":["--help"]}\'')) {
+  throw new Error("Dashboard does not wire confirmed CLI-Anything onboarding install to the daemon API.");
+}
+
 if (!html.includes("python -m cbn plugin onboard-harness cli-anything 3mf --from-market --smoke-suite --smoke-extra-arg=--help --no-workflows")) {
   throw new Error("Dashboard does not expose CLI-Anything onboarding smoke-suite command.");
 }

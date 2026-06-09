@@ -338,6 +338,11 @@ class CliAnythingHub:
     ) -> Path:
         manifest = self.manifest_for_harness(harness_name, title=title, market_record=market_record)
         path = self.paths.manifests / f"{manifest['metadata']['id']}.json"
+        if path.exists():
+            manifest = _preserve_existing_parser_contract(
+                existing=_manifest_dict_from_path(path, {}),
+                generated=manifest,
+            )
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         return path
@@ -365,6 +370,7 @@ class CliAnythingHub:
         if write:
             written = self.write_harness_manifest(harness_name, title=title, market_record=market_record)
             manifest_path = written
+            manifest = _manifest_dict_from_path(manifest_path, manifest)
         return {
             "ok": True,
             "plugin_id": PLUGIN_ID,
@@ -750,9 +756,12 @@ class CliAnythingHub:
         from_market: bool = True,
         write: bool = False,
         confirmed: bool = False,
+        install: bool = False,
+        allow_blocked: bool = False,
         include_workflows: bool = True,
         run_smoke_suite: bool = False,
         smoke_extra_args: tuple[str, ...] = (),
+        operation_runner: Any | None = None,
     ) -> dict[str, Any]:
         probe = self.probe_harness(
             harness_name,
@@ -768,6 +777,8 @@ class CliAnythingHub:
                 "from_market": from_market,
                 "write": write,
                 "confirmed": confirmed,
+                "install": install,
+                "allow_blocked": allow_blocked,
                 "include_workflows": include_workflows,
                 "run_smoke_suite": run_smoke_suite,
                 "error": probe["error"],
@@ -789,6 +800,7 @@ class CliAnythingHub:
         capability_id = evaluation["capability_id"]
         adaptation = evaluation["adaptation"]
         write_requested_without_confirmation = bool(write and not confirmed)
+        install_requested_without_confirmation = bool(install and not confirmed)
         if write and confirmed:
             adaptation = self.adapt_harness(
                 harness_name,
@@ -796,12 +808,31 @@ class CliAnythingHub:
                 from_market=from_market,
                 write=True,
             )
-        install_plan = self.harness_plan("install", harness_name).as_dict()
+        install_plan_obj = self.harness_plan("install", harness_name)
+        install_plan = install_plan_obj.as_dict()
         install_gate = self.harness_operation_gate(
             "install",
             harness_name,
             from_market=from_market,
         )
+        install_result = None
+        install_execution_status = "not_requested"
+        install_execution_blockers: list[str] = []
+        if install and not confirmed:
+            install_execution_status = "requires_confirmation"
+        elif install and confirmed and not allow_blocked and not install_gate.get("ok"):
+            install_execution_status = "blocked"
+            install_execution_blockers = list(install_gate.get("blockers", []))
+        elif install and confirmed and operation_runner is None:
+            install_execution_status = "blocked"
+            install_execution_blockers = ["operation runner is required for confirmed install"]
+        elif install and confirmed:
+            install_result = operation_runner.execute(install_plan_obj)
+            install_execution_status = str(install_result.get("status", "unknown"))
+            if install_execution_status != "completed":
+                install_execution_blockers = list(install_result.get("blockers", [])) or [
+                    f"harness install operation {install_execution_status}"
+                ]
         verification = self.verify_harness(
             harness_name,
             title=title,
@@ -827,8 +858,9 @@ class CliAnythingHub:
             if verification.get("ok")
             else False
         )
-        manifest_already_imported = bool(evaluation["gates"].get("manifest_imported"))
-        harness_already_installed = bool(evaluation["gates"].get("installed"))
+        effective_evaluation = verification.get("evaluation", evaluation) if verification.get("ok") else evaluation
+        manifest_already_imported = bool(effective_evaluation["gates"].get("manifest_imported"))
+        harness_already_installed = bool(effective_evaluation["gates"].get("installed"))
         smoke_suite = verification.get("protocol_smoke_suite", {}) if verification.get("ok") else {}
         stage_results = [
             {
@@ -862,9 +894,19 @@ class CliAnythingHub:
             },
             {
                 "id": "install_harness",
-                "status": "completed" if harness_already_installed else ("ready" if ready_for_install else "blocked"),
-                "execution": "planned",
-                "blockers": install_gate.get("blockers", []),
+                "status": (
+                    "completed"
+                    if harness_already_installed or install_execution_status == "completed"
+                    else "blocked"
+                    if install_execution_status == "blocked"
+                    else "ready"
+                    if ready_for_install
+                    else "blocked"
+                ),
+                "execution": install_execution_status,
+                "install_requested": install,
+                "allow_blocked": allow_blocked,
+                "blockers": install_execution_blockers or install_gate.get("blockers", []),
             },
             {
                 "id": "verify_runtime",
@@ -900,6 +942,8 @@ class CliAnythingHub:
             "from_market": from_market,
             "write": write,
             "confirmed": confirmed,
+            "install": install,
+            "allow_blocked": allow_blocked,
             "include_workflows": include_workflows,
             "run_smoke_suite": run_smoke_suite,
             "capability_id": capability_id,
@@ -908,6 +952,9 @@ class CliAnythingHub:
                 "manifest_written": manifest_written,
                 "write_requires_confirmation": write_requested_without_confirmation,
                 "ready_for_install": ready_for_install,
+                "install_requires_confirmation": install_requested_without_confirmation,
+                "install_executed": install_execution_status == "completed",
+                "install_execution_status": install_execution_status,
                 "ready_for_runtime_verification": ready_for_runtime_verification,
                 "smoke_suite_ready": bool(smoke_suite.get("ok")) if smoke_suite.get("run") else None,
                 "recommended_next_action": evaluation["recommended_next_action"],
@@ -919,6 +966,7 @@ class CliAnythingHub:
                 "adaptation": adaptation,
                 "install_plan": install_plan,
                 "install_gate": install_gate,
+                "install_result": install_result,
                 "verification": verification,
             },
             "next_commands": next_commands,
@@ -1636,6 +1684,25 @@ def _manifest_dict_from_path(path: Path, fallback: dict[str, Any]) -> dict[str, 
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return fallback
+
+
+def _preserve_existing_parser_contract(
+    existing: dict[str, Any],
+    generated: dict[str, Any],
+) -> dict[str, Any]:
+    existing_output = ((existing.get("spec") or {}).get("output") or {})
+    generated_output = ((generated.get("spec") or {}).get("output") or {})
+    if (
+        existing_output.get("verified") is True
+        and existing_output.get("parserRef") == generated_output.get("parserRef")
+    ):
+        generated_output["verified"] = True
+        generated_annotations = generated.setdefault("metadata", {}).setdefault("annotations", {})
+        existing_annotations = (existing.get("metadata") or {}).get("annotations") or {}
+        for key, value in existing_annotations.items():
+            if str(key).startswith("cbn.parser"):
+                generated_annotations.setdefault(key, value)
+    return generated
 
 
 def _protocol_verification_summary(protocol_checks: dict[str, dict[str, Any]]) -> dict[str, Any]:

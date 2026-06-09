@@ -185,6 +185,47 @@ class CliAnythingHubTests(unittest.TestCase):
             self.assertTrue(Path(result["written"]).exists())
             self.assertTrue(result["status"]["manifest_imported"])
 
+    def test_adapt_harness_write_preserves_verified_parser_contract(self):
+        class FakeHub(CliAnythingHub):
+            def info(self, harness_name: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "info", harness_name),
+                    exit_code=0,
+                    stdout=f"Entry point: {sys.executable}\nStatus: installed\n",
+                    stderr="",
+                )
+
+            def search_market(self, query: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "search", query, "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[SAMPLE_MARKET_RECORD],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            hub = FakeHub(root=Path(tmp))
+            existing = hub.manifest_for_harness("gimp", market_record=SAMPLE_MARKET_RECORD)
+            existing["spec"]["output"]["verified"] = True
+            existing["metadata"].setdefault("annotations", {})[
+                "cbn.parser_fixture"
+            ] = "parser_fixtures/cli-anything.raw.launch.json"
+            path = Path(tmp) / "manifests" / "cli-anything.gimp.launch.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(existing, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+            result = hub.adapt_harness("gimp", from_market=True, write=True)
+
+            self.assertTrue(result["ok"])
+            self.assertTrue(result["manifest"]["spec"]["output"]["verified"])
+            self.assertEqual(
+                result["manifest"]["metadata"]["annotations"]["cbn.parser_fixture"],
+                "parser_fixtures/cli-anything.raw.launch.json",
+            )
+            persisted = json.loads(path.read_text(encoding="utf-8"))
+            self.assertTrue(persisted["spec"]["output"]["verified"])
+
     def test_prepare_harness_returns_gates_and_lifecycle_plans(self):
         class FakeHub(CliAnythingHub):
             def info(self, harness_name: str) -> CliHubCommandResult:
@@ -674,6 +715,119 @@ class CliAnythingHubTests(unittest.TestCase):
             self.assertTrue(result["summary"]["manifest_written"])
             self.assertTrue(Path(result["reports"]["adaptation"]["written"]).exists())
             self.assertTrue(result["reports"]["verification"]["registry"]["manifest_imported"])
+
+    def test_onboard_harness_install_requires_confirmation(self):
+        class FakeHub(CliAnythingHub):
+            def status(self) -> dict:
+                return {
+                    "plugin_id": "cli-anything",
+                    "entrypoint": "cli-hub",
+                    "entrypoint_path": sys.executable,
+                    "entrypoint_available": True,
+                    "source_repo_dir": "external_plugins/cli-anything/repo",
+                    "source_repo_available": True,
+                    "version": "cli-hub test",
+                }
+
+            def info(self, harness_name: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "info", harness_name),
+                    exit_code=0,
+                    stdout=f"Entry point: {sys.executable}\nRequires: nothing\nStatus: not installed\n",
+                    stderr="",
+                )
+
+            def search_market(self, query: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "search", query, "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[SAMPLE_MERMAID_RECORD],
+                )
+
+        class FakeRunner:
+            called = False
+
+            def execute(self, plan):
+                self.called = True
+                return {"status": "completed", "plugin_id": plan.plugin_id, "action": plan.action, "results": []}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            runner = FakeRunner()
+            result = FakeHub(root=Path(tmp)).onboard_harness(
+                "mermaid",
+                from_market=True,
+                install=True,
+                confirmed=False,
+                operation_runner=runner,
+            )
+            self.assertTrue(result["ok"])
+            self.assertTrue(result["summary"]["install_requires_confirmation"])
+            self.assertFalse(result["summary"]["install_executed"])
+            self.assertEqual(result["summary"]["install_execution_status"], "requires_confirmation")
+            self.assertFalse(runner.called)
+
+    def test_onboard_harness_confirmed_install_runs_operation_runner(self):
+        class FakeHub(CliAnythingHub):
+            def status(self) -> dict:
+                return {
+                    "plugin_id": "cli-anything",
+                    "entrypoint": "cli-hub",
+                    "entrypoint_path": sys.executable,
+                    "entrypoint_available": True,
+                    "source_repo_dir": "external_plugins/cli-anything/repo",
+                    "source_repo_available": True,
+                    "version": "cli-hub test",
+                }
+
+            def info(self, harness_name: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "info", harness_name),
+                    exit_code=0,
+                    stdout=f"Entry point: {sys.executable}\nRequires: nothing\nStatus: not installed\n",
+                    stderr="",
+                )
+
+            def search_market(self, query: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "search", query, "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[SAMPLE_MERMAID_RECORD],
+                )
+
+        class FakeRunner:
+            def __init__(self) -> None:
+                self.plan = None
+
+            def execute(self, plan):
+                self.plan = plan
+                return {
+                    "operation_id": "op-test",
+                    "status": "completed",
+                    "plugin_id": plan.plugin_id,
+                    "action": plan.action,
+                    "results": [{"exit_code": 0}],
+                }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            runner = FakeRunner()
+            result = FakeHub(root=Path(tmp)).onboard_harness(
+                "mermaid",
+                from_market=True,
+                install=True,
+                confirmed=True,
+                operation_runner=runner,
+            )
+            self.assertTrue(result["ok"])
+            self.assertIsNotNone(runner.plan)
+            self.assertEqual(runner.plan.action, "harness-install-mermaid")
+            self.assertTrue(result["summary"]["install_executed"])
+            self.assertEqual(result["reports"]["install_result"]["status"], "completed")
+            stages = {stage["id"]: stage for stage in result["stage_results"]}
+            self.assertEqual(stages["install_harness"]["execution"], "completed")
 
     def test_live_verification_summarizes_harness_candidates_and_readiness(self):
         class FakeHub(CliAnythingHub):
@@ -1490,6 +1644,32 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertFalse(payload["from_market"])
         self.assertIn("stage_results", payload)
         self.assertIn("verification", payload["reports"])
+
+    def test_cli_onboard_harness_install_preview_requires_yes(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "plugin",
+                "onboard-harness",
+                "cli-anything",
+                "gimp",
+                "--offline",
+                "--install",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["install"])
+        self.assertTrue(payload["summary"]["install_requires_confirmation"])
+        self.assertFalse(payload["summary"]["install_executed"])
+        self.assertEqual(payload["summary"]["install_execution_status"], "requires_confirmation")
 
     def test_cli_prepare_harness_outputs_preparation_report(self):
         proc = subprocess.run(

@@ -582,9 +582,14 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 from_market=bool(payload.get("from_market", True)),
                 write=bool(payload.get("write", False)),
                 confirmed=bool(payload.get("confirmed", False)),
+                install=bool(payload.get("install", False)),
+                allow_blocked=bool(payload.get("allow_blocked", False)),
                 include_workflows=bool(payload.get("include_workflows", True)),
                 run_smoke_suite=bool(payload.get("run_smoke_suite", False)),
                 smoke_extra_args=tuple(payload.get("smoke_extra_args", [])),
+                operation_runner=runtime.plugin_runner
+                if bool(payload.get("install", False)) and bool(payload.get("confirmed", False))
+                else None,
             )
             self._send(200 if result["ok"] else 502, result)
             return
