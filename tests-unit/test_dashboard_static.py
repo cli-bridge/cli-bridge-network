@@ -66,6 +66,8 @@ class DashboardStaticTests(unittest.TestCase):
         self.assertIn("python -m cbn protocol matrix --include-workflows", self.html)
         self.assertIn("python -m cbn protocol readiness", self.html)
         self.assertIn("/protocols/readiness", self.html)
+        self.assertIn("python -m cbn protocol acceptance-queue", self.html)
+        self.assertIn("/protocols/acceptance-queue", self.html)
         self.assertIn("python -m cbn message contract", self.html)
         self.assertIn("/messages/contract", self.html)
         self.assertIn("python -m cbn plugin evaluate-harness cli-anything macrocli", self.html)

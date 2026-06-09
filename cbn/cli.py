@@ -17,6 +17,7 @@ from cbn_parsers.registry import ParserRegistry
 from cbn_plugins.cli_anything import CliAnythingHub
 from cbn_plugins.manager import PluginManager
 from cbn_protocol.acceptance import cli_to_cli_acceptance_report
+from cbn_protocol.acceptance_queue import cli_to_cli_acceptance_queue
 from cbn_protocol.bridge_contract import workflow_bridge_contract_report
 from cbn_protocol.a2a_http import agent_card, smoke_a2a_http
 from cbn_protocol.a2a_http import smoke_a2a_workflow_http
@@ -217,6 +218,19 @@ def main(argv: list[str] | None = None) -> int:
                 runtime.registry,
                 runtime.workflow_runner,
                 args.workflow_path,
+                run=args.run,
+                dry_run=args.dry_run,
+                confirmed=args.yes,
+                include_payloads=args.include_payloads,
+            )
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0 if payload["ok"] else 10
+        if args.protocol_command == "acceptance-queue":
+            payload = cli_to_cli_acceptance_queue(
+                runtime.registry,
+                runtime.workflow_runner,
+                workflow_paths=tuple(args.workflow_path) or None,
+                max_workflows=args.max_workflows,
                 run=args.run,
                 dry_run=args.dry_run,
                 confirmed=args.yes,

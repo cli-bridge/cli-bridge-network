@@ -553,6 +553,18 @@
             data-api-body='{"workflow_path":"workflows/cli-anything-macrocli-mermaid-routing.example.json","run":true}'
           >Run CLI Route Acceptance</button>
           <button
+            data-command="python -m cbn protocol acceptance-queue --workflow-path workflows/message-routing.example.json --workflow-path workflows/artifact-id-routing.example.json"
+            data-api-method="POST"
+            data-api-path="/protocols/acceptance-queue"
+            data-api-body='{"workflow_paths":["workflows/message-routing.example.json","workflows/artifact-id-routing.example.json"],"max_workflows":10}'
+          >Acceptance Queue</button>
+          <button
+            data-command="python -m cbn protocol acceptance-queue --workflow-path workflows/message-routing.example.json --run --dry-run"
+            data-api-method="POST"
+            data-api-path="/protocols/acceptance-queue"
+            data-api-body='{"workflow_paths":["workflows/message-routing.example.json"],"run":true,"dry_run":true,"max_workflows":10}'
+          >Runtime Acceptance Queue</button>
+          <button
             data-command="python -m cbn protocol smoke-suite --capability-id git.version --workflow-path workflows/example.json --workflow-dry-run"
             data-api-method="GET"
             data-api-path="/protocols/smoke-suite?capability_id=git.version&amp;workflow_path=workflows/example.json&amp;workflow_dry_run=true"

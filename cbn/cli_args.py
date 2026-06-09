@@ -150,6 +150,34 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Include task messages and raw run result payloads.",
     )
+    protocol_acceptance_queue = protocol_subcommands.add_parser(
+        "acceptance-queue",
+        help="Accept multiple CLI-to-CLI workflow BridgeMessage routing contracts.",
+    )
+    protocol_acceptance_queue.add_argument(
+        "--workflow-path",
+        action="append",
+        default=[],
+        help="Workflow JSON path to accept; repeatable. Defaults to the workflow catalog.",
+    )
+    protocol_acceptance_queue.add_argument(
+        "--max-workflows",
+        type=int,
+        default=50,
+        help="Maximum catalog workflows to inspect when no --workflow-path is provided.",
+    )
+    protocol_acceptance_queue.add_argument(
+        "--run",
+        action="store_true",
+        help="Execute selected workflows and attach runtime route evidence.",
+    )
+    protocol_acceptance_queue.add_argument("--dry-run", action="store_true", help="Dry-run workflow execution.")
+    protocol_acceptance_queue.add_argument("--yes", action="store_true", help="Confirm workflow tasks when needed.")
+    protocol_acceptance_queue.add_argument(
+        "--include-payloads",
+        action="store_true",
+        help="Include task messages and raw run result payloads.",
+    )
 
     mcp_parser = subcommands.add_parser("mcp", help="Run or test the MCP stdio facade.")
     mcp_subcommands = mcp_parser.add_subparsers(dest="mcp_command")

@@ -13,8 +13,10 @@ from cbn_protocol.exports import (
     export_workflow_protocol,
     list_protocol_exports,
 )
+from cbn_protocol.acceptance_queue import cli_to_cli_acceptance_queue
 from cbn_protocol.readiness import protocol_readiness_report
 from cbn_protocol.smoke_suite import protocol_smoke_suite
+from cbn_runtime.context import build_runtime
 
 
 class ProtocolExportTests(unittest.TestCase):
@@ -222,6 +224,43 @@ class ProtocolExportTests(unittest.TestCase):
         self.assertEqual(payload["summary"]["check_count"], 3)
         self.assertEqual(payload["summary"]["by_kind"]["workflow"]["passed"], 0)
 
+    def test_cli_to_cli_acceptance_queue_summarizes_selected_workflows(self):
+        runtime = build_runtime()
+        payload = cli_to_cli_acceptance_queue(
+            runtime.registry,
+            runtime.workflow_runner,
+            workflow_paths=(
+                "workflows/message-routing.example.json",
+                "workflows/artifact-id-routing.example.json",
+            ),
+        )
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["kind"], "CliToCliAcceptanceQueue")
+        self.assertEqual(payload["scope"], "selected")
+        self.assertEqual(payload["summary"]["workflow_count"], 2)
+        self.assertEqual(payload["summary"]["blocked_workflow_count"], 0)
+        self.assertEqual(payload["summary"]["route_count"], 2)
+        self.assertEqual(len(payload["rows"]), 2)
+        self.assertFalse(payload["wire_compatible"])
+        self.assertTrue(
+            all(row["recommended_next_action"] == "run_acceptance_with_dry_run_or_protocol_smoke" for row in payload["rows"])
+        )
+
+    def test_cli_to_cli_acceptance_queue_can_attach_runtime_evidence(self):
+        runtime = build_runtime()
+        payload = cli_to_cli_acceptance_queue(
+            runtime.registry,
+            runtime.workflow_runner,
+            workflow_paths=("workflows/message-routing.example.json",),
+            run=True,
+            dry_run=True,
+        )
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["run"])
+        self.assertEqual(payload["summary"]["runtime_route_count"], 1)
+        self.assertEqual(payload["summary"]["runtime_route_failed_count"], 0)
+        self.assertEqual(payload["rows"][0]["recommended_next_action"], "use_as_runtime_cli_to_cli_fixture")
+
     def test_cli_protocol_export(self):
         proc = subprocess.run(
             [sys.executable, "-m", "cbn", "protocol", "export", "mcp", "--capability-id", "git.status"],
@@ -404,6 +443,31 @@ class ProtocolExportTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["summary"]["check_count"], 6)
         self.assertFalse(payload["wire_compatible"])
+
+    def test_cli_protocol_acceptance_queue(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "protocol",
+                "acceptance-queue",
+                "--workflow-path",
+                "workflows/message-routing.example.json",
+                "--run",
+                "--dry-run",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["kind"], "CliToCliAcceptanceQueue")
+        self.assertEqual(payload["summary"]["runtime_route_failed_count"], 0)
+        self.assertEqual(payload["rows"][0]["workflow_path"], "workflows/message-routing.example.json")
 
 
 if __name__ == "__main__":
