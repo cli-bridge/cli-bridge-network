@@ -7,7 +7,9 @@ calls without changing backend ownership.
 
 from __future__ import annotations
 
+import os
 import json
+import secrets
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -43,6 +45,7 @@ from cbn_plugins.manager import PluginManager
 
 
 ALLOWED_ORIGIN_HOSTS = {"127.0.0.1", "localhost", "::1"}
+SESSION_TOKEN_ENV = "CBN_DAEMON_SESSION_TOKEN"
 
 
 ROUTE_SUMMARY = [
@@ -132,7 +135,7 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
         if cors_origin:
             self.send_header("Access-Control-Allow-Origin", cors_origin)
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type, X-CBN-Session")
         self.end_headers()
         self.wfile.write(body)
 
@@ -172,6 +175,8 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         if not self._require_allowed_origin():
             return
+        if not self._require_session_token():
+            return
         try:
             self._handle_POST()
         except KeyError as exc:
@@ -197,6 +202,19 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
         if _is_allowed_origin(origin):
             return True
         self._send_error(403, "origin_denied", f"Origin is not allowed: {origin}")
+        return False
+
+    def _require_session_token(self) -> bool:
+        expected = getattr(self.server, "session_token", None)
+        if expected is None:
+            return True
+        token = self.headers.get("X-CBN-Session", "")
+        authorization = self.headers.get("Authorization", "")
+        if authorization.startswith("Bearer "):
+            token = authorization.removeprefix("Bearer ").strip()
+        if secrets.compare_digest(token, expected):
+            return True
+        self._send_error(403, "session_denied", "valid daemon session token required")
         return False
 
     def _handle_GET(self) -> None:
@@ -926,7 +944,10 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
 
 def serve(host: str = "127.0.0.1", port: int = 8787) -> None:
     server = ThreadingHTTPServer((host, port), CbnRequestHandler)
+    token = os.environ.get(SESSION_TOKEN_ENV) or secrets.token_urlsafe(32)
+    setattr(server, "session_token", token)
     print(f"CBN daemon API listening on http://{host}:{port}")
+    print(f"CBN daemon session token: {token}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

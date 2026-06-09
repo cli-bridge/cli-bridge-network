@@ -78,7 +78,10 @@ class DaemonApiTests(unittest.TestCase):
                     "http://127.0.0.1:5173",
                 )
                 self.assertEqual(response.headers["Access-Control-Allow-Methods"], "GET, POST, OPTIONS")
-                self.assertEqual(response.headers["Access-Control-Allow-Headers"], "Content-Type")
+                self.assertEqual(
+                    response.headers["Access-Control-Allow-Headers"],
+                    "Authorization, Content-Type, X-CBN-Session",
+                )
 
     def test_disallowed_origin_is_rejected_before_route_handling(self):
         with daemon_url() as base_url:
@@ -115,6 +118,72 @@ class DaemonApiTests(unittest.TestCase):
                     response.headers["Access-Control-Allow-Origin"],
                     "http://localhost:3000",
                 )
+
+    def test_post_requires_session_token_when_configured(self):
+        with daemon_url(session_token="test-token") as base_url:
+            request = urllib.request.Request(
+                f"{base_url}/messages/validate",
+                data=json.dumps({"message": _sample_message()}).encode("utf-8"),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with self.assertRaises(urllib.error.HTTPError) as raised:
+                urllib.request.urlopen(request, timeout=5)
+
+            self.assertEqual(raised.exception.code, 403)
+            payload = json.loads(raised.exception.read().decode("utf-8"))
+            self.assertFalse(payload["ok"])
+            self.assertEqual(payload["error_type"], "session_denied")
+
+    def test_post_rejects_wrong_session_token_when_configured(self):
+        with daemon_url(session_token="test-token") as base_url:
+            request = urllib.request.Request(
+                f"{base_url}/messages/validate",
+                data=json.dumps({"message": _sample_message()}).encode("utf-8"),
+                method="POST",
+                headers={
+                    "Content-Type": "application/json",
+                    "X-CBN-Session": "wrong-token",
+                },
+            )
+            with self.assertRaises(urllib.error.HTTPError) as raised:
+                urllib.request.urlopen(request, timeout=5)
+
+            self.assertEqual(raised.exception.code, 403)
+            payload = json.loads(raised.exception.read().decode("utf-8"))
+            self.assertEqual(payload["error_type"], "session_denied")
+
+    def test_post_accepts_x_cbn_session_token_when_configured(self):
+        with daemon_url(session_token="test-token") as base_url:
+            request = urllib.request.Request(
+                f"{base_url}/messages/validate",
+                data=json.dumps({"message": _sample_message()}).encode("utf-8"),
+                method="POST",
+                headers={
+                    "Content-Type": "application/json",
+                    "X-CBN-Session": "test-token",
+                },
+            )
+            with urllib.request.urlopen(request, timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(response.status, 200)
+                self.assertTrue(payload["valid"])
+
+    def test_post_accepts_bearer_session_token_when_configured(self):
+        with daemon_url(session_token="test-token") as base_url:
+            request = urllib.request.Request(
+                f"{base_url}/messages/validate",
+                data=json.dumps({"message": _sample_message()}).encode("utf-8"),
+                method="POST",
+                headers={
+                    "Authorization": "Bearer test-token",
+                    "Content-Type": "application/json",
+                },
+            )
+            with urllib.request.urlopen(request, timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(response.status, 200)
+                self.assertTrue(payload["valid"])
 
     def test_protocol_check_route_returns_wire_gaps(self):
         with daemon_url() as base_url:
@@ -1258,9 +1327,27 @@ class DaemonApiTests(unittest.TestCase):
                 self.assertEqual(rpc["result"]["metadata"]["cbn"]["capability_id"], "git.version")
 
 
+def _sample_message():
+    return {
+        "apiVersion": "bridge.dev/v1alpha1",
+        "kind": "BridgeMessage",
+        "metadata": {
+            "id": "message-1",
+            "createdAt": "2026-06-10T00:00:00+0800",
+            "producer": "test",
+            "channel": "capability.output",
+            "correlationId": "call-1",
+        },
+        "payload": {"parser_ref": "raw.text", "ok": True, "data": {"stdout": "ok"}},
+        "artifacts": [],
+    }
+
+
 @contextmanager
-def daemon_url():
+def daemon_url(session_token=None):
     server = ThreadingHTTPServer(("127.0.0.1", 0), CbnRequestHandler)
+    if session_token is not None:
+        setattr(server, "session_token", session_token)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
