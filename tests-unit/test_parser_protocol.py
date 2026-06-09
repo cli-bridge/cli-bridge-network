@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from cbn_parsers.registry import ParserRegistry
-from cbn_core.manifest import ManifestRegistry
+from cbn_core.manifest import CapabilityManifest, ManifestRegistry
 from cbn_protocol.bridge_contract import workflow_bridge_contract_report
 from cbn_protocol.envelope import (
     BridgeMessage,
@@ -168,6 +168,52 @@ class ParserProtocolTests(unittest.TestCase):
         self.assertEqual(workflow["routes"][0]["route_kind"], "payload")
         self.assertEqual(workflow["routes"][0]["source_parser_ref"], "cli-anything.macrocli.backends")
         self.assertTrue(workflow["routes"][0]["selector_valid"])
+        self.assertTrue(workflow["routes"][0]["ready"])
+        self.assertEqual(workflow["routes"][0]["blockers"], [])
+        self.assertTrue(workflow["routes"][0]["argv_mapping"]["ready"])
+        self.assertEqual(report["summary"]["route_ready_count"], 2)
+        self.assertEqual(report["summary"]["blocked_route_count"], 0)
+        self.assertEqual(report["summary"]["argv_mapping_ready_count"], 2)
+
+    def test_bridge_contract_blocks_unverified_payload_source(self):
+        registry = ManifestRegistry()
+        registry.register(
+            CapabilityManifest.from_dict(
+                _manifest("sample.source", parser_ref="raw.text", verified=False)
+            )
+        )
+        registry.register(
+            CapabilityManifest.from_dict(
+                _manifest("sample.consumer", parser_ref="raw.text", verified=True)
+            )
+        )
+        workflow = {
+            "apiVersion": "bridge.dev/v1alpha1",
+            "kind": "Workflow",
+            "metadata": {"id": "sample.unverified-route"},
+            "spec": {
+                "tasks": [
+                    {"id": "source", "uses": "sample.source"},
+                    {
+                        "id": "consumer",
+                        "uses": "sample.consumer",
+                        "needs": ["source"],
+                        "argsFrom": [{"task": "source", "selector": "payload.data.stdout"}],
+                    },
+                ]
+            },
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "workflow.json"
+            path.write_text(json.dumps(workflow, ensure_ascii=False), encoding="utf-8")
+            report = workflow_bridge_contract_report(registry, workflow_path=str(path))
+
+        self.assertFalse(report["ok"])
+        self.assertEqual(report["summary"]["blocked_route_count"], 1)
+        route = report["workflows"][0]["routes"][0]
+        self.assertFalse(route["ready"])
+        self.assertIn("payload route source output is not verified", route["blockers"])
+        self.assertTrue(route["argv_mapping"]["ready"])
 
     def test_invalid_bridge_message_reports_errors(self):
         result = validate_bridge_message({"kind": "BridgeMessage", "payload": []})
@@ -327,6 +373,30 @@ class ParserProtocolTests(unittest.TestCase):
         self.assertEqual(payload["parsed"]["parser_ref"], "raw.text")
         self.assertTrue(payload["parsed"]["dry_run"])
         self.assertIn("git status --short", payload["parsed"]["data"]["stdout"])
+
+
+def _manifest(capability_id: str, parser_ref: str, verified: bool) -> dict[str, object]:
+    return {
+        "apiVersion": "bridge.dev/v1alpha1",
+        "kind": "ToolManifest",
+        "metadata": {"id": capability_id, "title": capability_id},
+        "spec": {
+            "transport": {
+                "kind": "stdio",
+                "command": "python",
+                "argsTemplate": ["-c", "print('ok')"],
+            },
+            "policy": {
+                "risk": "read",
+                "requiresConfirmation": False,
+                "network": "deny",
+            },
+            "output": {
+                "parserRef": parser_ref,
+                "verified": verified,
+            },
+        },
+    }
 
 
 if __name__ == "__main__":

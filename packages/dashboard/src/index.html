@@ -171,22 +171,22 @@
             data-api-body='{"command":"search","query":"image"}'
           >CLI-Hub Search</button>
           <button
-            data-command="python -m cbn plugin candidates cli-anything --query image --limit 20 --compact"
+            data-command="python -m cbn plugin candidates cli-anything --query file --limit 20 --compact"
             data-api-method="POST"
             data-api-path="/plugins/cli-anything/candidates"
-            data-api-body='{"query":"image","limit":20,"compact":true}'
+            data-api-body='{"query":"file","limit":20,"compact":true}'
           >Rank Candidates</button>
           <button
-            data-command="python -m cbn plugin candidates cli-anything --query image --limit 20 --with-probes --compact"
+            data-command="python -m cbn plugin candidates cli-anything --query file --limit 20 --with-probes --compact"
             data-api-method="POST"
             data-api-path="/plugins/cli-anything/candidates"
-            data-api-body='{"query":"image","limit":20,"with_probes":true,"compact":true}'
+            data-api-body='{"query":"file","limit":20,"with_probes":true,"compact":true}'
           >Rank + Probe</button>
           <button
             data-command="python -m cbn plugin live-verification cli-anything"
             data-api-method="POST"
             data-api-path="/plugins/cli-anything/live-verification"
-            data-api-body='{"harnesses":["mermaid","macrocli"],"candidate_query":"image","candidate_limit":10,"include_candidates":true,"include_workflows":true}'
+            data-api-body='{"harnesses":["mermaid","macrocli","3mf"],"candidate_query":"file","candidate_limit":10,"include_candidates":true,"include_workflows":true}'
           >Live Verification</button>
           <button
             data-command="python -m cbn plugin market cli-anything info gimp"
