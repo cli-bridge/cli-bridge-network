@@ -74,10 +74,14 @@ class ParserProtocolTests(unittest.TestCase):
             producer="git.status",
             channel="capability.output",
             correlation_id="call-1",
-            payload={"parser_ref": "raw.text", "data": {"stdout": "git status --short"}},
+            payload={"parser_ref": "raw.text", "ok": True, "data": {"stdout": "git status --short"}},
             artifacts=({"artifact_id": "artifact-1", "kind": "stdout"},),
         ).as_dict()
-        self.assertTrue(validate_bridge_message(message)["valid"])
+        validation = validate_bridge_message(message)
+        self.assertTrue(validation["valid"])
+        self.assertEqual(validation["payload_parser_ref"], "raw.text")
+        self.assertTrue(validation["payload_ok"])
+        self.assertEqual(validation["artifact_count"], 1)
         self.assertEqual(select_bridge_value(message, "payload.data.stdout")["value"], "git status --short")
         self.assertEqual(select_bridge_value(message, "artifacts[0].artifact_id")["value"], "artifact-1")
 
@@ -88,6 +92,7 @@ class ParserProtocolTests(unittest.TestCase):
             correlation_id="call-1",
             payload={
                 "parser_ref": "json.stdout",
+                "ok": True,
                 "data": {
                     "name": "gimp",
                     "enabled": True,
@@ -117,6 +122,29 @@ class ParserProtocolTests(unittest.TestCase):
         self.assertFalse(result["valid"])
         self.assertIn("metadata must be an object", result["errors"])
         self.assertIn("payload must be an object", result["errors"])
+
+    def test_invalid_bridge_message_reports_payload_and_artifact_errors(self):
+        result = validate_bridge_message(
+            {
+                "apiVersion": "bridge.dev/v1alpha1",
+                "kind": "BridgeMessage",
+                "metadata": {
+                    "id": "message-1",
+                    "createdAt": "2026-06-09T12:00:00+0800",
+                    "producer": "git.version",
+                    "channel": "capability.output",
+                    "correlationId": "call-1",
+                },
+                "payload": {"parser_ref": "", "data": []},
+                "artifacts": [{"artifact_id": "artifact-1"}, "bad-artifact"],
+            }
+        )
+        self.assertFalse(result["valid"])
+        self.assertIn("payload.parser_ref is required", result["errors"])
+        self.assertIn("payload.ok must be a boolean", result["errors"])
+        self.assertIn("payload.data must be an object when present", result["errors"])
+        self.assertIn("artifacts[0].kind is required", result["errors"])
+        self.assertIn("artifacts[1] must be an object", result["errors"])
 
     def test_cli_parser_list_and_call_message(self):
         parsers = subprocess.run(
@@ -150,7 +178,7 @@ class ParserProtocolTests(unittest.TestCase):
             producer="git.version",
             channel="capability.output",
             correlation_id="call-1",
-            payload={"parser_ref": "raw.text", "data": {"stdout": "git --version"}},
+            payload={"parser_ref": "raw.text", "ok": True, "data": {"stdout": "git --version"}},
         ).as_dict()
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "message.json"

@@ -11,6 +11,7 @@ from cbn_core.manifest import ManifestRegistry
 from cbn_events.bus import EventBus
 from cbn_execution.executor import CapabilityExecutor
 from cbn_execution.graph import WorkflowGraph
+from cbn_protocol.envelope import validate_bridge_message
 from cbn_tools.artifact_id_summary import summarize_artifact
 from cbn_workflow.catalog import inspect_workflow, list_workflows
 from cbn_workflow.runner import WorkflowRunner
@@ -217,6 +218,11 @@ class WorkflowRunnerTests(unittest.TestCase):
             self.assertEqual(summary["artifact_id"], artifact_id)
             self.assertEqual(summary["kind"], "stdout")
             self.assertIn("git version", summary["content_preview"])
+            for task in result["tasks"]:
+                validation = validate_bridge_message(task["result"]["message"])
+                self.assertTrue(validation["valid"], validation["errors"])
+                self.assertIsInstance(validation["payload_ok"], bool)
+                self.assertGreaterEqual(validation["artifact_count"], 1)
 
     def test_artifact_id_summary_reads_artifact_store(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -55,10 +55,39 @@ def validate_bridge_message(message: dict[str, Any]) -> dict[str, Any]:
     for key in ("id", "createdAt", "producer", "channel", "correlationId"):
         if not metadata.get(key):
             errors.append(f"metadata.{key} is required")
-    if not isinstance(message.get("payload"), dict):
+        elif not isinstance(metadata.get(key), str):
+            errors.append(f"metadata.{key} must be a string")
+    payload = message.get("payload")
+    if not isinstance(payload, dict):
         errors.append("payload must be an object")
-    if not isinstance(message.get("artifacts", []), list):
+        payload = {}
+    else:
+        if not isinstance(payload.get("parser_ref"), str) or not payload.get("parser_ref"):
+            errors.append("payload.parser_ref is required")
+        if not isinstance(payload.get("ok"), bool):
+            errors.append("payload.ok must be a boolean")
+        if "data" in payload and not isinstance(payload["data"], dict):
+            errors.append("payload.data must be an object when present")
+        if payload.get("ok") is False and not payload.get("error") and "data" not in payload:
+            errors.append("payload.error or payload.data is required when payload.ok=false")
+    artifacts = message.get("artifacts", [])
+    if not isinstance(artifacts, list):
         errors.append("artifacts must be a list")
+        artifacts = []
+    else:
+        for index, artifact in enumerate(artifacts):
+            if not isinstance(artifact, dict):
+                errors.append(f"artifacts[{index}] must be an object")
+                continue
+            for key in ("artifact_id", "kind"):
+                if not artifact.get(key):
+                    errors.append(f"artifacts[{index}].{key} is required")
+                elif not isinstance(artifact.get(key), str):
+                    errors.append(f"artifacts[{index}].{key} must be a string")
+            _validate_optional_artifact_field(errors, artifact, index, "path", str)
+            _validate_optional_artifact_field(errors, artifact, index, "media_type", str)
+            _validate_optional_artifact_field(errors, artifact, index, "size_bytes", int)
+            _validate_optional_artifact_field(errors, artifact, index, "truncated", bool)
     return {
         "valid": not errors,
         "errors": errors,
@@ -68,6 +97,9 @@ def validate_bridge_message(message: dict[str, Any]) -> dict[str, Any]:
         "producer": metadata.get("producer"),
         "channel": metadata.get("channel"),
         "correlation_id": metadata.get("correlationId"),
+        "payload_parser_ref": payload.get("parser_ref") if isinstance(payload, dict) else None,
+        "payload_ok": payload.get("ok") if isinstance(payload, dict) else None,
+        "artifact_count": len(artifacts),
     }
 
 
@@ -146,3 +178,19 @@ def _selector_tokens(selector: str) -> list[str | int]:
         if part:
             tokens.append(part)
     return tokens
+
+
+def _validate_optional_artifact_field(
+    errors: list[str],
+    artifact: dict[str, Any],
+    index: int,
+    key: str,
+    expected_type: type,
+) -> None:
+    if key not in artifact:
+        return
+    if expected_type is int and isinstance(artifact[key], bool):
+        errors.append(f"artifacts[{index}].{key} must be an int")
+        return
+    if not isinstance(artifact[key], expected_type):
+        errors.append(f"artifacts[{index}].{key} must be a {expected_type.__name__}")
