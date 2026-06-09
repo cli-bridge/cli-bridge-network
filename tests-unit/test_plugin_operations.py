@@ -294,6 +294,81 @@ class PluginOperationTests(unittest.TestCase):
                 )
             )
 
+    def test_plugin_write_operation_records_lock_audit_event_and_artifact(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            audit = AuditLog(root / "audit.jsonl")
+            events = EventBus(root / "events.jsonl")
+            artifacts = ArtifactStore(root / "artifacts")
+            runner = PluginOperationRunner(
+                audit_log=audit,
+                event_bus=events,
+                artifact_store=artifacts,
+            )
+            plan = PluginPlan(
+                plugin_id="test-plugin",
+                action="write-config",
+                plugin_dir=str(root / "external_plugins" / "test-plugin"),
+                commands=(),
+            )
+
+            result = runner.execute_write(
+                plan,
+                lambda operation_id: {
+                    "status": "completed",
+                    "operation_id": operation_id,
+                    "written": [str(root / "config.json")],
+                    "backups": [],
+                },
+            )
+
+            self.assertEqual(result["status"], "completed")
+            self.assertTrue(result["lock"]["acquired"])
+            self.assertTrue(result["artifact_ids"])
+            self.assertEqual(result["write_result"]["written"], [str(root / "config.json")])
+            self.assertFalse((root / "external_plugins" / "test-plugin" / ".operation.lock").exists())
+            audit_types = [event["type"] for event in audit.tail(limit=10)]
+            self.assertIn("plugin.operation.started", audit_types)
+            self.assertIn("plugin.operation.completed", audit_types)
+            event_types = [event["type"] for event in events.tail(limit=10)]
+            self.assertIn("plugin.operation.started", event_types)
+            self.assertIn("plugin.operation.completed", event_types)
+            artifact = artifacts.inspect(result["artifact_ids"][0])
+            self.assertIn("config.json", artifact["content"])
+
+    def test_plugin_write_operation_blocks_when_lock_exists(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plugin_dir = root / "external_plugins" / "test-plugin"
+            lock_dir = plugin_dir / ".operation.lock"
+            lock_dir.mkdir(parents=True)
+            (lock_dir / "holder.json").write_text(
+                json.dumps({"operation_id": "existing", "plugin_id": "test-plugin"}),
+                encoding="utf-8",
+            )
+            runner = PluginOperationRunner(
+                audit_log=AuditLog(root / "audit.jsonl"),
+                event_bus=EventBus(root / "events.jsonl"),
+                artifact_store=ArtifactStore(root / "artifacts"),
+            )
+            plan = PluginPlan(
+                plugin_id="test-plugin",
+                action="write-config",
+                plugin_dir=str(plugin_dir),
+                commands=(),
+            )
+
+            result = runner.execute_write(
+                plan,
+                lambda operation_id: {"status": "completed", "operation_id": operation_id},
+            )
+
+            self.assertEqual(result["status"], "blocked")
+            self.assertFalse(result["lock"]["acquired"])
+            self.assertEqual(result["lock"]["holder"]["operation_id"], "existing")
+            self.assertIsNone(result["write_result"])
+            self.assertEqual(result["artifact_ids"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

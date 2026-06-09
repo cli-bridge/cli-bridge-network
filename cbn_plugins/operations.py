@@ -8,7 +8,7 @@ import subprocess
 import time
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from cbn_audit.log import AuditLog
 from cbn_artifacts.store import ArtifactStore
@@ -88,6 +88,78 @@ class PluginOperationRunner:
             "completed_at": now_iso(),
             "lock": lock,
             "results": results,
+        }
+        self._audit("plugin.operation.completed", operation_id, plan, payload)
+        self._publish(EventType.PLUGIN_OPERATION_COMPLETED, plan.plugin_id, payload, operation_id)
+        return payload
+
+    def execute_write(
+        self,
+        plan: PluginPlan,
+        writer: Callable[[str], dict[str, Any]],
+    ) -> dict[str, Any]:
+        operation_id = str(uuid.uuid4())
+        started_at = now_iso()
+        plugin_dir = Path(plan.plugin_dir)
+        plugin_dir.mkdir(parents=True, exist_ok=True)
+        lock = self._acquire_lock(plan, operation_id, started_at)
+        if not lock["acquired"]:
+            payload = {
+                "operation_id": operation_id,
+                "plugin_id": plan.plugin_id,
+                "action": plan.action,
+                "status": "blocked",
+                "started_at": started_at,
+                "completed_at": now_iso(),
+                "blockers": ["plugin operation already running"],
+                "lock": lock,
+                "write_result": None,
+                "artifact_ids": [],
+            }
+            self._audit("plugin.operation.blocked", operation_id, plan, payload)
+            self._publish(EventType.PLUGIN_OPERATION_COMPLETED, plan.plugin_id, payload, operation_id)
+            return payload
+
+        self._audit(
+            "plugin.operation.started",
+            operation_id,
+            plan,
+            {"write": True, "lock": lock},
+        )
+        self._publish(
+            EventType.PLUGIN_OPERATION_STARTED,
+            plan.plugin_id,
+            {"operation_id": operation_id, "action": plan.action, "write": True},
+            operation_id,
+        )
+        write_result: dict[str, Any]
+        status = "completed"
+        try:
+            write_result = writer(operation_id)
+            if write_result.get("status") not in (None, "completed"):
+                status = str(write_result.get("status"))
+        except Exception as exc:  # pragma: no cover - defensive boundary
+            status = "failed"
+            write_result = {
+                "status": "failed",
+                "error": str(exc),
+                "written": [],
+                "backups": [],
+            }
+        finally:
+            self._release_lock(lock)
+
+        artifact_ids = self._record_write_artifact(plan.plugin_id, operation_id, write_result)
+        payload = {
+            "operation_id": operation_id,
+            "plugin_id": plan.plugin_id,
+            "action": plan.action,
+            "status": status,
+            "started_at": started_at,
+            "completed_at": now_iso(),
+            "lock": lock,
+            "write_result": write_result,
+            "artifact_ids": artifact_ids,
         }
         self._audit("plugin.operation.completed", operation_id, plan, payload)
         self._publish(EventType.PLUGIN_OPERATION_COMPLETED, plan.plugin_id, payload, operation_id)
@@ -289,6 +361,22 @@ class PluginOperationRunner:
             if record is not None:
                 records.append(record.artifact_id)
         return records
+
+    def _record_write_artifact(
+        self,
+        plugin_id: str,
+        operation_id: str,
+        write_result: dict[str, Any],
+    ) -> list[str]:
+        if self.artifact_store is None:
+            return []
+        record = self.artifact_store.create_json(
+            capability_id=f"plugin.{plugin_id}",
+            call_id=operation_id,
+            kind="write-summary",
+            payload=write_result,
+        )
+        return [record.artifact_id]
 
     def _audit(
         self,

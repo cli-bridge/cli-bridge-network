@@ -1775,6 +1775,9 @@ class CliAnythingHubTests(unittest.TestCase):
 
             result = hub.repair_entrypoint("piptool", module="pip", write=True, confirmed=True)
             self.assertEqual(result["execution"]["status"], "completed")
+            self.assertEqual(result["execution"]["operation_status"], "completed")
+            self.assertTrue(result["execution"]["operation_id"])
+            self.assertTrue(result["execution"]["artifact_ids"])
             wrapper_path = Path(result["wrapper_path"])
             manifest_path = Path(tempdir) / "runtime" / "manifests" / "cli-anything.piptool.launch.json"
             self.assertTrue(wrapper_path.exists())
@@ -1808,6 +1811,81 @@ class CliAnythingHubTests(unittest.TestCase):
             self.assertEqual(result["repair_provenance"]["module_provenance"]["distribution"], "pip")
             self.assertEqual(result["repair_provenance"]["policy_recheck"]["effective_policy"]["risk"], "read")
             self.assertTrue(result["validation"]["valid"])
+
+            second = hub.repair_entrypoint("piptool", module="pip", write=True, confirmed=True)
+            self.assertEqual(second["execution"]["status"], "completed")
+            backups = second["execution"]["backups"]
+            self.assertEqual({item["kind"] for item in backups}, {"wrapper", "manifest"})
+            for item in backups:
+                self.assertTrue(Path(item["backup_path"]).exists())
+                self.assertGreater(item["backup_size_bytes"], 0)
+
+    def test_repair_entrypoint_write_is_blocked_by_operation_lock(self):
+        class FakeHub(CliAnythingHub):
+            def entrypoint_repair_plan(self, harness_name, from_market=True):
+                return {
+                    "ok": True,
+                    "plugin_id": "cli-anything",
+                    "kind": "CliAnythingEntrypointRepairPlan",
+                    "harness_name": harness_name,
+                    "from_market": from_market,
+                    "capability_id": "cli-anything.piptool.launch",
+                    "distributions": [
+                        {
+                            "package": "pip",
+                            "installed": True,
+                            "version": "25.0",
+                            "location": str(Path(sys.executable).parent),
+                        }
+                    ],
+                    "modules": [{"package": "pip", "importable": True, "module_main": True}],
+                    "diagnosis": {"repair_required": True},
+                    "evaluation": {
+                        "adaptation": {
+                            "manifest_path": str(self.paths.manifests / "cli-anything.piptool.launch.json"),
+                            "manifest": {
+                                "apiVersion": "bridge.dev/v1alpha1",
+                                "kind": "ToolManifest",
+                                "metadata": {
+                                    "id": "cli-anything.piptool.launch",
+                                    "title": "Pip Tool",
+                                    "labels": {"plugin": "cli-anything", "harness": "piptool"},
+                                    "annotations": {},
+                                },
+                                "spec": {
+                                    "transport": {
+                                        "kind": "pty",
+                                        "command": "cli-hub",
+                                        "argsTemplate": ["launch", "piptool", "--"],
+                                    },
+                                    "policy": {
+                                        "risk": "read",
+                                        "requiresConfirmation": False,
+                                        "network": "deny",
+                                    },
+                                    "output": {"parserRef": "cli-anything.raw", "verified": False},
+                                },
+                            },
+                        }
+                    },
+                }
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            root = Path(tempdir)
+            lock_dir = root / "external_plugins" / "cli-anything" / ".operation.lock"
+            lock_dir.mkdir(parents=True)
+            (lock_dir / "holder.json").write_text(
+                json.dumps({"operation_id": "existing-operation", "plugin_id": "cli-anything"}),
+                encoding="utf-8",
+            )
+            hub = FakeHub(root=root)
+            result = hub.repair_entrypoint("piptool", module="pip", write=True, confirmed=True)
+
+            self.assertEqual(result["execution"]["status"], "blocked")
+            self.assertIn("plugin operation already running", result["execution"]["blockers"])
+            self.assertEqual(result["execution"]["written"], [])
+            self.assertFalse(Path(result["wrapper_path"]).exists())
+            self.assertFalse(Path(result["manifest_path"]).exists())
 
     def test_repair_entrypoint_rechecks_policy_against_market_metadata(self):
         class FakeHub(CliAnythingHub):
