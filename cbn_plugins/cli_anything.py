@@ -1351,6 +1351,9 @@ class CliAnythingHub:
         module: str | None = None,
         write: bool = False,
         confirmed: bool = False,
+        require_smoke: bool = False,
+        smoke_args: tuple[str, ...] = ("--help",),
+        smoke_timeout_seconds: int = 10,
     ) -> dict[str, Any]:
         plan = self.entrypoint_repair_plan(harness_name, from_market=from_market)
         strategy = _entrypoint_repair_strategy(plan, module=module)
@@ -1362,7 +1365,24 @@ class CliAnythingHub:
             "written": [],
         }
         wrapper_path = _entrypoint_wrapper_path(self.paths.external_plugins, harness_name)
+        smoke_report = None
+        if require_smoke and strategy.get("ready") and strategy.get("module"):
+            smoke_report = self.adapter_target_smoke(
+                harness_name,
+                module=strategy["module"],
+                from_market=from_market,
+                smoke_args=smoke_args,
+                timeout_seconds=smoke_timeout_seconds,
+                run=write,
+                confirmed=confirmed,
+            )
+        smoke_gate = _repair_entrypoint_smoke_gate(require_smoke, smoke_report)
         manifest = _entrypoint_repair_manifest(plan, strategy, wrapper_path)
+        if smoke_report and smoke_report.get("summary", {}).get("smoke_ok"):
+            annotations = manifest.setdefault("metadata", {}).setdefault("annotations", {})
+            annotations["cbn.repair.smoke.module"] = str(smoke_report["module"])
+            annotations["cbn.repair.smoke.args"] = json.dumps(smoke_report["smoke_args"], ensure_ascii=False)
+            annotations["cbn.repair.smoke.exit_code"] = str(smoke_report["execution"].get("exit_code"))
         validation = validate_manifest_dict(
             manifest,
             source_path=Path(plan["evaluation"]["adaptation"]["manifest_path"]),
@@ -1374,6 +1394,9 @@ class CliAnythingHub:
         elif write and confirmed and not strategy["ready"]:
             execution["status"] = "blocked"
             execution["blockers"] = list(strategy["blockers"])
+        elif write and confirmed and not smoke_gate["ok"]:
+            execution["status"] = "blocked"
+            execution["blockers"] = list(smoke_gate["blockers"])
         elif write and confirmed and not validation["valid"]:
             execution["status"] = "blocked"
             execution["blockers"] = [f"manifest validation error: {item}" for item in validation["errors"]]
@@ -1393,8 +1416,13 @@ class CliAnythingHub:
             "module": module,
             "write": write,
             "confirmed": confirmed,
+            "require_smoke": require_smoke,
+            "smoke_args": list(smoke_args),
+            "smoke_timeout_seconds": smoke_timeout_seconds,
             "plan": plan,
             "strategy": strategy,
+            "smoke_gate": smoke_gate,
+            "smoke_report": smoke_report,
             "wrapper_path": str(wrapper_path),
             "manifest": manifest,
             "validation": validation,
@@ -1402,7 +1430,9 @@ class CliAnythingHub:
             "next_commands": [
                 f"python -m cbn plugin repair-plan cli-anything {harness_name} --from-market",
                 f"python -m cbn plugin repair-entrypoint cli-anything {harness_name} --from-market --module <module>",
+                f"python -m cbn plugin adapter-smoke cli-anything {harness_name} --from-market --module <module> --run --yes",
                 f"python -m cbn plugin repair-entrypoint cli-anything {harness_name} --from-market --module <module> --write --yes",
+                f"python -m cbn plugin repair-entrypoint cli-anything {harness_name} --from-market --module <module> --require-smoke --write --yes",
                 "python -m cbn registry validate manifests",
                 f"python -m cbn call {plan.get('capability_id')} --dry-run",
             ],
@@ -3231,6 +3261,56 @@ def _adapter_target_smoke_next_action(
     if execution.get("exit_code") == 0:
         return "repair_entrypoint_with_smoked_module"
     return "inspect_smoke_failure_or_choose_another_target"
+
+
+def _repair_entrypoint_smoke_gate(
+    require_smoke: bool,
+    smoke_report: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if not require_smoke:
+        return {
+            "required": False,
+            "ok": True,
+            "status": "not_required",
+            "blockers": [],
+        }
+    if smoke_report is None:
+        return {
+            "required": True,
+            "ok": False,
+            "status": "blocked",
+            "blockers": ["smoke gate requires a ready module strategy"],
+        }
+    execution = smoke_report.get("execution", {})
+    if execution.get("status") == "not_run":
+        return {
+            "required": True,
+            "ok": False,
+            "status": "not_run",
+            "blockers": ["smoke gate has not run; use --write --yes or run adapter-smoke first"],
+        }
+    if execution.get("status") == "requires_confirmation":
+        return {
+            "required": True,
+            "ok": False,
+            "status": "requires_confirmation",
+            "blockers": ["smoke gate execution requires confirmation"],
+        }
+    if smoke_report.get("summary", {}).get("smoke_ok"):
+        return {
+            "required": True,
+            "ok": True,
+            "status": "passed",
+            "blockers": [],
+        }
+    return {
+        "required": True,
+        "ok": False,
+        "status": "failed",
+        "blockers": [
+            f"adapter target smoke failed: {execution.get('reason', 'unknown')}",
+        ],
+    }
 
 
 def _clip_text(value: str | None, limit: int) -> str:

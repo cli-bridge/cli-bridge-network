@@ -566,6 +566,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     plugin_repair_entrypoint.add_argument("--write", action="store_true", help="Write wrapper and repaired manifest.")
     plugin_repair_entrypoint.add_argument("--yes", action="store_true", help="Confirm writing repair artifacts.")
+    plugin_repair_entrypoint.add_argument(
+        "--require-smoke",
+        action="store_true",
+        help="Require adapter-smoke to pass before confirmed repair writes.",
+    )
+    plugin_repair_entrypoint.add_argument(
+        "--smoke-arg",
+        action="append",
+        default=[],
+        help="Argument passed to adapter smoke; defaults to --help when omitted.",
+    )
+    plugin_repair_entrypoint.add_argument("--smoke-timeout", type=int, default=10)
 
     plugin_adapter_targets = plugin_subcommands.add_parser(
         "adapter-targets",

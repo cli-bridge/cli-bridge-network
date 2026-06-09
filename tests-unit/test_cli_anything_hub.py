@@ -1708,6 +1708,162 @@ class CliAnythingHubTests(unittest.TestCase):
             self.assertEqual(manifest["metadata"]["annotations"]["cbn.repair.python_module"], "pip")
             self.assertTrue(result["validation"]["valid"])
 
+    def test_repair_entrypoint_requires_passing_smoke_when_requested(self):
+        class FakeHub(CliAnythingHub):
+            def entrypoint_repair_plan(self, harness_name, from_market=True):
+                return {
+                    "ok": True,
+                    "plugin_id": "cli-anything",
+                    "kind": "CliAnythingEntrypointRepairPlan",
+                    "harness_name": harness_name,
+                    "from_market": from_market,
+                    "capability_id": "cli-anything.piptool.launch",
+                    "modules": [{"package": "pip", "importable": True, "module_main": True}],
+                    "diagnosis": {"repair_required": True},
+                    "evaluation": {
+                        "adaptation": {
+                            "manifest_path": str(self.paths.manifests / "cli-anything.piptool.launch.json"),
+                            "manifest": {
+                                "apiVersion": "bridge.dev/v1alpha1",
+                                "kind": "ToolManifest",
+                                "metadata": {
+                                    "id": "cli-anything.piptool.launch",
+                                    "title": "Pip Tool",
+                                    "labels": {"plugin": "cli-anything", "harness": "piptool"},
+                                    "annotations": {},
+                                },
+                                "spec": {
+                                    "transport": {
+                                        "kind": "pty",
+                                        "command": "cli-hub",
+                                        "argsTemplate": ["launch", "piptool", "--"],
+                                    },
+                                    "policy": {
+                                        "risk": "read",
+                                        "requiresConfirmation": False,
+                                        "network": "deny",
+                                    },
+                                    "output": {"parserRef": "cli-anything.raw", "verified": False},
+                                },
+                            },
+                        }
+                    },
+                }
+
+            def adapter_target_smoke(
+                self,
+                harness_name,
+                module,
+                from_market=True,
+                smoke_args=("--help",),
+                timeout_seconds=10,
+                run=False,
+                confirmed=False,
+            ):
+                return {
+                    "ok": True,
+                    "plugin_id": "cli-anything",
+                    "kind": "CliAnythingAdapterTargetSmoke",
+                    "harness_name": harness_name,
+                    "module": module,
+                    "smoke_args": list(smoke_args),
+                    "execution": {"status": "failed", "exit_code": 2, "reason": "nonzero_exit"},
+                    "summary": {"smoke_ok": False},
+                }
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            result = FakeHub(root=Path(tempdir)).repair_entrypoint(
+                "piptool",
+                module="pip",
+                write=True,
+                confirmed=True,
+                require_smoke=True,
+            )
+            self.assertEqual(result["smoke_gate"]["status"], "failed")
+            self.assertEqual(result["execution"]["status"], "blocked")
+            self.assertFalse(Path(result["wrapper_path"]).exists())
+
+    def test_repair_entrypoint_records_passing_smoke_evidence(self):
+        class FakeHub(CliAnythingHub):
+            def entrypoint_repair_plan(self, harness_name, from_market=True):
+                return {
+                    "ok": True,
+                    "plugin_id": "cli-anything",
+                    "kind": "CliAnythingEntrypointRepairPlan",
+                    "harness_name": harness_name,
+                    "from_market": from_market,
+                    "capability_id": "cli-anything.piptool.launch",
+                    "modules": [{"package": "pip", "importable": True, "module_main": True}],
+                    "diagnosis": {"repair_required": True},
+                    "evaluation": {
+                        "adaptation": {
+                            "manifest_path": str(self.paths.manifests / "cli-anything.piptool.launch.json"),
+                            "manifest": {
+                                "apiVersion": "bridge.dev/v1alpha1",
+                                "kind": "ToolManifest",
+                                "metadata": {
+                                    "id": "cli-anything.piptool.launch",
+                                    "title": "Pip Tool",
+                                    "labels": {"plugin": "cli-anything", "harness": "piptool"},
+                                    "annotations": {},
+                                },
+                                "spec": {
+                                    "transport": {
+                                        "kind": "pty",
+                                        "command": "cli-hub",
+                                        "argsTemplate": ["launch", "piptool", "--"],
+                                    },
+                                    "policy": {
+                                        "risk": "read",
+                                        "requiresConfirmation": False,
+                                        "network": "deny",
+                                    },
+                                    "output": {"parserRef": "cli-anything.raw", "verified": False},
+                                },
+                            },
+                        }
+                    },
+                }
+
+            def adapter_target_smoke(
+                self,
+                harness_name,
+                module,
+                from_market=True,
+                smoke_args=("--help",),
+                timeout_seconds=10,
+                run=False,
+                confirmed=False,
+            ):
+                return {
+                    "ok": True,
+                    "plugin_id": "cli-anything",
+                    "kind": "CliAnythingAdapterTargetSmoke",
+                    "harness_name": harness_name,
+                    "module": module,
+                    "smoke_args": list(smoke_args),
+                    "execution": {"status": "completed", "exit_code": 0, "reason": "completed"},
+                    "summary": {"smoke_ok": True},
+                }
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            result = FakeHub(root=Path(tempdir)).repair_entrypoint(
+                "piptool",
+                module="pip",
+                write=True,
+                confirmed=True,
+                require_smoke=True,
+                smoke_args=("--help",),
+            )
+            self.assertEqual(result["smoke_gate"]["status"], "passed")
+            self.assertEqual(result["execution"]["status"], "completed")
+            manifest_path = Path(tempdir) / "manifests" / "cli-anything.piptool.launch.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            annotations = manifest["metadata"]["annotations"]
+            self.assertEqual(annotations["cbn.repair.smoke.module"], "pip")
+            self.assertEqual(json.loads(annotations["cbn.repair.smoke.args"]), ["--help"])
+            self.assertEqual(annotations["cbn.repair.smoke.exit_code"], "0")
+
     def test_adapter_target_package_report_finds_cli_like_modules(self):
         with tempfile.TemporaryDirectory() as tempdir:
             root = Path(tempdir)

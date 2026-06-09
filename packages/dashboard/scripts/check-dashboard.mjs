@@ -123,6 +123,10 @@ if (!html.includes('data-api-path="/plugins/cli-anything/adapter-smoke"')) {
   throw new Error("Dashboard does not wire CLI-Anything adapter target smoke planning to the daemon API.");
 }
 
+if (!html.includes("python -m cbn plugin repair-entrypoint cli-anything py4csr --from-market --module py4csr.tables.rtf_formatter --require-smoke")) {
+  throw new Error("Dashboard does not expose CLI-Anything smoke-gated entrypoint repair planning.");
+}
+
 if (!html.includes("python -m cbn plugin live-verification cli-anything")) {
   throw new Error("Dashboard does not expose the CLI-Anything live verification command.");
 }
@@ -189,6 +193,10 @@ if (!html.includes('data-api-body=\'{"harness_name":"py4csr","from_market":true,
 
 if (!html.includes('data-api-body=\'{"harness_name":"py4csr","from_market":true,"module":"py4csr.plotting.sas_compatible_rtf_generator","smoke_args":["--help"],"timeout_seconds":10}\'')) {
   throw new Error("Dashboard adapter smoke API body is not stable.");
+}
+
+if (!html.includes('data-api-body=\'{"harness_name":"py4csr","from_market":true,"module":"py4csr.tables.rtf_formatter","require_smoke":true,"smoke_args":["--help"],"smoke_timeout_seconds":10}\'')) {
+  throw new Error("Dashboard smoke-gated repair API body is not stable.");
 }
 
 if (!html.includes('data-api-path="/plugins/cli-anything/market"')) {

@@ -436,7 +436,17 @@ class DaemonApiTests(unittest.TestCase):
 
     def test_cli_anything_repair_entrypoint_route_returns_execution_report(self):
         class FakeHub:
-            def repair_entrypoint(self, harness_name, from_market=True, module=None, write=False, confirmed=False):
+            def repair_entrypoint(
+                self,
+                harness_name,
+                from_market=True,
+                module=None,
+                write=False,
+                confirmed=False,
+                require_smoke=False,
+                smoke_args=("--help",),
+                smoke_timeout_seconds=10,
+            ):
                 return {
                     "ok": True,
                     "plugin_id": "cli-anything",
@@ -446,6 +456,9 @@ class DaemonApiTests(unittest.TestCase):
                     "module": module,
                     "write": write,
                     "confirmed": confirmed,
+                    "require_smoke": require_smoke,
+                    "smoke_args": list(smoke_args),
+                    "smoke_timeout_seconds": smoke_timeout_seconds,
                     "strategy": {"state": "python_module_wrapper"},
                     "execution": {"status": "requires_confirmation"},
                 }
@@ -461,6 +474,9 @@ class DaemonApiTests(unittest.TestCase):
                             "module": "pip",
                             "write": True,
                             "confirmed": False,
+                            "require_smoke": True,
+                            "smoke_args": ["--help"],
+                            "smoke_timeout_seconds": 11,
                         }
                     ).encode("utf-8"),
                     method="POST",
@@ -473,6 +489,9 @@ class DaemonApiTests(unittest.TestCase):
                     self.assertEqual(payload["module"], "pip")
                     self.assertTrue(payload["write"])
                     self.assertFalse(payload["confirmed"])
+                    self.assertTrue(payload["require_smoke"])
+                    self.assertEqual(payload["smoke_args"], ["--help"])
+                    self.assertEqual(payload["smoke_timeout_seconds"], 11)
                     self.assertEqual(payload["execution"]["status"], "requires_confirmation")
 
     def test_cli_anything_adapter_targets_route_returns_candidate_report(self):

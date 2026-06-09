@@ -219,6 +219,12 @@
             data-api-body='{"harness_name":"py4csr","from_market":true,"module":"py4csr.plotting.sas_compatible_rtf_generator","smoke_args":["--help"],"timeout_seconds":10}'
           >Adapter Smoke Plan</button>
           <button
+            data-command="python -m cbn plugin repair-entrypoint cli-anything py4csr --from-market --module py4csr.tables.rtf_formatter --require-smoke"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/repair-entrypoint"
+            data-api-body='{"harness_name":"py4csr","from_market":true,"module":"py4csr.tables.rtf_formatter","require_smoke":true,"smoke_args":["--help"],"smoke_timeout_seconds":10}'
+          >Repair Smoke Gate</button>
+          <button
             data-command="python -m cbn plugin live-verification cli-anything"
             data-api-method="POST"
             data-api-path="/plugins/cli-anything/live-verification"

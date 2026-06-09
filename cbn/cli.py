@@ -624,6 +624,9 @@ def main(argv: list[str] | None = None) -> int:
                 module=args.module,
                 write=args.write,
                 confirmed=args.yes,
+                require_smoke=args.require_smoke,
+                smoke_args=tuple(args.smoke_arg) if args.smoke_arg else ("--help",),
+                smoke_timeout_seconds=args.smoke_timeout,
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0 if result["ok"] else 6

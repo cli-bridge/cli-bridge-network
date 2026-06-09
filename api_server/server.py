@@ -667,12 +667,19 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             self._send(200 if result["ok"] else 502, result)
             return
         if self.path == "/plugins/cli-anything/repair-entrypoint":
+            smoke_args_raw = payload.get("smoke_args", ["--help"])
+            if not isinstance(smoke_args_raw, list) or not all(isinstance(item, str) for item in smoke_args_raw):
+                self._send(400, {"error": "smoke_args must be a list of strings"})
+                return
             result = CliAnythingHub().repair_entrypoint(
                 payload["harness_name"],
                 from_market=bool(payload.get("from_market", True)),
                 module=payload.get("module"),
                 write=bool(payload.get("write", False)),
                 confirmed=bool(payload.get("confirmed", False)),
+                require_smoke=bool(payload.get("require_smoke", False)),
+                smoke_args=tuple(smoke_args_raw),
+                smoke_timeout_seconds=int(payload.get("smoke_timeout_seconds", 10)),
             )
             self._send(200 if result["ok"] else 502, result)
             return
