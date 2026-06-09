@@ -434,6 +434,47 @@ class DaemonApiTests(unittest.TestCase):
                     self.assertTrue(payload["from_market"])
                     self.assertEqual(payload["diagnosis"]["state"], "installed_entrypoint_missing")
 
+    def test_cli_anything_repair_entrypoint_route_returns_execution_report(self):
+        class FakeHub:
+            def repair_entrypoint(self, harness_name, from_market=True, module=None, write=False, confirmed=False):
+                return {
+                    "ok": True,
+                    "plugin_id": "cli-anything",
+                    "kind": "CliAnythingEntrypointRepair",
+                    "harness_name": harness_name,
+                    "from_market": from_market,
+                    "module": module,
+                    "write": write,
+                    "confirmed": confirmed,
+                    "strategy": {"state": "python_module_wrapper"},
+                    "execution": {"status": "requires_confirmation"},
+                }
+
+        with patch("api_server.server.CliAnythingHub", FakeHub):
+            with daemon_url() as base_url:
+                request = urllib.request.Request(
+                    f"{base_url}/plugins/cli-anything/repair-entrypoint",
+                    data=json.dumps(
+                        {
+                            "harness_name": "py4csr",
+                            "from_market": True,
+                            "module": "pip",
+                            "write": True,
+                            "confirmed": False,
+                        }
+                    ).encode("utf-8"),
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(payload["harness_name"], "py4csr")
+                    self.assertEqual(payload["module"], "pip")
+                    self.assertTrue(payload["write"])
+                    self.assertFalse(payload["confirmed"])
+                    self.assertEqual(payload["execution"]["status"], "requires_confirmation")
+
     def test_runtime_transport_status_and_plan_routes(self):
         with daemon_url() as base_url:
             with urllib.request.urlopen(f"{base_url}/runtime/transports?kind=pty", timeout=5) as response:

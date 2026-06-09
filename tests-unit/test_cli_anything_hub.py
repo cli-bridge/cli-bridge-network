@@ -1596,6 +1596,116 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertTrue(result["diagnosis"]["repair_required"])
         self.assertIn("installed package has no matching console_script", result["diagnosis"]["findings"])
 
+    def test_repair_entrypoint_blocks_without_adapter_target(self):
+        class FakeHub(CliAnythingHub):
+            def entrypoint_repair_plan(self, harness_name, from_market=True):
+                return {
+                    "ok": True,
+                    "plugin_id": "cli-anything",
+                    "kind": "CliAnythingEntrypointRepairPlan",
+                    "harness_name": harness_name,
+                    "from_market": from_market,
+                    "capability_id": "cli-anything.broken.launch",
+                    "modules": [{"package": "broken", "importable": True, "module_main": False}],
+                    "diagnosis": {"repair_required": True},
+                    "evaluation": {
+                        "adaptation": {
+                            "manifest_path": str(self.paths.manifests / "cli-anything.broken.launch.json"),
+                            "manifest": {
+                                "apiVersion": "bridge.dev/v1alpha1",
+                                "kind": "ToolManifest",
+                                "metadata": {
+                                    "id": "cli-anything.broken.launch",
+                                    "title": "Broken",
+                                    "labels": {"plugin": "cli-anything", "harness": "broken"},
+                                    "annotations": {},
+                                },
+                                "spec": {
+                                    "transport": {
+                                        "kind": "pty",
+                                        "command": "cli-hub",
+                                        "argsTemplate": ["launch", "broken", "--"],
+                                    },
+                                    "policy": {
+                                        "risk": "read",
+                                        "requiresConfirmation": False,
+                                        "network": "deny",
+                                    },
+                                    "output": {"parserRef": "cli-anything.raw", "verified": False},
+                                },
+                            },
+                        }
+                    },
+                }
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            result = FakeHub(root=Path(tempdir)).repair_entrypoint("broken", from_market=True)
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["kind"], "CliAnythingEntrypointRepair")
+            self.assertFalse(result["strategy"]["ready"])
+            self.assertEqual(result["strategy"]["state"], "adapter_target_required")
+            self.assertEqual(result["execution"]["status"], "not_requested")
+
+    def test_repair_entrypoint_writes_project_local_wrapper_when_confirmed(self):
+        class FakeHub(CliAnythingHub):
+            def entrypoint_repair_plan(self, harness_name, from_market=True):
+                return {
+                    "ok": True,
+                    "plugin_id": "cli-anything",
+                    "kind": "CliAnythingEntrypointRepairPlan",
+                    "harness_name": harness_name,
+                    "from_market": from_market,
+                    "capability_id": "cli-anything.piptool.launch",
+                    "modules": [{"package": "pip", "importable": True, "module_main": True}],
+                    "diagnosis": {"repair_required": True},
+                    "evaluation": {
+                        "adaptation": {
+                            "manifest_path": str(self.paths.manifests / "cli-anything.piptool.launch.json"),
+                            "manifest": {
+                                "apiVersion": "bridge.dev/v1alpha1",
+                                "kind": "ToolManifest",
+                                "metadata": {
+                                    "id": "cli-anything.piptool.launch",
+                                    "title": "Pip Tool",
+                                    "labels": {"plugin": "cli-anything", "harness": "piptool"},
+                                    "annotations": {},
+                                },
+                                "spec": {
+                                    "transport": {
+                                        "kind": "pty",
+                                        "command": "cli-hub",
+                                        "argsTemplate": ["launch", "piptool", "--"],
+                                    },
+                                    "policy": {
+                                        "risk": "read",
+                                        "requiresConfirmation": False,
+                                        "network": "deny",
+                                    },
+                                    "output": {"parserRef": "cli-anything.raw", "verified": False},
+                                },
+                            },
+                        }
+                    },
+                }
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            hub = FakeHub(root=Path(tempdir))
+            blocked = hub.repair_entrypoint("piptool", module="pip", write=True, confirmed=False)
+            self.assertEqual(blocked["execution"]["status"], "requires_confirmation")
+            self.assertFalse(Path(blocked["wrapper_path"]).exists())
+
+            result = hub.repair_entrypoint("piptool", module="pip", write=True, confirmed=True)
+            self.assertEqual(result["execution"]["status"], "completed")
+            wrapper_path = Path(result["wrapper_path"])
+            manifest_path = Path(tempdir) / "manifests" / "cli-anything.piptool.launch.json"
+            self.assertTrue(wrapper_path.exists())
+            self.assertTrue(manifest_path.exists())
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(manifest["spec"]["transport"]["command"], sys.executable)
+            self.assertEqual(manifest["spec"]["transport"]["argsTemplate"], [str(wrapper_path)])
+            self.assertEqual(manifest["metadata"]["annotations"]["cbn.repair.python_module"], "pip")
+            self.assertTrue(result["validation"]["valid"])
+
     def test_candidate_harnesses_limits_after_ranking_full_market(self):
         class FakeHub(CliAnythingHub):
             def list_market(self) -> CliHubCommandResult:
@@ -2296,6 +2406,29 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(payload["kind"], "CliAnythingEntrypointRepairPlan")
         self.assertIn("diagnosis", payload)
         self.assertIn("commands", payload)
+
+    def test_cli_repair_entrypoint_outputs_blocked_adapter_target_report(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "plugin",
+                "repair-entrypoint",
+                "cli-anything",
+                "py4csr",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertIn(proc.returncode, {0, 6})
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["plugin_id"], "cli-anything")
+        self.assertEqual(payload["kind"], "CliAnythingEntrypointRepair")
+        self.assertIn("strategy", payload)
+        self.assertIn("execution", payload)
 
     def test_cli_sync_market_handles_missing_cli_hub_without_crashing(self):
         proc = subprocess.run(

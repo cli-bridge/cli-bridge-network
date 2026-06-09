@@ -615,6 +615,18 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0 if result["ok"] else 6
+        if args.plugin_command == "repair-entrypoint":
+            if args.plugin_id != "cli-anything":
+                raise KeyError(f"repair-entrypoint is not implemented for plugin: {args.plugin_id}")
+            result = CliAnythingHub().repair_entrypoint(
+                args.harness_name,
+                from_market=args.from_market,
+                module=args.module,
+                write=args.write,
+                confirmed=args.yes,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["ok"] else 6
         if args.plugin_command == "sync-market":
             if args.plugin_id != "cli-anything":
                 raise KeyError(f"sync-market is not implemented for plugin: {args.plugin_id}")

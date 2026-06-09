@@ -547,6 +547,26 @@ def build_parser() -> argparse.ArgumentParser:
         help="Build repair diagnostics without requiring market metadata.",
     )
 
+    plugin_repair_entrypoint = plugin_subcommands.add_parser(
+        "repair-entrypoint",
+        help="Plan or confirm a CBN-owned wrapper repair for a missing CLI-Anything entrypoint.",
+    )
+    plugin_repair_entrypoint.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
+    plugin_repair_entrypoint.add_argument("harness_name", help="Harness name from the plugin market.")
+    plugin_repair_entrypoint.add_argument("--from-market", action="store_true", default=True)
+    plugin_repair_entrypoint.add_argument(
+        "--offline",
+        action="store_false",
+        dest="from_market",
+        help="Repair from current local status without requiring market metadata.",
+    )
+    plugin_repair_entrypoint.add_argument(
+        "--module",
+        help="Explicit Python module to run from the project-local wrapper.",
+    )
+    plugin_repair_entrypoint.add_argument("--write", action="store_true", help="Write wrapper and repaired manifest.")
+    plugin_repair_entrypoint.add_argument("--yes", action="store_true", help="Confirm writing repair artifacts.")
+
     plugin_sync = plugin_subcommands.add_parser(
         "sync-market",
         help="Preview or write CBN manifests for CLI-Anything market records.",

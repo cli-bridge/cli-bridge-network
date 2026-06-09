@@ -99,6 +99,14 @@ if (!html.includes('data-api-path="/plugins/cli-anything/repair-plan"')) {
   throw new Error("Dashboard does not wire the CLI-Anything entrypoint repair plan to the daemon API.");
 }
 
+if (!html.includes("python -m cbn plugin repair-entrypoint cli-anything py4csr --from-market")) {
+  throw new Error("Dashboard does not expose the CLI-Anything entrypoint repair execution plan.");
+}
+
+if (!html.includes('data-api-path="/plugins/cli-anything/repair-entrypoint"')) {
+  throw new Error("Dashboard does not wire the CLI-Anything entrypoint repair execution to the daemon API.");
+}
+
 if (!html.includes("python -m cbn plugin live-verification cli-anything")) {
   throw new Error("Dashboard does not expose the CLI-Anything live verification command.");
 }

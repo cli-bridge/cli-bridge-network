@@ -98,6 +98,7 @@ ROUTE_SUMMARY = [
     {"method": "POST", "path": "/plugins/cli-anything/install-queue"},
     {"method": "POST", "path": "/plugins/cli-anything/blocked-plan"},
     {"method": "POST", "path": "/plugins/cli-anything/repair-plan"},
+    {"method": "POST", "path": "/plugins/cli-anything/repair-entrypoint"},
     {"method": "POST", "path": "/plugins/cli-anything/sync-market"},
     {"method": "POST", "path": "/plugins/cli-anything/harness"},
 ]
@@ -660,6 +661,16 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             result = CliAnythingHub().entrypoint_repair_plan(
                 payload["harness_name"],
                 from_market=bool(payload.get("from_market", True)),
+            )
+            self._send(200 if result["ok"] else 502, result)
+            return
+        if self.path == "/plugins/cli-anything/repair-entrypoint":
+            result = CliAnythingHub().repair_entrypoint(
+                payload["harness_name"],
+                from_market=bool(payload.get("from_market", True)),
+                module=payload.get("module"),
+                write=bool(payload.get("write", False)),
+                confirmed=bool(payload.get("confirmed", False)),
             )
             self._send(200 if result["ok"] else 502, result)
             return

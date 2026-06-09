@@ -1342,6 +1342,70 @@ class CliAnythingHub:
             },
         }
 
+    def repair_entrypoint(
+        self,
+        harness_name: str,
+        from_market: bool = True,
+        module: str | None = None,
+        write: bool = False,
+        confirmed: bool = False,
+    ) -> dict[str, Any]:
+        plan = self.entrypoint_repair_plan(harness_name, from_market=from_market)
+        strategy = _entrypoint_repair_strategy(plan, module=module)
+        execution: dict[str, Any] = {
+            "requested": write,
+            "confirmed": confirmed,
+            "status": "not_requested",
+            "blockers": [],
+            "written": [],
+        }
+        wrapper_path = _entrypoint_wrapper_path(self.paths.external_plugins, harness_name)
+        manifest = _entrypoint_repair_manifest(plan, strategy, wrapper_path)
+        validation = validate_manifest_dict(
+            manifest,
+            source_path=Path(plan["evaluation"]["adaptation"]["manifest_path"]),
+            known_parser_refs=_known_parser_refs(),
+        )
+        if write and not confirmed:
+            execution["status"] = "requires_confirmation"
+            execution["blockers"] = ["entrypoint repair writes require --yes or confirmed=true"]
+        elif write and confirmed and not strategy["ready"]:
+            execution["status"] = "blocked"
+            execution["blockers"] = list(strategy["blockers"])
+        elif write and confirmed and not validation["valid"]:
+            execution["status"] = "blocked"
+            execution["blockers"] = [f"manifest validation error: {item}" for item in validation["errors"]]
+        elif write and confirmed:
+            _write_python_module_wrapper(wrapper_path, strategy["module"])
+            manifest_path = Path(plan["evaluation"]["adaptation"]["manifest_path"])
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            execution["status"] = "completed"
+            execution["written"] = [str(wrapper_path), str(manifest_path)]
+        return {
+            "ok": True,
+            "plugin_id": PLUGIN_ID,
+            "kind": "CliAnythingEntrypointRepair",
+            "harness_name": harness_name,
+            "from_market": from_market,
+            "module": module,
+            "write": write,
+            "confirmed": confirmed,
+            "plan": plan,
+            "strategy": strategy,
+            "wrapper_path": str(wrapper_path),
+            "manifest": manifest,
+            "validation": validation,
+            "execution": execution,
+            "next_commands": [
+                f"python -m cbn plugin repair-plan cli-anything {harness_name} --from-market",
+                f"python -m cbn plugin repair-entrypoint cli-anything {harness_name} --from-market --module <module>",
+                f"python -m cbn plugin repair-entrypoint cli-anything {harness_name} --from-market --module <module> --write --yes",
+                "python -m cbn registry validate manifests",
+                f"python -m cbn call {plan.get('capability_id')} --dry-run",
+            ],
+        }
+
     def live_verification(
         self,
         harnesses: tuple[str, ...] = ("mermaid", "macrocli"),
@@ -2676,6 +2740,104 @@ def _entrypoint_diagnosis(
         "recommended_next_action": action,
         "findings": findings,
     }
+
+
+def _entrypoint_repair_strategy(plan: dict[str, Any], module: str | None) -> dict[str, Any]:
+    diagnosis = plan.get("diagnosis") if isinstance(plan.get("diagnosis"), dict) else {}
+    if diagnosis.get("repair_required") is False:
+        return {
+            "ready": False,
+            "state": "repair_not_required",
+            "module": None,
+            "blockers": ["entrypoint is already available"],
+            "recommended_next_action": "verify_harness_runtime",
+        }
+    if not module:
+        runnable_modules = [
+            item
+            for item in plan.get("modules", [])
+            if item.get("importable") and item.get("module_main")
+        ]
+        if runnable_modules:
+            module = str(runnable_modules[0]["package"])
+        else:
+            return {
+                "ready": False,
+                "state": "adapter_target_required",
+                "module": None,
+                "blockers": [
+                    "no importable module with __main__.py was found; pass --module after inspecting the package API"
+                ],
+                "recommended_next_action": "choose_explicit_python_module_or_custom_adapter",
+            }
+    module_report = _module_report(module)
+    if not module_report["importable"]:
+        return {
+            "ready": False,
+            "state": "module_not_importable",
+            "module": module,
+            "module_report": module_report,
+            "blockers": [f"module is not importable: {module}"],
+            "recommended_next_action": "choose_importable_python_module",
+        }
+    return {
+        "ready": True,
+        "state": "python_module_wrapper",
+        "module": module,
+        "module_report": module_report,
+        "blockers": [],
+        "recommended_next_action": "write_wrapper_and_repaired_manifest",
+    }
+
+
+def _entrypoint_wrapper_path(external_plugins: Path, harness_name: str) -> Path:
+    return external_plugins / PLUGIN_ID / "entrypoints" / f"{sanitize_harness_name(harness_name)}.py"
+
+
+def _write_python_module_wrapper(path: Path, module: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    content = "\n".join(
+        [
+            "# Generated by CBN for a CLI-Anything harness whose declared entrypoint is missing.",
+            "# This wrapper stays under external_plugins and does not modify global PATH.",
+            "from __future__ import annotations",
+            "",
+            "import runpy",
+            "",
+            f"MODULE = {module!r}",
+            "",
+            "",
+            "if __name__ == \"__main__\":",
+            "    runpy.run_module(MODULE, run_name=\"__main__\", alter_sys=True)",
+            "",
+        ]
+    )
+    path.write_text(content, encoding="utf-8")
+
+
+def _entrypoint_repair_manifest(
+    plan: dict[str, Any],
+    strategy: dict[str, Any],
+    wrapper_path: Path,
+) -> dict[str, Any]:
+    manifest = json.loads(json.dumps(plan["evaluation"]["adaptation"]["manifest"]))
+    annotations = manifest.setdefault("metadata", {}).setdefault("annotations", {})
+    transport = manifest.setdefault("spec", {}).setdefault("transport", {})
+    annotations["cbn.repair.kind"] = "cli-anything-entrypoint-wrapper"
+    annotations["cbn.repair.original_command"] = str(transport.get("command", ""))
+    annotations["cbn.repair.original_argsTemplate"] = json.dumps(
+        transport.get("argsTemplate", []),
+        ensure_ascii=False,
+    )
+    annotations["cbn.repair.wrapper_path"] = str(wrapper_path)
+    annotations["cbn.repair.strategy"] = str(strategy.get("state"))
+    if strategy.get("module"):
+        annotations["cbn.repair.python_module"] = str(strategy["module"])
+    transport["kind"] = "pty"
+    transport["command"] = sys.executable
+    transport["argsTemplate"] = [str(wrapper_path)]
+    transport["cwdPolicy"] = transport.get("cwdPolicy", "workspace")
+    return manifest
 
 
 def _safe_plugin_report(builder: Any) -> dict[str, Any]:
