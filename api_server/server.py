@@ -45,6 +45,7 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/plugins"},
     {"method": "GET", "path": "/plugins/cli-anything/status"},
     {"method": "GET", "path": "/plugins/cli-anything/preflight"},
+    {"method": "GET", "path": "/plugins/cli-anything/provenance"},
     {"method": "GET", "path": "/audit"},
     {"method": "GET", "path": "/events"},
     {"method": "GET", "path": "/artifacts"},
@@ -176,6 +177,9 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/plugins/cli-anything/preflight":
             self._send(200, PluginManager().preflight("cli-anything"))
+            return
+        if parsed.path == "/plugins/cli-anything/provenance":
+            self._send(200, PluginManager().provenance("cli-anything"))
             return
         if parsed.path == "/registry/validate":
             path = Path(query.get("path", ["manifests"])[0])

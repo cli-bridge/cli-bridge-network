@@ -16,6 +16,7 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("POST", "/plugins/cli-anything/candidates"), routes)
         self.assertIn(("POST", "/plugins/cli-anything/probe-harness"), routes)
         self.assertIn(("POST", "/plugins/cli-anything/verify-harness"), routes)
+        self.assertIn(("GET", "/plugins/cli-anything/provenance"), routes)
         self.assertIn(("GET", "/protocols/check"), routes)
         self.assertIn(("GET", "/protocols/matrix"), routes)
         self.assertIn(("GET", "/protocols/workflows"), routes)
@@ -184,6 +185,16 @@ class DaemonApiTests(unittest.TestCase):
                 self.assertEqual(response.status, 200)
                 self.assertEqual(payload["action"], "harness-install-gimp")
                 self.assertIn("evaluate-harness", payload["notes"][0])
+
+    def test_cli_anything_provenance_route_returns_source_report(self):
+        with daemon_url() as base_url:
+            with urllib.request.urlopen(f"{base_url}/plugins/cli-anything/provenance", timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(response.status, 200)
+                self.assertEqual(payload["plugin_id"], "cli-anything")
+                self.assertIn("repository", payload)
+                self.assertIn("pip_packages", payload)
+                self.assertIn("entrypoints", payload)
 
     def test_cli_anything_verify_harness_route_returns_protocol_plan(self):
         with daemon_url() as base_url:

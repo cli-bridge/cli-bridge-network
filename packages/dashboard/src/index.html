@@ -60,6 +60,11 @@
             data-api-path="/plugins/cli-anything/status"
           >Status</button>
           <button
+            data-command="python -m cbn plugin provenance cli-anything"
+            data-api-method="GET"
+            data-api-path="/plugins/cli-anything/provenance"
+          >Provenance</button>
+          <button
             data-command="python -m cbn plugin plan cli-anything"
             data-api-method="POST"
             data-api-path="/plugins/plan"

@@ -18,6 +18,7 @@ class DashboardStaticTests(unittest.TestCase):
         self.assertIn("python -m cbn plugin install cli-anything --yes", self.html)
         self.assertIn("python -m cbn plugin update cli-anything --yes", self.html)
         self.assertIn("python -m cbn plugin status cli-anything", self.html)
+        self.assertIn("python -m cbn plugin provenance cli-anything", self.html)
         self.assertIn("python -m cbn plugin market cli-anything list", self.html)
         self.assertIn("python -m cbn plugin candidates cli-anything --query image --limit 20", self.html)
         self.assertIn("python -m cbn plugin candidates cli-anything --query image --limit 20 --with-probes", self.html)

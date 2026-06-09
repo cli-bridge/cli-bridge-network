@@ -1,7 +1,9 @@
 import json
 import subprocess
 import sys
+import tempfile
 import unittest
+from pathlib import Path
 
 from cbn_plugins.manager import PluginManager
 
@@ -43,6 +45,43 @@ class PluginManagerTests(unittest.TestCase):
         self.assertIn("plugin.entrypoints", check_ids)
         self.assertTrue(all(check["severity"] in {"error", "warning"} for check in result["checks"]))
 
+    def test_provenance_reports_source_package_and_entrypoint_fields(self):
+        result = PluginManager().provenance("cli-anything")
+        self.assertEqual(result["plugin_id"], "cli-anything")
+        self.assertIn("repository", result)
+        self.assertIn("pip_packages", result)
+        self.assertIn("entrypoints", result)
+        self.assertIn("ready_for_cli_hub", result)
+        self.assertIn("source_downloaded", result)
+        self.assertIn("next_commands", result)
+
+    def test_provenance_handles_not_downloaded_plugin(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            registry = root / "plugins" / "registry"
+            registry.mkdir(parents=True)
+            (registry / "example.json").write_text(
+                json.dumps(
+                    {
+                        "id": "example",
+                        "title": "Example",
+                        "description": "Example plugin",
+                        "source": {"repository": "https://example.com/example.git"},
+                        "install": {"pip_packages": []},
+                        "entrypoints": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = PluginManager(root=root).provenance("example")
+            self.assertFalse(result["source_downloaded"])
+            self.assertIsNone(result["source_trusted"])
+            self.assertFalse(result["repository"]["exists"])
+            self.assertEqual(result["pip_packages"], [])
+            self.assertEqual(result["entrypoints"], [])
+            self.assertEqual(result["blockers"], [])
+
     def test_cli_preflight_command_outputs_json(self):
         proc = subprocess.run(
             [sys.executable, "-m", "cbn", "plugin", "preflight", "cli-anything"],
@@ -55,6 +94,20 @@ class PluginManagerTests(unittest.TestCase):
         payload = json.loads(proc.stdout)
         self.assertEqual(payload["plugin_id"], "cli-anything")
         self.assertTrue(payload["checks"])
+
+    def test_cli_provenance_command_outputs_json(self):
+        proc = subprocess.run(
+            [sys.executable, "-m", "cbn", "plugin", "provenance", "cli-anything"],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["plugin_id"], "cli-anything")
+        self.assertIn("repository", payload)
+        self.assertIn("entrypoints", payload)
 
 
 if __name__ == "__main__":
