@@ -100,6 +100,8 @@ class DaemonApiTests(unittest.TestCase):
 
             self.assertEqual(response.status, 200)
             self.assertTrue(payload["dispatch_ready"])
+            self.assertEqual(payload["required_inputs"], ["harness", "module"])
+            self.assertEqual(payload["missing_inputs"], [])
             self.assertEqual(payload["api_request"]["path"], "/plugins/cli-anything/repair-entrypoint")
             self.assertTrue(payload["api_request"]["json"]["confirmed"])
 

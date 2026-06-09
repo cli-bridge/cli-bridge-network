@@ -70,6 +70,9 @@ class PluginManagerTests(unittest.TestCase):
         self.assertEqual(repair["kind"], "write")
         self.assertTrue(repair["requires_confirmation"])
         self.assertIn("runtime/manifests", repair["side_effects"])
+        self.assertEqual(repair["required_inputs"], ["harness", "module"])
+        self.assertEqual(repair["input_schema"]["harness"], "string")
+        self.assertEqual(repair["input_schema"]["module"], "string")
         self.assertGreater(result["summary"]["by_kind"]["gate"], 0)
         self.assertGreater(result["summary"]["write_or_execute_count"], 0)
 
@@ -96,6 +99,16 @@ class PluginManagerTests(unittest.TestCase):
             any("side_effects must be non-empty" in error for error in result["errors"])
         )
 
+    def test_validate_operation_catalog_reports_invalid_input_schema(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_example_plugin_manifest(root, invalid_input_schema=True)
+
+            result = PluginManager(root=root).validate_operation_catalog("example")
+
+        self.assertFalse(result["ok"])
+        self.assertTrue(any("input_schema must be an object" in error for error in result["errors"]))
+
     def test_operation_plan_resolves_read_only_descriptor(self):
         result = PluginManager().operation_plan("cli-anything", "candidates")
         self.assertTrue(result["ok"])
@@ -114,6 +127,8 @@ class PluginManagerTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertFalse(result["dispatch_ready"])
         self.assertIn("operation requires confirmed=true before dispatch", result["blockers"])
+        self.assertEqual(result["required_inputs"], ["harness", "module"])
+        self.assertEqual(result["missing_inputs"], [])
         self.assertEqual(result["resolved_payload"]["harness_name"], "py4csr")
         self.assertEqual(result["resolved_payload"]["module"], "py4csr.tables.rtf_formatter")
 
@@ -135,6 +150,8 @@ class PluginManagerTests(unittest.TestCase):
         result = PluginManager().operation_plan("cli-anything", "adapter-smoke", inputs={"harness": "py4csr"})
         self.assertFalse(result["ok"])
         self.assertIn("missing input: module", result["blockers"])
+        self.assertEqual(result["required_inputs"], ["harness", "module"])
+        self.assertEqual(result["missing_inputs"], ["module"])
 
     def test_operation_catalog_supports_manifest_declared_fake_provider(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -150,6 +167,7 @@ class PluginManagerTests(unittest.TestCase):
         fake = next(operation for operation in result["operations"] if operation["id"] == "fake-report")
         self.assertEqual(fake["kind"], "report")
         self.assertEqual(fake["api"]["path"], "/plugins/example/fake-report")
+        self.assertEqual(fake["required_inputs"], [])
         self.assertNotIn("adaptation-queue", operation_ids)
 
     def test_cli_operations_command_outputs_catalog(self):
@@ -205,6 +223,8 @@ class PluginManagerTests(unittest.TestCase):
         payload = json.loads(proc.stdout)
         self.assertEqual(payload["kind"], "PluginProviderOperationPlan")
         self.assertTrue(payload["dispatch_ready"])
+        self.assertEqual(payload["required_inputs"], ["harness", "module"])
+        self.assertEqual(payload["missing_inputs"], [])
         self.assertTrue(payload["resolved_payload"]["confirmed"])
 
     def test_provenance_handles_not_downloaded_plugin(self):
@@ -410,7 +430,11 @@ class PluginManagerTests(unittest.TestCase):
         self.assertEqual(payload["plugin_id"], "runtime.pty")
         self.assertTrue(payload["requires_confirmation"])
 
-def write_example_plugin_manifest(root: Path, unsafe_execute: bool = False) -> None:
+def write_example_plugin_manifest(
+    root: Path,
+    unsafe_execute: bool = False,
+    invalid_input_schema: bool = False,
+) -> None:
     registry = root / "plugins" / "registry"
     registry.mkdir(parents=True)
     operations = [
@@ -420,7 +444,7 @@ def write_example_plugin_manifest(root: Path, unsafe_execute: bool = False) -> N
             "kind": "report",
             "command": "python -m cbn plugin fake-report example",
             "api": {"method": "GET", "path": "/plugins/example/fake-report"},
-            "input_schema": {},
+            "input_schema": [] if invalid_input_schema else {},
         }
     ]
     if unsafe_execute:

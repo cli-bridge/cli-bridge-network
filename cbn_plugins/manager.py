@@ -179,7 +179,8 @@ class PluginManager:
         provided_inputs = dict(inputs or {})
         command, command_missing = _resolve_string_template(str(operation.get("command") or ""), provided_inputs)
         payload, payload_missing = _resolve_value_template(operation.get("payload_template", {}), provided_inputs)
-        blockers = sorted({f"missing input: {name}" for name in [*command_missing, *payload_missing]})
+        missing_inputs = sorted(set([*command_missing, *payload_missing]))
+        blockers = [f"missing input: {name}" for name in missing_inputs]
         validation = catalog["validation"]
         if not validation["ok"]:
             blockers.extend(f"catalog invalid: {error}" for error in validation["errors"])
@@ -203,6 +204,8 @@ class PluginManager:
             "requires_confirmation": bool(operation.get("requires_confirmation")),
             "side_effects": operation.get("side_effects", []),
             "inputs": provided_inputs,
+            "required_inputs": operation.get("required_inputs", []),
+            "missing_inputs": missing_inputs,
             "blockers": blockers,
             "operation": operation,
             "resolved_command": command,
@@ -593,12 +596,14 @@ class PluginManager:
         return {"plugin_id": plan.plugin_id, "action": plan.action, "results": results}
 
     def _operation_catalog_for_manifest(self, manifest: PluginManifest) -> dict[str, Any]:
-        operations = _dedupe_operations(
-            [
-                *_generic_plugin_operations(manifest),
-                *[operation.as_dict() for operation in manifest.operations],
-                *_provider_operations(manifest),
-            ]
+        operations = _enrich_operations(
+            _dedupe_operations(
+                [
+                    *_generic_plugin_operations(manifest),
+                    *[operation.as_dict() for operation in manifest.operations],
+                    *_provider_operations(manifest),
+                ]
+            )
         )
         by_kind: dict[str, int] = {}
         for operation in operations:
@@ -1191,7 +1196,7 @@ def _operation(
     input_schema: dict[str, Any] | None = None,
     payload_template: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return {
+    return _enrich_operation_descriptor({
         "id": operation_id,
         "title": title,
         "kind": kind,
@@ -1201,7 +1206,7 @@ def _operation(
         "side_effects": list(side_effects),
         "input_schema": input_schema or {},
         "payload_template": payload_template or {},
-    }
+    })
 
 
 def _dedupe_operations(operations: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1214,6 +1219,48 @@ def _dedupe_operations(operations: list[dict[str, Any]]) -> list[dict[str, Any]]
         selected.append(operation)
         seen.add(operation_id)
     return selected
+
+
+def _enrich_operations(operations: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [_enrich_operation_descriptor(operation) for operation in operations]
+
+
+def _enrich_operation_descriptor(operation: dict[str, Any]) -> dict[str, Any]:
+    enriched = dict(operation)
+    command = enriched.get("command", "")
+    payload = enriched.get("payload_template", {})
+    required_inputs = sorted(_required_inputs_for_templates(command, payload))
+    input_schema = enriched.get("input_schema", {})
+    if input_schema is None:
+        input_schema = {}
+    if isinstance(input_schema, dict):
+        input_schema = dict(input_schema)
+        for name in required_inputs:
+            input_schema.setdefault(name, "string")
+    enriched["required_inputs"] = required_inputs
+    enriched["input_schema"] = input_schema
+    enriched["input_count"] = len(required_inputs)
+    enriched["has_required_inputs"] = bool(required_inputs)
+    return enriched
+
+
+def _required_inputs_for_templates(command: Any, payload: Any) -> set[str]:
+    inputs: set[str] = set()
+    if isinstance(command, str):
+        inputs.update(_PLACEHOLDER_RE.findall(command))
+    _collect_placeholders(payload, inputs)
+    return inputs
+
+
+def _collect_placeholders(value: Any, inputs: set[str]) -> None:
+    if isinstance(value, str):
+        inputs.update(_PLACEHOLDER_RE.findall(value))
+    elif isinstance(value, list):
+        for item in value:
+            _collect_placeholders(item, inputs)
+    elif isinstance(value, dict):
+        for item in value.values():
+            _collect_placeholders(item, inputs)
 
 
 _OPERATION_KINDS = {"report", "gate", "plan", "execute", "write"}
@@ -1239,6 +1286,17 @@ def _validate_operation_catalog(manifest: PluginManifest, operations: list[dict[
         kind = operation.get("kind")
         if kind not in _OPERATION_KINDS:
             errors.append(f"{prefix}.kind is invalid: {kind}")
+        required_inputs = operation.get("required_inputs", [])
+        input_schema = operation.get("input_schema", {})
+        if not isinstance(required_inputs, list) or not all(isinstance(item, str) for item in required_inputs):
+            errors.append(f"{prefix}.required_inputs must be a list of strings")
+            required_inputs = []
+        if not isinstance(input_schema, dict):
+            errors.append(f"{prefix}.input_schema must be an object")
+            input_schema = {}
+        for name in required_inputs:
+            if name not in input_schema:
+                errors.append(f"{prefix}.input_schema is missing required input: {name}")
         command = operation.get("command")
         api = operation.get("api")
         if not isinstance(command, str) or not command:
@@ -1258,8 +1316,6 @@ def _validate_operation_catalog(manifest: PluginManifest, operations: list[dict[
                 errors.append(f"{prefix}.payload_template.confirmed cannot be false for {kind}")
         elif operation.get("requires_confirmation"):
             warnings.append(f"{prefix}.requires_confirmation is true for non-side-effect kind {kind}")
-        if not isinstance(operation.get("input_schema", {}), dict):
-            errors.append(f"{prefix}.input_schema must be an object")
         if not isinstance(operation.get("payload_template", {}), dict):
             errors.append(f"{prefix}.payload_template must be an object")
     return {
