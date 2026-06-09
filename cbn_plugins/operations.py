@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import json
 import subprocess
 import time
 import uuid
@@ -34,11 +35,30 @@ class PluginOperationRunner:
     def execute(self, plan: PluginPlan) -> dict[str, Any]:
         operation_id = str(uuid.uuid4())
         started_at = now_iso()
+        plugin_dir = Path(plan.plugin_dir)
+        plugin_dir.mkdir(parents=True, exist_ok=True)
+        lock = self._acquire_lock(plan, operation_id, started_at)
+        if not lock["acquired"]:
+            payload = {
+                "operation_id": operation_id,
+                "plugin_id": plan.plugin_id,
+                "action": plan.action,
+                "status": "blocked",
+                "started_at": started_at,
+                "completed_at": now_iso(),
+                "blockers": ["plugin operation already running"],
+                "lock": lock,
+                "results": [],
+            }
+            self._audit("plugin.operation.blocked", operation_id, plan, payload)
+            self._publish(EventType.PLUGIN_OPERATION_COMPLETED, plan.plugin_id, payload, operation_id)
+            return payload
+
         self._audit(
             "plugin.operation.started",
             operation_id,
             plan,
-            {"command_count": len(plan.commands)},
+            {"command_count": len(plan.commands), "lock": lock},
         )
         self._publish(
             EventType.PLUGIN_OPERATION_STARTED,
@@ -46,16 +66,18 @@ class PluginOperationRunner:
             {"operation_id": operation_id, "action": plan.action},
             operation_id,
         )
-        Path(plan.plugin_dir).mkdir(parents=True, exist_ok=True)
         results: list[dict[str, Any]] = []
         status = "completed"
 
-        for index, command in enumerate(plan.commands):
-            result = self._execute_command(operation_id, plan, index, command)
-            results.append(result)
-            if result.get("exit_code") not in (0, None) and not command.optional:
-                status = "failed"
-                break
+        try:
+            for index, command in enumerate(plan.commands):
+                result = self._execute_command(operation_id, plan, index, command)
+                results.append(result)
+                if result.get("exit_code") not in (0, None) and not command.optional:
+                    status = "failed"
+                    break
+        finally:
+            self._release_lock(lock)
 
         payload = {
             "operation_id": operation_id,
@@ -64,11 +86,48 @@ class PluginOperationRunner:
             "status": status,
             "started_at": started_at,
             "completed_at": now_iso(),
+            "lock": lock,
             "results": results,
         }
         self._audit("plugin.operation.completed", operation_id, plan, payload)
         self._publish(EventType.PLUGIN_OPERATION_COMPLETED, plan.plugin_id, payload, operation_id)
         return payload
+
+    def _acquire_lock(self, plan: PluginPlan, operation_id: str, started_at: str) -> dict[str, Any]:
+        lock_path = Path(plan.plugin_dir) / ".operation.lock"
+        holder_path = lock_path / "holder.json"
+        try:
+            lock_path.mkdir()
+        except FileExistsError:
+            return {
+                "acquired": False,
+                "path": str(lock_path),
+                "holder": _read_lock_holder(holder_path),
+            }
+        holder = {
+            "operation_id": operation_id,
+            "plugin_id": plan.plugin_id,
+            "action": plan.action,
+            "started_at": started_at,
+        }
+        holder_path.write_text(json.dumps(holder, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return {
+            "acquired": True,
+            "path": str(lock_path),
+            "holder": holder,
+        }
+
+    def _release_lock(self, lock: dict[str, Any]) -> None:
+        if not lock.get("acquired"):
+            return
+        lock_path = Path(str(lock["path"]))
+        holder_path = lock_path / "holder.json"
+        try:
+            if holder_path.exists():
+                holder_path.unlink()
+            lock_path.rmdir()
+        except OSError:
+            pass
 
     def _execute_command(
         self,
@@ -274,3 +333,10 @@ def _operation_env() -> dict[str, str]:
     env.setdefault("PYTHONIOENCODING", "utf-8")
     env.setdefault("PYTHONUTF8", "1")
     return env
+
+
+def _read_lock_holder(holder_path: Path) -> dict[str, Any] | None:
+    try:
+        return json.loads(holder_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None

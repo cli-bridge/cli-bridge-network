@@ -41,6 +41,8 @@ class PluginOperationTests(unittest.TestCase):
             result = runner.execute(plan)
 
             self.assertEqual(result["status"], "completed")
+            self.assertTrue(result["lock"]["acquired"])
+            self.assertFalse((root / "external_plugins" / "test-plugin" / ".operation.lock").exists())
             self.assertEqual(result["results"][0]["exit_code"], 0)
             self.assertTrue(result["results"][0]["artifact_ids"])
             event_types = [event["type"] for event in events.tail(limit=10)]
@@ -50,6 +52,57 @@ class PluginOperationTests(unittest.TestCase):
             audit_types = [event["type"] for event in audit.tail(limit=10)]
             self.assertIn("plugin.operation.completed", audit_types)
             self.assertEqual(artifacts.list(limit=1)[0]["kind"].split(".")[-1], "stdout")
+
+    def test_plugin_operation_blocks_when_lock_exists(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            audit = AuditLog(root / "audit.jsonl")
+            events = EventBus(root / "events.jsonl")
+            plugin_dir = root / "external_plugins" / "test-plugin"
+            lock_dir = plugin_dir / ".operation.lock"
+            lock_dir.mkdir(parents=True)
+            (lock_dir / "holder.json").write_text(
+                json.dumps(
+                    {
+                        "operation_id": "existing-operation",
+                        "plugin_id": "test-plugin",
+                        "action": "install",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            runner = PluginOperationRunner(
+                audit_log=audit,
+                event_bus=events,
+                artifact_store=ArtifactStore(root / "artifacts"),
+            )
+            plan = PluginPlan(
+                plugin_id="test-plugin",
+                action="install",
+                plugin_dir=str(plugin_dir),
+                commands=(
+                    PluginCommand(
+                        label="Should not run",
+                        argv=(sys.executable, "-c", "print('unexpected')"),
+                    ),
+                ),
+            )
+
+            result = runner.execute(plan)
+
+            self.assertEqual(result["status"], "blocked")
+            self.assertEqual(result["results"], [])
+            self.assertFalse(result["lock"]["acquired"])
+            self.assertEqual(result["lock"]["holder"]["operation_id"], "existing-operation")
+            self.assertTrue(lock_dir.exists())
+            audit_types = [event["type"] for event in audit.tail(limit=10)]
+            self.assertIn("plugin.operation.blocked", audit_types)
+            event_payloads = [
+                event["payload"]
+                for event in events.tail(limit=10)
+                if event["type"] == "plugin.operation.completed"
+            ]
+            self.assertEqual(event_payloads[0]["status"], "blocked")
 
     def test_plugin_operation_stops_on_required_failure(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -346,8 +346,9 @@ def main(argv: list[str] | None = None) -> int:
                     print(json.dumps(plan.as_dict(), ensure_ascii=False, indent=2))
                     return 2
                 runtime = build_runtime()
-                print(json.dumps(runtime.plugin_runner.execute(plan), ensure_ascii=False, indent=2))
-                return 0
+                result = runtime.plugin_runner.execute(plan)
+                print(json.dumps(result, ensure_ascii=False, indent=2))
+                return _operation_exit_code(result)
             if args.plan:
                 plan = manager.runtime_transport_plan(args.kind)
                 print(json.dumps(plan.as_dict(), ensure_ascii=False, indent=2))
@@ -543,8 +544,9 @@ def main(argv: list[str] | None = None) -> int:
                     print(json.dumps(gate, ensure_ascii=False, indent=2))
                     return 12
             runtime = build_runtime()
-            print(json.dumps(runtime.plugin_runner.execute(plan), ensure_ascii=False, indent=2))
-            return 0
+            result = runtime.plugin_runner.execute(plan)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return _operation_exit_code(result)
         if args.plugin_command == "plan":
             plan = manager.plan(
                 args.plugin_id,
@@ -568,8 +570,9 @@ def main(argv: list[str] | None = None) -> int:
                     print(json.dumps(gate, ensure_ascii=False, indent=2))
                     return 13
             runtime = build_runtime()
-            print(json.dumps(runtime.plugin_runner.execute(plan), ensure_ascii=False, indent=2))
-            return 0
+            result = runtime.plugin_runner.execute(plan)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return _operation_exit_code(result)
         if args.plugin_command == "update":
             plan = manager.plan(
                 args.plugin_id,
@@ -585,8 +588,9 @@ def main(argv: list[str] | None = None) -> int:
                     print(json.dumps(gate, ensure_ascii=False, indent=2))
                     return 13
             runtime = build_runtime()
-            print(json.dumps(runtime.plugin_runner.execute(plan), ensure_ascii=False, indent=2))
-            return 0
+            result = runtime.plugin_runner.execute(plan)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return _operation_exit_code(result)
 
     parser.print_help()
     return 0
@@ -606,3 +610,12 @@ def _read_json_arg(path: str) -> dict:
 
 def _known_parser_refs() -> set[str]:
     return {item["parser_ref"] for item in ParserRegistry.builtins().list()}
+
+
+def _operation_exit_code(result: dict) -> int:
+    status = result.get("status")
+    if status == "completed":
+        return 0
+    if status == "blocked":
+        return 14
+    return 15

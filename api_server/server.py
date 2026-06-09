@@ -395,7 +395,8 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 self._send(409, gate)
                 return
             plan = manager.runtime_transport_plan(kind)
-            self._send(200, runtime.plugin_runner.execute(plan))
+            result = runtime.plugin_runner.execute(plan)
+            self._send(200 if result["status"] == "completed" else 409, result)
             return
         if self.path == "/plugins/plan":
             manager = PluginManager()
@@ -438,7 +439,8 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 action=action,
                 include_codex_skill=bool(payload.get("include_codex_skill", False)),
             )
-            self._send(200, runtime.plugin_runner.execute(plan))
+            result = runtime.plugin_runner.execute(plan)
+            self._send(200 if result["status"] == "completed" else 409, result)
             return
         if self.path == "/plugins/cli-anything/market":
             hub = CliAnythingHub()
@@ -582,7 +584,8 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 if not gate["ok"]:
                     self._send(409, gate)
                     return
-            self._send(200, runtime.plugin_runner.execute(plan))
+            result = runtime.plugin_runner.execute(plan)
+            self._send(200 if result["status"] == "completed" else 409, result)
             return
         self._send(404, {"error": "not found", "routes": ROUTE_SUMMARY})
 
