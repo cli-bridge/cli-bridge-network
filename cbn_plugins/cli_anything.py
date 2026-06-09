@@ -25,6 +25,7 @@ from cbn_parsers.registry import ParserRegistry
 from cbn_plugins.manager import PluginCommand, PluginManager, PluginPlan
 from cbn_protocol.compatibility import check_all_protocols
 from cbn_protocol.readiness import protocol_readiness_report
+from cbn_protocol.smoke_suite import protocol_smoke_suite
 from cbn_workflow.catalog import list_workflows
 
 
@@ -630,6 +631,8 @@ class CliAnythingHub:
         title: str | None = None,
         from_market: bool = True,
         include_workflows: bool = True,
+        run_smoke_suite: bool = False,
+        smoke_extra_args: tuple[str, ...] = (),
     ) -> dict[str, Any]:
         probe = self.probe_harness(
             harness_name,
@@ -643,6 +646,7 @@ class CliAnythingHub:
                 "harness_name": harness_name,
                 "from_market": from_market,
                 "include_workflows": include_workflows,
+                "run_smoke_suite": run_smoke_suite,
                 "error": probe["error"],
                 "probe": probe,
             }
@@ -684,12 +688,24 @@ class CliAnythingHub:
             if include_workflows
             else []
         )
+        smoke_suite = _harness_protocol_smoke_suite(
+            registry=registry,
+            capability_id=capability_id,
+            include_workflows=include_workflows,
+            extra_args=smoke_extra_args,
+            run=run_smoke_suite,
+        )
+        if smoke_suite.get("run") and not smoke_suite.get("ok"):
+            verification_blockers = sorted(
+                set([*verification_blockers, "protocol smoke suite failed"])
+            )
         return {
             "ok": True,
             "plugin_id": PLUGIN_ID,
             "harness_name": harness_name,
             "from_market": from_market,
             "include_workflows": include_workflows,
+            "run_smoke_suite": run_smoke_suite,
             "capability_id": capability_id,
             "ready_for_manifest_write": bool(evaluation["gates"]["manifest_valid"] and not evaluation["blockers"]),
             "ready_for_runtime_verification": len(verification_blockers) == 0,
@@ -698,6 +714,7 @@ class CliAnythingHub:
             "registry": registry_status,
             "parser_contract": parser_contract,
             "protocols": _protocol_verification_summary(protocol_checks),
+            "protocol_smoke_suite": smoke_suite,
             "workflow_matches": workflow_matches,
             "verification_stages": _verification_stages(
                 harness_name=harness_name,
@@ -707,6 +724,7 @@ class CliAnythingHub:
                 registry_status=registry_status,
                 parser_contract=parser_contract,
                 protocol_checks=protocol_checks,
+                smoke_suite=smoke_suite,
             ),
             "probe": probe,
             "evaluation": evaluation,
@@ -718,6 +736,7 @@ class CliAnythingHub:
                 f"python -m cbn plugin harness cli-anything install {harness_name} --yes",
                 f"python -m cbn call {capability_id} --dry-run",
                 f"python -m cbn protocol check all --capability-id {capability_id}",
+                smoke_suite["command"],
                 f"python -m cbn mcp smoke --capability-id {capability_id}",
                 f"python -m cbn a2a smoke --capability-id {capability_id}",
                 f"python -m cbn acp smoke --capability-id {capability_id}",
@@ -831,6 +850,8 @@ class CliAnythingHub:
         candidate_limit: int = 10,
         include_candidates: bool = True,
         include_workflows: bool = True,
+        run_smoke_suite: bool = False,
+        smoke_extra_args: tuple[str, ...] = (),
     ) -> dict[str, Any]:
         """Return a repeatable read-only verification snapshot for CLI-Anything."""
 
@@ -841,6 +862,8 @@ class CliAnythingHub:
                 harness,
                 from_market=True,
                 include_workflows=include_workflows,
+                run_smoke_suite=run_smoke_suite,
+                smoke_extra_args=smoke_extra_args,
             )
             for harness in harnesses
         ]
@@ -873,6 +896,7 @@ class CliAnythingHub:
             and summary["workflow_internal_bridge_ready"] is not False,
             "plugin_id": PLUGIN_ID,
             "kind": "CliAnythingLiveVerification",
+            "run_smoke_suite": run_smoke_suite,
             "status": status,
             "environment": environment,
             "harnesses": harness_summary,
@@ -889,6 +913,7 @@ class CliAnythingHub:
                 "python -m cbn plugin candidates cli-anything --query image --limit 10 --with-probes --compact",
                 "python -m cbn plugin verify-harness cli-anything mermaid",
                 "python -m cbn plugin verify-harness cli-anything macrocli",
+                "python -m cbn plugin verify-harness cli-anything 3mf --smoke-suite --smoke-extra-arg=--help --no-workflows",
                 "python -m cbn call cli-anything.macrocli.backends",
                 "python -m cbn workflow run workflows/cli-anything-macrocli-mermaid-routing.example.json",
                 "python -m cbn protocol readiness --workflow-path workflows/cli-anything-macrocli-mermaid-routing.example.json",
@@ -1512,6 +1537,7 @@ def _verification_stages(
     registry_status: dict[str, Any],
     parser_contract: dict[str, Any],
     protocol_checks: dict[str, dict[str, Any]],
+    smoke_suite: dict[str, Any],
 ) -> list[dict[str, Any]]:
     gates = evaluation.get("gates", {})
     dry_run_ready = bool(registry_status.get("manifest_imported"))
@@ -1563,7 +1589,11 @@ def _verification_stages(
         },
         {
             "id": "smoke_protocol_facades",
-            "status": "ready" if gates.get("launch_ready") else "blocked",
+            "status": _smoke_suite_stage_status(smoke_suite, gates),
+            "command": smoke_suite.get("command"),
+            "run": bool(smoke_suite.get("run")),
+            "ok": smoke_suite.get("ok"),
+            "summary": smoke_suite.get("summary"),
             "commands": [
                 f"python -m cbn mcp smoke --capability-id {capability_id}",
                 f"python -m cbn a2a smoke --capability-id {capability_id}",
@@ -1571,6 +1601,83 @@ def _verification_stages(
             ],
         },
     ]
+
+
+def _harness_protocol_smoke_suite(
+    registry: ManifestRegistry,
+    capability_id: str,
+    include_workflows: bool,
+    extra_args: tuple[str, ...],
+    run: bool,
+) -> dict[str, Any]:
+    workflow_paths: tuple[str, ...] = ("workflows/example.json",) if include_workflows else ()
+    command = _protocol_smoke_suite_command(capability_id, extra_args, workflow_paths)
+    payload: dict[str, Any] = {
+        "run": run,
+        "ok": None,
+        "command": command,
+        "capability_id": capability_id,
+        "workflow_paths": list(workflow_paths),
+        "extra_args": list(extra_args),
+        "wire_compatible": False,
+        "summary": None,
+        "report": None,
+        "error": None,
+    }
+    if not run:
+        payload["status"] = "not_run"
+        return payload
+    try:
+        report = protocol_smoke_suite(
+            registry,
+            capability_ids=(capability_id,),
+            workflow_paths=workflow_paths,
+            extra_args=extra_args,
+            workflow_dry_run=True,
+        )
+    except Exception as exc:
+        payload.update({"status": "failed", "ok": False, "error": str(exc)})
+        return payload
+    payload.update(
+        {
+            "status": "completed" if report.get("ok") else "failed",
+            "ok": bool(report.get("ok")),
+            "wire_compatible": bool(report.get("wire_compatible")),
+            "summary": report.get("summary"),
+            "readiness": report.get("readiness"),
+            "bridge_contract": report.get("bridge_contract"),
+            "failures": report.get("failures", []),
+            "report": report,
+        }
+    )
+    return payload
+
+
+def _protocol_smoke_suite_command(
+    capability_id: str,
+    extra_args: tuple[str, ...],
+    workflow_paths: tuple[str, ...],
+) -> str:
+    parts = [
+        "python",
+        "-m",
+        "cbn",
+        "protocol",
+        "smoke-suite",
+        "--capability-id",
+        capability_id,
+    ]
+    for extra_arg in extra_args:
+        parts.append(f"--extra-arg={extra_arg}")
+    for workflow_path in workflow_paths:
+        parts.extend(["--workflow-path", workflow_path, "--workflow-dry-run"])
+    return " ".join(parts)
+
+
+def _smoke_suite_stage_status(smoke_suite: dict[str, Any], gates: dict[str, Any]) -> str:
+    if smoke_suite.get("run"):
+        return "completed" if smoke_suite.get("ok") else "failed"
+    return "ready" if gates.get("launch_ready") else "blocked"
 
 
 def _policy_requires_confirmation(policy: dict[str, Any]) -> bool:
@@ -1640,6 +1747,7 @@ def _harness_live_summary(report: dict[str, Any]) -> dict[str, Any]:
     evaluation = report.get("evaluation") if isinstance(report.get("evaluation"), dict) else {}
     gates = evaluation.get("gates") if isinstance(evaluation.get("gates"), dict) else {}
     parser_contract = report.get("parser_contract") if isinstance(report.get("parser_contract"), dict) else {}
+    smoke_suite = report.get("protocol_smoke_suite") if isinstance(report.get("protocol_smoke_suite"), dict) else {}
     return {
         "harness_name": report.get("harness_name"),
         "capability_id": report.get("capability_id"),
@@ -1654,6 +1762,8 @@ def _harness_live_summary(report: dict[str, Any]) -> dict[str, Any]:
         "launch_ready": bool(gates.get("launch_ready")),
         "parser_ref": parser_contract.get("parser_ref"),
         "parser_verified": bool(parser_contract.get("verified")),
+        "protocol_smoke_suite_run": bool(smoke_suite.get("run")),
+        "protocol_smoke_suite_ok": smoke_suite.get("ok"),
         "protocol_wire_compatible": any(
             protocol.get("wire_compatible")
             for protocol in (report.get("protocols") or {}).values()
@@ -1716,6 +1826,12 @@ def _live_verification_summary(
         ),
         "launch_ready_harness_count": sum(1 for item in harness_summary if item["launch_ready"]),
         "unverified_parser_count": sum(1 for item in harness_summary if not item["parser_verified"]),
+        "protocol_smoke_suite_run_count": sum(1 for item in harness_summary if item["protocol_smoke_suite_run"]),
+        "protocol_smoke_suite_passed_count": sum(
+            1
+            for item in harness_summary
+            if item["protocol_smoke_suite_run"] and item["protocol_smoke_suite_ok"]
+        ),
         "candidate_query": candidates.get("query") if candidates else None,
         "candidate_market_count": candidates.get("market_count") if candidates else None,
         "candidate_blocked_count": candidates.get("blocked_count") if candidates else None,

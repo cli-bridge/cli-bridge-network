@@ -522,6 +522,8 @@ def main(argv: list[str] | None = None) -> int:
                 title=args.title,
                 from_market=args.from_market,
                 include_workflows=args.include_workflows,
+                run_smoke_suite=args.smoke_suite,
+                smoke_extra_args=tuple(args.smoke_extra_arg),
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0 if result["ok"] else 6
@@ -535,6 +537,8 @@ def main(argv: list[str] | None = None) -> int:
                 candidate_limit=args.candidate_limit,
                 include_candidates=args.include_candidates,
                 include_workflows=args.include_workflows,
+                run_smoke_suite=args.smoke_suite,
+                smoke_extra_args=tuple(args.smoke_extra_arg),
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0 if result["ok"] else 6

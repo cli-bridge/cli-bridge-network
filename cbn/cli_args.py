@@ -371,6 +371,17 @@ def build_parser() -> argparse.ArgumentParser:
         dest="include_workflows",
         help="Skip workflow reference lookup.",
     )
+    plugin_verify.add_argument(
+        "--smoke-suite",
+        action="store_true",
+        help="Run the protocol smoke suite for this harness capability.",
+    )
+    plugin_verify.add_argument(
+        "--smoke-extra-arg",
+        action="append",
+        default=[],
+        help="Extra arg passed to the harness capability when --smoke-suite is used; repeatable.",
+    )
 
     plugin_live = plugin_subcommands.add_parser(
         "live-verification",
@@ -396,6 +407,17 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_false",
         dest="include_workflows",
         help="Skip workflow protocol readiness.",
+    )
+    plugin_live.add_argument(
+        "--smoke-suite",
+        action="store_true",
+        help="Run protocol smoke suite for every selected harness.",
+    )
+    plugin_live.add_argument(
+        "--smoke-extra-arg",
+        action="append",
+        default=[],
+        help="Extra arg passed to harness capabilities when --smoke-suite is used; repeatable.",
     )
 
     plugin_candidates = plugin_subcommands.add_parser(

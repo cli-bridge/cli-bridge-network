@@ -569,6 +569,8 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 title=payload.get("title"),
                 from_market=bool(payload.get("from_market", True)),
                 include_workflows=bool(payload.get("include_workflows", True)),
+                run_smoke_suite=bool(payload.get("run_smoke_suite", False)),
+                smoke_extra_args=tuple(payload.get("smoke_extra_args", [])),
             )
             self._send(200 if result["ok"] else 502, result)
             return
@@ -583,6 +585,8 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 candidate_limit=int(payload.get("candidate_limit", 10)),
                 include_candidates=bool(payload.get("include_candidates", True)),
                 include_workflows=bool(payload.get("include_workflows", True)),
+                run_smoke_suite=bool(payload.get("run_smoke_suite", False)),
+                smoke_extra_args=tuple(payload.get("smoke_extra_args", [])),
             )
             self._send(200 if result["ok"] else 502, result)
             return

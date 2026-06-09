@@ -189,6 +189,12 @@
             data-api-body='{"harnesses":["mermaid","macrocli","3mf"],"candidate_query":"file","candidate_limit":10,"include_candidates":true,"include_workflows":true}'
           >Live Verification</button>
           <button
+            data-command="python -m cbn plugin verify-harness cli-anything 3mf --smoke-suite --smoke-extra-arg=--help --no-workflows"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/verify-harness"
+            data-api-body='{"harness_name":"3mf","from_market":true,"include_workflows":false,"run_smoke_suite":true,"smoke_extra_args":["--help"]}'
+          >Verify 3MF Smoke</button>
+          <button
             data-command="python -m cbn plugin market cli-anything info gimp"
             data-api-method="POST"
             data-api-path="/plugins/cli-anything/market"

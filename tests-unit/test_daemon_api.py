@@ -474,6 +474,57 @@ class DaemonApiTests(unittest.TestCase):
                 self.assertFalse(payload["include_workflows"])
                 self.assertIn("protocols", payload)
                 self.assertIn("verification_stages", payload)
+                self.assertFalse(payload["protocol_smoke_suite"]["run"])
+
+    def test_cli_anything_verify_harness_route_accepts_smoke_suite_payload(self):
+        class FakeHub:
+            def verify_harness(
+                self,
+                harness_name,
+                title=None,
+                from_market=True,
+                include_workflows=True,
+                run_smoke_suite=False,
+                smoke_extra_args=(),
+            ):
+                return {
+                    "ok": True,
+                    "plugin_id": "cli-anything",
+                    "harness_name": harness_name,
+                    "from_market": from_market,
+                    "include_workflows": include_workflows,
+                    "run_smoke_suite": run_smoke_suite,
+                    "smoke_extra_args": list(smoke_extra_args),
+                    "protocol_smoke_suite": {
+                        "run": run_smoke_suite,
+                        "ok": True,
+                        "command": "python -m cbn protocol smoke-suite",
+                    },
+                    "protocols": {},
+                    "verification_stages": [],
+                }
+
+        with patch("api_server.server.CliAnythingHub", FakeHub):
+            with daemon_url() as base_url:
+                request = urllib.request.Request(
+                    f"{base_url}/plugins/cli-anything/verify-harness",
+                    data=json.dumps(
+                        {
+                            "harness_name": "3mf",
+                            "include_workflows": False,
+                            "run_smoke_suite": True,
+                            "smoke_extra_args": ["--help"],
+                        }
+                    ).encode("utf-8"),
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                    self.assertEqual(response.status, 200)
+                    self.assertTrue(payload["run_smoke_suite"])
+                    self.assertEqual(payload["smoke_extra_args"], ["--help"])
+                    self.assertTrue(payload["protocol_smoke_suite"]["run"])
 
     def test_cli_anything_live_verification_route_returns_snapshot(self):
         class FakeHub:
@@ -484,11 +535,14 @@ class DaemonApiTests(unittest.TestCase):
                 candidate_limit=10,
                 include_candidates=True,
                 include_workflows=True,
+                run_smoke_suite=False,
+                smoke_extra_args=(),
             ):
                 return {
                     "ok": True,
                     "plugin_id": "cli-anything",
                     "kind": "CliAnythingLiveVerification",
+                    "run_smoke_suite": run_smoke_suite,
                     "harnesses": [{"harness_name": harnesses[0], "launch_ready": True}],
                     "candidate_scan": {"query": candidate_query, "selected_count": candidate_limit},
                     "workflow_readiness": {"internal_bridge_ready": include_workflows},

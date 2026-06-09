@@ -83,6 +83,14 @@ if (!html.includes('data-api-path="/plugins/cli-anything/live-verification"')) {
   throw new Error("Dashboard does not wire CLI-Anything live verification to the daemon API.");
 }
 
+if (!html.includes("python -m cbn plugin verify-harness cli-anything 3mf --smoke-suite --smoke-extra-arg=--help --no-workflows")) {
+  throw new Error("Dashboard does not expose the CLI-Anything harness smoke-suite verification command.");
+}
+
+if (!html.includes('data-api-body=\'{"harness_name":"3mf","from_market":true,"include_workflows":false,"run_smoke_suite":true,"smoke_extra_args":["--help"]}\'')) {
+  throw new Error("Dashboard does not wire CLI-Anything harness smoke-suite verification to the daemon API.");
+}
+
 if (!html.includes('data-api-body=\'{"query":"file","limit":20,"compact":true}\'')) {
   throw new Error("Dashboard candidate ranking API body is not compact.");
 }

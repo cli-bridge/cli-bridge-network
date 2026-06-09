@@ -36,8 +36,8 @@ def protocol_smoke_suite(
 ) -> dict[str, Any]:
     """Run a bounded MCP/A2A/ACP smoke suite for selected CBN surfaces."""
 
-    selected_capabilities = tuple(capability_ids or DEFAULT_SMOKE_CAPABILITIES)
-    selected_workflows = tuple(workflow_paths or DEFAULT_SMOKE_WORKFLOWS)
+    selected_capabilities = tuple(DEFAULT_SMOKE_CAPABILITIES if capability_ids is None else capability_ids)
+    selected_workflows = tuple(DEFAULT_SMOKE_WORKFLOWS if workflow_paths is None else workflow_paths)
     checks: list[dict[str, Any]] = []
 
     for capability_id in selected_capabilities:

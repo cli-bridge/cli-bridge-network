@@ -211,6 +211,17 @@ class ProtocolExportTests(unittest.TestCase):
         self.assertTrue(payload["bridge_contract"]["ok"])
         self.assertEqual(payload["failures"], [])
 
+    def test_protocol_smoke_suite_can_skip_workflows(self):
+        payload = protocol_smoke_suite(
+            self.registry,
+            capability_ids=("git.version",),
+            workflow_paths=(),
+        )
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["workflow_paths"], [])
+        self.assertEqual(payload["summary"]["check_count"], 3)
+        self.assertEqual(payload["summary"]["by_kind"]["workflow"]["passed"], 0)
+
     def test_cli_protocol_export(self):
         proc = subprocess.run(
             [sys.executable, "-m", "cbn", "protocol", "export", "mcp", "--capability-id", "git.status"],

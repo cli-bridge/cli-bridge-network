@@ -393,9 +393,84 @@ class CliAnythingHubTests(unittest.TestCase):
             self.assertIn("mcp", result["protocols"])
             self.assertIn("status_counts", result["protocols"]["mcp"])
             self.assertEqual(result["parser_contract"]["parser_ref"], "cli-anything.raw")
+            self.assertFalse(result["protocol_smoke_suite"]["run"])
+            self.assertEqual(result["protocol_smoke_suite"]["status"], "not_run")
             stage_ids = [item["id"] for item in result["verification_stages"]]
             self.assertIn("check_protocol_exports", stage_ids)
             self.assertIn("smoke_protocol_facades", stage_ids)
+
+    def test_verify_harness_can_run_protocol_smoke_suite(self):
+        class FakeHub(CliAnythingHub):
+            def status(self) -> dict:
+                return {
+                    "plugin_id": "cli-anything",
+                    "entrypoint": "cli-hub",
+                    "entrypoint_path": sys.executable,
+                    "entrypoint_available": True,
+                    "source_repo_dir": "external_plugins/cli-anything/repo",
+                    "source_repo_available": True,
+                    "version": "cli-hub test",
+                }
+
+            def info(self, harness_name: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "info", harness_name),
+                    exit_code=0,
+                    stdout=f"Entry point: {sys.executable}\nRequires: nothing\nStatus: installed\n",
+                    stderr="",
+                )
+
+            def search_market(self, query: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "search", query, "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[SAMPLE_MERMAID_RECORD],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            hub = FakeHub(root=Path(tmp))
+            hub.write_harness_manifest("mermaid", market_record=SAMPLE_MERMAID_RECORD)
+            with patch(
+                "cbn_plugins.cli_anything.pty_backend_status",
+                return_value={
+                    "kind": "pty",
+                    "platform": sys.platform,
+                    "backend": "test-pty",
+                    "available": True,
+                    "install_hint": None,
+                },
+            ), patch(
+                "cbn_plugins.cli_anything.protocol_smoke_suite",
+                return_value={
+                    "ok": True,
+                    "wire_compatible": False,
+                    "summary": {"check_count": 3, "failed_count": 0},
+                    "readiness": {"internal_bridge_ready": True},
+                    "bridge_contract": {"ok": True},
+                    "failures": [],
+                },
+            ) as smoke:
+                result = hub.verify_harness(
+                    "mermaid",
+                    from_market=True,
+                    include_workflows=False,
+                    run_smoke_suite=True,
+                    smoke_extra_args=("--help",),
+                )
+
+            self.assertTrue(result["protocol_smoke_suite"]["run"])
+            self.assertTrue(result["protocol_smoke_suite"]["ok"])
+            self.assertEqual(result["protocol_smoke_suite"]["summary"]["failed_count"], 0)
+            self.assertIn("--extra-arg=--help", result["protocol_smoke_suite"]["command"])
+            self.assertEqual(result["protocol_smoke_suite"]["workflow_paths"], [])
+            stages = {item["id"]: item for item in result["verification_stages"]}
+            self.assertEqual(stages["smoke_protocol_facades"]["status"], "completed")
+            smoke.assert_called_once()
+            self.assertEqual(smoke.call_args.kwargs["capability_ids"], ("cli-anything.mermaid.launch",))
+            self.assertEqual(smoke.call_args.kwargs["workflow_paths"], ())
+            self.assertEqual(smoke.call_args.kwargs["extra_args"], ("--help",))
 
     def test_verify_harness_reports_runtime_ready_after_import_and_install(self):
         class FakeHub(CliAnythingHub):
