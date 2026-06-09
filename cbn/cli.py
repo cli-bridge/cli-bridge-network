@@ -704,6 +704,19 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0 if result["ok"] else 6
+        if args.plugin_command == "promotion-gate":
+            if args.plugin_id != "cli-anything":
+                raise KeyError(f"promotion-gate is not implemented for plugin: {args.plugin_id}")
+            result = CliAnythingHub().promotion_gate(
+                args.harness_name,
+                title=args.title,
+                from_market=args.from_market,
+                include_workflows=args.include_workflows,
+                run_smoke_suite=args.smoke_suite,
+                smoke_extra_args=tuple(args.smoke_extra_arg),
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["ok"] else 6
         if args.plugin_command == "adapter-targets":
             if args.plugin_id != "cli-anything":
                 raise KeyError(f"adapter-targets is not implemented for plugin: {args.plugin_id}")

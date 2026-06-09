@@ -678,6 +678,34 @@ def build_parser() -> argparse.ArgumentParser:
     )
     plugin_repair_entrypoint.add_argument("--smoke-timeout", type=int, default=10)
 
+    plugin_promotion_gate = plugin_subcommands.add_parser(
+        "promotion-gate",
+        help="Check whether a repaired CLI-Anything runtime overlay can be promoted to portable manifests.",
+    )
+    plugin_promotion_gate.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
+    plugin_promotion_gate.add_argument("harness_name", help="Harness name from the plugin market.")
+    plugin_promotion_gate.add_argument("--from-market", action="store_true", default=True)
+    plugin_promotion_gate.add_argument(
+        "--offline",
+        action="store_false",
+        dest="from_market",
+        help="Gate local overlay promotion without requiring market metadata.",
+    )
+    plugin_promotion_gate.add_argument("--title", help="Optional title override for generated preview manifests.")
+    plugin_promotion_gate.add_argument("--no-workflows", action="store_false", dest="include_workflows")
+    plugin_promotion_gate.set_defaults(include_workflows=True)
+    plugin_promotion_gate.add_argument(
+        "--smoke-suite",
+        action="store_true",
+        help="Run protocol smoke-suite evidence as part of the promotion gate.",
+    )
+    plugin_promotion_gate.add_argument(
+        "--smoke-extra-arg",
+        action="append",
+        default=[],
+        help="Extra arg passed to the capability during protocol smoke-suite.",
+    )
+
     plugin_adapter_targets = plugin_subcommands.add_parser(
         "adapter-targets",
         help="Inspect installed Python packages for CLI-like modules that can back a CLI-Anything adapter.",

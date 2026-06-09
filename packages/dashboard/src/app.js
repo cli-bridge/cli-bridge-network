@@ -321,6 +321,7 @@ function operationSummary(payload) {
     payload?.recommended_next_action ? `next ${payload.recommended_next_action}` : null,
     payload?.lifecycle?.state ? `state ${payload.lifecycle.state}` : null,
     payload?.install_candidate !== undefined ? `install candidate ${Boolean(payload.install_candidate)}` : null,
+    payload?.ready_for_promotion !== undefined ? `promotion ready ${Boolean(payload.ready_for_promotion)}` : null,
     payload?.requires_confirmation !== undefined ? `confirmation ${Boolean(payload.requires_confirmation)}` : null,
   ];
   return parts.filter(Boolean).join(" | ") || "Operation response received.";
@@ -353,6 +354,9 @@ function operationBlockers(payload) {
   }
   if (Array.isArray(payload?.evaluation?.blockers)) {
     return payload.evaluation.blockers;
+  }
+  if (Array.isArray(payload?.promotion_blockers)) {
+    return payload.promotion_blockers;
   }
   return [];
 }

@@ -237,6 +237,12 @@
             data-api-body='{"harness_name":"py4csr","from_market":true,"module":"py4csr.tables.rtf_formatter","require_smoke":true,"smoke_args":["--help"],"smoke_timeout_seconds":10}'
           >Repair Smoke Gate</button>
           <button
+            data-command="python -m cbn plugin promotion-gate cli-anything py4csr --from-market --smoke-suite --smoke-extra-arg=--help"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/promotion-gate"
+            data-api-body='{"harness_name":"py4csr","from_market":true,"run_smoke_suite":true,"smoke_extra_args":["--help"]}'
+          >Overlay Promotion Gate</button>
+          <button
             data-command="python -m cbn plugin live-verification cli-anything"
             data-api-method="POST"
             data-api-path="/plugins/cli-anything/live-verification"

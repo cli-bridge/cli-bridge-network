@@ -114,6 +114,7 @@ ROUTE_SUMMARY = [
     {"method": "POST", "path": "/plugins/cli-anything/blocked-plan"},
     {"method": "POST", "path": "/plugins/cli-anything/repair-plan"},
     {"method": "POST", "path": "/plugins/cli-anything/repair-entrypoint"},
+    {"method": "POST", "path": "/plugins/cli-anything/promotion-gate"},
     {"method": "POST", "path": "/plugins/cli-anything/adapter-targets"},
     {"method": "POST", "path": "/plugins/cli-anything/adapter-smoke"},
     {"method": "POST", "path": "/plugins/cli-anything/adaptation-gate"},
@@ -828,6 +829,21 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 require_smoke=bool(payload.get("require_smoke", False)),
                 smoke_args=tuple(smoke_args_raw),
                 smoke_timeout_seconds=int(payload.get("smoke_timeout_seconds", 10)),
+            )
+            self._send(200 if result["ok"] else 502, result)
+            return
+        if self.path == "/plugins/cli-anything/promotion-gate":
+            smoke_args_raw = payload.get("smoke_extra_args", [])
+            if not isinstance(smoke_args_raw, list) or not all(isinstance(item, str) for item in smoke_args_raw):
+                self._send(400, {"error": "smoke_extra_args must be a list of strings"})
+                return
+            result = CliAnythingHub().promotion_gate(
+                payload["harness_name"],
+                title=payload.get("title"),
+                from_market=bool(payload.get("from_market", True)),
+                include_workflows=bool(payload.get("include_workflows", True)),
+                run_smoke_suite=bool(payload.get("run_smoke_suite", False)),
+                smoke_extra_args=tuple(smoke_args_raw),
             )
             self._send(200 if result["ok"] else 502, result)
             return

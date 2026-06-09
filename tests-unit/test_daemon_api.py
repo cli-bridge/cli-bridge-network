@@ -17,6 +17,7 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("POST", "/plugins/cli-anything/candidates"), routes)
         self.assertIn(("POST", "/plugins/cli-anything/probe-harness"), routes)
         self.assertIn(("POST", "/plugins/cli-anything/verify-harness"), routes)
+        self.assertIn(("POST", "/plugins/cli-anything/promotion-gate"), routes)
         self.assertIn(("POST", "/plugins/cli-anything/live-verification"), routes)
         self.assertIn(("POST", "/plugins/cli-anything/mvp-plan"), routes)
         self.assertIn(("POST", "/plugins/cli-anything/bootstrap-plan"), routes)
@@ -642,6 +643,58 @@ class DaemonApiTests(unittest.TestCase):
                     self.assertEqual(payload["smoke_args"], ["--help"])
                     self.assertEqual(payload["smoke_timeout_seconds"], 11)
                     self.assertEqual(payload["execution"]["status"], "requires_confirmation")
+
+    def test_cli_anything_promotion_gate_route_returns_overlay_report(self):
+        class FakeHub:
+            def promotion_gate(
+                self,
+                harness_name,
+                title=None,
+                from_market=True,
+                include_workflows=True,
+                run_smoke_suite=False,
+                smoke_extra_args=(),
+            ):
+                return {
+                    "ok": True,
+                    "plugin_id": "cli-anything",
+                    "kind": "CliAnythingOverlayPromotionGate",
+                    "harness_name": harness_name,
+                    "title": title,
+                    "from_market": from_market,
+                    "include_workflows": include_workflows,
+                    "run_smoke_suite": run_smoke_suite,
+                    "smoke_extra_args": list(smoke_extra_args),
+                    "ready_for_promotion": False,
+                    "promotion_blockers": ["parser output contract is not verified in the manifest"],
+                }
+
+        with patch("api_server.server.CliAnythingHub", FakeHub):
+            with daemon_url() as base_url:
+                request = urllib.request.Request(
+                    f"{base_url}/plugins/cli-anything/promotion-gate",
+                    data=json.dumps(
+                        {
+                            "harness_name": "py4csr",
+                            "title": "Py4CSR",
+                            "from_market": True,
+                            "include_workflows": False,
+                            "run_smoke_suite": True,
+                            "smoke_extra_args": ["--help"],
+                        }
+                    ).encode("utf-8"),
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(payload["harness_name"], "py4csr")
+                    self.assertEqual(payload["title"], "Py4CSR")
+                    self.assertFalse(payload["include_workflows"])
+                    self.assertTrue(payload["run_smoke_suite"])
+                    self.assertEqual(payload["smoke_extra_args"], ["--help"])
+                    self.assertFalse(payload["ready_for_promotion"])
 
     def test_cli_anything_adapter_targets_route_returns_candidate_report(self):
         class FakeHub:

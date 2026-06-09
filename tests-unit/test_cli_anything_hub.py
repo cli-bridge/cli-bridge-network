@@ -3284,6 +3284,75 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertIn("strategy", payload)
         self.assertIn("execution", payload)
 
+    def test_promotion_gate_blocks_unverified_runtime_overlay(self):
+        class FakeHub(CliAnythingHub):
+            def info(self, harness_name: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "info", harness_name),
+                    exit_code=0,
+                    stdout="Entry point: tracecsr\nStatus: installed\n",
+                    stderr="",
+                )
+
+            def search_market(self, query: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "search", query),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[SAMPLE_PY4CSR_RECORD],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            hub = FakeHub(root=Path(tmp))
+            manifest = hub.manifest_for_harness("py4csr", market_record=SAMPLE_PY4CSR_RECORD)
+            manifest["metadata"].setdefault("annotations", {})["cbn.repair.kind"] = "cli-anything-entrypoint-wrapper"
+            local_manifest = hub.paths.local_manifests / "cli-anything.py4csr.launch.json"
+            local_manifest.parent.mkdir(parents=True)
+            local_manifest.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+
+            result = hub.promotion_gate("py4csr", from_market=True)
+
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["ready_for_promotion"])
+        self.assertEqual(result["source"]["kind"], "runtime_local_overlay")
+        self.assertTrue(result["source"]["entrypoint_repair_active"])
+        self.assertIn("parser output contract is not verified in the manifest", result["promotion_blockers"])
+        self.assertIn("parser fixtures do not list this capability as verified", result["promotion_blockers"])
+        self.assertIn("protocol smoke suite was not run for promotion", result["promotion_blockers"])
+        self.assertEqual(
+            result["requirements"][0],
+            {
+                "id": "runtime_overlay_source",
+                "status": "passed",
+                "evidence": "runtime_local_overlay",
+            },
+        )
+
+    def test_cli_promotion_gate_outputs_overlay_report(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "plugin",
+                "promotion-gate",
+                "cli-anything",
+                "py4csr",
+                "--no-workflows",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertIn(proc.returncode, {0, 6})
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["plugin_id"], "cli-anything")
+        self.assertEqual(payload["kind"], "CliAnythingOverlayPromotionGate")
+        self.assertIn("ready_for_promotion", payload)
+        self.assertIn("requirements", payload)
+
     def test_cli_adapter_targets_outputs_candidate_report(self):
         proc = subprocess.run(
             [
