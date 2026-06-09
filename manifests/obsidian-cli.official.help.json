@@ -1,0 +1,44 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "ToolManifest",
+  "metadata": {
+    "id": "obsidian-cli.official.help",
+    "title": "Obsidian Official CLI Help",
+    "labels": {
+      "adapter": "direct-cli",
+      "profile": "obsidian-cli",
+      "vendor": "obsidian",
+      "category": "knowledge-base"
+    },
+    "annotations": {
+      "cbn.adapter.profile": "obsidian-cli",
+      "cbn.adapter.action": "official-help",
+      "cbn.thread.evidence": "official shim found at D:/Programs/Obsidian/Obsidian.com; CLI requires Settings > General > Advanced enablement",
+      "cbn.auth_gate": "requires Obsidian desktop process and GUI CLI toggle",
+      "cbn.control_plane": "official desktop CLI"
+    }
+  },
+  "spec": {
+    "transport": {
+      "kind": "stdio",
+      "command": "python",
+      "argsTemplate": [
+        "-m",
+        "cbn_tools.external_cli",
+        "obsidian-cli",
+        "official-help"
+      ],
+      "cwdPolicy": "workspace",
+      "timeoutSeconds": 20
+    },
+    "policy": {
+      "risk": "read",
+      "requiresConfirmation": false,
+      "network": "deny"
+    },
+    "output": {
+      "parserRef": "raw.text",
+      "verified": false
+    }
+  }
+}

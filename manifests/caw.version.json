@@ -1,0 +1,44 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "ToolManifest",
+  "metadata": {
+    "id": "caw.version",
+    "title": "Cobo Agentic Wallet Version",
+    "labels": {
+      "adapter": "direct-cli",
+      "profile": "caw",
+      "vendor": "cobo",
+      "category": "wallet"
+    },
+    "annotations": {
+      "cbn.adapter.profile": "caw",
+      "cbn.adapter.action": "version",
+      "cbn.parser_fixture": "parser_fixtures/direct-cli.raw.probes.json",
+      "cbn.thread.evidence": "caw --version returned v0.2.84 via WSL",
+      "cbn.auth_gate": "none for version probe"
+    }
+  },
+  "spec": {
+    "transport": {
+      "kind": "stdio",
+      "command": "python",
+      "argsTemplate": [
+        "-m",
+        "cbn_tools.external_cli",
+        "caw",
+        "version"
+      ],
+      "cwdPolicy": "workspace",
+      "timeoutSeconds": 20
+    },
+    "policy": {
+      "risk": "read",
+      "requiresConfirmation": false,
+      "network": "deny"
+    },
+    "output": {
+      "parserRef": "raw.text",
+      "verified": true
+    }
+  }
+}

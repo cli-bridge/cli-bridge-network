@@ -1,0 +1,43 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "ToolManifest",
+  "metadata": {
+    "id": "jimeng.list_task",
+    "title": "Jimeng/Dreamina Task List",
+    "labels": {
+      "adapter": "direct-cli",
+      "profile": "jimeng",
+      "vendor": "dreamina",
+      "category": "media-generation"
+    },
+    "annotations": {
+      "cbn.adapter.profile": "jimeng",
+      "cbn.adapter.action": "list-task",
+      "cbn.auth_gate": "requires Dreamina OAuth login state",
+      "cbn.output_contract": "future parser should extract task ids, statuses, result URLs, and artifact ids"
+    }
+  },
+  "spec": {
+    "transport": {
+      "kind": "stdio",
+      "command": "python",
+      "argsTemplate": [
+        "-m",
+        "cbn_tools.external_cli",
+        "jimeng",
+        "list-task"
+      ],
+      "cwdPolicy": "workspace",
+      "timeoutSeconds": 120
+    },
+    "policy": {
+      "risk": "external-network",
+      "requiresConfirmation": true,
+      "network": "requires-confirmation"
+    },
+    "output": {
+      "parserRef": "raw.text",
+      "verified": false
+    }
+  }
+}

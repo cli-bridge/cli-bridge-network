@@ -1,0 +1,44 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "ToolManifest",
+  "metadata": {
+    "id": "obsidian-cli.local-rest.note.read",
+    "title": "Obsidian Local REST Note Read",
+    "labels": {
+      "adapter": "direct-cli",
+      "profile": "obsidian-cli",
+      "vendor": "obsidian",
+      "category": "knowledge-base"
+    },
+    "annotations": {
+      "cbn.adapter.profile": "obsidian-cli",
+      "cbn.adapter.action": "local-rest-note-read",
+      "cbn.auth_gate": "requires Obsidian Local REST API plugin, API key, and explicit vault/note selection",
+      "cbn.privacy": "reads local knowledge-base content; confirmation is required even though transport is localhost",
+      "cbn.output_contract": "future parser should emit note path, frontmatter, body text, and artifact ids"
+    }
+  },
+  "spec": {
+    "transport": {
+      "kind": "stdio",
+      "command": "python",
+      "argsTemplate": [
+        "-m",
+        "cbn_tools.external_cli",
+        "obsidian-cli",
+        "local-rest-note-read"
+      ],
+      "cwdPolicy": "workspace",
+      "timeoutSeconds": 60
+    },
+    "policy": {
+      "risk": "read",
+      "requiresConfirmation": true,
+      "network": "localhost"
+    },
+    "output": {
+      "parserRef": "raw.text",
+      "verified": false
+    }
+  }
+}

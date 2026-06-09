@@ -1,0 +1,44 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "ToolManifest",
+  "metadata": {
+    "id": "jimeng.help",
+    "title": "Jimeng/Dreamina CLI Help",
+    "labels": {
+      "adapter": "direct-cli",
+      "profile": "jimeng",
+      "vendor": "dreamina",
+      "category": "media-generation"
+    },
+    "annotations": {
+      "cbn.adapter.profile": "jimeng",
+      "cbn.adapter.action": "help",
+      "cbn.parser_fixture": "parser_fixtures/direct-cli.raw.probes.json",
+      "cbn.thread.evidence": "dreamina --help listed login, user_credit, list_task, query_result, text2image, text2video and related generator commands",
+      "cbn.auth_gate": "none for help probe"
+    }
+  },
+  "spec": {
+    "transport": {
+      "kind": "stdio",
+      "command": "python",
+      "argsTemplate": [
+        "-m",
+        "cbn_tools.external_cli",
+        "jimeng",
+        "help"
+      ],
+      "cwdPolicy": "workspace",
+      "timeoutSeconds": 20
+    },
+    "policy": {
+      "risk": "read",
+      "requiresConfirmation": false,
+      "network": "deny"
+    },
+    "output": {
+      "parserRef": "raw.text",
+      "verified": true
+    }
+  }
+}
