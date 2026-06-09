@@ -80,6 +80,42 @@ SAMPLE_LIBREOFFICE_RECORD = {
     "_source": "harness",
 }
 
+SAMPLE_OBS_STUDIO_RECORD = {
+    "name": "obs-studio",
+    "display_name": "OBS Studio",
+    "version": "1.0.0",
+    "description": "Control OBS Studio recording and streaming sessions.",
+    "requires": "obs-studio",
+    "install_cmd": "pip install git+https://github.com/HKUDS/CLI-Anything.git#subdirectory=obs-studio/agent-harness",
+    "entry_point": "cli-anything-obs-studio",
+    "category": "video",
+    "_source": "harness",
+}
+
+SAMPLE_N8N_RECORD = {
+    "name": "n8n",
+    "display_name": "n8n",
+    "version": "2.4.7",
+    "description": "Workflow automation via n8n REST API - 55+ commands",
+    "requires": "n8n >= 1.0.0",
+    "install_cmd": "pip install git+https://github.com/HKUDS/CLI-Anything.git#subdirectory=n8n/agent-harness",
+    "entry_point": "cli-anything-n8n",
+    "category": "automation",
+    "_source": "harness",
+}
+
+SAMPLE_UNIMOL_RECORD = {
+    "name": "unimol_tools",
+    "display_name": "Uni-Mol Tools",
+    "version": "1.0.0",
+    "description": "Molecular property prediction, train and predict for drug discovery.",
+    "requires": "PyTorch 1.12+, Uni-Mol Tools backend",
+    "install_cmd": "pip install git+https://github.com/HKUDS/CLI-Anything.git#subdirectory=unimol_tools/agent-harness",
+    "entry_point": "cli-anything-unimol-tools",
+    "category": "science",
+    "_source": "harness",
+}
+
 
 class CliAnythingHubTests(unittest.TestCase):
     def test_sanitize_harness_name_keeps_manifest_safe(self):
@@ -364,6 +400,116 @@ class CliAnythingHubTests(unittest.TestCase):
             self.assertIn("python-runtime", result["requirements"]["signals"])
             self.assertIn("managed-packages", result["requirements"]["signals"])
             self.assertNotIn(
+                "declared requirements need external app, account, token, or service",
+                result["blockers"],
+            )
+
+    def test_evaluate_harness_blocks_installed_harness_with_missing_entrypoint(self):
+        class FakeHub(CliAnythingHub):
+            def info(self, harness_name: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "info", harness_name),
+                    exit_code=0,
+                    stdout=(
+                        "Entry point: tracecsr\n"
+                        "Requires: Python >= 3.10\n"
+                        "Status: installed\n"
+                    ),
+                    stderr="",
+                )
+
+            def search_market(self, query: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "search", query, "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[
+                        {
+                            "name": "py4csr",
+                            "display_name": "TraceCSR / Py4CSR CLI",
+                            "requires": "Python >= 3.10",
+                            "entry_point": "tracecsr",
+                            "install_cmd": "pip install py4csr",
+                            "category": "data-science",
+                        }
+                    ],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result = FakeHub(root=Path(tmp)).evaluate_harness("py4csr", from_market=True)
+            self.assertTrue(result["ok"])
+            self.assertFalse(result["install_candidate"])
+            self.assertTrue(result["gates"]["installed"])
+            self.assertFalse(result["gates"]["entrypoint_available"])
+            self.assertFalse(result["gates"]["launch_ready"])
+            self.assertEqual(result["recommended_next_action"], "resolve_blockers")
+            self.assertIn("installed harness entrypoint is missing from PATH", result["blockers"])
+            self.assertTrue(result["lifecycle"]["requires_override"])
+
+    def test_evaluate_harness_blocks_rest_api_harness_without_confirmation(self):
+        class FakeHub(CliAnythingHub):
+            def info(self, harness_name: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "info", harness_name),
+                    exit_code=0,
+                    stdout=(
+                        "Entry point: cli-anything-n8n\n"
+                        "Requires: n8n >= 1.0.0\n"
+                        "Status: not installed\n"
+                    ),
+                    stderr="",
+                )
+
+            def search_market(self, query: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "search", query, "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[SAMPLE_N8N_RECORD],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result = FakeHub(root=Path(tmp)).evaluate_harness("n8n", from_market=True)
+            self.assertTrue(result["ok"])
+            self.assertFalse(result["install_candidate"])
+            self.assertEqual(result["policy"]["risk"], "external-network")
+            self.assertTrue(result["policy"]["requiresConfirmation"])
+            self.assertEqual(result["policy"]["network"], "requires-confirmation")
+            self.assertIn("policy requires elevated confirmation", result["blockers"])
+
+    def test_evaluate_harness_blocks_backend_requirements(self):
+        class FakeHub(CliAnythingHub):
+            def info(self, harness_name: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "info", harness_name),
+                    exit_code=0,
+                    stdout=(
+                        "Entry point: cli-anything-unimol-tools\n"
+                        "Requires: PyTorch 1.12+, Uni-Mol Tools backend\n"
+                        "Status: not installed\n"
+                    ),
+                    stderr="",
+                )
+
+            def search_market(self, query: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "search", query, "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[SAMPLE_UNIMOL_RECORD],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result = FakeHub(root=Path(tmp)).evaluate_harness("unimol_tools", from_market=True)
+            self.assertTrue(result["ok"])
+            self.assertFalse(result["install_candidate"])
+            self.assertFalse(result["gates"]["external_dependency_free"])
+            self.assertEqual(result["requirements"]["dependency_class"], "manual-or-external")
+            self.assertIn("backend", result["requirements"]["signals"])
+            self.assertIn(
                 "declared requirements need external app, account, token, or service",
                 result["blockers"],
             )
@@ -1237,7 +1383,12 @@ class CliAnythingHubTests(unittest.TestCase):
                     exit_code=0,
                     stdout="",
                     stderr="",
-                    parsed_json=[SAMPLE_BLENDER_RECORD, SAMPLE_LIBREOFFICE_RECORD, SAMPLE_3MF_RECORD],
+                    parsed_json=[
+                        SAMPLE_BLENDER_RECORD,
+                        SAMPLE_LIBREOFFICE_RECORD,
+                        SAMPLE_OBS_STUDIO_RECORD,
+                        SAMPLE_3MF_RECORD,
+                    ],
                 )
 
         with tempfile.TemporaryDirectory() as tmp, patch("cbn_plugins.cli_anything.shutil.which", return_value=None):
@@ -1249,6 +1400,7 @@ class CliAnythingHubTests(unittest.TestCase):
             for name, signal in {
                 "blender": "external-app:blender",
                 "libreoffice": "external-app:libreoffice",
+                "obs-studio": "external-app:obs-studio",
             }.items():
                 candidate = by_name[name]
                 self.assertFalse(candidate["install_candidate"])
@@ -1313,6 +1465,15 @@ class CliAnythingHubTests(unittest.TestCase):
                     parsed_json=[SAMPLE_3MF_RECORD, SAMPLE_BLENDER_RECORD],
                 )
 
+            def evaluate_harness(self, harness_name, title=None, from_market=True):
+                return {
+                    "ok": True,
+                    "harness_name": harness_name,
+                    "install_candidate": harness_name == "3mf",
+                    "blockers": [] if harness_name == "3mf" else ["blocked"],
+                    "gates": {"launch_ready": False},
+                }
+
         with tempfile.TemporaryDirectory() as tmp, patch("cbn_plugins.cli_anything.shutil.which", return_value=None):
             result = FakeHub(root=Path(tmp)).market_install_queue(limit=10, max_installs=5)
             self.assertTrue(result["ok"])
@@ -1342,6 +1503,15 @@ class CliAnythingHubTests(unittest.TestCase):
                     stderr="",
                     parsed_json=[SAMPLE_3MF_RECORD, SAMPLE_MERMAID_RECORD, SAMPLE_BLENDER_RECORD],
                 )
+
+            def evaluate_harness(self, harness_name, title=None, from_market=True):
+                return {
+                    "ok": True,
+                    "harness_name": harness_name,
+                    "install_candidate": harness_name in {"3mf", "mermaid"},
+                    "blockers": [] if harness_name in {"3mf", "mermaid"} else ["blocked"],
+                    "gates": {"launch_ready": False},
+                }
 
         with tempfile.TemporaryDirectory() as tmp, patch("cbn_plugins.cli_anything.shutil.which", return_value=None):
             result = FakeHub(root=Path(tmp)).market_install_queue(

@@ -61,6 +61,9 @@ EXTERNAL_NETWORK_MARKERS = (
     "access token",
     "auth token",
     "bearer token",
+    "n8n rest api",
+    "cloud api",
+    "remote api",
     "google_cloud_project",
     "gemini_api_key",
     "openai_api_key",
@@ -504,6 +507,7 @@ class CliAnythingHub:
             "manifest_valid": bool(validation["valid"]),
             "manifest_imported": bool(status["manifest_imported"]),
             "installed": bool(status["installed"]),
+            "entrypoint_available": bool(status["entrypoint_available"]),
             "runtime_transport_ready": bool(transport["ready"]),
             "launch_ready": bool(status["launch_ready"] and validation["valid"] and transport["ready"]),
             "low_policy_risk": low_policy_risk,
@@ -523,6 +527,8 @@ class CliAnythingHub:
             blockers.append("declared requirements need external app, account, token, or service")
         if not gates["platform_compatible"]:
             blockers.append("declared platform does not match this host")
+        if gates["installed"] and not gates["entrypoint_available"]:
+            blockers.append("installed harness entrypoint is missing from PATH")
         install_candidate = (
             gates["cli_hub_available"]
             and gates["market_required_satisfied"]
@@ -530,9 +536,12 @@ class CliAnythingHub:
             and gates["low_policy_risk"]
             and gates["external_dependency_free"]
             and gates["platform_compatible"]
+            and not (gates["installed"] and not gates["entrypoint_available"])
         )
         if gates["launch_ready"]:
             recommended_next_action = "call_capability"
+        elif gates["installed"] and not gates["entrypoint_available"]:
+            recommended_next_action = "resolve_blockers"
         elif gates["installed"] and not gates["manifest_imported"]:
             recommended_next_action = "write_manifest"
         elif gates["installed"] and gates["manifest_imported"] and not gates["runtime_transport_ready"]:
@@ -1124,13 +1133,49 @@ class CliAnythingHub:
                 continue
             gates = item.get("gates") if isinstance(item.get("gates"), dict) else {}
             if bool(item.get("install_candidate")) and not bool(gates.get("launch_ready")):
+                evaluation = self.evaluate_harness(harness_name, from_market=True)
+                if not evaluation.get("ok"):
+                    blocked.append(
+                        _install_queue_blocked_entry(
+                            item,
+                            "harness evaluation failed before queueing",
+                            evaluation=evaluation,
+                        )
+                    )
+                    continue
+                eval_gates = evaluation.get("gates") if isinstance(evaluation.get("gates"), dict) else {}
+                if bool(eval_gates.get("launch_ready")):
+                    skipped.append(
+                        _install_queue_skipped_entry(
+                            item,
+                            "harness is already launch-ready",
+                            evaluation=evaluation,
+                        )
+                    )
+                    continue
+                if not bool(evaluation.get("install_candidate")):
+                    blocked.append(
+                        _install_queue_blocked_entry(
+                            item,
+                            "harness evaluation blockers must be resolved first",
+                            evaluation=evaluation,
+                        )
+                    )
+                    continue
                 if len(queue) >= bounded_max_installs:
-                    skipped.append(_install_queue_skipped_entry(item, "max_installs limit reached"))
+                    skipped.append(
+                        _install_queue_skipped_entry(
+                            item,
+                            "max_installs limit reached",
+                            evaluation=evaluation,
+                        )
+                    )
                     continue
                 queue.append(
                     _install_queue_entry(
                         item,
                         install_plan=self.harness_plan("install", harness_name).as_dict(),
+                        evaluation=evaluation,
                     )
                 )
             elif bool(item.get("install_candidate")) and bool(gates.get("launch_ready")):
@@ -1329,6 +1374,7 @@ class CliAnythingHub:
             "manifest_valid": bool(validation["valid"]),
             "manifest_imported": manifest_imported,
             "installed": installed,
+            "entrypoint_available": installed,
             "runtime_transport_ready": bool(transport.get("ready")),
             "launch_ready": launch_ready,
             "low_policy_risk": low_policy_risk,
@@ -1344,6 +1390,8 @@ class CliAnythingHub:
             blockers.append("declared requirements need external app, account, token, or service")
         if not gates["platform_compatible"]:
             blockers.append("declared platform does not match this host")
+        if gates["installed"] and not gates["entrypoint_available"]:
+            blockers.append("installed harness entrypoint is missing from PATH")
         install_candidate = len(blockers) == 0
         if gates["launch_ready"]:
             recommended_next_action = "call_capability"
@@ -2110,7 +2158,11 @@ def _candidate_summary(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]
     return summary
 
 
-def _install_queue_entry(item: dict[str, Any], install_plan: dict[str, Any]) -> dict[str, Any]:
+def _install_queue_entry(
+    item: dict[str, Any],
+    install_plan: dict[str, Any],
+    evaluation: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     harness_name = item.get("harness_name")
     capability_id = item.get("capability_id")
     return {
@@ -2125,6 +2177,7 @@ def _install_queue_entry(item: dict[str, Any], install_plan: dict[str, Any]) -> 
         "lifecycle": item.get("lifecycle"),
         "gates": item.get("gates"),
         "readiness": item.get("readiness"),
+        "evaluation": evaluation,
         "plan": install_plan,
         "commands": {
             "evaluate": f"python -m cbn plugin evaluate-harness cli-anything {harness_name}",
@@ -2137,7 +2190,16 @@ def _install_queue_entry(item: dict[str, Any], install_plan: dict[str, Any]) -> 
     }
 
 
-def _install_queue_blocked_entry(item: dict[str, Any], reason: str) -> dict[str, Any]:
+def _install_queue_blocked_entry(
+    item: dict[str, Any],
+    reason: str,
+    evaluation: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    blockers = list(item.get("blockers", []))
+    if evaluation and isinstance(evaluation.get("blockers"), list):
+        for blocker in evaluation["blockers"]:
+            if blocker not in blockers:
+                blockers.append(blocker)
     return {
         "rank": item.get("rank"),
         "harness_name": item.get("harness_name"),
@@ -2146,11 +2208,12 @@ def _install_queue_blocked_entry(item: dict[str, Any], reason: str) -> dict[str,
         "state": "blocked",
         "ready_for_install": False,
         "reason": reason,
-        "blockers": item.get("blockers", []),
+        "blockers": blockers,
         "recommended_next_action": item.get("recommended_next_action"),
         "lifecycle": item.get("lifecycle"),
         "gates": item.get("gates"),
         "readiness": item.get("readiness"),
+        "evaluation": evaluation,
         "commands": {
             "evaluate": f"python -m cbn plugin evaluate-harness cli-anything {item.get('harness_name')}",
             "probe": f"python -m cbn plugin probe-harness cli-anything {item.get('harness_name')}",
@@ -2158,7 +2221,11 @@ def _install_queue_blocked_entry(item: dict[str, Any], reason: str) -> dict[str,
     }
 
 
-def _install_queue_skipped_entry(item: dict[str, Any], reason: str) -> dict[str, Any]:
+def _install_queue_skipped_entry(
+    item: dict[str, Any],
+    reason: str,
+    evaluation: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     return {
         "rank": item.get("rank"),
         "harness_name": item.get("harness_name"),
@@ -2171,6 +2238,7 @@ def _install_queue_skipped_entry(item: dict[str, Any], reason: str) -> dict[str,
         "lifecycle": item.get("lifecycle"),
         "gates": item.get("gates"),
         "readiness": item.get("readiness"),
+        "evaluation": evaluation,
     }
 
 
@@ -2343,6 +2411,7 @@ def _requirement_assessment(requires: str | None) -> dict[str, Any]:
         "environment variable",
         "extension",
         "login",
+        "backend",
     )
     signals = [
         *[marker.strip() for marker in blocking_markers if marker in text],
@@ -2432,6 +2501,7 @@ def _external_app_requirement_signals(requires: str) -> list[str]:
         "krita",
         "musescore",
         "obsidian",
+        "obs-studio",
         "ollama",
     )
     signals = []
