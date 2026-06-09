@@ -526,6 +526,65 @@ class DaemonApiTests(unittest.TestCase):
                     self.assertEqual(payload["smoke_extra_args"], ["--help"])
                     self.assertTrue(payload["protocol_smoke_suite"]["run"])
 
+    def test_cli_anything_onboard_harness_route_returns_onboarding_report(self):
+        class FakeHub:
+            def onboard_harness(
+                self,
+                harness_name,
+                title=None,
+                from_market=True,
+                write=False,
+                confirmed=False,
+                include_workflows=True,
+                run_smoke_suite=False,
+                smoke_extra_args=(),
+            ):
+                return {
+                    "ok": True,
+                    "plugin_id": "cli-anything",
+                    "kind": "CliAnythingHarnessOnboarding",
+                    "harness_name": harness_name,
+                    "title": title,
+                    "from_market": from_market,
+                    "write": write,
+                    "confirmed": confirmed,
+                    "include_workflows": include_workflows,
+                    "run_smoke_suite": run_smoke_suite,
+                    "smoke_extra_args": list(smoke_extra_args),
+                    "summary": {"ready_for_manifest_write": True},
+                    "stage_results": [{"id": "evaluate", "status": "completed"}],
+                }
+
+        with patch("api_server.server.CliAnythingHub", FakeHub):
+            with daemon_url() as base_url:
+                request = urllib.request.Request(
+                    f"{base_url}/plugins/cli-anything/onboard-harness",
+                    data=json.dumps(
+                        {
+                            "harness_name": "3mf",
+                            "title": "3MF Harness",
+                            "from_market": True,
+                            "write": True,
+                            "confirmed": True,
+                            "include_workflows": False,
+                            "run_smoke_suite": True,
+                            "smoke_extra_args": ["--help"],
+                        }
+                    ).encode("utf-8"),
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(payload["kind"], "CliAnythingHarnessOnboarding")
+                    self.assertEqual(payload["harness_name"], "3mf")
+                    self.assertTrue(payload["write"])
+                    self.assertTrue(payload["confirmed"])
+                    self.assertFalse(payload["include_workflows"])
+                    self.assertTrue(payload["run_smoke_suite"])
+                    self.assertEqual(payload["smoke_extra_args"], ["--help"])
+
     def test_cli_anything_live_verification_route_returns_snapshot(self):
         class FakeHub:
             def live_verification(

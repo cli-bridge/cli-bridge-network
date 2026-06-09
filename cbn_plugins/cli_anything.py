@@ -743,6 +743,187 @@ class CliAnythingHub:
             ],
         }
 
+    def onboard_harness(
+        self,
+        harness_name: str,
+        title: str | None = None,
+        from_market: bool = True,
+        write: bool = False,
+        confirmed: bool = False,
+        include_workflows: bool = True,
+        run_smoke_suite: bool = False,
+        smoke_extra_args: tuple[str, ...] = (),
+    ) -> dict[str, Any]:
+        probe = self.probe_harness(
+            harness_name,
+            title=title,
+            from_market=from_market,
+        )
+        if not probe["ok"]:
+            return {
+                "ok": False,
+                "plugin_id": PLUGIN_ID,
+                "kind": "CliAnythingHarnessOnboarding",
+                "harness_name": harness_name,
+                "from_market": from_market,
+                "write": write,
+                "confirmed": confirmed,
+                "include_workflows": include_workflows,
+                "run_smoke_suite": run_smoke_suite,
+                "error": probe["error"],
+                "stage_results": [
+                    {
+                        "id": "probe",
+                        "status": "blocked",
+                        "blockers": [probe["error"]],
+                    }
+                ],
+                "reports": {"probe": probe},
+                "next_commands": [
+                    f"python -m cbn plugin market cli-anything info {harness_name}",
+                    f"python -m cbn plugin onboard-harness cli-anything {harness_name} --offline",
+                ],
+            }
+
+        evaluation = probe["evaluation"]
+        capability_id = evaluation["capability_id"]
+        adaptation = evaluation["adaptation"]
+        write_requested_without_confirmation = bool(write and not confirmed)
+        if write and confirmed:
+            adaptation = self.adapt_harness(
+                harness_name,
+                title=title,
+                from_market=from_market,
+                write=True,
+            )
+        install_plan = self.harness_plan("install", harness_name).as_dict()
+        install_gate = self.harness_operation_gate(
+            "install",
+            harness_name,
+            from_market=from_market,
+        )
+        verification = self.verify_harness(
+            harness_name,
+            title=title,
+            from_market=from_market,
+            include_workflows=include_workflows,
+            run_smoke_suite=run_smoke_suite,
+            smoke_extra_args=smoke_extra_args,
+        )
+        verification_blockers = (
+            verification.get("verification_blockers", [])
+            if verification.get("ok")
+            else [verification.get("error", "verification failed")]
+        )
+        manifest_written = bool(adaptation.get("written"))
+        ready_for_manifest_write = bool(
+            verification.get("ready_for_manifest_write")
+            if verification.get("ok")
+            else evaluation["gates"]["manifest_valid"] and not evaluation["blockers"]
+        )
+        ready_for_install = bool(install_gate.get("ok"))
+        ready_for_runtime_verification = bool(
+            verification.get("ready_for_runtime_verification")
+            if verification.get("ok")
+            else False
+        )
+        manifest_already_imported = bool(evaluation["gates"].get("manifest_imported"))
+        harness_already_installed = bool(evaluation["gates"].get("installed"))
+        smoke_suite = verification.get("protocol_smoke_suite", {}) if verification.get("ok") else {}
+        stage_results = [
+            {
+                "id": "evaluate",
+                "status": "completed",
+                "blockers": evaluation["blockers"],
+                "recommended_next_action": evaluation["recommended_next_action"],
+            },
+            {
+                "id": "probe_dependencies",
+                "status": "completed" if probe["ready"] else "blocked",
+                "blockers": [
+                    item["id"]
+                    for item in probe["probes"]
+                    if item.get("severity") == "blocker" and item.get("status") != "available"
+                ],
+            },
+            {
+                "id": "adapt_manifest",
+                "status": (
+                    "completed"
+                    if manifest_written or manifest_already_imported
+                    else "ready"
+                    if ready_for_manifest_write
+                    else "blocked"
+                ),
+                "write_requested": write,
+                "write_confirmed": confirmed,
+                "written": adaptation.get("written"),
+                "blockers": [] if ready_for_manifest_write else evaluation["blockers"],
+            },
+            {
+                "id": "install_harness",
+                "status": "completed" if harness_already_installed else ("ready" if ready_for_install else "blocked"),
+                "execution": "planned",
+                "blockers": install_gate.get("blockers", []),
+            },
+            {
+                "id": "verify_runtime",
+                "status": "completed" if ready_for_runtime_verification else "blocked",
+                "blockers": verification_blockers,
+            },
+            {
+                "id": "smoke_protocol_facades",
+                "status": (
+                    "completed"
+                    if smoke_suite.get("run") and smoke_suite.get("ok")
+                    else "blocked"
+                    if smoke_suite.get("run")
+                    else "pending"
+                ),
+                "run": bool(smoke_suite.get("run")),
+                "blockers": [] if smoke_suite.get("ok") or not smoke_suite.get("run") else ["protocol smoke suite failed"],
+            },
+        ]
+        next_commands = [
+            f"python -m cbn plugin onboard-harness cli-anything {harness_name} --from-market",
+            f"python -m cbn plugin onboard-harness cli-anything {harness_name} --from-market --write --yes",
+            f"python -m cbn plugin harness cli-anything install {harness_name} --yes",
+            "python -m cbn registry validate manifests",
+            f"python -m cbn plugin verify-harness cli-anything {harness_name} --smoke-suite --smoke-extra-arg=--help --no-workflows",
+            f"python -m cbn call {capability_id} --dry-run",
+        ]
+        return {
+            "ok": True,
+            "plugin_id": PLUGIN_ID,
+            "kind": "CliAnythingHarnessOnboarding",
+            "harness_name": harness_name,
+            "from_market": from_market,
+            "write": write,
+            "confirmed": confirmed,
+            "include_workflows": include_workflows,
+            "run_smoke_suite": run_smoke_suite,
+            "capability_id": capability_id,
+            "summary": {
+                "ready_for_manifest_write": ready_for_manifest_write,
+                "manifest_written": manifest_written,
+                "write_requires_confirmation": write_requested_without_confirmation,
+                "ready_for_install": ready_for_install,
+                "ready_for_runtime_verification": ready_for_runtime_verification,
+                "smoke_suite_ready": bool(smoke_suite.get("ok")) if smoke_suite.get("run") else None,
+                "recommended_next_action": evaluation["recommended_next_action"],
+            },
+            "stage_results": stage_results,
+            "reports": {
+                "evaluation": evaluation,
+                "probe": probe,
+                "adaptation": adaptation,
+                "install_plan": install_plan,
+                "install_gate": install_gate,
+                "verification": verification,
+            },
+            "next_commands": next_commands,
+        }
+
     def candidate_harnesses(
         self,
         query: str | None = None,

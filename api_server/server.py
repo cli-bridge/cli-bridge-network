@@ -90,6 +90,7 @@ ROUTE_SUMMARY = [
     {"method": "POST", "path": "/plugins/cli-anything/evaluate-harness"},
     {"method": "POST", "path": "/plugins/cli-anything/probe-harness"},
     {"method": "POST", "path": "/plugins/cli-anything/verify-harness"},
+    {"method": "POST", "path": "/plugins/cli-anything/onboard-harness"},
     {"method": "POST", "path": "/plugins/cli-anything/live-verification"},
     {"method": "POST", "path": "/plugins/cli-anything/candidates"},
     {"method": "POST", "path": "/plugins/cli-anything/sync-market"},
@@ -568,6 +569,19 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 payload["harness_name"],
                 title=payload.get("title"),
                 from_market=bool(payload.get("from_market", True)),
+                include_workflows=bool(payload.get("include_workflows", True)),
+                run_smoke_suite=bool(payload.get("run_smoke_suite", False)),
+                smoke_extra_args=tuple(payload.get("smoke_extra_args", [])),
+            )
+            self._send(200 if result["ok"] else 502, result)
+            return
+        if self.path == "/plugins/cli-anything/onboard-harness":
+            result = CliAnythingHub().onboard_harness(
+                payload["harness_name"],
+                title=payload.get("title"),
+                from_market=bool(payload.get("from_market", True)),
+                write=bool(payload.get("write", False)),
+                confirmed=bool(payload.get("confirmed", False)),
                 include_workflows=bool(payload.get("include_workflows", True)),
                 run_smoke_suite=bool(payload.get("run_smoke_suite", False)),
                 smoke_extra_args=tuple(payload.get("smoke_extra_args", [])),

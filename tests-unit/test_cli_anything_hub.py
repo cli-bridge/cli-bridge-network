@@ -526,6 +526,155 @@ class CliAnythingHubTests(unittest.TestCase):
             self.assertEqual(stages["install_harness"], "completed")
             self.assertEqual(stages["dry_run_call"], "ready")
 
+    def test_onboard_harness_previews_full_acceptance_chain(self):
+        class FakeHub(CliAnythingHub):
+            def status(self) -> dict:
+                return {
+                    "plugin_id": "cli-anything",
+                    "entrypoint": "cli-hub",
+                    "entrypoint_path": sys.executable,
+                    "entrypoint_available": True,
+                    "source_repo_dir": "external_plugins/cli-anything/repo",
+                    "source_repo_available": True,
+                    "version": "cli-hub test",
+                }
+
+            def info(self, harness_name: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "info", harness_name),
+                    exit_code=0,
+                    stdout=f"Entry point: {sys.executable}\nRequires: nothing\nStatus: installed\n",
+                    stderr="",
+                )
+
+            def search_market(self, query: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "search", query, "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[SAMPLE_MERMAID_RECORD],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch(
+                "cbn_plugins.cli_anything.pty_backend_status",
+                return_value={
+                    "kind": "pty",
+                    "platform": sys.platform,
+                    "backend": "test-pty",
+                    "available": True,
+                    "install_hint": None,
+                },
+            ):
+                result = FakeHub(root=Path(tmp)).onboard_harness("mermaid", from_market=True)
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["kind"], "CliAnythingHarnessOnboarding")
+            self.assertFalse(result["summary"]["manifest_written"])
+            self.assertTrue(result["summary"]["ready_for_manifest_write"])
+            self.assertTrue(result["summary"]["ready_for_install"])
+            self.assertIn("install_gate", result["reports"])
+            self.assertIn("verification", result["reports"])
+            self.assertIn("smoke_protocol_facades", [stage["id"] for stage in result["stage_results"]])
+            self.assertIn(
+                "python -m cbn plugin harness cli-anything install mermaid --yes",
+                result["next_commands"],
+            )
+
+    def test_onboard_harness_requires_confirmation_before_manifest_write(self):
+        class FakeHub(CliAnythingHub):
+            def status(self) -> dict:
+                return {
+                    "plugin_id": "cli-anything",
+                    "entrypoint": "cli-hub",
+                    "entrypoint_path": sys.executable,
+                    "entrypoint_available": True,
+                    "source_repo_dir": "external_plugins/cli-anything/repo",
+                    "source_repo_available": True,
+                    "version": "cli-hub test",
+                }
+
+            def info(self, harness_name: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "info", harness_name),
+                    exit_code=0,
+                    stdout=f"Entry point: {sys.executable}\nRequires: nothing\nStatus: installed\n",
+                    stderr="",
+                )
+
+            def search_market(self, query: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "search", query, "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[SAMPLE_MERMAID_RECORD],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result = FakeHub(root=Path(tmp)).onboard_harness(
+                "mermaid",
+                from_market=True,
+                write=True,
+                confirmed=False,
+            )
+            self.assertTrue(result["ok"])
+            self.assertTrue(result["summary"]["write_requires_confirmation"])
+            self.assertFalse(result["summary"]["manifest_written"])
+            self.assertFalse((Path(tmp) / "manifests" / "cli-anything.mermaid.launch.json").exists())
+
+    def test_onboard_harness_confirmed_write_updates_verification_registry(self):
+        class FakeHub(CliAnythingHub):
+            def status(self) -> dict:
+                return {
+                    "plugin_id": "cli-anything",
+                    "entrypoint": "cli-hub",
+                    "entrypoint_path": sys.executable,
+                    "entrypoint_available": True,
+                    "source_repo_dir": "external_plugins/cli-anything/repo",
+                    "source_repo_available": True,
+                    "version": "cli-hub test",
+                }
+
+            def info(self, harness_name: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "info", harness_name),
+                    exit_code=0,
+                    stdout=f"Entry point: {sys.executable}\nRequires: nothing\nStatus: installed\n",
+                    stderr="",
+                )
+
+            def search_market(self, query: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "search", query, "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[SAMPLE_MERMAID_RECORD],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch(
+                "cbn_plugins.cli_anything.pty_backend_status",
+                return_value={
+                    "kind": "pty",
+                    "platform": sys.platform,
+                    "backend": "test-pty",
+                    "available": True,
+                    "install_hint": None,
+                },
+            ):
+                result = FakeHub(root=Path(tmp)).onboard_harness(
+                    "mermaid",
+                    from_market=True,
+                    write=True,
+                    confirmed=True,
+                )
+            self.assertTrue(result["ok"])
+            self.assertTrue(result["summary"]["manifest_written"])
+            self.assertTrue(Path(result["reports"]["adaptation"]["written"]).exists())
+            self.assertTrue(result["reports"]["verification"]["registry"]["manifest_imported"])
+
     def test_live_verification_summarizes_harness_candidates_and_readiness(self):
         class FakeHub(CliAnythingHub):
             def status(self) -> dict:
@@ -1315,6 +1464,32 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(payload["manifest"]["metadata"]["id"], "cli-anything.gimp.launch")
         self.assertFalse(payload["write"])
         self.assertIn("next_commands", payload)
+
+    def test_cli_onboard_harness_outputs_onboarding_report_offline(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "plugin",
+                "onboard-harness",
+                "cli-anything",
+                "gimp",
+                "--offline",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["kind"], "CliAnythingHarnessOnboarding")
+        self.assertEqual(payload["harness_name"], "gimp")
+        self.assertFalse(payload["from_market"])
+        self.assertIn("stage_results", payload)
+        self.assertIn("verification", payload["reports"])
 
     def test_cli_prepare_harness_outputs_preparation_report(self):
         proc = subprocess.run(

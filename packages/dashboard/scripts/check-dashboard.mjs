@@ -91,6 +91,22 @@ if (!html.includes('data-api-body=\'{"harness_name":"3mf","from_market":true,"in
   throw new Error("Dashboard does not wire CLI-Anything harness smoke-suite verification to the daemon API.");
 }
 
+if (!html.includes("python -m cbn plugin onboard-harness cli-anything gimp --from-market")) {
+  throw new Error("Dashboard does not expose the CLI-Anything harness onboarding preview command.");
+}
+
+if (!html.includes('data-api-path="/plugins/cli-anything/onboard-harness"')) {
+  throw new Error("Dashboard does not wire CLI-Anything harness onboarding to the daemon API.");
+}
+
+if (!html.includes("python -m cbn plugin onboard-harness cli-anything gimp --from-market --write --yes")) {
+  throw new Error("Dashboard does not expose confirmed CLI-Anything onboarding manifest write.");
+}
+
+if (!html.includes("python -m cbn plugin onboard-harness cli-anything 3mf --from-market --smoke-suite --smoke-extra-arg=--help --no-workflows")) {
+  throw new Error("Dashboard does not expose CLI-Anything onboarding smoke-suite command.");
+}
+
 if (!html.includes('data-api-body=\'{"query":"file","limit":20,"compact":true}\'')) {
   throw new Error("Dashboard candidate ranking API body is not compact.");
 }

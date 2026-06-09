@@ -383,6 +383,40 @@ def build_parser() -> argparse.ArgumentParser:
         help="Extra arg passed to the harness capability when --smoke-suite is used; repeatable.",
     )
 
+    plugin_onboard = plugin_subcommands.add_parser(
+        "onboard-harness",
+        help="Run the CLI-Anything harness discovery, adaptation, install gate, and verification onboarding report.",
+    )
+    plugin_onboard.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
+    plugin_onboard.add_argument("harness_name", help="Harness name in CLI-Hub.")
+    plugin_onboard.add_argument("--title", help="Override generated manifest title.")
+    plugin_onboard.add_argument("--from-market", action="store_true", default=True)
+    plugin_onboard.add_argument(
+        "--offline",
+        action="store_false",
+        dest="from_market",
+        help="Onboard without requiring market metadata.",
+    )
+    plugin_onboard.add_argument("--write", action="store_true", help="Write the generated harness manifest.")
+    plugin_onboard.add_argument("--yes", action="store_true", help="Confirm manifest write when --write is set.")
+    plugin_onboard.add_argument(
+        "--no-workflows",
+        action="store_false",
+        dest="include_workflows",
+        help="Skip workflow reference lookup.",
+    )
+    plugin_onboard.add_argument(
+        "--smoke-suite",
+        action="store_true",
+        help="Run the protocol smoke suite for this harness capability.",
+    )
+    plugin_onboard.add_argument(
+        "--smoke-extra-arg",
+        action="append",
+        default=[],
+        help="Extra arg passed to the harness capability when --smoke-suite is used; repeatable.",
+    )
+
     plugin_live = plugin_subcommands.add_parser(
         "live-verification",
         help="Return a read-only CLI-Anything live verification snapshot.",

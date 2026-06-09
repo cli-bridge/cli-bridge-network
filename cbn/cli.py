@@ -527,6 +527,21 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0 if result["ok"] else 6
+        if args.plugin_command == "onboard-harness":
+            if args.plugin_id != "cli-anything":
+                raise KeyError(f"onboard-harness is not implemented for plugin: {args.plugin_id}")
+            result = CliAnythingHub().onboard_harness(
+                args.harness_name,
+                title=args.title,
+                from_market=args.from_market,
+                write=args.write,
+                confirmed=args.yes,
+                include_workflows=args.include_workflows,
+                run_smoke_suite=args.smoke_suite,
+                smoke_extra_args=tuple(args.smoke_extra_arg),
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["ok"] else 6
         if args.plugin_command == "live-verification":
             if args.plugin_id != "cli-anything":
                 raise KeyError(f"live-verification is not implemented for plugin: {args.plugin_id}")
