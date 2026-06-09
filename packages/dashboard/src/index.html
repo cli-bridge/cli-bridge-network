@@ -207,6 +207,12 @@
             data-api-body='{"harness_name":"py4csr","from_market":true}'
           >Repair Entrypoint</button>
           <button
+            data-command="python -m cbn plugin adapter-targets cli-anything py4csr --from-market --limit 10"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/adapter-targets"
+            data-api-body='{"harness_name":"py4csr","from_market":true,"limit":10}'
+          >Adapter Targets</button>
+          <button
             data-command="python -m cbn plugin live-verification cli-anything"
             data-api-method="POST"
             data-api-path="/plugins/cli-anything/live-verification"

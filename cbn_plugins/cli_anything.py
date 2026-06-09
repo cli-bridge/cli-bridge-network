@@ -7,6 +7,7 @@ generates CBN manifests for installed or planned harnesses.
 
 from __future__ import annotations
 
+import ast
 import json
 import importlib.metadata as importlib_metadata
 import importlib.util as importlib_util
@@ -1403,6 +1404,68 @@ class CliAnythingHub:
                 f"python -m cbn plugin repair-entrypoint cli-anything {harness_name} --from-market --module <module> --write --yes",
                 "python -m cbn registry validate manifests",
                 f"python -m cbn call {plan.get('capability_id')} --dry-run",
+            ],
+        }
+
+    def adapter_targets(
+        self,
+        harness_name: str,
+        from_market: bool = True,
+        package: str | None = None,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        plan = self.entrypoint_repair_plan(harness_name, from_market=from_market)
+        package_candidates = [package] if package else list(plan.get("package_candidates", []))
+        package_reports = [
+            _adapter_target_package_report(candidate, limit=limit)
+            for candidate in package_candidates
+        ]
+        targets = [
+            {
+                **target,
+                "package": report["package"],
+                "repair_command": (
+                    f"python -m cbn plugin repair-entrypoint cli-anything {harness_name} "
+                    f"--from-market --module {target['module']}"
+                ),
+            }
+            for report in package_reports
+            for target in report.get("targets", [])
+        ]
+        targets.sort(key=lambda item: (-int(item["score"]), item["module"]))
+        targets = targets[: max(0, min(limit, 100))]
+        recommended = targets[0] if targets else None
+        return {
+            "ok": True,
+            "plugin_id": PLUGIN_ID,
+            "kind": "CliAnythingAdapterTargets",
+            "harness_name": harness_name,
+            "from_market": from_market,
+            "package": package,
+            "limit": limit,
+            "plan": plan,
+            "packages": package_reports,
+            "targets": targets,
+            "summary": {
+                "package_count": len(package_reports),
+                "target_count": len(targets),
+                "recommended_module": recommended["module"] if recommended else None,
+                "recommended_score": recommended["score"] if recommended else None,
+                "recommended_next_action": (
+                    "inspect_top_target_then_repair_entrypoint"
+                    if recommended
+                    else "write_custom_adapter_or_choose_package_api"
+                ),
+            },
+            "next_commands": [
+                f"python -m cbn plugin repair-plan cli-anything {harness_name} --from-market",
+                f"python -m cbn plugin adapter-targets cli-anything {harness_name} --from-market",
+                (
+                    f"python -m cbn plugin repair-entrypoint cli-anything {harness_name} "
+                    f"--from-market --module {recommended['module']}"
+                    if recommended
+                    else None
+                ),
             ],
         }
 
@@ -2838,6 +2901,159 @@ def _entrypoint_repair_manifest(
     transport["argsTemplate"] = [str(wrapper_path)]
     transport["cwdPolicy"] = transport.get("cwdPolicy", "workspace")
     return manifest
+
+
+def _adapter_target_package_report(package: str, limit: int = 20) -> dict[str, Any]:
+    try:
+        dist = importlib_metadata.distribution(package)
+    except importlib_metadata.PackageNotFoundError:
+        return {
+            "package": package,
+            "installed": False,
+            "version": None,
+            "targets": [],
+            "blockers": [f"python package distribution is not installed: {package}"],
+        }
+    top_levels = _distribution_top_levels(dist, package)
+    targets: list[dict[str, Any]] = []
+    scanned_files = 0
+    for top_level in top_levels:
+        spec = importlib_util.find_spec(top_level)
+        if spec is None:
+            continue
+        locations = list(spec.submodule_search_locations or [])
+        if not locations and spec.origin:
+            locations = [str(Path(spec.origin).parent)]
+        for location in locations:
+            root = Path(location)
+            if not root.exists():
+                continue
+            for path in sorted(root.rglob("*.py")):
+                if "__pycache__" in path.parts:
+                    continue
+                scanned_files += 1
+                target = _module_adapter_target(path, root, top_level)
+                if target is not None:
+                    targets.append(target)
+                if scanned_files >= 500:
+                    break
+            if scanned_files >= 500:
+                break
+        if scanned_files >= 500:
+            break
+    targets.sort(key=lambda item: (-int(item["score"]), item["module"]))
+    bounded_limit = max(0, min(limit, 100))
+    return {
+        "package": package,
+        "installed": True,
+        "version": dist.version,
+        "location": str(Path(dist.locate_file(""))),
+        "top_levels": top_levels,
+        "scanned_files": scanned_files,
+        "targets": targets[:bounded_limit],
+        "truncated": len(targets) > bounded_limit,
+        "blockers": [] if targets else ["no CLI-like python module targets found"],
+    }
+
+
+def _distribution_top_levels(dist: importlib_metadata.Distribution, package: str) -> list[str]:
+    raw = dist.read_text("top_level.txt") or ""
+    names = [line.strip() for line in raw.splitlines() if line.strip()]
+    fallback = package.replace("-", "_").split(".", 1)[0]
+    if fallback in names:
+        return [fallback]
+    if fallback and fallback not in names:
+        names.append(fallback)
+    return [name for name in names if re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", name)]
+
+
+def _module_adapter_target(path: Path, root: Path, top_level: str) -> dict[str, Any] | None:
+    try:
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        tree = ast.parse(text)
+    except (OSError, SyntaxError, UnicodeDecodeError):
+        return None
+    rel = path.relative_to(root)
+    module_parts = [top_level]
+    if rel.name == "__init__.py":
+        module_parts.extend(rel.parent.parts)
+    elif rel.name == "__main__.py":
+        module_parts.extend(rel.parent.parts)
+    else:
+        module_parts.extend(rel.with_suffix("").parts)
+    module = ".".join(part for part in module_parts if part)
+    evidence: list[str] = []
+    score = 0
+    if rel.name == "__main__.py":
+        score += 90
+        evidence.append("__main__.py module")
+    if _has_name_main_guard(tree):
+        score += 70
+        evidence.append("if __name__ == '__main__'")
+    imports = _imported_root_names(tree)
+    for name, points in (("click", 35), ("typer", 35), ("argparse", 25), ("fire", 25)):
+        if name in imports:
+            score += points
+            evidence.append(f"imports {name}")
+    functions = {
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    if "main" in functions:
+        score += 25
+        evidence.append("defines main()")
+    if "cli" in functions:
+        score += 15
+        evidence.append("defines cli()")
+    if not evidence:
+        return None
+    kind = "python-module-main" if rel.name == "__main__.py" else "python-module"
+    if any(item.startswith("imports ") for item in evidence):
+        kind = "python-cli-framework"
+    return {
+        "module": module,
+        "kind": kind,
+        "score": score,
+        "path": str(path),
+        "evidence": evidence,
+        "command_preview": f"{sys.executable} -m {module}",
+    }
+
+
+def _imported_root_names(tree: ast.AST) -> set[str]:
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                names.add(alias.name.split(".", 1)[0])
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            names.add(node.module.split(".", 1)[0])
+    return names
+
+
+def _has_name_main_guard(tree: ast.AST) -> bool:
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.If):
+            continue
+        if _is_name_main_compare(node.test):
+            return True
+    return False
+
+
+def _is_name_main_compare(node: ast.AST) -> bool:
+    if not isinstance(node, ast.Compare) or len(node.ops) != 1 or not isinstance(node.ops[0], ast.Eq):
+        return False
+    if len(node.comparators) != 1:
+        return False
+    left = node.left
+    right = node.comparators[0]
+    return (
+        isinstance(left, ast.Name)
+        and left.id == "__name__"
+        and isinstance(right, ast.Constant)
+        and right.value == "__main__"
+    )
 
 
 def _safe_plugin_report(builder: Any) -> dict[str, Any]:

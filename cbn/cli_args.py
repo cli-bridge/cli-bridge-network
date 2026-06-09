@@ -567,6 +567,22 @@ def build_parser() -> argparse.ArgumentParser:
     plugin_repair_entrypoint.add_argument("--write", action="store_true", help="Write wrapper and repaired manifest.")
     plugin_repair_entrypoint.add_argument("--yes", action="store_true", help="Confirm writing repair artifacts.")
 
+    plugin_adapter_targets = plugin_subcommands.add_parser(
+        "adapter-targets",
+        help="Inspect installed Python packages for CLI-like modules that can back a CLI-Anything adapter.",
+    )
+    plugin_adapter_targets.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
+    plugin_adapter_targets.add_argument("harness_name", help="Harness name from the plugin market.")
+    plugin_adapter_targets.add_argument("--from-market", action="store_true", default=True)
+    plugin_adapter_targets.add_argument(
+        "--offline",
+        action="store_false",
+        dest="from_market",
+        help="Inspect local packages without requiring market metadata.",
+    )
+    plugin_adapter_targets.add_argument("--package", help="Inspect one explicit Python distribution name.")
+    plugin_adapter_targets.add_argument("--limit", type=int, default=20, help="Maximum adapter targets to return.")
+
     plugin_sync = plugin_subcommands.add_parser(
         "sync-market",
         help="Preview or write CBN manifests for CLI-Anything market records.",

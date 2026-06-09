@@ -11,6 +11,7 @@ from cbn_core.manifest import CapabilityManifest
 from cbn_plugins.cli_anything import (
     CliAnythingHub,
     CliHubCommandResult,
+    _adapter_target_package_report,
     infer_market_policy,
     sanitize_harness_name,
 )
@@ -1706,6 +1707,76 @@ class CliAnythingHubTests(unittest.TestCase):
             self.assertEqual(manifest["metadata"]["annotations"]["cbn.repair.python_module"], "pip")
             self.assertTrue(result["validation"]["valid"])
 
+    def test_adapter_target_package_report_finds_cli_like_modules(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            root = Path(tempdir)
+            dist_info = root / "samplecli-1.0.dist-info"
+            pkg = root / "samplecli"
+            dist_info.mkdir()
+            pkg.mkdir()
+            (dist_info / "METADATA").write_text(
+                "Metadata-Version: 2.1\nName: samplecli\nVersion: 1.0\n",
+                encoding="utf-8",
+            )
+            (dist_info / "top_level.txt").write_text("samplecli\nunrelated_env\n", encoding="utf-8")
+            (pkg / "__init__.py").write_text("", encoding="utf-8")
+            (pkg / "runner.py").write_text(
+                "import argparse\n\n"
+                "def main():\n"
+                "    return argparse.ArgumentParser()\n\n"
+                "if __name__ == '__main__':\n"
+                "    main()\n",
+                encoding="utf-8",
+            )
+            unrelated = root / "unrelated_env"
+            unrelated.mkdir()
+            (unrelated / "__init__.py").write_text("", encoding="utf-8")
+            (unrelated / "__main__.py").write_text(
+                "import argparse\n"
+                "def main(): pass\n"
+                "if __name__ == '__main__': main()\n",
+                encoding="utf-8",
+            )
+            sys.path.insert(0, str(root))
+            try:
+                report = _adapter_target_package_report("samplecli", limit=5)
+            finally:
+                sys.path.remove(str(root))
+            self.assertTrue(report["installed"])
+            self.assertEqual(report["top_levels"], ["samplecli"])
+            self.assertFalse(report["blockers"])
+            self.assertEqual(report["targets"][0]["module"], "samplecli.runner")
+            self.assertIn("imports argparse", report["targets"][0]["evidence"])
+            self.assertIn("defines main()", report["targets"][0]["evidence"])
+
+    def test_adapter_targets_report_reuses_repair_plan_package_candidates(self):
+        class FakeHub(CliAnythingHub):
+            def entrypoint_repair_plan(self, harness_name, from_market=True):
+                return {
+                    "ok": True,
+                    "plugin_id": "cli-anything",
+                    "kind": "CliAnythingEntrypointRepairPlan",
+                    "harness_name": harness_name,
+                    "from_market": from_market,
+                    "capability_id": "cli-anything.piptool.launch",
+                    "package_candidates": ["pip"],
+                    "diagnosis": {"repair_required": True},
+                    "evaluation": {
+                        "adaptation": {
+                            "manifest_path": str(self.paths.manifests / "cli-anything.piptool.launch.json"),
+                            "manifest": {},
+                        }
+                    },
+                }
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            result = FakeHub(root=Path(tempdir)).adapter_targets("piptool", limit=5)
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["kind"], "CliAnythingAdapterTargets")
+            self.assertEqual(result["packages"][0]["package"], "pip")
+            self.assertIn("summary", result)
+            self.assertIn("targets", result)
+
     def test_candidate_harnesses_limits_after_ranking_full_market(self):
         class FakeHub(CliAnythingHub):
             def list_market(self) -> CliHubCommandResult:
@@ -2429,6 +2500,32 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(payload["kind"], "CliAnythingEntrypointRepair")
         self.assertIn("strategy", payload)
         self.assertIn("execution", payload)
+
+    def test_cli_adapter_targets_outputs_candidate_report(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "plugin",
+                "adapter-targets",
+                "cli-anything",
+                "py4csr",
+                "--limit",
+                "5",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertIn(proc.returncode, {0, 6})
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["plugin_id"], "cli-anything")
+        self.assertEqual(payload["kind"], "CliAnythingAdapterTargets")
+        self.assertIn("packages", payload)
+        self.assertIn("targets", payload)
+        self.assertIn("summary", payload)
 
     def test_cli_sync_market_handles_missing_cli_hub_without_crashing(self):
         proc = subprocess.run(

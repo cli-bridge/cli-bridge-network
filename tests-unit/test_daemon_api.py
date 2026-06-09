@@ -475,6 +475,44 @@ class DaemonApiTests(unittest.TestCase):
                     self.assertFalse(payload["confirmed"])
                     self.assertEqual(payload["execution"]["status"], "requires_confirmation")
 
+    def test_cli_anything_adapter_targets_route_returns_candidate_report(self):
+        class FakeHub:
+            def adapter_targets(self, harness_name, from_market=True, package=None, limit=20):
+                return {
+                    "ok": True,
+                    "plugin_id": "cli-anything",
+                    "kind": "CliAnythingAdapterTargets",
+                    "harness_name": harness_name,
+                    "from_market": from_market,
+                    "package": package,
+                    "limit": limit,
+                    "summary": {"target_count": 1},
+                    "targets": [{"module": "samplecli.runner"}],
+                }
+
+        with patch("api_server.server.CliAnythingHub", FakeHub):
+            with daemon_url() as base_url:
+                request = urllib.request.Request(
+                    f"{base_url}/plugins/cli-anything/adapter-targets",
+                    data=json.dumps(
+                        {
+                            "harness_name": "py4csr",
+                            "from_market": True,
+                            "package": "py4csr",
+                            "limit": 10,
+                        }
+                    ).encode("utf-8"),
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(payload["harness_name"], "py4csr")
+                    self.assertEqual(payload["package"], "py4csr")
+                    self.assertEqual(payload["limit"], 10)
+                    self.assertEqual(payload["targets"][0]["module"], "samplecli.runner")
+
     def test_runtime_transport_status_and_plan_routes(self):
         with daemon_url() as base_url:
             with urllib.request.urlopen(f"{base_url}/runtime/transports?kind=pty", timeout=5) as response:
