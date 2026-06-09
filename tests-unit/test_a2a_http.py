@@ -52,7 +52,7 @@ class A2AHttpTests(unittest.TestCase):
                         "role": "user",
                         "parts": [{"text": "workflow"}],
                     },
-                    "metadata": {"cbn": {"workflow_path": "workflows/example.json", "dry_run": True}},
+                    "metadata": {"cbn": {"workflow_id": "example.git-check", "dry_run": True}},
                 },
             }
         )
@@ -60,6 +60,7 @@ class A2AHttpTests(unittest.TestCase):
         self.assertEqual(response["jsonrpc"], "2.0")
         self.assertEqual(task["status"]["state"], "completed")
         self.assertEqual(task["metadata"]["cbn"]["workflow_id"], "example.git-check")
+        self.assertEqual(task["metadata"]["cbn"]["workflow_path"], "workflows/example.json")
         self.assertEqual(task["metadata"]["cbn"]["status"], "completed")
         self.assertTrue(task["artifacts"])
         self.assertEqual(task["artifacts"][0]["metadata"]["cbn"]["kind"], "stdout")

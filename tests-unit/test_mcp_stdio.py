@@ -56,13 +56,14 @@ class McpStdioTests(unittest.TestCase):
                     "method": "tools/call",
                     "params": {
                         "name": "workflow:example.git-check",
-                        "arguments": {"workflow_path": "workflows/example.json", "dry_run": True},
+                        "arguments": {"dry_run": True},
                     },
                 }
             )
         )
         result = response["result"]
         self.assertFalse(result["isError"])
+        self.assertEqual(result["structuredContent"]["workflow_id"], "example.git-check")
         self.assertEqual(result["structuredContent"]["workflow_path"], "workflows/example.json")
         self.assertEqual(result["structuredContent"]["run"]["status"], "completed")
 

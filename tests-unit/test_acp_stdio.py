@@ -92,7 +92,7 @@ class AcpStdioTests(unittest.TestCase):
                     "params": {
                         "sessionId": session,
                         "prompt": [{"type": "text", "text": "workflow"}],
-                        "_meta": {"cbn": {"workflow_path": "workflows/example.json", "dry_run": True}},
+                        "_meta": {"cbn": {"workflow_id": "example.git-check", "dry_run": True}},
                     },
                 }
             )
@@ -101,6 +101,7 @@ class AcpStdioTests(unittest.TestCase):
         self.assertEqual(result["stopReason"], "end_turn")
         cbn = result["_meta"]["cbn"]
         self.assertEqual(cbn["workflow_id"], "example.git-check")
+        self.assertEqual(cbn["workflow_path"], "workflows/example.json")
         self.assertEqual(cbn["status"], "completed")
 
     def test_smoke_runs_real_stdio_agent(self):

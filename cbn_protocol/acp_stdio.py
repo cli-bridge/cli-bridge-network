@@ -115,8 +115,9 @@ class AcpStdioAgent:
             raise ValueError("session/prompt params.prompt must be a list")
         cbn_meta = _cbn_metadata(params)
         workflow_path = cbn_meta.get("workflow_path")
-        if isinstance(workflow_path, str) and workflow_path:
-            return self._prompt_workflow(workflow_path, cbn_meta)
+        workflow_id = cbn_meta.get("workflow_id")
+        if (isinstance(workflow_path, str) and workflow_path) or (isinstance(workflow_id, str) and workflow_id):
+            return self._prompt_workflow(cbn_meta)
         capability_id = cbn_meta.get("capability_id")
         if not isinstance(capability_id, str) or not capability_id:
             raise ValueError("params._meta.cbn.capability_id is required")
@@ -147,9 +148,10 @@ class AcpStdioAgent:
             },
         }
 
-    def _prompt_workflow(self, workflow_path: str, cbn_meta: dict[str, Any]) -> dict[str, Any]:
+    def _prompt_workflow(self, cbn_meta: dict[str, Any]) -> dict[str, Any]:
         result = run_workflow_from_metadata(self.runtime, cbn_meta)
         success = workflow_run_ok(result)
+        workflow_path = result.get("workflow_path") or cbn_meta.get("workflow_path")
         return {
             "stopReason": "end_turn" if success else "refusal",
             "_meta": {
@@ -309,7 +311,7 @@ def smoke_acp_workflow_stdio(workflow_path: str, dry_run: bool = False, confirme
             "prompt": [{"type": "text", "text": "Run CBN workflow"}],
             "_meta": {
                 "cbn": {
-                    "workflow_path": workflow_path,
+                    "workflow_id": _workflow_id_from_path(workflow_path),
                     "dry_run": dry_run,
                     "confirmed": confirmed,
                 }
@@ -328,6 +330,7 @@ def smoke_acp_workflow_stdio(workflow_path: str, dry_run: bool = False, confirme
     return_code = proc.wait(timeout=60)
     prompt_result = responses[2].get("result", {}) if len(responses) > 2 else {}
     cbn = prompt_result.get("_meta", {}).get("cbn", {})
+    workflow_id = _workflow_id_from_path(workflow_path)
     ok = (
         return_code == 0
         and len(responses) == 3
@@ -335,6 +338,7 @@ def smoke_acp_workflow_stdio(workflow_path: str, dry_run: bool = False, confirme
         and isinstance(session_id, str)
         and prompt_result.get("stopReason") == "end_turn"
         and cbn.get("workflow_path") == workflow_path
+        and cbn.get("workflow_id") == workflow_id
         and cbn.get("status") == "completed"
     )
     return {
@@ -378,6 +382,12 @@ def _initialize_result(params: Any) -> dict[str, Any]:
             }
         },
     }
+
+
+def _workflow_id_from_path(workflow_path: str) -> str:
+    from cbn_execution.graph import WorkflowGraph
+
+    return WorkflowGraph.from_file(Path(workflow_path)).workflow_id
 
 
 def _cbn_metadata(params: dict[str, Any]) -> dict[str, Any]:

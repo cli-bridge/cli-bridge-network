@@ -163,7 +163,7 @@ def smoke_a2a_workflow_http(workflow_path: str, dry_run: bool = False, confirmed
                         },
                         "metadata": {
                             "cbn": {
-                                "workflow_path": workflow_path,
+                                "workflow_id": workflow_id,
                                 "dry_run": dry_run,
                                 "confirmed": confirmed,
                             }
@@ -186,6 +186,7 @@ def smoke_a2a_workflow_http(workflow_path: str, dry_run: bool = False, confirmed
             and any(skill.get("id") == f"workflow:{workflow_id}" for skill in card.get("skills", []))
             and task.get("status", {}).get("state") == "completed"
             and task.get("metadata", {}).get("cbn", {}).get("workflow_path") == workflow_path
+            and task.get("metadata", {}).get("cbn", {}).get("workflow_id") == workflow_id
             and task.get("metadata", {}).get("cbn", {}).get("status") == "completed"
         )
         return {
@@ -215,8 +216,9 @@ def _send_message(params: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("params.metadata.cbn must be an object")
     capability_id = cbn_meta.get("capability_id")
     workflow_path = cbn_meta.get("workflow_path")
-    if isinstance(workflow_path, str) and workflow_path:
-        return _send_workflow_message(message, workflow_path, cbn_meta)
+    workflow_id = cbn_meta.get("workflow_id")
+    if (isinstance(workflow_path, str) and workflow_path) or (isinstance(workflow_id, str) and workflow_id):
+        return _send_workflow_message(message, cbn_meta)
     if not isinstance(capability_id, str) or not capability_id:
         raise ValueError("params.metadata.cbn.capability_id is required")
     extra_args = cbn_meta.get("extra_args", [])
@@ -268,9 +270,10 @@ def _send_message(params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _send_workflow_message(message: dict[str, Any], workflow_path: str, cbn_meta: dict[str, Any]) -> dict[str, Any]:
+def _send_workflow_message(message: dict[str, Any], cbn_meta: dict[str, Any]) -> dict[str, Any]:
     runtime = build_runtime()
     result = run_workflow_from_metadata(runtime, cbn_meta)
+    workflow_path = result.get("workflow_path") or cbn_meta.get("workflow_path")
     task_id = str(uuid.uuid4())
     context_id = message.get("contextId") if isinstance(message.get("contextId"), str) else str(uuid.uuid4())
     state = "completed" if workflow_run_ok(result) else "failed"
@@ -283,6 +286,7 @@ def _send_workflow_message(message: dict[str, Any], workflow_path: str, cbn_meta
             {
                 "data": {
                     "workflow_path": workflow_path,
+                    "workflow_id": result.get("workflow_id"),
                     "run": result,
                     "messages": workflow_messages(result),
                 }

@@ -124,6 +124,14 @@ def _export_a2a_workflows(workflows: list[dict[str, Any]]) -> dict[str, Any]:
                     "description": "CBN workflow descriptor for multi-capability routing.",
                     "inputModes": ["application/json"],
                     "outputModes": ["application/json"],
+                    "metadata": {
+                        "cbn_input": {
+                            "metadata.cbn.workflow_id": workflow["workflow_id"],
+                            "metadata.cbn.workflow_path": workflow["path"],
+                            "metadata.cbn.dry_run": "boolean",
+                            "metadata.cbn.confirmed": "boolean",
+                        }
+                    },
                     "tags": ["workflow", f"tasks:{workflow['task_count']}"],
                     "cbn": _workflow_cbn_contract(workflow),
                     "cbn_workflow": workflow,
@@ -144,6 +152,8 @@ def _export_acp_workflows(workflows: list[dict[str, Any]]) -> dict[str, Any]:
                 "title": workflow["title"] or workflow["path"],
                 "kind": "workflow",
                 "input": {
+                    "workflow_id": "string",
+                    "workflow_path": "string",
                     "dry_run": "boolean",
                     "confirmed": "boolean",
                 },
@@ -165,6 +175,14 @@ def _workflow_input_schema() -> dict[str, Any]:
         "properties": {
             "dry_run": {"type": "boolean"},
             "confirmed": {"type": "boolean"},
+            "workflow_id": {
+                "type": "string",
+                "description": "Optional stable workflow id; omitted when calling a workflow:<id> tool.",
+            },
+            "workflow_path": {
+                "type": "string",
+                "description": "Local compatibility fallback; prefer workflow_id or the workflow:<id> tool name.",
+            },
         },
         "additionalProperties": False,
     }

@@ -66,6 +66,10 @@ class ProtocolExportTests(unittest.TestCase):
         self.assertFalse(payload["wire_compatible"])
         workflow_tool = payload["workflowTools"][0]
         self.assertEqual(workflow_tool["name"], "workflow:example.cli-anything-macrocli-mermaid-routing")
+        schema = workflow_tool["inputSchema"]
+        self.assertIn("workflow_id", schema["properties"])
+        self.assertIn("workflow_path", schema["properties"])
+        self.assertNotIn("workflow_path", schema.get("required", []))
         workflow = workflow_tool["_meta"]["cbn_workflow"]
         self.assertEqual(workflow["task_count"], 3)
         self.assertEqual(workflow["tasks"][0]["capability"]["parser_ref"], "cli-anything.macrocli.backends")
@@ -83,9 +87,14 @@ class ProtocolExportTests(unittest.TestCase):
             "workflow:example.cli-anything-macrocli-mermaid-routing",
         )
         self.assertEqual(
+            payload["exports"]["a2a"]["agentCard"]["skills"][0]["metadata"]["cbn_input"]["metadata.cbn.workflow_id"],
+            "example.cli-anything-macrocli-mermaid-routing",
+        )
+        self.assertEqual(
             payload["exports"]["acp"]["workflows"][0]["cbn"]["runner"],
             "cbn.workflow.run",
         )
+        self.assertEqual(payload["exports"]["acp"]["workflows"][0]["input"]["workflow_id"], "string")
 
     def test_protocol_check_reports_descriptor_evidence_and_wire_gaps(self):
         payload = check_protocol(self.registry, "all", capability_id="cli-anything.mermaid.set-diagram")
@@ -335,6 +344,13 @@ class ProtocolExportTests(unittest.TestCase):
         self.assertFalse(mcp["wire_compatible"])
         self.assertTrue(
             any(
+                item["requirement"] == "MCP workflow handle is descriptor-native"
+                and item["status"] == "present"
+                for item in mcp["checks"]
+            )
+        )
+        self.assertTrue(
+            any(
                 item["requirement"] == "CBN workflow descriptor is preserved"
                 and item["status"] == "present"
                 for item in mcp["checks"]
@@ -352,6 +368,13 @@ class ProtocolExportTests(unittest.TestCase):
         self.assertEqual(a2a["scope"], "workflow")
         self.assertTrue(
             any(
+                item["requirement"] == "A2A workflow handle is descriptor-native"
+                and item["status"] == "present"
+                for item in a2a["checks"]
+            )
+        )
+        self.assertTrue(
+            any(
                 item["requirement"] == "A2A workflow message/send smoke"
                 and "artifact-id-routing.example.json" in item["evidence"]
                 for item in a2a["checks"]
@@ -359,6 +382,13 @@ class ProtocolExportTests(unittest.TestCase):
         )
         acp = payload["checks"]["acp"]
         self.assertEqual(acp["scope"], "workflow")
+        self.assertTrue(
+            any(
+                item["requirement"] == "ACP workflow handle is descriptor-native"
+                and item["status"] == "present"
+                for item in acp["checks"]
+            )
+        )
         self.assertGreaterEqual(acp["status_counts"]["present"], 4)
 
     def test_protocol_check_rejects_mixed_capability_and_workflow_scope(self):

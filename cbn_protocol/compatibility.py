@@ -327,6 +327,7 @@ def _check_acp(descriptor: dict[str, Any]) -> list[dict[str, str]]:
 def _check_mcp_workflow(descriptor: dict[str, Any]) -> list[dict[str, str]]:
     tools = descriptor.get("workflowTools")
     first_tool = tools[0] if isinstance(tools, list) and tools else {}
+    input_schema = first_tool.get("inputSchema") if isinstance(first_tool, dict) else {}
     meta = first_tool.get("_meta", {}) if isinstance(first_tool, dict) else {}
     cbn = meta.get("cbn") if isinstance(meta, dict) else None
     workflow = meta.get("cbn_workflow") if isinstance(meta, dict) else None
@@ -344,10 +345,11 @@ def _check_mcp_workflow(descriptor: dict[str, Any]) -> list[dict[str, str]]:
         ),
         _check(
             "workflow input schema is JSON object",
-            isinstance(first_tool.get("inputSchema"), dict)
-            and first_tool["inputSchema"].get("type") == "object",
+            isinstance(input_schema, dict)
+            and input_schema.get("type") == "object",
             "workflow tool exposes dry_run/confirmed inputSchema",
         ),
+        _workflow_handle_check("MCP", cbn, input_schema),
         _workflow_descriptor_check(cbn, workflow),
         _workflow_routing_check(workflow),
         _partial(
@@ -367,6 +369,7 @@ def _check_a2a_workflow(descriptor: dict[str, Any]) -> list[dict[str, str]]:
     first_skill = skills[0] if isinstance(skills, list) and skills else {}
     cbn = first_skill.get("cbn") if isinstance(first_skill, dict) else None
     workflow = first_skill.get("cbn_workflow") if isinstance(first_skill, dict) else None
+    metadata = first_skill.get("metadata") if isinstance(first_skill, dict) else {}
     return [
         _check(
             "descriptor declares A2A workflow target",
@@ -386,6 +389,7 @@ def _check_a2a_workflow(descriptor: dict[str, Any]) -> list[dict[str, str]]:
             and isinstance(first_skill.get("outputModes"), list),
             "workflow skill declares JSON input/output modes",
         ),
+        _workflow_handle_check("A2A", cbn, metadata.get("cbn_input") if isinstance(metadata, dict) else None),
         _workflow_descriptor_check(cbn, workflow),
         _workflow_routing_check(workflow),
         _partial(
@@ -404,6 +408,7 @@ def _check_acp_workflow(descriptor: dict[str, Any]) -> list[dict[str, str]]:
     first_workflow = workflows[0] if isinstance(workflows, list) and workflows else {}
     cbn = first_workflow.get("cbn") if isinstance(first_workflow, dict) else None
     workflow = first_workflow.get("cbn_workflow") if isinstance(first_workflow, dict) else None
+    workflow_input = first_workflow.get("input") if isinstance(first_workflow, dict) else {}
     return [
         _check(
             "descriptor declares ACP workflow target",
@@ -423,6 +428,7 @@ def _check_acp_workflow(descriptor: dict[str, Any]) -> list[dict[str, str]]:
             and first_workflow["output"].get("messages") == "BridgeMessage[]",
             "ACP workflow output declares WorkflowRun plus task BridgeMessages",
         ),
+        _workflow_handle_check("ACP", cbn, workflow_input),
         _workflow_descriptor_check(cbn, workflow),
         _workflow_routing_check(workflow),
         _partial(
@@ -448,6 +454,38 @@ def _workflow_descriptor_check(cbn: Any, workflow: Any) -> dict[str, str]:
         and workflow.get("task_count") == len(workflow["tasks"]),
         "descriptor embeds valid cbn WorkflowDescriptor and cbn_workflow task graph",
     )
+
+
+def _workflow_handle_check(protocol: str, cbn: Any, input_descriptor: Any) -> dict[str, str]:
+    workflow_id = cbn.get("workflow_id") if isinstance(cbn, dict) else None
+    if protocol == "MCP":
+        properties = input_descriptor.get("properties", {}) if isinstance(input_descriptor, dict) else {}
+        required = input_descriptor.get("required", []) if isinstance(input_descriptor, dict) else []
+        passed = (
+            isinstance(workflow_id, str)
+            and bool(workflow_id)
+            and isinstance(properties, dict)
+            and "workflow_id" in properties
+            and "workflow_path" not in required
+        )
+        evidence = "workflow:<id> tool name and optional workflow_id can generate a call without local workflow_path"
+    elif protocol == "A2A":
+        passed = (
+            isinstance(workflow_id, str)
+            and bool(workflow_id)
+            and isinstance(input_descriptor, dict)
+            and "metadata.cbn.workflow_id" in input_descriptor
+        )
+        evidence = "AgentCard skill metadata documents metadata.cbn.workflow_id for message/send"
+    else:
+        passed = (
+            isinstance(workflow_id, str)
+            and bool(workflow_id)
+            and isinstance(input_descriptor, dict)
+            and "workflow_id" in input_descriptor
+        )
+        evidence = "ACP workflow input declares workflow_id so session/prompt need not expose a local path"
+    return _check(f"{protocol} workflow handle is descriptor-native", passed, evidence)
 
 
 def _workflow_routing_check(workflow: Any) -> dict[str, str]:

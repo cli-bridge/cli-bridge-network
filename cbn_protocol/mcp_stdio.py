@@ -119,23 +119,24 @@ class McpStdioServer:
         }
 
     def _call_workflow(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        workflow_path = arguments.get("workflow_path")
-        if not isinstance(workflow_path, str) or not workflow_path:
-            raise ValueError("workflow tools/call requires arguments.workflow_path")
         result = run_workflow_from_metadata(
             self.runtime,
             {
-                "workflow_path": workflow_path,
+                "workflow_id": arguments.get("workflow_id"),
+                "workflow_path": arguments.get("workflow_path"),
                 "dry_run": bool(arguments.get("dry_run", False)),
                 "confirmed": bool(arguments.get("confirmed", False)),
             },
+            workflow_tool=name,
         )
         is_error = not workflow_run_ok(result)
+        workflow_path = result.get("workflow_path") or arguments.get("workflow_path")
         return {
             "content": [{"type": "text", "text": result.get("status", "unknown")}],
             "structuredContent": {
                 "workflow_tool": name,
                 "workflow_path": workflow_path,
+                "workflow_id": result.get("workflow_id"),
                 "run": result,
             },
             "isError": bool(is_error),
@@ -245,7 +246,6 @@ def smoke_mcp_workflow_stdio(workflow_path: str, dry_run: bool = False, confirme
             "params": {
                 "name": tool_name,
                 "arguments": {
-                    "workflow_path": workflow_path,
                     "dry_run": dry_run,
                     "confirmed": confirmed,
                 },
