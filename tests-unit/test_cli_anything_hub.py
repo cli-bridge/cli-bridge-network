@@ -43,6 +43,18 @@ SAMPLE_MERMAID_RECORD = {
     "_source": "harness",
 }
 
+SAMPLE_3MF_RECORD = {
+    "name": "3mf",
+    "display_name": "3MF Tools",
+    "version": "1.0.0",
+    "description": "Inspect and transform 3MF model files",
+    "requires": "Python 3.10+; numpy, scipy, trimesh",
+    "install_cmd": "pip install git+https://github.com/HKUDS/CLI-Anything.git#subdirectory=3mf/agent-harness",
+    "entry_point": "cli-anything-3mf",
+    "category": "file",
+    "_source": "harness",
+}
+
 
 class CliAnythingHubTests(unittest.TestCase):
     def test_sanitize_harness_name_keeps_manifest_safe(self):
@@ -251,6 +263,44 @@ class CliAnythingHubTests(unittest.TestCase):
             stages = {item["id"]: item["status"] for item in result["lifecycle"]["stages"]}
             self.assertEqual(stages["write_manifest"], "ready")
             self.assertEqual(stages["install_harness"], "pending")
+
+    def test_evaluate_harness_allows_managed_python_package_requirements(self):
+        class FakeHub(CliAnythingHub):
+            def info(self, harness_name: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "info", harness_name),
+                    exit_code=0,
+                    stdout=(
+                        "Entry point: cli-anything-3mf\n"
+                        "Requires: Python 3.10+; numpy, scipy, trimesh\n"
+                        "Status: not installed\n"
+                    ),
+                    stderr="",
+                )
+
+            def search_market(self, query: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "search", query, "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[SAMPLE_3MF_RECORD],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result = FakeHub(root=Path(tmp)).evaluate_harness("3mf", from_market=True)
+            self.assertTrue(result["ok"])
+            self.assertTrue(result["install_candidate"])
+            self.assertTrue(result["gates"]["external_dependency_free"])
+            self.assertEqual(result["requirements"]["dependency_class"], "managed-package")
+            self.assertTrue(result["requirements"]["managed_dependency_only"])
+            self.assertFalse(result["requirements"]["manual_dependency_required"])
+            self.assertIn("python-runtime", result["requirements"]["signals"])
+            self.assertIn("managed-packages", result["requirements"]["signals"])
+            self.assertNotIn(
+                "declared requirements need external app, account, token, or service",
+                result["blockers"],
+            )
 
     def test_evaluate_harness_blocks_account_or_token_requirements(self):
         class FakeHub(CliAnythingHub):
@@ -713,6 +763,32 @@ class CliAnythingHubTests(unittest.TestCase):
             self.assertGreaterEqual(blocked["readiness"]["probe_blocker_count"], 1)
             self.assertTrue(any(item["id"] == "command:gimp" for item in blocked["readiness"]["probes"]))
 
+    def test_candidate_harnesses_probe_readiness_accepts_managed_package_requirements(self):
+        class FakeHub(CliAnythingHub):
+            def list_market(self) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "list", "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[SAMPLE_3MF_RECORD],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp, patch("cbn_plugins.cli_anything.shutil.which", return_value=None):
+            result = FakeHub(root=Path(tmp)).candidate_harnesses(limit=10, with_probes=True)
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["install_candidate_count"], 1)
+            self.assertEqual(result["probe_ready_count"], 1)
+            candidate = result["candidates"][0]
+            self.assertEqual(candidate["harness_name"], "3mf")
+            self.assertTrue(candidate["install_candidate"])
+            self.assertTrue(candidate["readiness"]["ready"])
+            self.assertEqual(candidate["readiness"]["probe_blocker_count"], 0)
+            declared = candidate["readiness"]["probes"][0]
+            self.assertEqual(declared["id"], "declared-requirements")
+            self.assertEqual(declared["severity"], "info")
+            self.assertEqual(declared["dependency_class"], "managed-package")
+
     def test_candidate_harnesses_limits_after_ranking_full_market(self):
         class FakeHub(CliAnythingHub):
             def list_market(self) -> CliHubCommandResult:
@@ -789,6 +865,33 @@ class CliAnythingHubTests(unittest.TestCase):
             self.assertTrue(candidate["local_status"]["entrypoint_available"])
             self.assertTrue(candidate["local_status"]["launch_ready"])
             self.assertEqual(candidate["lifecycle"]["state"], "launch_ready")
+
+    def test_candidate_harnesses_uses_imported_manifest_validation_status(self):
+        local_record = dict(SAMPLE_MERMAID_RECORD)
+        local_record["entry_point"] = sys.executable
+
+        class FakeHub(CliAnythingHub):
+            def list_market(self) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "list", "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[local_record],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            hub = FakeHub(root=Path(tmp))
+            path = hub.write_harness_manifest("mermaid", market_record=local_record)
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+            manifest["spec"]["output"]["verified"] = True
+            path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+            result = hub.candidate_harnesses(limit=1)
+            candidate = result["candidates"][0]
+            self.assertTrue(candidate["validation"]["valid"])
+            self.assertEqual(candidate["validation"]["warnings"], [])
+            self.assertTrue(candidate["local_status"]["manifest_imported"])
 
     def test_candidate_harnesses_reports_market_failures_without_crashing(self):
         hub = CliAnythingHub(entrypoint="cbn-cli-hub-that-does-not-exist")

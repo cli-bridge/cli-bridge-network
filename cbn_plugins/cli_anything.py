@@ -953,6 +953,8 @@ class CliAnythingHub:
             manifest = self.manifest_for_harness(harness_name, market_record=record)
             capability_id = manifest["metadata"]["id"]
             manifest_path = self.paths.manifests / f"{capability_id}.json"
+            if manifest_path.exists():
+                manifest = _manifest_dict_from_path(manifest_path, manifest)
             validation = validate_manifest_dict(
                 manifest,
                 source_path=manifest_path,
@@ -1752,35 +1754,98 @@ def _requirement_assessment(requires: str | None) -> dict[str, Any]:
         return {
             "declared": requires,
             "external_dependency_free": True,
+            "dependency_class": "none",
+            "managed_dependency_only": False,
+            "manual_dependency_required": False,
             "signals": [],
         }
     text = requires.casefold()
     blocking_markers = (
         "api key",
+        "apikey",
         "token",
+        "secret",
+        "credential",
         "account",
+        "auth",
         "desktop app",
         "running",
         "server",
         "instance",
+        "localhost",
+        "127.0.0.1",
         "licensed",
+        "license",
         "installation",
-        "install ",
         "apt ",
         "brew ",
+        "choco ",
+        "winget ",
         "set ",
         "env ",
+        "environment variable",
         "extension",
         "login",
     )
     signals = [marker.strip() for marker in blocking_markers if marker in text]
+    managed_signals = _managed_requirement_signals(requires)
+    if not signals and managed_signals:
+        return {
+            "declared": requires,
+            "external_dependency_free": True,
+            "dependency_class": "managed-package",
+            "managed_dependency_only": True,
+            "manual_dependency_required": False,
+            "signals": managed_signals,
+        }
     if not signals:
         signals = ["declared requirement"]
     return {
         "declared": requires,
         "external_dependency_free": False,
+        "dependency_class": "manual-or-external",
+        "managed_dependency_only": False,
+        "manual_dependency_required": True,
         "signals": signals,
     }
+
+
+def _managed_requirement_signals(requires: str) -> list[str]:
+    text = requires.casefold().strip()
+    if not text:
+        return []
+    signals: list[str] = []
+    if re.search(r"\bpython\s*[0-9><=~.+-]*", text):
+        signals.append("python-runtime")
+    if re.search(r"\b(node|npm|npx|pnpm|yarn)\b", text):
+        signals.append("node-runtime")
+    if re.search(r"\b(pip|uv|poetry|pdm)\b", text):
+        signals.append("python-package-manager")
+    cleaned = re.sub(r"\bpython\s*[0-9><=~.+-]*", "", text)
+    cleaned = re.sub(r"\b(node|npm|npx|pnpm|yarn|pip|uv|poetry|pdm)\b", "", cleaned)
+    cleaned = re.sub(r"\b(version|package|packages|dependency|dependencies|requires|required)\b", "", cleaned)
+    cleaned = re.sub(r"[><=~!^]+", "", cleaned)
+    tokens = [
+        token.strip()
+        for token in re.split(r"[,;\s]+", cleaned)
+        if token.strip()
+    ]
+    package_tokens = [
+        token
+        for token in tokens
+        if re.match(r"^@?[a-z0-9][a-z0-9_.-]*(/[a-z0-9][a-z0-9_.-]*)?$", token)
+        and not re.fullmatch(r"\d+(\.\d+)*\+?", token)
+    ]
+    leftovers = [
+        token
+        for token in tokens
+        if token not in package_tokens and not re.fullmatch(r"\d+(\.\d+)*\+?", token)
+    ]
+    if package_tokens:
+        signals.append("managed-packages")
+    if signals and not leftovers:
+        return sorted(set(signals))
+    return []
 
 
 def _platform_assessment(market_record: dict[str, Any] | None, requires: str | None) -> dict[str, Any]:
@@ -1972,7 +2037,8 @@ def _stage_status(done: bool, ready: bool, blocked: bool) -> str:
 def _dependency_probes(requires: str | None, entry_point: Any) -> list[dict[str, Any]]:
     probes: list[dict[str, Any]] = []
     requirement = (requires or "").strip()
-    if not requirement or requirement.casefold() in {"none", "nothing", "null", "n/a"}:
+    assessment = _requirement_assessment(requirement)
+    if assessment["external_dependency_free"]:
         probes.append(
             {
                 "id": "declared-requirements",
@@ -1980,6 +2046,8 @@ def _dependency_probes(requires: str | None, entry_point: Any) -> list[dict[str,
                 "status": "satisfied",
                 "severity": "info",
                 "detail": requirement or "no declared requirements",
+                "dependency_class": assessment["dependency_class"],
+                "signals": assessment["signals"],
             }
         )
     else:
@@ -1990,6 +2058,8 @@ def _dependency_probes(requires: str | None, entry_point: Any) -> list[dict[str,
                 "status": "declared",
                 "severity": "blocker",
                 "detail": requirement,
+                "dependency_class": assessment["dependency_class"],
+                "signals": assessment["signals"],
             }
         )
 

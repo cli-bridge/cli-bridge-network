@@ -7,7 +7,8 @@
     "parserRef": "cli-anything.raw",
     "verifiedCapabilities": [
       "cli-anything.mermaid.launch",
-      "cli-anything.macrocli.launch"
+      "cli-anything.macrocli.launch",
+      "cli-anything.3mf.launch"
     ]
   },
   "cases": [
@@ -41,6 +42,26 @@
             "contains": [
               "cli-anything-macrocli",
               "backends"
+            ]
+          },
+          "stderr": {
+            "equals": ""
+          }
+        }
+      }
+    },
+    {
+      "id": "3mf-launch-help",
+      "stdout": "Usage: cli-anything-3mf [OPTIONS] COMMAND [ARGS]...\n\n  3MF CLI - Mesh geometry editor for 3D printing files.\n\n  Run without a subcommand to enter interactive REPL mode.\n\nOptions:\n  --json  Output as JSON\n  --help  Show this message and exit.\n\nCommands:\n  compare  Compare two 3MF files.\n  info     Show mesh info (vertices, faces, bounds, watertight, volume).\n  inspect  Detect and list all cylindrical holes.\n  repair   Fix mesh issues (degenerate faces, duplicate vertices, normals).\n  resize   Resize cylindrical holes to specified diameter.\n",
+      "stderr": "",
+      "expect": {
+        "ok": true,
+        "data": {
+          "stdout": {
+            "contains": [
+              "cli-anything-3mf",
+              "Commands:",
+              "inspect"
             ]
           },
           "stderr": {
