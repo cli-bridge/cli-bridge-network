@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from adapters.base import ToolCall, ToolResult
+from adapters.pty import PtyAdapter
 from adapters.stdio import StdioAdapter
 from cbn_audit.log import AuditLog
 from cbn_approval.store import ApprovalStore
@@ -38,6 +39,7 @@ class CapabilityExecutor:
         self.artifact_store = artifact_store
         self.parser_registry = parser_registry or ParserRegistry.builtins()
         self.stdio = StdioAdapter()
+        self.pty = PtyAdapter()
 
     def call(
         self,
@@ -215,6 +217,8 @@ class CapabilityExecutor:
     def _dispatch(self, manifest: CapabilityManifest, request: ToolCall) -> ToolResult:
         if manifest.transport.kind == "stdio":
             return self.stdio.call(request)
+        if manifest.transport.kind == "pty":
+            return self.pty.call(request)
         return ToolResult(
             capability_id=manifest.capability_id,
             allowed=False,

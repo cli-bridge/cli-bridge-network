@@ -9,10 +9,14 @@ license = { file = "LICENSE" }
 [project.scripts]
 cbn = "cbn.cli:main"
 
+[project.optional-dependencies]
+pty = [
+  "pywinpty>=2.0; platform_system == 'Windows'",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests", "tests-unit"]
 pythonpath = ["."]
 
 [tool.ruff]
 line-length = 100
-

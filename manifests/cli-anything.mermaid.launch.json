@@ -23,7 +23,7 @@
   },
   "spec": {
     "transport": {
-      "kind": "stdio",
+      "kind": "pty",
       "command": "cli-hub",
       "argsTemplate": [
         "launch",

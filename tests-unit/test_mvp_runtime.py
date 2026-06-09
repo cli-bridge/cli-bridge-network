@@ -161,6 +161,43 @@ class MvpRuntimeTests(unittest.TestCase):
         self.assertEqual(payload["reason"], "dry-run")
         self.assertIn("git --version", payload["stdout"])
 
+    def test_executor_dispatches_pty_transport_for_dry_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            registry = ManifestRegistry()
+            registry.register(
+                CapabilityManifest.from_dict(
+                    {
+                        "apiVersion": "bridge.dev/v1alpha1",
+                        "kind": "ToolManifest",
+                        "metadata": {"id": "test.pty", "title": "PTY"},
+                        "spec": {
+                            "transport": {
+                                "kind": "pty",
+                                "command": sys.executable,
+                                "argsTemplate": ["--version"],
+                                "cwdPolicy": "workspace",
+                                "timeoutSeconds": 5,
+                            },
+                            "policy": {
+                                "risk": "read",
+                                "requiresConfirmation": False,
+                                "network": "deny",
+                            },
+                            "output": {"parserRef": "raw.text", "verified": True},
+                        },
+                    }
+                )
+            )
+            executor = CapabilityExecutor(
+                registry,
+                AuditLog(Path(tmp) / "audit.jsonl"),
+                artifact_store=ArtifactStore(Path(tmp) / "artifacts"),
+            )
+            result = executor.call("test.pty", dry_run=True)
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["reason"], "dry-run")
+            self.assertIn("--version", result["stdout"])
+
     def test_policy_blocks_privileged_without_confirmation(self):
         runtime = build_runtime()
         manifest_type = type(runtime.registry.require("git.version"))

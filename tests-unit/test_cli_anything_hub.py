@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from cbn_core.manifest import CapabilityManifest
 from cbn_plugins.cli_anything import (
@@ -368,7 +369,17 @@ class CliAnythingHubTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             hub = FakeHub(root=Path(tmp))
             hub.write_harness_manifest("mermaid", market_record=SAMPLE_MERMAID_RECORD)
-            result = hub.verify_harness("mermaid", from_market=True)
+            with patch(
+                "cbn_plugins.cli_anything.pty_backend_status",
+                return_value={
+                    "kind": "pty",
+                    "platform": sys.platform,
+                    "backend": "test-pty",
+                    "available": True,
+                    "install_hint": None,
+                },
+            ):
+                result = hub.verify_harness("mermaid", from_market=True)
             self.assertTrue(result["ok"])
             self.assertTrue(result["registry"]["manifest_imported"])
             self.assertEqual(result["registry"]["protocol_check_source"], "current_registry")
@@ -378,6 +389,44 @@ class CliAnythingHubTests(unittest.TestCase):
             self.assertEqual(stages["write_manifest"], "completed")
             self.assertEqual(stages["install_harness"], "completed")
             self.assertEqual(stages["dry_run_call"], "ready")
+
+    def test_verify_harness_blocks_runtime_when_pty_backend_missing(self):
+        class FakeHub(CliAnythingHub):
+            def info(self, harness_name: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "info", harness_name),
+                    exit_code=0,
+                    stdout=f"Entry point: {sys.executable}\nRequires: nothing\nStatus: installed\n",
+                    stderr="",
+                )
+
+            def search_market(self, query: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "search", query, "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[SAMPLE_MERMAID_RECORD],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            hub = FakeHub(root=Path(tmp))
+            hub.write_harness_manifest("mermaid", market_record=SAMPLE_MERMAID_RECORD)
+            with patch(
+                "cbn_plugins.cli_anything.pty_backend_status",
+                return_value={
+                    "kind": "pty",
+                    "platform": sys.platform,
+                    "backend": "test-pty",
+                    "available": False,
+                    "install_hint": "pip install cli-bridge-network[pty]",
+                },
+            ):
+                result = hub.verify_harness("mermaid", from_market=True)
+            self.assertTrue(result["ok"])
+            self.assertFalse(result["ready_for_runtime_verification"])
+            self.assertFalse(result["evaluation"]["gates"]["runtime_transport_ready"])
+            self.assertIn("runtime transport is not ready", result["verification_blockers"])
 
     def test_probe_harness_reports_missing_system_command(self):
         class FakeHub(CliAnythingHub):
@@ -771,11 +820,11 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertIn("supported JSON list shape", result["error"])
 
-    def test_manifest_for_harness_uses_stdio_launch_boundary(self):
+    def test_manifest_for_harness_uses_pty_launch_boundary(self):
         manifest = CliAnythingHub().manifest_for_harness("gimp")
         self.assertEqual(manifest["metadata"]["id"], "cli-anything.gimp.launch")
         self.assertEqual(manifest["metadata"]["labels"]["plugin"], "cli-anything")
-        self.assertEqual(manifest["spec"]["transport"]["kind"], "stdio")
+        self.assertEqual(manifest["spec"]["transport"]["kind"], "pty")
         self.assertEqual(manifest["spec"]["transport"]["argsTemplate"], ["launch", "gimp", "--"])
         self.assertEqual(manifest["spec"]["transport"]["timeoutSeconds"], 600)
         self.assertFalse(manifest["spec"]["output"]["verified"])

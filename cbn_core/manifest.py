@@ -12,7 +12,7 @@ MANIFEST_API_VERSION = "bridge.dev/v1alpha1"
 VALID_MANIFEST_RISKS = {"read", "write-workspace", "privileged", "external-network"}
 VALID_NETWORK_POLICIES = {"deny", "localhost", "requires-confirmation", "allow"}
 KNOWN_TRANSPORT_KINDS = {"stdio", "pty"}
-CURRENT_EXECUTOR_TRANSPORTS = {"stdio"}
+CURRENT_EXECUTOR_TRANSPORTS = {"stdio", "pty"}
 
 
 @dataclass(frozen=True)

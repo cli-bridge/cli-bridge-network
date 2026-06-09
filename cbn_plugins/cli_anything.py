@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from adapters.pty import pty_backend_status
 from cbn.paths import resolve_project_paths
 from cbn_core.manifest import CapabilityManifest, ManifestRegistry, validate_manifest_dict
 from cbn_parsers.registry import ParserRegistry
@@ -309,7 +310,7 @@ class CliAnythingHub:
             },
             "spec": {
                 "transport": {
-                    "kind": "stdio",
+                    "kind": "pty",
                     "command": self.entrypoint,
                     "argsTemplate": ["launch", market_name, "--"],
                     "cwdPolicy": "workspace",
@@ -474,6 +475,7 @@ class CliAnythingHub:
         requirements = _requirement_assessment(requires)
         platform = _platform_assessment(market_record, requires)
         policy = manifest["spec"]["policy"]
+        transport = _transport_assessment(manifest)
         low_policy_risk = policy["risk"] in {"read", "write-workspace"} and not policy["requiresConfirmation"]
         gates = {
             "cli_hub_available": bool(status["cli_hub_available"]),
@@ -482,7 +484,8 @@ class CliAnythingHub:
             "manifest_valid": bool(validation["valid"]),
             "manifest_imported": bool(status["manifest_imported"]),
             "installed": bool(status["installed"]),
-            "launch_ready": bool(status["launch_ready"] and validation["valid"]),
+            "runtime_transport_ready": bool(transport["ready"]),
+            "launch_ready": bool(status["launch_ready"] and validation["valid"] and transport["ready"]),
             "low_policy_risk": low_policy_risk,
             "external_dependency_free": requirements["external_dependency_free"],
             "platform_compatible": platform["compatible"],
@@ -512,6 +515,8 @@ class CliAnythingHub:
             recommended_next_action = "call_capability"
         elif gates["installed"] and not gates["manifest_imported"]:
             recommended_next_action = "write_manifest"
+        elif gates["installed"] and gates["manifest_imported"] and not gates["runtime_transport_ready"]:
+            recommended_next_action = "install_runtime_transport"
         elif install_candidate and gates["manifest_imported"]:
             recommended_next_action = "install_harness"
         elif install_candidate:
@@ -539,6 +544,7 @@ class CliAnythingHub:
             "gates": gates,
             "requirements": requirements,
             "platform": platform,
+            "transport": transport,
             "policy": policy,
             "lifecycle": lifecycle,
             "status": status,
@@ -1316,6 +1322,8 @@ def _verification_blockers(
     gates = evaluation.get("gates", {})
     if not gates.get("installed"):
         blockers.append("harness is not installed")
+    if not gates.get("runtime_transport_ready", True):
+        blockers.append("runtime transport is not ready")
     if not gates.get("launch_ready"):
         blockers.append("harness launch is not ready")
     return sorted(set(blockers))
@@ -1331,6 +1339,7 @@ def _verification_stages(
     protocol_checks: dict[str, dict[str, Any]],
 ) -> list[dict[str, Any]]:
     gates = evaluation.get("gates", {})
+    dry_run_ready = bool(registry_status.get("manifest_imported"))
     return [
         {
             "id": "evaluate_market_and_policy",
@@ -1359,7 +1368,7 @@ def _verification_stages(
         },
         {
             "id": "dry_run_call",
-            "status": "ready" if gates.get("launch_ready") else "blocked",
+            "status": "ready" if dry_run_ready else "blocked",
             "command": f"python -m cbn call {capability_id} --dry-run",
         },
         {
@@ -1474,6 +1483,45 @@ def _platform_assessment(market_record: dict[str, Any] | None, requires: str | N
     }
 
 
+def _transport_assessment(manifest: dict[str, Any]) -> dict[str, Any]:
+    transport = manifest.get("spec", {}).get("transport", {})
+    if not isinstance(transport, dict):
+        return {
+            "kind": None,
+            "ready": False,
+            "reason": "manifest transport is not an object",
+            "backend": None,
+            "install_hint": None,
+        }
+    kind = transport.get("kind")
+    if kind == "stdio":
+        return {
+            "kind": "stdio",
+            "ready": True,
+            "reason": "stdio transport is available",
+            "backend": "subprocess",
+            "install_hint": None,
+        }
+    if kind == "pty":
+        status = pty_backend_status()
+        ready = bool(status["available"])
+        return {
+            "kind": "pty",
+            "ready": ready,
+            "reason": "pty transport is available" if ready else "pty transport backend is missing",
+            "backend": status.get("backend"),
+            "platform": status.get("platform"),
+            "install_hint": status.get("install_hint"),
+        }
+    return {
+        "kind": kind,
+        "ready": False,
+        "reason": f"unsupported transport kind: {kind}",
+        "backend": None,
+        "install_hint": None,
+    }
+
+
 def _market_runtime_text(market_record: dict[str, Any]) -> str:
     values = []
     for key in RUNTIME_TEXT_KEYS:
@@ -1521,10 +1569,13 @@ def _lifecycle_report(
     manifest_imported = bool(gates.get("manifest_imported", False))
     installed = bool(gates.get("installed", False))
     launch_ready = bool(gates.get("launch_ready", False))
+    runtime_transport_ready = bool(gates.get("runtime_transport_ready", True))
     ready_for_install = bool(install_candidate and not installed and not blocked)
     requires_override = blocked or not bool(gates.get("external_dependency_free", True))
     if launch_ready:
         state = "launch_ready"
+    elif installed and manifest_imported and not runtime_transport_ready:
+        state = "runtime_transport_missing"
     elif blocked:
         state = "blocked"
     elif installed and not manifest_imported:
@@ -1566,7 +1617,7 @@ def _lifecycle_report(
             "id": "dry_run_call",
             "status": _stage_status(
                 done=False,
-                ready=launch_ready,
+                ready=manifest_imported,
                 blocked=blocked or not capability_id,
             ),
             "command": f"python -m cbn call {capability_id} --dry-run" if capability_id else None,
