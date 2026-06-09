@@ -357,6 +357,11 @@
           <button data-command="python -m cbn plugin import-harness cli-anything &lt;harness&gt;">Import CLI-Anything</button>
           <button data-command="python -m cbn parser list">List Parsers</button>
           <button data-command="python -m cbn parser inspect git.status.short">Inspect Parser</button>
+          <button
+            data-command="python -m cbn parser fixtures --parser-ref cli-anything.raw"
+            data-api-method="GET"
+            data-api-path="/parsers/fixtures?parser_ref=cli-anything.raw"
+          >Verify Parser Fixtures</button>
           <button data-command="cbn import openapi &lt;spec&gt;">Import OpenAPI</button>
           <button
             data-command="python -m cbn registry list"

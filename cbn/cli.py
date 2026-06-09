@@ -12,6 +12,7 @@ from cbn.paths import resolve_project_paths
 from cbn.version import __version__
 from cbn_core.manifest import validate_manifest_path
 from cbn_execution.graph import WorkflowGraph
+from cbn_parsers.fixtures import run_parser_fixtures
 from cbn_parsers.registry import ParserRegistry
 from cbn_plugins.cli_anything import CliAnythingHub
 from cbn_plugins.manager import PluginManager
@@ -140,6 +141,14 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
             return 0
+        if args.parser_command == "fixtures":
+            result = run_parser_fixtures(
+                Path(args.path),
+                parser_ref=args.parser_ref,
+                registry=runtime.parser_registry,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["ok"] else 7
 
     if args.command == "protocol":
         runtime = build_runtime()

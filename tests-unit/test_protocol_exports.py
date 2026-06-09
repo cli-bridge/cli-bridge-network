@@ -166,7 +166,7 @@ class ProtocolExportTests(unittest.TestCase):
         self.assertGreaterEqual(payload["summary"]["capability_count"], 1)
         self.assertGreaterEqual(payload["summary"]["route_count"], 1)
         self.assertGreaterEqual(payload["parser_coverage"]["verified_output_count"], 1)
-        self.assertGreaterEqual(payload["parser_coverage"]["unverified_output_count"], 1)
+        self.assertEqual(payload["parser_coverage"]["unverified_output_count"], 0)
         self.assertTrue(
             any(
                 route["selector"] == "artifacts[0].artifact_id"

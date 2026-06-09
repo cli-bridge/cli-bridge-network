@@ -54,6 +54,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser_subcommands.add_parser("list", help="List built-in parsers.")
     parser_inspect = parser_subcommands.add_parser("inspect", help="Inspect one parser.")
     parser_inspect.add_argument("parser_ref")
+    parser_fixtures = parser_subcommands.add_parser("fixtures", help="Run parser output fixtures.")
+    parser_fixtures.add_argument("path", nargs="?", default="parser_fixtures", help="Fixture file or directory.")
+    parser_fixtures.add_argument("--parser-ref", help="Only run fixtures for one parser ref.")
 
     protocol_parser = subcommands.add_parser("protocol", help="Inspect protocol export descriptors.")
     protocol_subcommands = protocol_parser.add_subparsers(dest="protocol_command")

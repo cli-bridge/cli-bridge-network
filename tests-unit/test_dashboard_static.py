@@ -55,6 +55,8 @@ class DashboardStaticTests(unittest.TestCase):
         self.assertIn("python -m cbn workflow run workflows/example.json --dry-run", self.html)
         self.assertIn("python -m cbn workflow run workflows/cli-anything-macrocli-mermaid-routing.example.json", self.html)
         self.assertIn("python -m cbn parser list", self.html)
+        self.assertIn("python -m cbn parser fixtures --parser-ref cli-anything.raw", self.html)
+        self.assertIn("/parsers/fixtures?parser_ref=cli-anything.raw", self.html)
         self.assertIn("python -m cbn protocol export all", self.html)
         self.assertIn("python -m cbn protocol export-workflows all", self.html)
         self.assertIn("python -m cbn protocol check all --capability-id cli-anything.mermaid.set-diagram", self.html)

@@ -16,6 +16,7 @@ from urllib.parse import parse_qs, urlparse
 from api_server.routes.health import health_payload
 from cbn_core.manifest import validate_manifest_path
 from cbn_execution.graph import WorkflowGraph
+from cbn_parsers.fixtures import run_parser_fixtures
 from cbn_parsers.registry import ParserRegistry
 from cbn_protocol.a2a_http import agent_card, handle_a2a_jsonrpc_request
 from cbn_protocol.bridge_contract import workflow_bridge_contract_report
@@ -53,6 +54,7 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/events"},
     {"method": "GET", "path": "/artifacts"},
     {"method": "GET", "path": "/parsers"},
+    {"method": "GET", "path": "/parsers/fixtures"},
     {"method": "GET", "path": "/.well-known/agent-card.json"},
     {"method": "GET", "path": "/protocols"},
     {"method": "GET", "path": "/protocols/workflows"},
@@ -241,6 +243,12 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 self._send(200, runtime.parser_registry.inspect(parser_ref))
             else:
                 self._send(200, runtime.parser_registry.list())
+            return
+        if parsed.path == "/parsers/fixtures":
+            path = Path(query.get("path", ["parser_fixtures"])[0])
+            parser_ref = query.get("parser_ref", [None])[0]
+            result = run_parser_fixtures(path, parser_ref=parser_ref, registry=runtime.parser_registry)
+            self._send(200 if result["ok"] else 422, result)
             return
         if parsed.path == "/protocols":
             target = query.get("target", [None])[0]

@@ -1,0 +1,62 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "ParserFixture",
+  "metadata": {
+    "id": "cli-anything.raw.launch",
+    "title": "CLI-Anything raw launch output",
+    "parserRef": "cli-anything.raw",
+    "verifiedCapabilities": [
+      "cli-anything.mermaid.launch",
+      "cli-anything.macrocli.launch"
+    ]
+  },
+  "cases": [
+    {
+      "id": "mermaid-launch-help",
+      "stdout": "cli-anything-mermaid 1.0.0\nUsage: cli-anything-mermaid [OPTIONS] COMMAND [ARGS]...\nCommands:\n  diagram\n",
+      "stderr": "",
+      "expect": {
+        "ok": true,
+        "data": {
+          "stdout": {
+            "contains": [
+              "cli-anything-mermaid",
+              "Usage:"
+            ]
+          },
+          "stderr": {
+            "equals": ""
+          }
+        }
+      }
+    },
+    {
+      "id": "macrocli-launch-help",
+      "stdout": "cli-anything-macrocli 1.0.0\nUsage: cli-anything-macrocli [OPTIONS] COMMAND [ARGS]...\nCommands:\n  backends\n",
+      "stderr": "",
+      "expect": {
+        "ok": true,
+        "data": {
+          "stdout": {
+            "contains": [
+              "cli-anything-macrocli",
+              "backends"
+            ]
+          },
+          "stderr": {
+            "equals": ""
+          }
+        }
+      }
+    },
+    {
+      "id": "windows-no-console-buffer-fatal",
+      "stdout": "cli-anything-mermaid 1.0.0\n",
+      "stderr": "Traceback (most recent call last):\n  File \"cli_anything_mermaid\", line 1, in <module>\nprompt_toolkit.output.win32.NoConsoleScreenBufferError: No Windows console found.\n",
+      "expect": {
+        "ok": false,
+        "errorContains": "NoConsoleScreenBufferError"
+      }
+    }
+  ]
+}

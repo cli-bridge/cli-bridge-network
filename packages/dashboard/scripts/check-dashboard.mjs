@@ -215,6 +215,14 @@ if (!html.includes("python -m cbn parser list")) {
   throw new Error("Dashboard does not expose the parser registry list command.");
 }
 
+if (!html.includes("python -m cbn parser fixtures --parser-ref cli-anything.raw")) {
+  throw new Error("Dashboard does not expose parser fixture verification.");
+}
+
+if (!html.includes('data-api-path="/parsers/fixtures?parser_ref=cli-anything.raw"')) {
+  throw new Error("Dashboard does not wire parser fixture verification to the daemon API.");
+}
+
 if (!html.includes("python -m cbn registry search")) {
   throw new Error("Dashboard does not expose the capability registry search command.");
 }

@@ -31,6 +31,7 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("GET", "/workflows"), routes)
         self.assertIn(("GET", "/runtime/transports"), routes)
         self.assertIn(("GET", "/messages/contract"), routes)
+        self.assertIn(("GET", "/parsers/fixtures"), routes)
         self.assertIn(("POST", "/runtime/transports/gate"), routes)
         self.assertIn(("POST", "/runtime/transports/plan"), routes)
         self.assertIn(("POST", "/runtime/transports/install"), routes)
@@ -187,6 +188,22 @@ class DaemonApiTests(unittest.TestCase):
                 self.assertTrue(payload["ok"])
                 self.assertEqual(payload["summary"]["artifact_route_count"], 1)
                 self.assertEqual(payload["workflows"][0]["routes"][0]["selector"], "artifacts[0].artifact_id")
+
+    def test_parser_fixtures_route_returns_verified_contracts(self):
+        with daemon_url() as base_url:
+            with urllib.request.urlopen(
+                f"{base_url}/parsers/fixtures?parser_ref=cli-anything.raw",
+                timeout=5,
+            ) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(response.status, 200)
+                self.assertTrue(payload["ok"])
+                self.assertEqual(payload["parser_ref"], "cli-anything.raw")
+                self.assertEqual(payload["failed_case_count"], 0)
+                self.assertIn(
+                    "cli-anything.macrocli.launch",
+                    payload["reports"][0]["verified_capabilities"],
+                )
 
     def test_workflows_route_returns_catalog(self):
         with daemon_url() as base_url:

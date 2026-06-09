@@ -64,6 +64,33 @@ class ParserProtocolTests(unittest.TestCase):
                 "prompt_toolkit.output.win32.NoConsoleScreenBufferError: No Windows console found.\n",
             )
 
+    def test_cli_anything_raw_parser_fixtures_verify_launch_contract(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "parser",
+                "fixtures",
+                "--parser-ref",
+                "cli-anything.raw",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["parser_ref"], "cli-anything.raw")
+        self.assertEqual(payload["fixture_count"], 1)
+        self.assertEqual(payload["failed_case_count"], 0)
+        self.assertIn(
+            "cli-anything.mermaid.launch",
+            payload["reports"][0]["verified_capabilities"],
+        )
+
     def test_bridge_message_envelope_shape(self):
         message = BridgeMessage(
             producer="git.status",

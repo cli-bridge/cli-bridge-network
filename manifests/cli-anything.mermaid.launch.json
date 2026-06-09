@@ -18,6 +18,7 @@
       "cli-anything.install_cmd": "pip install git+https://github.com/HKUDS/CLI-Anything.git#subdirectory=mermaid/agent-harness",
       "cli-anything.entry_point": "cli-anything-mermaid",
       "cli-anything.contributors": "[{\"name\": \"getmored-create\", \"url\": \"https://github.com/getmored-create\"}]",
+      "cbn.parser_fixture": "parser_fixtures/cli-anything.raw.launch.json",
       "cli-anything.policy_inference": "[\"runtime appears to generate, edit, render, convert, or export artifacts\"]"
     }
   },
@@ -40,7 +41,7 @@
     },
     "output": {
       "parserRef": "cli-anything.raw",
-      "verified": false
+      "verified": true
     }
   }
 }

@@ -471,6 +471,18 @@ class CliAnythingHub:
         status = adaptation["status"]
         manifest = adaptation["manifest"]
         validation = adaptation["validation"]
+        if status.get("manifest_imported"):
+            manifest = _manifest_dict_from_path(Path(adaptation["manifest_path"]), manifest)
+            validation = validate_manifest_dict(
+                manifest,
+                source_path=Path(adaptation["manifest_path"]),
+                known_parser_refs=_known_parser_refs(),
+            )
+            adaptation = {
+                **adaptation,
+                "manifest": manifest,
+                "validation": validation,
+            }
         market_record = status.get("market_record") if isinstance(status.get("market_record"), dict) else None
         requires = _declared_requires(market_record, status)
         requirements = _requirement_assessment(requires)
@@ -642,6 +654,7 @@ class CliAnythingHub:
         registry = ManifestRegistry()
         registry.load_dir(self.paths.manifests)
         imported_manifest = registry.get(capability_id)
+        effective_manifest = _effective_manifest_dict(imported_manifest, manifest)
         protocol_registry = registry if imported_manifest else ManifestRegistry()
         if imported_manifest is None:
             protocol_registry.register(
@@ -664,7 +677,7 @@ class CliAnythingHub:
             "manifest_path": adaptation["manifest_path"],
             "protocol_check_source": "current_registry" if imported_manifest else "generated_preview",
         }
-        parser_contract = _parser_contract_report(manifest)
+        parser_contract = _parser_contract_report(effective_manifest)
         verification_blockers = _verification_blockers(evaluation, readiness, registry_status)
         workflow_matches = (
             _workflow_matches_for_capability(registry, capability_id)
@@ -1401,6 +1414,22 @@ def _parser_contract_report(manifest: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _effective_manifest_dict(
+    imported_manifest: CapabilityManifest | None,
+    preview_manifest: dict[str, Any],
+) -> dict[str, Any]:
+    if imported_manifest is None or imported_manifest.source_path is None:
+        return preview_manifest
+    return _manifest_dict_from_path(imported_manifest.source_path, preview_manifest)
+
+
+def _manifest_dict_from_path(path: Path, fallback: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return fallback
+
+
 def _protocol_verification_summary(protocol_checks: dict[str, dict[str, Any]]) -> dict[str, Any]:
     return {
         protocol: {
@@ -1518,7 +1547,7 @@ def _verification_stages(
         {
             "id": "verify_parser_contract",
             "status": "completed" if parser_contract.get("verified") else "pending",
-            "command": "add parser fixtures and set spec.output.verified=true",
+            "command": f"python -m cbn parser fixtures --parser-ref {parser_contract.get('parser_ref')}",
         },
         {
             "id": "check_protocol_exports",
