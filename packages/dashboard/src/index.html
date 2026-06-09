@@ -533,6 +533,14 @@
           >
             Probe Harness
           </button>
+          <button
+            data-command="python -m cbn plugin verify-harness cli-anything mermaid"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/verify-harness"
+            data-api-body='{"harness_name":"mermaid","from_market":true,"include_workflows":true}'
+          >
+            Verify Harness
+          </button>
           <pre id="selectedCommand">Select any button to stage a command.</pre>
         </section>
 

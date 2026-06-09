@@ -256,6 +256,27 @@ def build_parser() -> argparse.ArgumentParser:
     plugin_probe.add_argument("--title", help="Override generated manifest title.")
     plugin_probe.add_argument("--from-market", action="store_true", default=True)
 
+    plugin_verify = plugin_subcommands.add_parser(
+        "verify-harness",
+        help="Return the read-only adaptation verification plan for a CLI-Anything harness.",
+    )
+    plugin_verify.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
+    plugin_verify.add_argument("harness_name", help="Harness name in CLI-Hub.")
+    plugin_verify.add_argument("--title", help="Override generated manifest title.")
+    plugin_verify.add_argument("--from-market", action="store_true", default=True)
+    plugin_verify.add_argument(
+        "--offline",
+        action="store_false",
+        dest="from_market",
+        help="Verify without requiring market metadata.",
+    )
+    plugin_verify.add_argument(
+        "--no-workflows",
+        action="store_false",
+        dest="include_workflows",
+        help="Skip workflow reference lookup.",
+    )
+
     plugin_candidates = plugin_subcommands.add_parser(
         "candidates",
         help="Rank CLI-Anything market harnesses as install candidates without installing them.",

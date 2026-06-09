@@ -19,9 +19,11 @@ from pathlib import Path
 from typing import Any
 
 from cbn.paths import resolve_project_paths
-from cbn_core.manifest import validate_manifest_dict
+from cbn_core.manifest import CapabilityManifest, ManifestRegistry, validate_manifest_dict
 from cbn_parsers.registry import ParserRegistry
 from cbn_plugins.manager import PluginCommand, PluginPlan
+from cbn_protocol.compatibility import check_all_protocols
+from cbn_workflow.catalog import list_workflows
 
 
 PLUGIN_ID = "cli-anything"
@@ -603,6 +605,105 @@ class CliAnythingHub:
             ],
         }
 
+    def verify_harness(
+        self,
+        harness_name: str,
+        title: str | None = None,
+        from_market: bool = True,
+        include_workflows: bool = True,
+    ) -> dict[str, Any]:
+        probe = self.probe_harness(
+            harness_name,
+            title=title,
+            from_market=from_market,
+        )
+        if not probe["ok"]:
+            return {
+                "ok": False,
+                "plugin_id": PLUGIN_ID,
+                "harness_name": harness_name,
+                "from_market": from_market,
+                "include_workflows": include_workflows,
+                "error": probe["error"],
+                "probe": probe,
+            }
+
+        evaluation = probe["evaluation"]
+        adaptation = evaluation["adaptation"]
+        manifest = adaptation["manifest"]
+        capability_id = evaluation["capability_id"]
+        registry = ManifestRegistry()
+        registry.load_dir(self.paths.manifests)
+        imported_manifest = registry.get(capability_id)
+        protocol_registry = registry if imported_manifest else ManifestRegistry()
+        if imported_manifest is None:
+            protocol_registry.register(
+                CapabilityManifest.from_dict(
+                    manifest,
+                    source_path=Path(adaptation["manifest_path"]),
+                )
+            )
+        protocol_checks = check_all_protocols(
+            protocol_registry,
+            capability_id=capability_id,
+        )["checks"]
+        readiness = {
+            "ready": probe["ready"],
+            "probe_blocker_count": probe["probe_blocker_count"],
+            "probes": probe["probes"],
+        }
+        registry_status = {
+            "manifest_imported": imported_manifest is not None,
+            "manifest_path": adaptation["manifest_path"],
+            "protocol_check_source": "current_registry" if imported_manifest else "generated_preview",
+        }
+        parser_contract = _parser_contract_report(manifest)
+        verification_blockers = _verification_blockers(evaluation, readiness, registry_status)
+        workflow_matches = (
+            _workflow_matches_for_capability(registry, capability_id)
+            if include_workflows
+            else []
+        )
+        return {
+            "ok": True,
+            "plugin_id": PLUGIN_ID,
+            "harness_name": harness_name,
+            "from_market": from_market,
+            "include_workflows": include_workflows,
+            "capability_id": capability_id,
+            "ready_for_manifest_write": bool(evaluation["gates"]["manifest_valid"] and not evaluation["blockers"]),
+            "ready_for_runtime_verification": len(verification_blockers) == 0,
+            "verification_blockers": verification_blockers,
+            "readiness": readiness,
+            "registry": registry_status,
+            "parser_contract": parser_contract,
+            "protocols": _protocol_verification_summary(protocol_checks),
+            "workflow_matches": workflow_matches,
+            "verification_stages": _verification_stages(
+                harness_name=harness_name,
+                capability_id=capability_id,
+                evaluation=evaluation,
+                readiness=readiness,
+                registry_status=registry_status,
+                parser_contract=parser_contract,
+                protocol_checks=protocol_checks,
+            ),
+            "probe": probe,
+            "evaluation": evaluation,
+            "next_commands": [
+                f"python -m cbn plugin evaluate-harness cli-anything {harness_name}",
+                f"python -m cbn plugin probe-harness cli-anything {harness_name}",
+                f"python -m cbn plugin adapt-harness cli-anything {harness_name} --from-market --write",
+                "python -m cbn registry validate manifests",
+                f"python -m cbn plugin harness cli-anything install {harness_name} --yes",
+                f"python -m cbn call {capability_id} --dry-run",
+                f"python -m cbn protocol check all --capability-id {capability_id}",
+                f"python -m cbn mcp smoke --capability-id {capability_id}",
+                f"python -m cbn a2a smoke --capability-id {capability_id}",
+                f"python -m cbn acp smoke --capability-id {capability_id}",
+            ],
+        }
+
     def candidate_harnesses(
         self,
         query: str | None = None,
@@ -1122,6 +1223,170 @@ def _readiness_summary(probes: list[dict[str, Any]], install_candidate: bool) ->
         "probe_blocker_count": len(blockers),
         "probes": probes,
     }
+
+
+def _parser_contract_report(manifest: dict[str, Any]) -> dict[str, Any]:
+    output = manifest.get("spec", {}).get("output", {})
+    if not isinstance(output, dict):
+        output = {}
+    parser_ref = output.get("parserRef") or "raw.text"
+    known = parser_ref in _known_parser_refs()
+    verified = bool(output.get("verified", False))
+    if verified and known:
+        status = "verified"
+    elif known:
+        status = "known_unverified"
+    else:
+        status = "unknown_parser"
+    return {
+        "parser_ref": parser_ref,
+        "known": known,
+        "verified": verified,
+        "status": status,
+        "next_step": (
+            "Add harness-specific parser fixtures and set spec.output.verified=true."
+            if not verified
+            else "Keep parser fixtures in the release gate."
+        ),
+    }
+
+
+def _protocol_verification_summary(protocol_checks: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    return {
+        protocol: {
+            "scope": report["scope"],
+            "wire_compatible": report["wire_compatible"],
+            "status_counts": report["status_counts"],
+            "missing": [
+                item["requirement"]
+                for item in report["checks"]
+                if item["status"] == "missing"
+            ],
+            "partial": [
+                item["requirement"]
+                for item in report["checks"]
+                if item["status"] == "partial"
+            ],
+            "next_steps": report["next_steps"],
+        }
+        for protocol, report in protocol_checks.items()
+    }
+
+
+def _workflow_matches_for_capability(
+    registry: ManifestRegistry,
+    capability_id: str,
+) -> list[dict[str, Any]]:
+    matches: list[dict[str, Any]] = []
+    for workflow in list_workflows(registry=registry):
+        tasks = workflow.get("tasks") if isinstance(workflow.get("tasks"), list) else []
+        matched_tasks = [
+            {
+                "id": task.get("id"),
+                "uses": task.get("uses"),
+                "capability": task.get("capability"),
+            }
+            for task in tasks
+            if isinstance(task, dict) and task.get("uses") == capability_id
+        ]
+        if not matched_tasks:
+            continue
+        matches.append(
+            {
+                "workflow_id": workflow.get("workflow_id"),
+                "title": workflow.get("title"),
+                "path": workflow.get("path"),
+                "valid": workflow.get("valid"),
+                "matched_tasks": matched_tasks,
+            }
+        )
+    return matches
+
+
+def _verification_blockers(
+    evaluation: dict[str, Any],
+    readiness: dict[str, Any],
+    registry_status: dict[str, Any],
+) -> list[str]:
+    blockers = list(evaluation.get("blockers", []))
+    if readiness.get("probe_blocker_count", 0) > 0:
+        blockers.append("dependency probes have blocker-level failures")
+    if not registry_status.get("manifest_imported"):
+        blockers.append("manifest is not imported into manifests/")
+    gates = evaluation.get("gates", {})
+    if not gates.get("installed"):
+        blockers.append("harness is not installed")
+    if not gates.get("launch_ready"):
+        blockers.append("harness launch is not ready")
+    return sorted(set(blockers))
+
+
+def _verification_stages(
+    harness_name: str,
+    capability_id: str,
+    evaluation: dict[str, Any],
+    readiness: dict[str, Any],
+    registry_status: dict[str, Any],
+    parser_contract: dict[str, Any],
+    protocol_checks: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    gates = evaluation.get("gates", {})
+    return [
+        {
+            "id": "evaluate_market_and_policy",
+            "status": "completed" if evaluation.get("ok") else "blocked",
+            "command": f"python -m cbn plugin evaluate-harness cli-anything {harness_name}",
+        },
+        {
+            "id": "probe_dependencies",
+            "status": "completed" if readiness.get("probe_blocker_count") == 0 else "blocked",
+            "command": f"python -m cbn plugin probe-harness cli-anything {harness_name}",
+        },
+        {
+            "id": "write_manifest",
+            "status": "completed" if registry_status.get("manifest_imported") else "ready",
+            "command": f"python -m cbn plugin adapt-harness cli-anything {harness_name} --from-market --write",
+        },
+        {
+            "id": "validate_registry",
+            "status": "completed" if gates.get("manifest_valid") else "blocked",
+            "command": "python -m cbn registry validate manifests",
+        },
+        {
+            "id": "install_harness",
+            "status": "completed" if gates.get("installed") else "pending",
+            "command": f"python -m cbn plugin harness cli-anything install {harness_name} --yes",
+        },
+        {
+            "id": "dry_run_call",
+            "status": "ready" if gates.get("launch_ready") else "blocked",
+            "command": f"python -m cbn call {capability_id} --dry-run",
+        },
+        {
+            "id": "verify_parser_contract",
+            "status": "completed" if parser_contract.get("verified") else "pending",
+            "command": "add parser fixtures and set spec.output.verified=true",
+        },
+        {
+            "id": "check_protocol_exports",
+            "status": "completed",
+            "command": f"python -m cbn protocol check all --capability-id {capability_id}",
+            "source": registry_status.get("protocol_check_source"),
+            "protocol_status_counts": {
+                protocol: report.get("status_counts", {})
+                for protocol, report in protocol_checks.items()
+            },
+        },
+        {
+            "id": "smoke_protocol_facades",
+            "status": "ready" if gates.get("launch_ready") else "blocked",
+            "commands": [
+                f"python -m cbn mcp smoke --capability-id {capability_id}",
+                f"python -m cbn a2a smoke --capability-id {capability_id}",
+                f"python -m cbn acp smoke --capability-id {capability_id}",
+            ],
+        },
+    ]
 
 
 def _policy_requires_confirmation(policy: dict[str, Any]) -> bool:

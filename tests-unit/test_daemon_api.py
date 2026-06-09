@@ -15,6 +15,7 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("POST", "/plugins/cli-anything/evaluate-harness"), routes)
         self.assertIn(("POST", "/plugins/cli-anything/candidates"), routes)
         self.assertIn(("POST", "/plugins/cli-anything/probe-harness"), routes)
+        self.assertIn(("POST", "/plugins/cli-anything/verify-harness"), routes)
         self.assertIn(("GET", "/protocols/check"), routes)
         self.assertIn(("GET", "/protocols/matrix"), routes)
         self.assertIn(("GET", "/protocols/workflows"), routes)
@@ -183,6 +184,29 @@ class DaemonApiTests(unittest.TestCase):
                 self.assertEqual(response.status, 200)
                 self.assertEqual(payload["action"], "harness-install-gimp")
                 self.assertIn("evaluate-harness", payload["notes"][0])
+
+    def test_cli_anything_verify_harness_route_returns_protocol_plan(self):
+        with daemon_url() as base_url:
+            request = urllib.request.Request(
+                f"{base_url}/plugins/cli-anything/verify-harness",
+                data=json.dumps(
+                    {
+                        "harness_name": "mermaid",
+                        "from_market": False,
+                        "include_workflows": False,
+                    }
+                ).encode("utf-8"),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(request, timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(response.status, 200)
+                self.assertEqual(payload["plugin_id"], "cli-anything")
+                self.assertEqual(payload["harness_name"], "mermaid")
+                self.assertFalse(payload["include_workflows"])
+                self.assertIn("protocols", payload)
+                self.assertIn("verification_stages", payload)
 
     def test_a2a_routes_return_agent_card_and_task(self):
         with daemon_url() as base_url:

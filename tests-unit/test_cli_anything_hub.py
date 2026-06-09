@@ -313,6 +313,72 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(result["probe_blocker_count"], 0)
         self.assertTrue(any(item["id"] == "declared-requirements" for item in result["probes"]))
 
+    def test_verify_harness_previews_protocol_checks_before_manifest_write(self):
+        class FakeHub(CliAnythingHub):
+            def info(self, harness_name: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "info", harness_name),
+                    exit_code=0,
+                    stdout="Entry point: cli-anything-mermaid\nRequires: nothing\nStatus: not installed\n",
+                    stderr="",
+                )
+
+            def search_market(self, query: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "search", query, "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[SAMPLE_MERMAID_RECORD],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result = FakeHub(root=Path(tmp)).verify_harness("mermaid", from_market=True)
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["capability_id"], "cli-anything.mermaid.launch")
+            self.assertFalse(result["registry"]["manifest_imported"])
+            self.assertEqual(result["registry"]["protocol_check_source"], "generated_preview")
+            self.assertIn("manifest is not imported into manifests/", result["verification_blockers"])
+            self.assertIn("mcp", result["protocols"])
+            self.assertIn("status_counts", result["protocols"]["mcp"])
+            self.assertEqual(result["parser_contract"]["parser_ref"], "cli-anything.raw")
+            stage_ids = [item["id"] for item in result["verification_stages"]]
+            self.assertIn("check_protocol_exports", stage_ids)
+            self.assertIn("smoke_protocol_facades", stage_ids)
+
+    def test_verify_harness_reports_runtime_ready_after_import_and_install(self):
+        class FakeHub(CliAnythingHub):
+            def info(self, harness_name: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "info", harness_name),
+                    exit_code=0,
+                    stdout=f"Entry point: {sys.executable}\nRequires: nothing\nStatus: installed\n",
+                    stderr="",
+                )
+
+            def search_market(self, query: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "search", query, "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[SAMPLE_MERMAID_RECORD],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            hub = FakeHub(root=Path(tmp))
+            hub.write_harness_manifest("mermaid", market_record=SAMPLE_MERMAID_RECORD)
+            result = hub.verify_harness("mermaid", from_market=True)
+            self.assertTrue(result["ok"])
+            self.assertTrue(result["registry"]["manifest_imported"])
+            self.assertEqual(result["registry"]["protocol_check_source"], "current_registry")
+            self.assertTrue(result["ready_for_runtime_verification"])
+            self.assertEqual(result["verification_blockers"], [])
+            stages = {item["id"]: item["status"] for item in result["verification_stages"]}
+            self.assertEqual(stages["write_manifest"], "completed")
+            self.assertEqual(stages["install_harness"], "completed")
+            self.assertEqual(stages["dry_run_call"], "ready")
+
     def test_probe_harness_reports_missing_system_command(self):
         class FakeHub(CliAnythingHub):
             def info(self, harness_name: str) -> CliHubCommandResult:
@@ -922,6 +988,31 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(payload["harness_name"], "mermaid")
         self.assertIn("install_candidate", payload)
         self.assertIn("recommended_next_action", payload)
+
+    def test_cli_verify_harness_outputs_verification_report_offline(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "plugin",
+                "verify-harness",
+                "cli-anything",
+                "mermaid",
+                "--offline",
+                "--no-workflows",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["plugin_id"], "cli-anything")
+        self.assertEqual(payload["harness_name"], "mermaid")
+        self.assertIn("protocols", payload)
+        self.assertIn("verification_stages", payload)
 
     def test_cli_candidates_handles_missing_cli_hub_without_crashing(self):
         proc = subprocess.run(

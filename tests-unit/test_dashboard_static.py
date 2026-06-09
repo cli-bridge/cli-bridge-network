@@ -22,6 +22,7 @@ class DashboardStaticTests(unittest.TestCase):
         self.assertIn("python -m cbn plugin candidates cli-anything --query image --limit 20", self.html)
         self.assertIn("python -m cbn plugin candidates cli-anything --query image --limit 20 --with-probes", self.html)
         self.assertIn("python -m cbn plugin probe-harness cli-anything mermaid", self.html)
+        self.assertIn("python -m cbn plugin verify-harness cli-anything mermaid", self.html)
         self.assertIn("python -m cbn plugin import-harness cli-anything gimp", self.html)
         self.assertIn("python -m cbn plugin harness cli-anything install gimp", self.html)
         self.assertIn("python -m cbn event tail", self.html)
