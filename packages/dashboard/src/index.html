@@ -65,6 +65,12 @@
             data-api-path="/plugins/cli-anything/provenance"
           >Provenance</button>
           <button
+            data-command="python -m cbn plugin gate cli-anything --action install"
+            data-api-method="POST"
+            data-api-path="/plugins/gate"
+            data-api-body='{"plugin_id":"cli-anything","action":"install"}'
+          >Install Gate</button>
+          <button
             data-command="python -m cbn plugin plan cli-anything"
             data-api-method="POST"
             data-api-path="/plugins/plan"
@@ -96,6 +102,12 @@
             data-api-path="/plugins/plan"
             data-api-body='{"plugin_id":"cli-anything","action":"update"}'
           >Check Updates</button>
+          <button
+            data-command="python -m cbn plugin gate cli-anything --action update"
+            data-api-method="POST"
+            data-api-path="/plugins/gate"
+            data-api-body='{"plugin_id":"cli-anything","action":"update"}'
+          >Update Gate</button>
           <button
             data-command="python -m cbn plugin update cli-anything --yes"
             data-api-method="POST"

@@ -66,6 +66,7 @@ ROUTE_SUMMARY = [
     {"method": "POST", "path": "/workflows/validate"},
     {"method": "POST", "path": "/workflows/plan"},
     {"method": "POST", "path": "/workflows/run"},
+    {"method": "POST", "path": "/plugins/gate"},
     {"method": "POST", "path": "/plugins/plan"},
     {"method": "POST", "path": "/plugins/execute"},
     {"method": "POST", "path": "/plugins/cli-anything/market"},
@@ -357,6 +358,14 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 include_codex_skill=bool(payload.get("include_codex_skill", False)),
             )
             self._send(200, plan.as_dict())
+            return
+        if self.path == "/plugins/gate":
+            manager = PluginManager()
+            result = manager.operation_gate(
+                payload["plugin_id"],
+                action=payload.get("action", "install"),
+            )
+            self._send(200, result)
             return
         if self.path == "/plugins/execute":
             if not bool(payload.get("confirmed", False)):

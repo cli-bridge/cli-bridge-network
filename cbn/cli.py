@@ -350,6 +350,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.plugin_command == "provenance":
             print(json.dumps(manager.provenance(args.plugin_id), ensure_ascii=False, indent=2))
             return 0
+        if args.plugin_command == "gate":
+            result = manager.operation_gate(args.plugin_id, args.action)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["ok"] else 13
         if args.plugin_command == "status":
             if args.plugin_id != "cli-anything":
                 raise KeyError(f"status is not implemented for plugin: {args.plugin_id}")

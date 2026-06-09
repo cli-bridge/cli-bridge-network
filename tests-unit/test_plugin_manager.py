@@ -127,6 +127,22 @@ class PluginManagerTests(unittest.TestCase):
         self.assertIn("repository", payload)
         self.assertIn("entrypoints", payload)
 
+    def test_cli_gate_command_outputs_json(self):
+        proc = subprocess.run(
+            [sys.executable, "-m", "cbn", "plugin", "gate", "cli-anything", "--action", "install"],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertIn(proc.returncode, {0, 13})
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["plugin_id"], "cli-anything")
+        self.assertEqual(payload["action"], "install")
+        self.assertTrue(payload["gated"])
+        self.assertIn("preflight", payload)
+        self.assertIn("provenance", payload)
+
 def write_example_plugin_manifest(root: Path) -> None:
     registry = root / "plugins" / "registry"
     registry.mkdir(parents=True)

@@ -18,6 +18,7 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("POST", "/plugins/cli-anything/probe-harness"), routes)
         self.assertIn(("POST", "/plugins/cli-anything/verify-harness"), routes)
         self.assertIn(("GET", "/plugins/cli-anything/provenance"), routes)
+        self.assertIn(("POST", "/plugins/gate"), routes)
         self.assertIn(("GET", "/protocols/check"), routes)
         self.assertIn(("GET", "/protocols/matrix"), routes)
         self.assertIn(("GET", "/protocols/workflows"), routes)
@@ -223,6 +224,28 @@ class DaemonApiTests(unittest.TestCase):
                 payload = json.loads(raised.exception.read().decode("utf-8"))
                 self.assertFalse(payload["ok"])
                 self.assertIn("preflight failed: external_plugins.writable", payload["blockers"])
+
+    def test_plugin_gate_route_returns_read_only_gate_report(self):
+        with daemon_url() as base_url:
+            request = urllib.request.Request(
+                f"{base_url}/plugins/gate",
+                data=json.dumps(
+                    {
+                        "plugin_id": "cli-anything",
+                        "action": "install",
+                    }
+                ).encode("utf-8"),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(request, timeout=10) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(response.status, 200)
+                self.assertEqual(payload["plugin_id"], "cli-anything")
+                self.assertEqual(payload["action"], "install")
+                self.assertTrue(payload["gated"])
+                self.assertIn("preflight", payload)
+                self.assertIn("provenance", payload)
 
     def test_cli_anything_provenance_route_returns_source_report(self):
         with daemon_url() as base_url:

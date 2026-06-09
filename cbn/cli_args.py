@@ -184,6 +184,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     plugin_provenance.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
 
+    plugin_gate = plugin_subcommands.add_parser(
+        "gate",
+        help="Preview install/update preflight and provenance gates without executing.",
+    )
+    plugin_gate.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
+    plugin_gate.add_argument(
+        "--action",
+        choices=["install", "update"],
+        default="install",
+        help="Operation to check.",
+    )
+
     plugin_status = plugin_subcommands.add_parser("status", help="Show external plugin runtime status.")
     plugin_status.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
 
