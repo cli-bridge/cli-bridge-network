@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from cbn_core.manifest import ManifestRegistry
-from cbn_protocol.compatibility import check_protocol
+from cbn_protocol.compatibility import check_protocol, protocol_matrix
 from cbn_protocol.exports import (
     export_all_protocols,
     export_all_workflow_protocols,
@@ -139,6 +139,20 @@ class ProtocolExportTests(unittest.TestCase):
         )
         self.assertTrue(any(item["requirement"] == "ACP full session lifecycle and conformance" for item in acp["checks"]))
         self.assertIn("agentclientprotocol.com", acp["source"]["url"])
+
+    def test_protocol_matrix_summarizes_capabilities_and_workflows(self):
+        payload = protocol_matrix(self.registry, include_workflows=True)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(set(payload["protocols"]), {"a2a", "acp", "mcp"})
+        self.assertGreaterEqual(payload["capability_count"], 1)
+        self.assertGreaterEqual(payload["workflow_count"], 1)
+        capability = next(item for item in payload["rows"] if item["id"] == "git.status")
+        self.assertEqual(capability["kind"], "capability")
+        self.assertIn("mcp", capability["protocols"])
+        workflow = next(item for item in payload["rows"] if item["kind"] == "workflow")
+        self.assertIn("workflow", workflow["protocols"]["mcp"]["scope"])
+        self.assertFalse(workflow["wire_compatible"])
+        self.assertEqual(payload["summary"]["row_count"], len(payload["rows"]))
 
     def test_cli_protocol_export(self):
         proc = subprocess.run(

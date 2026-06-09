@@ -364,6 +364,11 @@
             data-api-path="/protocols/check?target=all&amp;path=workflows/artifact-id-routing.example.json"
           >Check Workflow Compatibility</button>
           <button
+            data-command="python -m cbn protocol matrix --include-workflows"
+            data-api-method="GET"
+            data-api-path="/protocols/matrix?include_workflows=true"
+          >Protocol Matrix</button>
+          <button
             data-command="python -m cbn protocol export mcp --capability-id git.status"
             data-api-method="GET"
             data-api-path="/protocols?target=mcp&amp;capability_id=git.status"

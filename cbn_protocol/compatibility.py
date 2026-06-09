@@ -10,6 +10,7 @@ from typing import Any
 
 from cbn_core.manifest import ManifestRegistry
 from cbn_protocol.exports import export_protocol, export_workflow_protocol
+from cbn_workflow.catalog import list_workflows
 
 
 PROTOCOL_SOURCES: dict[str, dict[str, str]] = {
@@ -90,6 +91,113 @@ def check_all_protocols(
             )
             for protocol in PROTOCOLS
         }
+    }
+
+
+def protocol_matrix(
+    registry: ManifestRegistry,
+    include_workflows: bool = False,
+) -> dict[str, Any]:
+    capability_rows = [
+        _matrix_row(
+            kind="capability",
+            item_id=manifest.capability_id,
+            title=manifest.title,
+            checks=check_all_protocols(registry, capability_id=manifest.capability_id)["checks"],
+            path=None,
+        )
+        for manifest in sorted(registry.list(), key=lambda item: item.capability_id)
+    ]
+    workflow_rows = []
+    if include_workflows:
+        for workflow in list_workflows(registry=registry):
+            path = workflow.get("path")
+            workflow_id = workflow.get("workflow_id") or path
+            if not isinstance(path, str) or not workflow.get("valid"):
+                workflow_rows.append(
+                    {
+                        "kind": "workflow",
+                        "id": str(workflow_id),
+                        "title": workflow.get("title"),
+                        "path": path,
+                        "valid": False,
+                        "errors": workflow.get("errors", []),
+                        "protocols": {},
+                    }
+                )
+                continue
+            workflow_rows.append(
+                _matrix_row(
+                    kind="workflow",
+                    item_id=str(workflow_id),
+                    title=workflow.get("title"),
+                    checks=check_all_protocols(registry, workflow_path=path)["checks"],
+                    path=path,
+                )
+            )
+    return {
+        "ok": True,
+        "protocols": list(PROTOCOLS),
+        "include_workflows": include_workflows,
+        "capability_count": len(capability_rows),
+        "workflow_count": len(workflow_rows),
+        "rows": capability_rows + workflow_rows,
+        "summary": _matrix_summary(capability_rows + workflow_rows),
+    }
+
+
+def _matrix_row(
+    kind: str,
+    item_id: str,
+    title: Any,
+    checks: dict[str, dict[str, Any]],
+    path: str | None,
+) -> dict[str, Any]:
+    return {
+        "kind": kind,
+        "id": item_id,
+        "title": title,
+        "path": path,
+        "wire_compatible": False,
+        "protocols": {
+            protocol: {
+                "scope": report["scope"],
+                "status_counts": report["status_counts"],
+                "wire_compatible": report["wire_compatible"],
+                "missing": [
+                    item["requirement"]
+                    for item in report["checks"]
+                    if item["status"] == "missing"
+                ],
+                "partial": [
+                    item["requirement"]
+                    for item in report["checks"]
+                    if item["status"] == "partial"
+                ],
+            }
+            for protocol, report in checks.items()
+        },
+    }
+
+
+def _matrix_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    by_protocol = {
+        protocol: {"present": 0, "partial": 0, "missing": 0, "wire_compatible": 0}
+        for protocol in PROTOCOLS
+    }
+    for row in rows:
+        for protocol, report in row.get("protocols", {}).items():
+            if protocol not in by_protocol:
+                continue
+            counts = report.get("status_counts", {})
+            by_protocol[protocol]["present"] += int(counts.get("present", 0))
+            by_protocol[protocol]["partial"] += int(counts.get("partial", 0))
+            by_protocol[protocol]["missing"] += int(counts.get("missing", 0))
+            if report.get("wire_compatible"):
+                by_protocol[protocol]["wire_compatible"] += 1
+    return {
+        "row_count": len(rows),
+        "by_protocol": by_protocol,
     }
 
 

@@ -16,6 +16,7 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("POST", "/plugins/cli-anything/candidates"), routes)
         self.assertIn(("POST", "/plugins/cli-anything/probe-harness"), routes)
         self.assertIn(("GET", "/protocols/check"), routes)
+        self.assertIn(("GET", "/protocols/matrix"), routes)
         self.assertIn(("GET", "/protocols/workflows"), routes)
         self.assertIn(("GET", "/.well-known/agent-card.json"), routes)
         self.assertIn(("POST", "/a2a"), routes)
@@ -132,6 +133,20 @@ class DaemonApiTests(unittest.TestCase):
                 self.assertTrue(
                     any("artifacts[0].artifact_id" in item["evidence"] for item in mcp["checks"])
                 )
+
+    def test_protocol_matrix_route_returns_capabilities_and_workflows(self):
+        with daemon_url() as base_url:
+            with urllib.request.urlopen(
+                f"{base_url}/protocols/matrix?include_workflows=true",
+                timeout=5,
+            ) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(response.status, 200)
+                self.assertTrue(payload["ok"])
+                self.assertTrue(payload["include_workflows"])
+                self.assertGreaterEqual(payload["capability_count"], 1)
+                self.assertGreaterEqual(payload["workflow_count"], 1)
+                self.assertTrue(any(item["kind"] == "workflow" for item in payload["rows"]))
 
     def test_workflows_route_returns_catalog(self):
         with daemon_url() as base_url:

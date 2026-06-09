@@ -19,7 +19,7 @@ from cbn_execution.graph import WorkflowGraph
 from cbn_parsers.registry import ParserRegistry
 from cbn_protocol.a2a_http import agent_card, handle_a2a_jsonrpc_request
 from cbn_protocol.envelope import bridge_args_from_selectors, select_bridge_value, validate_bridge_message
-from cbn_protocol.compatibility import check_protocol
+from cbn_protocol.compatibility import check_protocol, protocol_matrix
 from cbn_protocol.exports import (
     export_all_protocols,
     export_all_workflow_protocols,
@@ -53,6 +53,7 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/protocols"},
     {"method": "GET", "path": "/protocols/workflows"},
     {"method": "GET", "path": "/protocols/check"},
+    {"method": "GET", "path": "/protocols/matrix"},
     {"method": "GET", "path": "/approvals"},
     {"method": "GET", "path": "/workflows"},
     {"method": "POST", "path": "/call"},
@@ -248,6 +249,10 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                     workflow_path=workflow_path,
                 ),
             )
+            return
+        if parsed.path == "/protocols/matrix":
+            include_workflows = query.get("include_workflows", ["false"])[0].lower() in {"1", "true", "yes"}
+            self._send(200, protocol_matrix(runtime.registry, include_workflows=include_workflows))
             return
         if parsed.path == "/approvals":
             approval_id = query.get("approval_id", [None])[0]

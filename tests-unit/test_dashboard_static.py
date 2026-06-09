@@ -35,6 +35,7 @@ class DashboardStaticTests(unittest.TestCase):
         self.assertIn("python -m cbn protocol export-workflows all", self.html)
         self.assertIn("python -m cbn protocol check all --capability-id cli-anything.mermaid.set-diagram", self.html)
         self.assertIn("python -m cbn protocol check all --workflow-path workflows/artifact-id-routing.example.json", self.html)
+        self.assertIn("python -m cbn protocol matrix --include-workflows", self.html)
         self.assertIn("python -m cbn plugin evaluate-harness cli-anything macrocli", self.html)
         self.assertIn("python -m cbn plugin harness cli-anything install macrocli --yes", self.html)
         self.assertIn("python -m cbn call cli-anything.macrocli.backends", self.html)
