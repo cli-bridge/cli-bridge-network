@@ -288,6 +288,107 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(result["lifecycle"]["state"], "blocked")
         self.assertTrue(result["lifecycle"]["requires_override"])
 
+    def test_probe_harness_marks_low_dependency_candidate_ready(self):
+        class FakeHub(CliAnythingHub):
+            def info(self, harness_name: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "info", harness_name),
+                    exit_code=0,
+                    stdout="Entry point: cli-anything-mermaid\nRequires: nothing\nStatus: not installed\n",
+                    stderr="",
+                )
+
+            def search_market(self, query: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "search", query, "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[SAMPLE_MERMAID_RECORD],
+                )
+
+        result = FakeHub().probe_harness("mermaid", from_market=True)
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["ready"])
+        self.assertEqual(result["probe_blocker_count"], 0)
+        self.assertTrue(any(item["id"] == "declared-requirements" for item in result["probes"]))
+
+    def test_probe_harness_reports_missing_system_command(self):
+        class FakeHub(CliAnythingHub):
+            def info(self, harness_name: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "info", harness_name),
+                    exit_code=0,
+                    stdout=(
+                        "Entry point: cli-anything-missing\n"
+                        "Requires: cbn-definitely-missing-binary (apt install cbn-definitely-missing-binary)\n"
+                        "Status: not installed\n"
+                    ),
+                    stderr="",
+                )
+
+            def search_market(self, query: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "search", query, "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[
+                        {
+                            "name": "missing-command",
+                            "display_name": "Missing Command",
+                            "requires": "cbn-definitely-missing-binary (apt install cbn-definitely-missing-binary)",
+                            "entry_point": "cli-anything-missing",
+                        }
+                    ],
+                )
+
+        result = FakeHub().probe_harness("missing-command", from_market=True)
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["ready"])
+        command_probe = next(item for item in result["probes"] if item["id"] == "command:cbn-definitely-missing-binary")
+        self.assertEqual(command_probe["status"], "missing")
+        self.assertEqual(command_probe["severity"], "blocker")
+
+    def test_probe_harness_reports_missing_env_and_manual_api_key(self):
+        class FakeHub(CliAnythingHub):
+            def info(self, harness_name: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "info", harness_name),
+                    exit_code=0,
+                    stdout=(
+                        "Entry point: generate-veo\n"
+                        "Requires: CBN_TEST_REQUIRED_ENV_NEVER_SET env var and API key\n"
+                        "Status: not installed\n"
+                    ),
+                    stderr="",
+                )
+
+            def search_market(self, query: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "search", query, "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[
+                        {
+                            "name": "env-required",
+                            "display_name": "Env Required",
+                            "description": "External API harness",
+                            "requires": "CBN_TEST_REQUIRED_ENV_NEVER_SET env var and API key",
+                            "entry_point": "generate-veo",
+                        }
+                    ],
+                )
+
+        result = FakeHub().probe_harness("env-required", from_market=True)
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["ready"])
+        env_probe = next(item for item in result["probes"] if item["id"] == "env:CBN_TEST_REQUIRED_ENV_NEVER_SET")
+        self.assertEqual(env_probe["status"], "missing")
+        manual_probe = next(item for item in result["probes"] if item["id"] == "manual-account-or-api-key")
+        self.assertEqual(manual_probe["status"], "manual_required")
+
     def test_harness_operation_gate_allows_low_dependency_install(self):
         class FakeHub(CliAnythingHub):
             def info(self, harness_name: str) -> CliHubCommandResult:

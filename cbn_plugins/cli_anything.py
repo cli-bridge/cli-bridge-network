@@ -8,8 +8,10 @@ generates CBN manifests for installed or planned harnesses.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -541,6 +543,58 @@ class CliAnythingHub:
                 f"python -m cbn plugin harness cli-anything install {harness_name} --yes",
                 "python -m cbn registry validate manifests",
                 f"python -m cbn call {capability_id} --dry-run",
+            ],
+        }
+
+    def probe_harness(
+        self,
+        harness_name: str,
+        title: str | None = None,
+        from_market: bool = True,
+    ) -> dict[str, Any]:
+        evaluation = self.evaluate_harness(
+            harness_name,
+            title=title,
+            from_market=from_market,
+        )
+        if not evaluation["ok"]:
+            return {
+                "ok": False,
+                "plugin_id": PLUGIN_ID,
+                "harness_name": harness_name,
+                "from_market": from_market,
+                "error": evaluation["error"],
+                "evaluation": evaluation,
+                "probes": [],
+            }
+        status = evaluation["status"]
+        market_record = status.get("market_record") if isinstance(status.get("market_record"), dict) else None
+        requires = _declared_requires(market_record, status)
+        probes = _dependency_probes(
+            requires=requires,
+            entry_point=status.get("entry_point"),
+        )
+        blocking = [
+            item
+            for item in probes
+            if item["status"] in {"missing", "unavailable", "manual_required"}
+            and item["severity"] == "blocker"
+        ]
+        return {
+            "ok": True,
+            "plugin_id": PLUGIN_ID,
+            "harness_name": harness_name,
+            "from_market": from_market,
+            "capability_id": evaluation["capability_id"],
+            "ready": len(blocking) == 0 and evaluation["install_candidate"],
+            "probe_blocker_count": len(blocking),
+            "probes": probes,
+            "evaluation": evaluation,
+            "next_commands": [
+                f"python -m cbn plugin probe-harness cli-anything {harness_name}",
+                f"python -m cbn plugin evaluate-harness cli-anything {harness_name}",
+                f"python -m cbn plugin adapt-harness cli-anything {harness_name} --from-market --write",
+                f"python -m cbn plugin harness cli-anything install {harness_name} --yes",
             ],
         }
 
@@ -1212,6 +1266,142 @@ def _stage_status(done: bool, ready: bool, blocked: bool) -> str:
     if ready:
         return "ready"
     return "pending"
+
+
+def _dependency_probes(requires: str | None, entry_point: Any) -> list[dict[str, Any]]:
+    probes: list[dict[str, Any]] = []
+    requirement = (requires or "").strip()
+    if not requirement or requirement.casefold() in {"none", "nothing", "null", "n/a"}:
+        probes.append(
+            {
+                "id": "declared-requirements",
+                "kind": "requirements",
+                "status": "satisfied",
+                "severity": "info",
+                "detail": requirement or "no declared requirements",
+            }
+        )
+    else:
+        probes.append(
+            {
+                "id": "declared-requirements",
+                "kind": "requirements",
+                "status": "declared",
+                "severity": "blocker",
+                "detail": requirement,
+            }
+        )
+
+    for command in _requirement_commands(requirement):
+        path = shutil.which(command)
+        probes.append(
+            {
+                "id": f"command:{command}",
+                "kind": "command",
+                "name": command,
+                "status": "available" if path else "missing",
+                "severity": "info" if path else "blocker",
+                "path": path,
+            }
+        )
+
+    if isinstance(entry_point, str) and entry_point:
+        path = shutil.which(entry_point)
+        probes.append(
+            {
+                "id": f"entrypoint:{entry_point}",
+                "kind": "entrypoint",
+                "name": entry_point,
+                "status": "available" if path else "missing",
+                "severity": "info" if path else "warning",
+                "path": path,
+            }
+        )
+
+    for env_name in _requirement_env_vars(requirement):
+        present = bool(os.environ.get(env_name))
+        probes.append(
+            {
+                "id": f"env:{env_name}",
+                "kind": "env",
+                "name": env_name,
+                "status": "available" if present else "missing",
+                "severity": "info" if present else "blocker",
+            }
+        )
+
+    for host, port in _requirement_localhost_ports(requirement):
+        available = _localhost_port_available(host, port)
+        probes.append(
+            {
+                "id": f"localhost:{host}:{port}",
+                "kind": "localhost",
+                "host": host,
+                "port": port,
+                "status": "available" if available else "unavailable",
+                "severity": "info" if available else "blocker",
+            }
+        )
+
+    if _requires_manual_account_or_key(requirement):
+        probes.append(
+            {
+                "id": "manual-account-or-api-key",
+                "kind": "manual",
+                "status": "manual_required",
+                "severity": "blocker",
+                "detail": "declared requirement mentions account, login, token, or API key",
+            }
+        )
+    return probes
+
+
+def _requirement_commands(requirement: str) -> list[str]:
+    commands: list[str] = []
+    text = requirement.strip()
+    if not text:
+        return commands
+    package_match = re.match(r"^\s*([a-zA-Z][a-zA-Z0-9_.-]+)\s*\(", text)
+    if package_match:
+        commands.append(package_match.group(1))
+    for marker in ("apt install", "brew install", "choco install", "winget install"):
+        if marker in text.casefold():
+            before_marker = text[: text.casefold().find(marker)].strip()
+            if before_marker and re.match(r"^[a-zA-Z][a-zA-Z0-9_.-]+$", before_marker.split()[0]):
+                commands.append(before_marker.split()[0])
+    if re.search(r"\buv\b", text.casefold()):
+        commands.append("uv")
+    return sorted(set(commands))
+
+
+def _requirement_env_vars(requirement: str) -> list[str]:
+    if not requirement:
+        return []
+    env_vars = re.findall(r"\b[A-Z][A-Z0-9_]{2,}\b", requirement)
+    return sorted(set(env_vars))
+
+
+def _requirement_localhost_ports(requirement: str) -> list[tuple[str, int]]:
+    ports: list[tuple[str, int]] = []
+    for match in re.finditer(r"(localhost|127\.0\.0\.1|\[?::1\]?):(\d{2,5})", requirement, flags=re.IGNORECASE):
+        host = match.group(1).strip("[]")
+        port = int(match.group(2))
+        if 0 < port < 65536:
+            ports.append((host, port))
+    return sorted(set(ports))
+
+
+def _localhost_port_available(host: str, port: int) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=0.25):
+            return True
+    except OSError:
+        return False
+
+
+def _requires_manual_account_or_key(requirement: str) -> bool:
+    text = requirement.casefold()
+    return any(marker in text for marker in ("account", "login", "api key", "token", "secret"))
 
 
 def _known_parser_refs() -> set[str]:

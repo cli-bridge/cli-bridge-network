@@ -238,6 +238,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Evaluate without requiring market metadata.",
     )
 
+    plugin_probe = plugin_subcommands.add_parser(
+        "probe-harness",
+        help="Read-only probe of CLI-Anything harness dependencies before install.",
+    )
+    plugin_probe.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
+    plugin_probe.add_argument("harness_name", help="Harness name in CLI-Hub.")
+    plugin_probe.add_argument("--title", help="Override generated manifest title.")
+    plugin_probe.add_argument("--from-market", action="store_true", default=True)
+
     plugin_candidates = plugin_subcommands.add_parser(
         "candidates",
         help="Rank CLI-Anything market harnesses as install candidates without installing them.",

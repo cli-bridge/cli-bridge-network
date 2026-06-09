@@ -514,6 +514,14 @@
             <h2>Selected Command</h2>
             <button id="copyCommand" type="button">Copy</button>
           </div>
+          <button
+            data-command="python -m cbn plugin probe-harness cli-anything mermaid"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/probe-harness"
+            data-api-body='{"harness_name":"mermaid","from_market":true}'
+          >
+            Probe Harness
+          </button>
           <pre id="selectedCommand">Select any button to stage a command.</pre>
         </section>
 
