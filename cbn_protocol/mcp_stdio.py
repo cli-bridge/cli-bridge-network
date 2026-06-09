@@ -100,7 +100,7 @@ class McpStdioServer:
             dry_run=bool(arguments.get("dry_run", False)),
             approval_id=_optional_str(arguments.get("approval_id")),
         )
-        is_error = not result.get("allowed") or result.get("exit_code") not in (0, None)
+        is_error = not result.get("ok")
         text = result.get("stdout") or result.get("stderr") or json.dumps(result.get("parsed", {}), ensure_ascii=False)
         return {
             "content": [{"type": "text", "text": text}],
@@ -108,6 +108,7 @@ class McpStdioServer:
                 "capability_id": result.get("capability_id"),
                 "call_id": result.get("call_id"),
                 "allowed": result.get("allowed"),
+                "ok": result.get("ok"),
                 "exit_code": result.get("exit_code"),
                 "reason": result.get("reason"),
                 "parsed": result.get("parsed"),

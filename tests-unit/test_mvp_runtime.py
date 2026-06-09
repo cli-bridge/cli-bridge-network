@@ -331,6 +331,52 @@ class MvpRuntimeTests(unittest.TestCase):
             self.assertTrue(any(event["type"] == "tool_call.completed" for event in audit.tail(limit=10)))
             self.assertTrue(any(event["type"] == "tool_call.completed" for event in events.tail(limit=10)))
 
+    def test_executor_marks_cli_anything_fatal_stderr_not_ok(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            registry = ManifestRegistry()
+            registry.register(
+                CapabilityManifest.from_dict(
+                    {
+                        "apiVersion": "bridge.dev/v1alpha1",
+                        "kind": "ToolManifest",
+                        "metadata": {"id": "test.cli_anything_repl", "title": "CLI-Anything REPL"},
+                        "spec": {
+                            "transport": {
+                                "kind": "stdio",
+                                "command": sys.executable,
+                                "argsTemplate": [
+                                    "-c",
+                                    "import sys; print('cli-anything-mermaid v1.0.0'); "
+                                    "sys.stderr.write('Traceback (most recent call last):\\n"
+                                    "prompt_toolkit.output.win32.NoConsoleScreenBufferError: "
+                                    "No Windows console found.\\n')",
+                                ],
+                                "cwdPolicy": "workspace",
+                                "timeoutSeconds": 5,
+                            },
+                            "policy": {
+                                "risk": "read",
+                                "requiresConfirmation": False,
+                                "network": "deny",
+                            },
+                            "output": {"parserRef": "cli-anything.raw", "verified": False},
+                        },
+                    }
+                )
+            )
+            executor = CapabilityExecutor(
+                registry,
+                AuditLog(Path(tmp) / "audit.jsonl"),
+                event_bus=EventBus(Path(tmp) / "events.jsonl"),
+                artifact_store=ArtifactStore(Path(tmp) / "artifacts"),
+            )
+            result = executor.call("test.cli_anything_repl")
+            self.assertTrue(result["allowed"])
+            self.assertEqual(result["exit_code"], 0)
+            self.assertFalse(result["ok"])
+            self.assertFalse(result["parsed"]["ok"])
+            self.assertIn("NoConsoleScreenBufferError", result["parsed"]["error"])
+
     def test_executor_publishes_events_for_dry_run(self):
         with tempfile.TemporaryDirectory() as tmp:
             registry = ManifestRegistry()

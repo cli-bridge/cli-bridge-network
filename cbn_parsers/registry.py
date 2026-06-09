@@ -43,8 +43,8 @@ class ParserRegistry:
         registry.register(
             "cli-anything.raw",
             "CLI-Anything raw",
-            "Keep CLI-Anything harness output as raw text until a verified harness parser exists.",
-            parse_raw_text,
+            "Keep CLI-Anything harness output as raw text, but fail on known fatal harness stderr.",
+            parse_cli_anything_raw,
         )
         registry.register(
             "cli-anything.mermaid.set_diagram",
@@ -96,6 +96,13 @@ class ParserRegistry:
 
 
 def parse_raw_text(stdout: str, stderr: str) -> dict[str, Any]:
+    return {"stdout": stdout, "stderr": stderr}
+
+
+def parse_cli_anything_raw(stdout: str, stderr: str) -> dict[str, Any]:
+    fatal = _cli_anything_fatal_stderr(stderr)
+    if fatal:
+        raise ValueError(f"CLI-Anything harness failed: {fatal}")
     return {"stdout": stdout, "stderr": stderr}
 
 
@@ -177,3 +184,21 @@ def parse_cli_anything_macrocli_backends(stdout: str, stderr: str) -> dict[str, 
     if stderr.strip():
         data["stderr"] = stderr
     return data
+
+
+def _cli_anything_fatal_stderr(stderr: str) -> str | None:
+    text = stderr.strip()
+    if not text:
+        return None
+    fatal_markers = (
+        "NoConsoleScreenBufferError",
+        "Traceback (most recent call last):",
+        "Exception:",
+        "Error:",
+        "ModuleNotFoundError:",
+        "ImportError:",
+    )
+    for marker in fatal_markers:
+        if marker in text:
+            return marker
+    return None

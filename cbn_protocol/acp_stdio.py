@@ -129,7 +129,7 @@ class AcpStdioAgent:
             dry_run=bool(cbn_meta.get("dry_run", False)),
             approval_id=_optional_str(cbn_meta.get("approval_id")),
         )
-        success = bool(result.get("allowed")) and result.get("exit_code") in (0, None)
+        success = bool(result.get("ok"))
         return {
             "stopReason": "end_turn" if success else "refusal",
             "_meta": {
@@ -137,6 +137,7 @@ class AcpStdioAgent:
                     "capability_id": result.get("capability_id"),
                     "call_id": result.get("call_id"),
                     "allowed": result.get("allowed"),
+                    "ok": result.get("ok"),
                     "exit_code": result.get("exit_code"),
                     "reason": result.get("reason"),
                     "parsed": result.get("parsed"),
@@ -245,6 +246,7 @@ def smoke_acp_stdio(capability_id: str, extra_args: Iterable[str] = (), dry_run:
         and prompt_result.get("stopReason") == "end_turn"
         and cbn.get("capability_id") == capability_id
         and cbn.get("allowed") is True
+        and cbn.get("ok") is True
         and cbn.get("exit_code") == 0
     )
     return {

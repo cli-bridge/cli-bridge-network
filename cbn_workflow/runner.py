@@ -73,7 +73,7 @@ class WorkflowRunner:
             if not result.get("allowed"):
                 status = "blocked"
                 break
-            if result.get("exit_code") not in (0, None):
+            if not result.get("ok"):
                 status = "failed"
                 break
 

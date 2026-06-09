@@ -251,6 +251,7 @@ def _send_message(params: dict[str, Any]) -> dict[str, Any]:
                 "capability_id": result.get("capability_id"),
                 "call_id": result.get("call_id"),
                 "allowed": result.get("allowed"),
+                "ok": result.get("ok"),
                 "exit_code": result.get("exit_code"),
                 "reason": result.get("reason"),
             }
@@ -364,7 +365,7 @@ def _artifact_from_cbn(artifact: dict[str, Any]) -> dict[str, Any]:
 def _task_state(result: dict[str, Any]) -> str:
     if not result.get("allowed"):
         return "rejected"
-    if result.get("exit_code") not in (0, None):
+    if not result.get("ok"):
         return "failed"
     return "completed"
 

@@ -99,6 +99,7 @@ class CapabilityExecutor:
             return {
                 "call_id": call_id,
                 "capability_id": capability_id,
+                "ok": False,
                 "allowed": False,
                 "decision": decision.as_dict(),
                 "approval": approval,
@@ -129,6 +130,7 @@ class CapabilityExecutor:
         parsed = self._parse_result(manifest, call_id, result, artifacts)
         if parsed["artifact"] is not None:
             artifacts.append(parsed["artifact"])
+        ok = _tool_call_ok(result, parsed["payload"])
         message = BridgeMessage(
             producer=capability_id,
             channel="capability.output",
@@ -148,11 +150,13 @@ class CapabilityExecutor:
                 "call_id": call_id,
                 "capability_id": capability_id,
                 "allowed": result.allowed,
+                "ok": ok,
                 "exit_code": result.exit_code,
                 "reason": result.reason,
                 "stdout_summary": result.stdout[:500],
                 "stderr_summary": result.stderr[:500],
                 "parser_ref": parsed["payload"]["parser_ref"],
+                "parser_ok": parsed["payload"].get("ok"),
                 "artifact_ids": [artifact["artifact_id"] for artifact in artifacts],
                 "dry_run": dry_run,
             }
@@ -162,10 +166,12 @@ class CapabilityExecutor:
             capability_id,
             {
                 "allowed": result.allowed,
+                "ok": ok,
                 "exit_code": result.exit_code,
                 "reason": result.reason,
                 "approval_id": approval_id if approval_confirmed else None,
                 "parser_ref": parsed["payload"]["parser_ref"],
+                "parser_ok": parsed["payload"].get("ok"),
                 "artifact_ids": [artifact["artifact_id"] for artifact in artifacts],
                 "dry_run": dry_run,
             },
@@ -174,6 +180,7 @@ class CapabilityExecutor:
         return {
             "call_id": call_id,
             "capability_id": capability_id,
+            "ok": ok,
             "allowed": result.allowed,
             "exit_code": result.exit_code,
             "reason": result.reason,
@@ -297,3 +304,7 @@ class CapabilityExecutor:
             payload=payload,
             correlation_id=call_id,
         )
+
+
+def _tool_call_ok(result: ToolResult, parsed: dict[str, Any]) -> bool:
+    return bool(result.allowed) and result.exit_code in (0, None) and parsed.get("ok") is True

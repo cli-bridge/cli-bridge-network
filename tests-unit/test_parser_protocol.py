@@ -48,6 +48,15 @@ class ParserProtocolTests(unittest.TestCase):
         self.assertEqual(parsed["data"]["available_count"], 1)
         self.assertEqual(parsed["data"]["backends"][0]["id"], "native_api")
 
+    def test_cli_anything_raw_parser_rejects_fatal_stderr(self):
+        with self.assertRaisesRegex(ValueError, "NoConsoleScreenBufferError"):
+            ParserRegistry.builtins().parse(
+                "cli-anything.raw",
+                "cli-anything-mermaid v1.0.0\n",
+                "Traceback (most recent call last):\n"
+                "prompt_toolkit.output.win32.NoConsoleScreenBufferError: No Windows console found.\n",
+            )
+
     def test_bridge_message_envelope_shape(self):
         message = BridgeMessage(
             producer="git.status",

@@ -95,7 +95,7 @@ def main(argv: list[str] | None = None) -> int:
             approval_id=args.approval_id,
         )
         print(json.dumps(result, ensure_ascii=False, indent=2))
-        return 0 if result.get("allowed") else 3
+        return 0 if result.get("ok") else 3
 
     if args.command == "audit":
         runtime = build_runtime()

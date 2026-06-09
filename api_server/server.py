@@ -290,7 +290,8 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 confirmed=bool(payload.get("confirmed", False)),
                 approval_id=payload.get("approval_id"),
             )
-            self._send(200 if result.get("allowed") else 403, result)
+            status = 200 if result.get("ok") else 403 if not result.get("allowed") else 502
+            self._send(status, result)
             return
         if self.path == "/a2a":
             self._send(200, handle_a2a_jsonrpc_request(payload))
