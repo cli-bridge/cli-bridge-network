@@ -127,6 +127,38 @@ class PluginManager:
                 "operation_count": sum(item["summary"]["operation_count"] for item in catalogs),
                 "provider_count": len({item["provider"] for item in catalogs}),
             },
+            "validation": _catalog_list_validation(catalogs),
+        }
+
+    def validate_operation_catalog(self, plugin_id: str | None = None) -> dict[str, Any]:
+        catalog = self.operation_catalog(plugin_id)
+        if plugin_id:
+            reports = [catalog]
+            validation = catalog["validation"]
+        else:
+            reports = catalog["catalogs"]
+            validation = catalog["validation"]
+        return {
+            "ok": bool(validation["ok"]),
+            "kind": "PluginProviderOperationCatalogValidation",
+            "plugin_api_version": "cbn.plugin.v1",
+            "plugin_id": plugin_id,
+            "plugin_count": len(reports),
+            "summary": {
+                "operation_count": sum(report["summary"]["operation_count"] for report in reports),
+                "error_count": validation["error_count"],
+                "warning_count": validation["warning_count"],
+            },
+            "reports": [
+                {
+                    "plugin_id": report["plugin_id"],
+                    "provider": report["provider"],
+                    "validation": report["validation"],
+                }
+                for report in reports
+            ],
+            "errors": validation["errors"],
+            "warnings": validation["warnings"],
         }
 
     def provenance(self, plugin_id: str) -> dict[str, Any]:
@@ -538,8 +570,10 @@ class PluginManager:
                     1 for operation in operations if operation.get("kind") in {"execute", "write"}
                 ),
             },
+            "validation": _validate_operation_catalog(manifest, operations),
             "next_commands": [
                 f"python -m cbn plugin operations {manifest.plugin_id}",
+                f"python -m cbn plugin validate-operations {manifest.plugin_id}",
                 f"python -m cbn plugin gate {manifest.plugin_id} --action install",
                 f"python -m cbn plugin plan {manifest.plugin_id}",
             ],
@@ -1126,3 +1160,88 @@ def _dedupe_operations(operations: list[dict[str, Any]]) -> list[dict[str, Any]]
         selected.append(operation)
         seen.add(operation_id)
     return selected
+
+
+_OPERATION_KINDS = {"report", "gate", "plan", "execute", "write"}
+
+
+def _validate_operation_catalog(manifest: PluginManifest, operations: list[dict[str, Any]]) -> dict[str, Any]:
+    errors: list[str] = []
+    warnings: list[str] = []
+    if manifest.plugin_api_version != "cbn.plugin.v1":
+        errors.append(f"unsupported plugin_api_version: {manifest.plugin_api_version}")
+    if not manifest.provider:
+        errors.append("provider is required")
+    seen: set[str] = set()
+    for index, operation in enumerate(operations):
+        prefix = f"operations[{index}]"
+        operation_id = operation.get("id")
+        if not isinstance(operation_id, str) or not operation_id:
+            errors.append(f"{prefix}.id is required")
+            operation_id = f"<missing:{index}>"
+        elif operation_id in seen:
+            errors.append(f"duplicate operation id: {operation_id}")
+        seen.add(str(operation_id))
+        kind = operation.get("kind")
+        if kind not in _OPERATION_KINDS:
+            errors.append(f"{prefix}.kind is invalid: {kind}")
+        command = operation.get("command")
+        api = operation.get("api")
+        if not isinstance(command, str) or not command:
+            errors.append(f"{prefix}.command is required")
+        if api is not None:
+            _validate_operation_api(prefix, api, kind, errors)
+        elif kind in {"execute", "write"}:
+            warnings.append(f"{prefix}.api is missing for side-effecting operation {operation_id}")
+        side_effects = operation.get("side_effects", [])
+        if kind in {"execute", "write"}:
+            if operation.get("requires_confirmation") is not True:
+                errors.append(f"{prefix}.requires_confirmation must be true for {kind}")
+            if not isinstance(side_effects, list) or not side_effects:
+                errors.append(f"{prefix}.side_effects must be non-empty for {kind}")
+            payload = operation.get("payload_template", {})
+            if isinstance(payload, dict) and payload.get("confirmed") is False:
+                errors.append(f"{prefix}.payload_template.confirmed cannot be false for {kind}")
+        elif operation.get("requires_confirmation"):
+            warnings.append(f"{prefix}.requires_confirmation is true for non-side-effect kind {kind}")
+        if not isinstance(operation.get("input_schema", {}), dict):
+            errors.append(f"{prefix}.input_schema must be an object")
+        if not isinstance(operation.get("payload_template", {}), dict):
+            errors.append(f"{prefix}.payload_template must be an object")
+    return {
+        "ok": not errors,
+        "error_count": len(errors),
+        "warning_count": len(warnings),
+        "errors": errors,
+        "warnings": warnings,
+    }
+
+
+def _validate_operation_api(prefix: str, api: Any, kind: Any, errors: list[str]) -> None:
+    if not isinstance(api, dict):
+        errors.append(f"{prefix}.api must be an object when present")
+        return
+    method = api.get("method")
+    path = api.get("path")
+    if method not in {"GET", "POST"}:
+        errors.append(f"{prefix}.api.method must be GET or POST")
+    if not isinstance(path, str) or not path.startswith("/"):
+        errors.append(f"{prefix}.api.path must start with /")
+    if kind in {"execute", "write"} and method != "POST":
+        errors.append(f"{prefix}.api.method must be POST for {kind}")
+
+
+def _catalog_list_validation(catalogs: list[dict[str, Any]]) -> dict[str, Any]:
+    errors: list[str] = []
+    warnings: list[str] = []
+    for catalog in catalogs:
+        validation = catalog.get("validation", {})
+        errors.extend(f"{catalog.get('plugin_id')}: {error}" for error in validation.get("errors", []))
+        warnings.extend(f"{catalog.get('plugin_id')}: {warning}" for warning in validation.get("warnings", []))
+    return {
+        "ok": not errors,
+        "error_count": len(errors),
+        "warning_count": len(warnings),
+        "errors": errors,
+        "warnings": warnings,
+    }

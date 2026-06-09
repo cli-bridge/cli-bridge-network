@@ -468,6 +468,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.plugin_command == "operations":
             print(json.dumps(manager.operation_catalog(args.plugin_id), ensure_ascii=False, indent=2))
             return 0
+        if args.plugin_command == "validate-operations":
+            result = manager.validate_operation_catalog(args.plugin_id)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["ok"] else 13
         if args.plugin_command == "preflight":
             result = manager.preflight(args.plugin_id)
             print(json.dumps(result, ensure_ascii=False, indent=2))

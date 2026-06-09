@@ -79,6 +79,11 @@
             data-api-path="/plugins/operations?plugin_id=cli-anything"
           >Provider Operations</button>
           <button
+            data-command="python -m cbn plugin validate-operations cli-anything"
+            data-api-method="GET"
+            data-api-path="/plugins/operations/validate?plugin_id=cli-anything"
+          >Validate Operations</button>
+          <button
             data-command="python -m cbn plugin preflight cli-anything"
             data-api-method="GET"
             data-api-path="/plugins/cli-anything/preflight"

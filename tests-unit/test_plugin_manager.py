@@ -61,6 +61,7 @@ class PluginManagerTests(unittest.TestCase):
         self.assertEqual(result["kind"], "PluginProviderOperationCatalog")
         self.assertEqual(result["plugin_api_version"], "cbn.plugin.v1")
         self.assertEqual(result["provider"], "cli-anything")
+        self.assertTrue(result["validation"]["ok"])
         operation_ids = {operation["id"] for operation in result["operations"]}
         self.assertIn("install-gate", operation_ids)
         self.assertIn("adaptation-queue", operation_ids)
@@ -71,6 +72,29 @@ class PluginManagerTests(unittest.TestCase):
         self.assertIn("runtime/manifests", repair["side_effects"])
         self.assertGreater(result["summary"]["by_kind"]["gate"], 0)
         self.assertGreater(result["summary"]["write_or_execute_count"], 0)
+
+    def test_validate_operation_catalog_reports_safe_provider_contract(self):
+        result = PluginManager().validate_operation_catalog("cli-anything")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["kind"], "PluginProviderOperationCatalogValidation")
+        self.assertEqual(result["summary"]["error_count"], 0)
+        self.assertGreater(result["summary"]["operation_count"], 0)
+
+    def test_validate_operation_catalog_blocks_unsafe_execute_descriptor(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_example_plugin_manifest(root, unsafe_execute=True)
+
+            result = PluginManager(root=root).validate_operation_catalog("example")
+
+        self.assertFalse(result["ok"])
+        self.assertGreater(result["summary"]["error_count"], 0)
+        self.assertTrue(
+            any("requires_confirmation must be true" in error for error in result["errors"])
+        )
+        self.assertTrue(
+            any("side_effects must be non-empty" in error for error in result["errors"])
+        )
 
     def test_operation_catalog_supports_manifest_declared_fake_provider(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -101,6 +125,20 @@ class PluginManagerTests(unittest.TestCase):
         self.assertEqual(payload["kind"], "PluginProviderOperationCatalog")
         self.assertEqual(payload["plugin_id"], "cli-anything")
         self.assertTrue(payload["operations"])
+
+    def test_cli_validate_operations_command_outputs_report(self):
+        proc = subprocess.run(
+            [sys.executable, "-m", "cbn", "plugin", "validate-operations", "cli-anything"],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["kind"], "PluginProviderOperationCatalogValidation")
+        self.assertEqual(payload["summary"]["error_count"], 0)
 
     def test_provenance_handles_not_downloaded_plugin(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -305,9 +343,31 @@ class PluginManagerTests(unittest.TestCase):
         self.assertEqual(payload["plugin_id"], "runtime.pty")
         self.assertTrue(payload["requires_confirmation"])
 
-def write_example_plugin_manifest(root: Path) -> None:
+def write_example_plugin_manifest(root: Path, unsafe_execute: bool = False) -> None:
     registry = root / "plugins" / "registry"
     registry.mkdir(parents=True)
+    operations = [
+        {
+            "id": "fake-report",
+            "title": "Fake Report",
+            "kind": "report",
+            "command": "python -m cbn plugin fake-report example",
+            "api": {"method": "GET", "path": "/plugins/example/fake-report"},
+            "input_schema": {},
+        }
+    ]
+    if unsafe_execute:
+        operations.append(
+            {
+                "id": "unsafe-execute",
+                "title": "Unsafe Execute",
+                "kind": "execute",
+                "command": "python -m cbn plugin unsafe example",
+                "api": {"method": "POST", "path": "/plugins/example/unsafe"},
+                "requires_confirmation": False,
+                "side_effects": [],
+            }
+        )
     (registry / "example.json").write_text(
         json.dumps(
             {
@@ -320,16 +380,7 @@ def write_example_plugin_manifest(root: Path) -> None:
                 "install": {"pip_packages": [], "modes": ["fake"]},
                 "entrypoints": [],
                 "permissions": ["fake.read"],
-                "operations": [
-                    {
-                        "id": "fake-report",
-                        "title": "Fake Report",
-                        "kind": "report",
-                        "command": "python -m cbn plugin fake-report example",
-                        "api": {"method": "GET", "path": "/plugins/example/fake-report"},
-                        "input_schema": {},
-                    }
-                ],
+                "operations": operations,
             }
         ),
         encoding="utf-8",

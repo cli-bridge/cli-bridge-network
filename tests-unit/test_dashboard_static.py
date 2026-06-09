@@ -9,7 +9,15 @@ class DashboardStaticTests(unittest.TestCase):
         self.js = (self.root / "app.js").read_text(encoding="utf-8")
 
     def test_cli_anything_lifecycle_buttons_exist(self):
-        for label in ["Provider Operations", "Download / Clone", "Install", "Check Updates", "Update", "Install PTY Backend"]:
+        for label in [
+            "Provider Operations",
+            "Validate Operations",
+            "Download / Clone",
+            "Install",
+            "Check Updates",
+            "Update",
+            "Install PTY Backend",
+        ]:
             self.assertIn(label, self.html)
         self.assertIn("Candidate Summary", self.html)
         self.assertIn("candidateSummary", self.html)
@@ -26,6 +34,8 @@ class DashboardStaticTests(unittest.TestCase):
         self.assertIn("python -m cbn plugin plan cli-anything", self.html)
         self.assertIn("python -m cbn plugin operations cli-anything", self.html)
         self.assertIn("/plugins/operations?plugin_id=cli-anything", self.html)
+        self.assertIn("python -m cbn plugin validate-operations cli-anything", self.html)
+        self.assertIn("/plugins/operations/validate?plugin_id=cli-anything", self.html)
         self.assertIn("python -m cbn plugin preflight cli-anything", self.html)
         self.assertIn("python -m cbn plugin install cli-anything --yes", self.html)
         self.assertIn("python -m cbn plugin install cli-anything --yes --allow-failed-preflight", self.html)

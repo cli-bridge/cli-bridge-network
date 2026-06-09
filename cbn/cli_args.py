@@ -325,6 +325,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     plugin_operations.add_argument("plugin_id", nargs="?", help="Plugin id, for example cli-anything.")
 
+    plugin_validate_operations = plugin_subcommands.add_parser(
+        "validate-operations",
+        help="Validate provider operation descriptors and side-effect gates.",
+    )
+    plugin_validate_operations.add_argument("plugin_id", nargs="?", help="Plugin id, for example cli-anything.")
+
     plugin_preflight = plugin_subcommands.add_parser("preflight", help="Run install readiness checks.")
     plugin_preflight.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
 
