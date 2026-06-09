@@ -1779,6 +1779,10 @@ class CliAnythingHubTests(unittest.TestCase):
             manifest_path = Path(tempdir) / "manifests" / "cli-anything.piptool.launch.json"
             self.assertTrue(wrapper_path.exists())
             self.assertTrue(manifest_path.exists())
+            wrapper_text = wrapper_path.read_text(encoding="utf-8")
+            self.assertIn("wrapper_dir = str(Path(__file__).resolve().parent)", wrapper_text)
+            self.assertIn("sys.path[:] = [entry for entry in sys.path", wrapper_text)
+            self.assertIn("runpy.run_module(MODULE, run_name=\"__main__\", alter_sys=True)", wrapper_text)
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             self.assertEqual(manifest["spec"]["transport"]["command"], sys.executable)
             self.assertEqual(manifest["spec"]["transport"]["argsTemplate"], [str(wrapper_path)])
