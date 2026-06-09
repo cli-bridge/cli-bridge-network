@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from cbn_core.manifest import ManifestRegistry
+from cbn_protocol.descriptor_roundtrip import workflow_descriptor_roundtrip
 from cbn_protocol.exports import export_protocol, export_workflow_protocol
 from cbn_workflow.catalog import list_workflows
 
@@ -49,11 +50,11 @@ def check_protocol(
     if workflow_path:
         descriptor = export_workflow_protocol(registry, protocol, workflow_path=workflow_path)
         if protocol == "mcp":
-            checks = _check_mcp_workflow(descriptor)
+            checks = _check_mcp_workflow(registry, descriptor)
         elif protocol == "a2a":
-            checks = _check_a2a_workflow(descriptor)
+            checks = _check_a2a_workflow(registry, descriptor)
         else:
-            checks = _check_acp_workflow(descriptor)
+            checks = _check_acp_workflow(registry, descriptor)
     else:
         descriptor = export_protocol(registry, protocol, capability_id=capability_id)
         if protocol == "mcp":
@@ -324,7 +325,7 @@ def _check_acp(descriptor: dict[str, Any]) -> list[dict[str, str]]:
     ]
 
 
-def _check_mcp_workflow(descriptor: dict[str, Any]) -> list[dict[str, str]]:
+def _check_mcp_workflow(registry: ManifestRegistry, descriptor: dict[str, Any]) -> list[dict[str, str]]:
     tools = descriptor.get("workflowTools")
     first_tool = tools[0] if isinstance(tools, list) and tools else {}
     input_schema = first_tool.get("inputSchema") if isinstance(first_tool, dict) else {}
@@ -350,6 +351,7 @@ def _check_mcp_workflow(descriptor: dict[str, Any]) -> list[dict[str, str]]:
             "workflow tool exposes dry_run/confirmed inputSchema",
         ),
         _workflow_handle_check("MCP", cbn, input_schema),
+        _workflow_descriptor_roundtrip_check(registry, "mcp", descriptor),
         _workflow_descriptor_check(cbn, workflow),
         _workflow_routing_check(workflow),
         _partial(
@@ -363,7 +365,7 @@ def _check_mcp_workflow(descriptor: dict[str, Any]) -> list[dict[str, str]]:
     ]
 
 
-def _check_a2a_workflow(descriptor: dict[str, Any]) -> list[dict[str, str]]:
+def _check_a2a_workflow(registry: ManifestRegistry, descriptor: dict[str, Any]) -> list[dict[str, str]]:
     agent_card = descriptor.get("agentCard")
     skills = agent_card.get("skills") if isinstance(agent_card, dict) else None
     first_skill = skills[0] if isinstance(skills, list) and skills else {}
@@ -390,6 +392,7 @@ def _check_a2a_workflow(descriptor: dict[str, Any]) -> list[dict[str, str]]:
             "workflow skill declares JSON input/output modes",
         ),
         _workflow_handle_check("A2A", cbn, metadata.get("cbn_input") if isinstance(metadata, dict) else None),
+        _workflow_descriptor_roundtrip_check(registry, "a2a", descriptor),
         _workflow_descriptor_check(cbn, workflow),
         _workflow_routing_check(workflow),
         _partial(
@@ -403,7 +406,7 @@ def _check_a2a_workflow(descriptor: dict[str, Any]) -> list[dict[str, str]]:
     ]
 
 
-def _check_acp_workflow(descriptor: dict[str, Any]) -> list[dict[str, str]]:
+def _check_acp_workflow(registry: ManifestRegistry, descriptor: dict[str, Any]) -> list[dict[str, str]]:
     workflows = descriptor.get("workflows")
     first_workflow = workflows[0] if isinstance(workflows, list) and workflows else {}
     cbn = first_workflow.get("cbn") if isinstance(first_workflow, dict) else None
@@ -429,6 +432,7 @@ def _check_acp_workflow(descriptor: dict[str, Any]) -> list[dict[str, str]]:
             "ACP workflow output declares WorkflowRun plus task BridgeMessages",
         ),
         _workflow_handle_check("ACP", cbn, workflow_input),
+        _workflow_descriptor_roundtrip_check(registry, "acp", descriptor),
         _workflow_descriptor_check(cbn, workflow),
         _workflow_routing_check(workflow),
         _partial(
@@ -453,6 +457,26 @@ def _workflow_descriptor_check(cbn: Any, workflow: Any) -> dict[str, str]:
         and isinstance(workflow.get("tasks"), list)
         and workflow.get("task_count") == len(workflow["tasks"]),
         "descriptor embeds valid cbn WorkflowDescriptor and cbn_workflow task graph",
+    )
+
+
+def _workflow_descriptor_roundtrip_check(
+    registry: ManifestRegistry,
+    protocol: str,
+    descriptor: dict[str, Any],
+) -> dict[str, str]:
+    report = workflow_descriptor_roundtrip(registry, protocol, descriptor)
+    evidence = (
+        f"{protocol} generated call uses {report.get('declared_handle')} without "
+        f"workflow_path; resolved={report.get('resolved_path')}; "
+        f"declared={str(report.get('input_declares_handle')).lower()}"
+    )
+    if report.get("error"):
+        evidence += f"; error={report['error']}"
+    return _check(
+        "workflow descriptor call roundtrips through runtime resolver",
+        bool(report.get("ok")),
+        evidence,
     )
 
 

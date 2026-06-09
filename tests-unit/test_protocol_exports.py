@@ -8,6 +8,7 @@ from pathlib import Path
 from cbn_core.manifest import ManifestRegistry
 from cbn_protocol.compatibility import check_protocol, protocol_matrix
 from cbn_protocol.conformance import protocol_conformance_plan
+from cbn_protocol.descriptor_roundtrip import workflow_descriptor_roundtrip
 from cbn_protocol.exports import (
     export_all_protocols,
     export_all_workflow_protocols,
@@ -100,6 +101,23 @@ class ProtocolExportTests(unittest.TestCase):
             "cbn.workflow.run",
         )
         self.assertEqual(payload["exports"]["acp"]["workflows"][0]["input"]["workflow_id"], "string")
+
+    def test_workflow_descriptor_roundtrip_uses_native_handles_without_paths(self):
+        payload = export_all_workflow_protocols(
+            self.registry,
+            workflow_path="workflows/cli-anything-macrocli-mermaid-routing.example.json",
+        )
+        for protocol, descriptor in payload["exports"].items():
+            with self.subTest(protocol=protocol):
+                report = workflow_descriptor_roundtrip(self.registry, protocol, descriptor)
+                self.assertTrue(report["ok"])
+                self.assertFalse(report["uses_workflow_path"])
+                self.assertTrue(report["input_declares_handle"])
+                self.assertEqual(
+                    report["resolved_path"],
+                    "workflows/cli-anything-macrocli-mermaid-routing.example.json",
+                )
+                self.assertNotIn("workflow_path", json.dumps(report["generated_call"], ensure_ascii=False))
 
     def test_protocol_check_reports_descriptor_evidence_and_wire_gaps(self):
         payload = check_protocol(self.registry, "all", capability_id="cli-anything.mermaid.set-diagram")
@@ -545,6 +563,14 @@ class ProtocolExportTests(unittest.TestCase):
                 for item in mcp["checks"]
             )
         )
+        self.assertTrue(
+            any(
+                item["requirement"] == "workflow descriptor call roundtrips through runtime resolver"
+                and item["status"] == "present"
+                and "without workflow_path" in item["evidence"]
+                for item in mcp["checks"]
+            )
+        )
         routing = [
             item
             for item in mcp["checks"]
@@ -564,6 +590,13 @@ class ProtocolExportTests(unittest.TestCase):
         )
         self.assertTrue(
             any(
+                item["requirement"] == "workflow descriptor call roundtrips through runtime resolver"
+                and item["status"] == "present"
+                for item in a2a["checks"]
+            )
+        )
+        self.assertTrue(
+            any(
                 item["requirement"] == "A2A workflow message/send smoke"
                 and "artifact-id-routing.example.json" in item["evidence"]
                 for item in a2a["checks"]
@@ -574,6 +607,13 @@ class ProtocolExportTests(unittest.TestCase):
         self.assertTrue(
             any(
                 item["requirement"] == "ACP workflow handle is descriptor-native"
+                and item["status"] == "present"
+                for item in acp["checks"]
+            )
+        )
+        self.assertTrue(
+            any(
+                item["requirement"] == "workflow descriptor call roundtrips through runtime resolver"
                 and item["status"] == "present"
                 for item in acp["checks"]
             )
