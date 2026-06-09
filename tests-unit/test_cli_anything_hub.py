@@ -2111,6 +2111,84 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(by_stage["adapter_smoke"]["status"], "completed")
         self.assertEqual(by_stage["repair_write"]["status"], "ready")
 
+    def test_adaptation_queue_batches_explicit_harness_gates(self):
+        class FakeHub(CliAnythingHub):
+            def adaptation_gate(
+                self,
+                harness_name,
+                from_market=True,
+                module=None,
+                require_smoke=True,
+                run_smoke=False,
+                confirmed=False,
+                smoke_args=("--help",),
+                smoke_timeout_seconds=10,
+            ):
+                return {
+                    "ok": True,
+                    "harness_name": harness_name,
+                    "summary": {
+                        "native_launch_ready": harness_name == "native",
+                        "ready_for_repair_write": harness_name == "repair-ready",
+                        "recommended_next_action": (
+                            "verify_harness_and_protocol_facades"
+                            if harness_name == "native"
+                            else "write_smoke_gated_repaired_manifest"
+                            if harness_name == "repair-ready"
+                            else "run_adapter_smoke"
+                        ),
+                    },
+                }
+
+        result = FakeHub().adaptation_queue(
+            harnesses=("native", "repair-ready", "native", "needs-smoke"),
+            max_harnesses=3,
+        )
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["kind"], "CliAnythingHarnessAdaptationQueue")
+        self.assertEqual(result["source"], "explicit_harnesses")
+        self.assertEqual(result["harnesses"], ["native", "repair-ready", "needs-smoke"])
+        self.assertEqual(result["summary"]["harness_count"], 3)
+        self.assertEqual(result["summary"]["native_ready_count"], 1)
+        self.assertEqual(result["summary"]["ready_for_repair_write_count"], 1)
+        self.assertEqual(result["summary"]["smoke_ready_count"], 1)
+
+    def test_adaptation_queue_can_source_from_install_queue(self):
+        class FakeHub(CliAnythingHub):
+            def market_install_queue(self, query=None, limit=50, max_installs=10, include_blocked=True):
+                return {
+                    "ok": True,
+                    "queue": [{"harness_name": "queued"}],
+                    "blocked": [{"candidate": {"harness_name": "blocked"}}],
+                    "skipped": [{"harness_name": "skipped"}],
+                }
+
+            def adaptation_gate(
+                self,
+                harness_name,
+                from_market=True,
+                module=None,
+                require_smoke=True,
+                run_smoke=False,
+                confirmed=False,
+                smoke_args=("--help",),
+                smoke_timeout_seconds=10,
+            ):
+                return {
+                    "ok": True,
+                    "harness_name": harness_name,
+                    "summary": {
+                        "native_launch_ready": False,
+                        "ready_for_repair_write": False,
+                        "recommended_next_action": "run_adapter_smoke",
+                    },
+                }
+
+        result = FakeHub().adaptation_queue(query="file", max_harnesses=2)
+        self.assertEqual(result["source"], "market_install_queue")
+        self.assertEqual(result["harnesses"], ["queued", "blocked"])
+        self.assertEqual(result["summary"]["harness_count"], 2)
+
     def test_candidate_harnesses_limits_after_ranking_full_market(self):
         class FakeHub(CliAnythingHub):
             def list_market(self) -> CliHubCommandResult:
@@ -2910,6 +2988,33 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(payload["kind"], "CliAnythingHarnessAdaptationGate")
         self.assertIn("summary", payload)
         self.assertIn("stages", payload)
+
+    def test_cli_adaptation_queue_outputs_batch_summary(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "plugin",
+                "adaptation-queue",
+                "cli-anything",
+                "--harness",
+                "py4csr",
+                "--max-harnesses",
+                "1",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertIn(proc.returncode, {0, 6})
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["plugin_id"], "cli-anything")
+        self.assertEqual(payload["kind"], "CliAnythingHarnessAdaptationQueue")
+        self.assertEqual(payload["harnesses"], ["py4csr"])
+        self.assertIn("summary", payload)
+        self.assertIn("gates", payload)
 
     def test_cli_sync_market_handles_missing_cli_hub_without_crashing(self):
         proc = subprocess.run(

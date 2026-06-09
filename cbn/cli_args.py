@@ -645,6 +645,33 @@ def build_parser() -> argparse.ArgumentParser:
     plugin_adaptation_gate.add_argument("--run-smoke", action="store_true", help="Execute adapter smoke.")
     plugin_adaptation_gate.add_argument("--yes", action="store_true", help="Confirm smoke execution.")
 
+    plugin_adaptation_queue = plugin_subcommands.add_parser(
+        "adaptation-queue",
+        help="Build a read-only adaptation gate queue for multiple CLI-Anything harnesses.",
+    )
+    plugin_adaptation_queue.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
+    plugin_adaptation_queue.add_argument(
+        "--harness",
+        action="append",
+        default=[],
+        help="Specific harness to gate; repeatable. Defaults to market install queue entries.",
+    )
+    plugin_adaptation_queue.add_argument("--query", help="Optional CLI-Hub search query when no --harness is provided.")
+    plugin_adaptation_queue.add_argument("--limit", type=int, default=20)
+    plugin_adaptation_queue.add_argument("--max-harnesses", type=int, default=5)
+    plugin_adaptation_queue.add_argument("--no-blocked", action="store_false", dest="include_blocked")
+    plugin_adaptation_queue.add_argument("--no-require-smoke", action="store_false", dest="require_smoke")
+    plugin_adaptation_queue.set_defaults(include_blocked=True, require_smoke=True)
+    plugin_adaptation_queue.add_argument(
+        "--smoke-arg",
+        action="append",
+        default=[],
+        help="Argument passed to adapter smoke; defaults to --help when omitted.",
+    )
+    plugin_adaptation_queue.add_argument("--smoke-timeout", type=int, default=10)
+    plugin_adaptation_queue.add_argument("--run-smoke", action="store_true", help="Execute adapter smoke for selected gates.")
+    plugin_adaptation_queue.add_argument("--yes", action="store_true", help="Confirm smoke execution.")
+
     plugin_sync = plugin_subcommands.add_parser(
         "sync-market",
         help="Preview or write CBN manifests for CLI-Anything market records.",

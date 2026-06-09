@@ -1662,6 +1662,73 @@ class CliAnythingHub:
             ],
         }
 
+    def adaptation_queue(
+        self,
+        harnesses: tuple[str, ...] = (),
+        query: str | None = None,
+        limit: int = 20,
+        max_harnesses: int = 5,
+        include_blocked: bool = True,
+        require_smoke: bool = True,
+        run_smoke: bool = False,
+        confirmed: bool = False,
+        smoke_args: tuple[str, ...] = ("--help",),
+        smoke_timeout_seconds: int = 10,
+    ) -> dict[str, Any]:
+        bounded_limit = max(0, min(limit, 500))
+        bounded_max = max(0, min(max_harnesses, 50))
+        source_report = None
+        source = "explicit_harnesses"
+        selected_harnesses = _unique_harnesses(harnesses)
+        if not selected_harnesses:
+            source = "market_install_queue"
+            source_report = self.market_install_queue(
+                query=query,
+                limit=bounded_limit,
+                max_installs=bounded_max,
+                include_blocked=include_blocked,
+            )
+            selected_harnesses = _harnesses_from_install_queue(source_report, include_blocked=include_blocked)
+        selected_harnesses = selected_harnesses[:bounded_max]
+        gates = [
+            self.adaptation_gate(
+                harness,
+                from_market=True,
+                require_smoke=require_smoke,
+                run_smoke=run_smoke,
+                confirmed=confirmed,
+                smoke_args=smoke_args,
+                smoke_timeout_seconds=smoke_timeout_seconds,
+            )
+            for harness in selected_harnesses
+        ]
+        summary = _adaptation_queue_summary(gates)
+        return {
+            "ok": True,
+            "plugin_id": PLUGIN_ID,
+            "kind": "CliAnythingHarnessAdaptationQueue",
+            "source": source,
+            "query": query,
+            "limit": bounded_limit,
+            "max_harnesses": bounded_max,
+            "include_blocked": include_blocked,
+            "harnesses": selected_harnesses,
+            "require_smoke": require_smoke,
+            "run_smoke": run_smoke,
+            "confirmed": confirmed,
+            "smoke_args": list(smoke_args),
+            "smoke_timeout_seconds": smoke_timeout_seconds,
+            "summary": summary,
+            "gates": gates,
+            "source_report": source_report,
+            "next_commands": [
+                "python -m cbn plugin adaptation-queue cli-anything --query file --limit 20 --max-harnesses 5",
+                "python -m cbn plugin adaptation-queue cli-anything --harness py4csr --harness 3mf",
+                "python -m cbn plugin adaptation-gate cli-anything <harness> --from-market",
+                "python -m cbn plugin adaptation-gate cli-anything <harness> --from-market --run-smoke --yes",
+            ],
+        }
+
     def live_verification(
         self,
         harnesses: tuple[str, ...] = ("mermaid", "macrocli"),
@@ -3559,6 +3626,63 @@ def _adaptation_gate_stages(
             "blockers": [] if summary["ready_for_repair_write"] or summary["native_launch_ready"] else smoke_gate["blockers"],
         },
     ]
+
+
+def _unique_harnesses(harnesses: tuple[str, ...]) -> list[str]:
+    selected: list[str] = []
+    for harness in harnesses:
+        value = str(harness).strip()
+        if value and value not in selected:
+            selected.append(value)
+    return selected
+
+
+def _harnesses_from_install_queue(report: dict[str, Any], include_blocked: bool = True) -> list[str]:
+    selected: list[str] = []
+    for section in ("queue", "blocked" if include_blocked else "", "skipped"):
+        if not section:
+            continue
+        entries = report.get(section, [])
+        if not isinstance(entries, list):
+            continue
+        for item in entries:
+            if not isinstance(item, dict):
+                continue
+            harness = item.get("harness_name")
+            if not isinstance(harness, str) or not harness:
+                candidate = item.get("candidate") if isinstance(item.get("candidate"), dict) else {}
+                harness = candidate.get("harness_name")
+            if isinstance(harness, str) and harness and harness not in selected:
+                selected.append(harness)
+    return selected
+
+
+def _adaptation_queue_summary(gates: list[dict[str, Any]]) -> dict[str, Any]:
+    action_counts: dict[str, int] = {}
+    for gate in gates:
+        action = str(gate.get("summary", {}).get("recommended_next_action", "unknown"))
+        action_counts[action] = action_counts.get(action, 0) + 1
+    return {
+        "harness_count": len(gates),
+        "native_ready_count": sum(1 for item in gates if item.get("summary", {}).get("native_launch_ready")),
+        "ready_for_repair_write_count": sum(
+            1 for item in gates if item.get("summary", {}).get("ready_for_repair_write")
+        ),
+        "smoke_ready_count": sum(
+            1 for item in gates if item.get("summary", {}).get("recommended_next_action") == "run_adapter_smoke"
+        ),
+        "blocked_count": sum(
+            1
+            for item in gates
+            if item.get("summary", {}).get("recommended_next_action")
+            in {
+                "inspect_harness_blockers",
+                "inspect_adapter_targets",
+                "choose_another_adapter_target_or_fix_dependencies",
+            }
+        ),
+        "action_counts": action_counts,
+    }
 
 
 def _clip_text(value: str | None, limit: int) -> str:

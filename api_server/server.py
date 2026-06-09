@@ -102,6 +102,7 @@ ROUTE_SUMMARY = [
     {"method": "POST", "path": "/plugins/cli-anything/adapter-targets"},
     {"method": "POST", "path": "/plugins/cli-anything/adapter-smoke"},
     {"method": "POST", "path": "/plugins/cli-anything/adaptation-gate"},
+    {"method": "POST", "path": "/plugins/cli-anything/adaptation-queue"},
     {"method": "POST", "path": "/plugins/cli-anything/sync-market"},
     {"method": "POST", "path": "/plugins/cli-anything/harness"},
 ]
@@ -718,6 +719,29 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 payload["harness_name"],
                 from_market=bool(payload.get("from_market", True)),
                 module=payload.get("module"),
+                require_smoke=bool(payload.get("require_smoke", True)),
+                run_smoke=bool(payload.get("run_smoke", False)),
+                confirmed=bool(payload.get("confirmed", False)),
+                smoke_args=tuple(smoke_args_raw),
+                smoke_timeout_seconds=int(payload.get("smoke_timeout_seconds", 10)),
+            )
+            self._send(200 if result["ok"] else 502, result)
+            return
+        if self.path == "/plugins/cli-anything/adaptation-queue":
+            smoke_args_raw = payload.get("smoke_args", ["--help"])
+            if not isinstance(smoke_args_raw, list) or not all(isinstance(item, str) for item in smoke_args_raw):
+                self._send(400, {"error": "smoke_args must be a list of strings"})
+                return
+            harnesses = payload.get("harnesses", [])
+            if not isinstance(harnesses, list) or not all(isinstance(item, str) for item in harnesses):
+                self._send(400, {"error": "harnesses must be a list of strings"})
+                return
+            result = CliAnythingHub().adaptation_queue(
+                harnesses=tuple(harnesses),
+                query=payload.get("query"),
+                limit=int(payload.get("limit", 20)),
+                max_harnesses=int(payload.get("max_harnesses", 5)),
+                include_blocked=bool(payload.get("include_blocked", True)),
                 require_smoke=bool(payload.get("require_smoke", True)),
                 run_smoke=bool(payload.get("run_smoke", False)),
                 confirmed=bool(payload.get("confirmed", False)),

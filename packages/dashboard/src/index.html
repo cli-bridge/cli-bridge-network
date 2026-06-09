@@ -219,6 +219,12 @@
             data-api-body='{"harness_name":"py4csr","from_market":true,"module":"py4csr.tables.rtf_formatter","require_smoke":true,"smoke_args":["--help"],"smoke_timeout_seconds":10}'
           >Adaptation Gate</button>
           <button
+            data-command="python -m cbn plugin adaptation-queue cli-anything --harness py4csr --harness 3mf --max-harnesses 2"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/adaptation-queue"
+            data-api-body='{"harnesses":["py4csr","3mf"],"max_harnesses":2,"include_blocked":true,"require_smoke":true,"smoke_args":["--help"],"smoke_timeout_seconds":10}'
+          >Adaptation Queue</button>
+          <button
             data-command="python -m cbn plugin adapter-smoke cli-anything py4csr --from-market --module py4csr.plotting.sas_compatible_rtf_generator"
             data-api-method="POST"
             data-api-path="/plugins/cli-anything/adapter-smoke"

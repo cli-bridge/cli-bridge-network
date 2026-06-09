@@ -643,6 +643,68 @@ class DaemonApiTests(unittest.TestCase):
                     self.assertFalse(payload["run_smoke"])
                     self.assertEqual(payload["stages"][0]["id"], "adapter_smoke")
 
+    def test_cli_anything_adaptation_queue_route_returns_batch_report(self):
+        class FakeHub:
+            def adaptation_queue(
+                self,
+                harnesses=(),
+                query=None,
+                limit=20,
+                max_harnesses=5,
+                include_blocked=True,
+                require_smoke=True,
+                run_smoke=False,
+                confirmed=False,
+                smoke_args=("--help",),
+                smoke_timeout_seconds=10,
+            ):
+                return {
+                    "ok": True,
+                    "plugin_id": "cli-anything",
+                    "kind": "CliAnythingHarnessAdaptationQueue",
+                    "harnesses": list(harnesses),
+                    "query": query,
+                    "limit": limit,
+                    "max_harnesses": max_harnesses,
+                    "include_blocked": include_blocked,
+                    "require_smoke": require_smoke,
+                    "run_smoke": run_smoke,
+                    "confirmed": confirmed,
+                    "smoke_args": list(smoke_args),
+                    "smoke_timeout_seconds": smoke_timeout_seconds,
+                    "summary": {"harness_count": len(harnesses)},
+                    "gates": [],
+                }
+
+        with patch("api_server.server.CliAnythingHub", FakeHub):
+            with daemon_url() as base_url:
+                request = urllib.request.Request(
+                    f"{base_url}/plugins/cli-anything/adaptation-queue",
+                    data=json.dumps(
+                        {
+                            "harnesses": ["py4csr", "3mf"],
+                            "query": "file",
+                            "limit": 20,
+                            "max_harnesses": 2,
+                            "include_blocked": True,
+                            "require_smoke": True,
+                            "run_smoke": False,
+                            "confirmed": False,
+                            "smoke_args": ["--help"],
+                            "smoke_timeout_seconds": 10,
+                        }
+                    ).encode("utf-8"),
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(payload["harnesses"], ["py4csr", "3mf"])
+                    self.assertEqual(payload["query"], "file")
+                    self.assertEqual(payload["max_harnesses"], 2)
+                    self.assertEqual(payload["summary"]["harness_count"], 2)
+
     def test_runtime_transport_status_and_plan_routes(self):
         with daemon_url() as base_url:
             with urllib.request.urlopen(f"{base_url}/runtime/transports?kind=pty", timeout=5) as response:

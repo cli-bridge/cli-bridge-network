@@ -670,6 +670,23 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0 if result["ok"] else 6
+        if args.plugin_command == "adaptation-queue":
+            if args.plugin_id != "cli-anything":
+                raise KeyError(f"adaptation-queue is not implemented for plugin: {args.plugin_id}")
+            result = CliAnythingHub().adaptation_queue(
+                harnesses=tuple(args.harness),
+                query=args.query,
+                limit=args.limit,
+                max_harnesses=args.max_harnesses,
+                include_blocked=args.include_blocked,
+                require_smoke=args.require_smoke,
+                run_smoke=args.run_smoke,
+                confirmed=args.yes,
+                smoke_args=tuple(args.smoke_arg) if args.smoke_arg else ("--help",),
+                smoke_timeout_seconds=args.smoke_timeout,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["ok"] else 6
         if args.plugin_command == "sync-market":
             if args.plugin_id != "cli-anything":
                 raise KeyError(f"sync-market is not implemented for plugin: {args.plugin_id}")
