@@ -837,8 +837,17 @@ class CliAnythingHub:
         capability_id = evaluation["capability_id"]
         adaptation = evaluation["adaptation"]
         write_requested_without_confirmation = bool(write and not confirmed)
+        write_blocked_by_gate = bool(
+            write
+            and confirmed
+            and not allow_blocked
+            and not (
+                evaluation["gates"]["manifest_valid"]
+                and not evaluation["blockers"]
+            )
+        )
         install_requested_without_confirmation = bool(install and not confirmed)
-        if write and confirmed:
+        if write and confirmed and not write_blocked_by_gate:
             adaptation = self.adapt_harness(
                 harness_name,
                 title=title,
@@ -927,7 +936,11 @@ class CliAnythingHub:
                 "write_requested": write,
                 "write_confirmed": confirmed,
                 "written": adaptation.get("written"),
-                "blockers": [] if ready_for_manifest_write else evaluation["blockers"],
+                "blockers": (
+                    ["manifest write blocked by harness evaluation"]
+                    if write_blocked_by_gate
+                    else [] if ready_for_manifest_write else evaluation["blockers"]
+                ),
             },
             {
                 "id": "install_harness",
@@ -987,6 +1000,17 @@ class CliAnythingHub:
             "summary": {
                 "ready_for_manifest_write": ready_for_manifest_write,
                 "manifest_written": manifest_written,
+                "manifest_write_status": (
+                    "blocked"
+                    if write_blocked_by_gate
+                    else "completed"
+                    if manifest_written
+                    else "requires_confirmation"
+                    if write_requested_without_confirmation
+                    else "ready"
+                    if ready_for_manifest_write
+                    else "blocked"
+                ),
                 "write_requires_confirmation": write_requested_without_confirmation,
                 "ready_for_install": ready_for_install,
                 "install_requires_confirmation": install_requested_without_confirmation,

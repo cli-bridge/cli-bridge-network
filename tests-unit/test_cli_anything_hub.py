@@ -58,6 +58,19 @@ SAMPLE_3MF_RECORD = {
     "_source": "harness",
 }
 
+SAMPLE_PY4CSR_RECORD = {
+    "name": "py4csr",
+    "display_name": "TraceCSR / Py4CSR CLI",
+    "version": "latest",
+    "description": "GxP-compliant agent harness for Clinical Study Report generation",
+    "requires": "Python >= 3.10",
+    "install_cmd": "pip install py4csr",
+    "entry_point": "tracecsr",
+    "category": "data-science",
+    "package_manager": "pip",
+    "_source": "public",
+}
+
 SAMPLE_BLENDER_RECORD = {
     "name": "blender",
     "display_name": "Blender",
@@ -873,6 +886,59 @@ class CliAnythingHubTests(unittest.TestCase):
             self.assertTrue(result["summary"]["write_requires_confirmation"])
             self.assertFalse(result["summary"]["manifest_written"])
             self.assertFalse((Path(tmp) / "manifests" / "cli-anything.mermaid.launch.json").exists())
+
+    def test_onboard_harness_blocks_manifest_write_when_evaluation_blocked(self):
+        class FakeHub(CliAnythingHub):
+            def status(self) -> dict:
+                return {
+                    "plugin_id": "cli-anything",
+                    "entrypoint": "cli-hub",
+                    "entrypoint_path": sys.executable,
+                    "entrypoint_available": True,
+                    "source_repo_dir": "external_plugins/cli-anything/repo",
+                    "source_repo_available": True,
+                    "version": "cli-hub test",
+                }
+
+            def info(self, harness_name: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "info", harness_name),
+                    exit_code=0,
+                    stdout=(
+                        "Entry point: tracecsr\n"
+                        "Requires: Python >= 3.10\n"
+                        "Status: installed\n"
+                    ),
+                    stderr="",
+                )
+
+            def search_market(self, query: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "search", query, "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[SAMPLE_PY4CSR_RECORD],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result = FakeHub(root=Path(tmp)).onboard_harness(
+                "py4csr",
+                from_market=True,
+                write=True,
+                confirmed=True,
+            )
+            self.assertTrue(result["ok"])
+            self.assertFalse(result["summary"]["ready_for_manifest_write"])
+            self.assertFalse(result["summary"]["manifest_written"])
+            self.assertEqual(result["summary"]["manifest_write_status"], "blocked")
+            self.assertFalse((Path(tmp) / "manifests" / "cli-anything.py4csr.launch.json").exists())
+            stages = {stage["id"]: stage for stage in result["stage_results"]}
+            self.assertEqual(stages["adapt_manifest"]["status"], "blocked")
+            self.assertIn(
+                "manifest write blocked by harness evaluation",
+                stages["adapt_manifest"]["blockers"],
+            )
 
     def test_onboard_harness_confirmed_write_updates_verification_registry(self):
         class FakeHub(CliAnythingHub):
