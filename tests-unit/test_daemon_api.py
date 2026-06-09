@@ -5,6 +5,7 @@ import urllib.error
 import urllib.request
 from contextlib import contextmanager
 from http.server import ThreadingHTTPServer
+from unittest.mock import patch
 
 from api_server.server import CbnRequestHandler, ROUTE_SUMMARY
 
@@ -185,6 +186,43 @@ class DaemonApiTests(unittest.TestCase):
                 self.assertEqual(response.status, 200)
                 self.assertEqual(payload["action"], "harness-install-gimp")
                 self.assertIn("evaluate-harness", payload["notes"][0])
+
+    def test_plugin_execute_route_rejects_failed_operation_gate(self):
+        class FakeManager:
+            def operation_gate(self, plugin_id, action):
+                return {
+                    "ok": False,
+                    "plugin_id": plugin_id,
+                    "action": action,
+                    "gated": True,
+                    "blockers": ["preflight failed: external_plugins.writable"],
+                    "override_flag": "--allow-failed-preflight",
+                }
+
+            def plan(self, *args, **kwargs):
+                raise AssertionError("plan should not be built when gate blocks")
+
+        with patch("api_server.server.PluginManager", FakeManager):
+            with daemon_url() as base_url:
+                request = urllib.request.Request(
+                    f"{base_url}/plugins/execute",
+                    data=json.dumps(
+                        {
+                            "plugin_id": "cli-anything",
+                            "action": "install",
+                            "confirmed": True,
+                        }
+                    ).encode("utf-8"),
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                )
+                with self.assertRaises(urllib.error.HTTPError) as raised:
+                    urllib.request.urlopen(request, timeout=5)
+
+                self.assertEqual(raised.exception.code, 409)
+                payload = json.loads(raised.exception.read().decode("utf-8"))
+                self.assertFalse(payload["ok"])
+                self.assertIn("preflight failed: external_plugins.writable", payload["blockers"])
 
     def test_cli_anything_provenance_route_returns_source_report(self):
         with daemon_url() as base_url:

@@ -345,6 +345,11 @@ def build_parser() -> argparse.ArgumentParser:
     plugin_install.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
     plugin_install.add_argument("--yes", action="store_true", help="Execute the install plan.")
     plugin_install.add_argument(
+        "--allow-failed-preflight",
+        action="store_true",
+        help="Execute even when plugin preflight/provenance gates report blockers.",
+    )
+    plugin_install.add_argument(
         "--with-codex-skill",
         action="store_true",
         help="Also install the optional Codex skill when supported.",
@@ -353,6 +358,11 @@ def build_parser() -> argparse.ArgumentParser:
     plugin_update = plugin_subcommands.add_parser("update", help="Update an external plugin.")
     plugin_update.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
     plugin_update.add_argument("--yes", action="store_true", help="Execute the update plan.")
+    plugin_update.add_argument(
+        "--allow-failed-preflight",
+        action="store_true",
+        help="Execute even when plugin preflight/provenance gates report blockers.",
+    )
     plugin_update.add_argument(
         "--with-codex-skill",
         action="store_true",

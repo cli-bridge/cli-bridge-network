@@ -185,6 +185,38 @@ class PluginManager:
             ],
         }
 
+    def operation_gate(self, plugin_id: str, action: str) -> dict[str, Any]:
+        if action not in {"install", "update"}:
+            return {
+                "ok": True,
+                "plugin_id": plugin_id,
+                "action": action,
+                "gated": False,
+                "blockers": [],
+            }
+        preflight = self.preflight(plugin_id)
+        provenance = self.provenance(plugin_id)
+        blockers = [
+            f"preflight failed: {check['check_id']}"
+            for check in preflight["checks"]
+            if check["severity"] == "error" and not check["ok"]
+        ]
+        if action == "update":
+            if not provenance["source_downloaded"]:
+                blockers.append("plugin source repository is not downloaded")
+            if provenance["source_trusted"] is False:
+                blockers.append("plugin source repository is not trusted")
+        return {
+            "ok": len(blockers) == 0,
+            "plugin_id": plugin_id,
+            "action": action,
+            "gated": True,
+            "blockers": blockers,
+            "preflight": preflight,
+            "provenance": provenance,
+            "override_flag": "--allow-failed-preflight",
+        }
+
     def plan(
         self,
         plugin_id: str,

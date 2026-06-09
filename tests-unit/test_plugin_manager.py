@@ -58,21 +58,7 @@ class PluginManagerTests(unittest.TestCase):
     def test_provenance_handles_not_downloaded_plugin(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            registry = root / "plugins" / "registry"
-            registry.mkdir(parents=True)
-            (registry / "example.json").write_text(
-                json.dumps(
-                    {
-                        "id": "example",
-                        "title": "Example",
-                        "description": "Example plugin",
-                        "source": {"repository": "https://example.com/example.git"},
-                        "install": {"pip_packages": []},
-                        "entrypoints": [],
-                    }
-                ),
-                encoding="utf-8",
-            )
+            write_example_plugin_manifest(root)
 
             result = PluginManager(root=root).provenance("example")
             self.assertFalse(result["source_downloaded"])
@@ -81,6 +67,38 @@ class PluginManagerTests(unittest.TestCase):
             self.assertEqual(result["pip_packages"], [])
             self.assertEqual(result["entrypoints"], [])
             self.assertEqual(result["blockers"], [])
+
+    def test_operation_gate_allows_clean_install_before_source_download(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_example_plugin_manifest(root)
+
+            gate = PluginManager(root=root).operation_gate("example", "install")
+            self.assertTrue(gate["ok"])
+            self.assertEqual(gate["blockers"], [])
+            self.assertFalse(gate["provenance"]["source_downloaded"])
+
+    def test_operation_gate_blocks_update_without_downloaded_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_example_plugin_manifest(root)
+
+            gate = PluginManager(root=root).operation_gate("example", "update")
+            self.assertFalse(gate["ok"])
+            self.assertIn("plugin source repository is not downloaded", gate["blockers"])
+            self.assertIn("preflight", gate)
+            self.assertIn("provenance", gate)
+
+    def test_operation_gate_blocks_install_when_error_preflight_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_example_plugin_manifest(root)
+            (root / "external_plugins").write_text("not a directory", encoding="utf-8")
+
+            gate = PluginManager(root=root).operation_gate("example", "install")
+            self.assertFalse(gate["ok"])
+            self.assertIn("preflight failed: external_plugins.writable", gate["blockers"])
+            self.assertEqual(gate["override_flag"], "--allow-failed-preflight")
 
     def test_cli_preflight_command_outputs_json(self):
         proc = subprocess.run(
@@ -108,6 +126,23 @@ class PluginManagerTests(unittest.TestCase):
         self.assertEqual(payload["plugin_id"], "cli-anything")
         self.assertIn("repository", payload)
         self.assertIn("entrypoints", payload)
+
+def write_example_plugin_manifest(root: Path) -> None:
+    registry = root / "plugins" / "registry"
+    registry.mkdir(parents=True)
+    (registry / "example.json").write_text(
+        json.dumps(
+            {
+                "id": "example",
+                "title": "Example",
+                "description": "Example plugin",
+                "source": {"repository": "https://example.com/example.git"},
+                "install": {"pip_packages": []},
+                "entrypoints": [],
+            }
+        ),
+        encoding="utf-8",
+    )
 
 
 if __name__ == "__main__":

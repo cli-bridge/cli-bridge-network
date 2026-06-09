@@ -363,9 +363,15 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 self._send(403, {"error": "plugin execution requires confirmed=true"})
                 return
             manager = PluginManager()
+            action = payload.get("action", "install")
+            if not bool(payload.get("allow_failed_preflight", False)):
+                gate = manager.operation_gate(payload["plugin_id"], action=action)
+                if not gate["ok"]:
+                    self._send(409, gate)
+                    return
             plan = manager.plan(
                 payload["plugin_id"],
-                action=payload.get("action", "install"),
+                action=action,
                 include_codex_skill=bool(payload.get("include_codex_skill", False)),
             )
             self._send(200, runtime.plugin_runner.execute(plan))

@@ -525,6 +525,11 @@ def main(argv: list[str] | None = None) -> int:
             if not args.yes:
                 print(json.dumps(plan.as_dict(), ensure_ascii=False, indent=2))
                 return 2
+            if not args.allow_failed_preflight:
+                gate = manager.operation_gate(args.plugin_id, "install")
+                if not gate["ok"]:
+                    print(json.dumps(gate, ensure_ascii=False, indent=2))
+                    return 13
             runtime = build_runtime()
             print(json.dumps(runtime.plugin_runner.execute(plan), ensure_ascii=False, indent=2))
             return 0
@@ -537,6 +542,11 @@ def main(argv: list[str] | None = None) -> int:
             if not args.yes:
                 print(json.dumps(plan.as_dict(), ensure_ascii=False, indent=2))
                 return 2
+            if not args.allow_failed_preflight:
+                gate = manager.operation_gate(args.plugin_id, "update")
+                if not gate["ok"]:
+                    print(json.dumps(gate, ensure_ascii=False, indent=2))
+                    return 13
             runtime = build_runtime()
             print(json.dumps(runtime.plugin_runner.execute(plan), ensure_ascii=False, indent=2))
             return 0

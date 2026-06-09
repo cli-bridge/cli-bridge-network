@@ -84,6 +84,13 @@
             data-api-confirm="Install CLI-Anything now?"
           >Install</button>
           <button
+            data-command="python -m cbn plugin install cli-anything --yes --allow-failed-preflight"
+            data-api-method="POST"
+            data-api-path="/plugins/execute"
+            data-api-body='{"plugin_id":"cli-anything","confirmed":true,"allow_failed_preflight":true}'
+            data-api-confirm="Override plugin preflight blockers and install CLI-Anything now?"
+          >Install Override</button>
+          <button
             data-command="python -m cbn plugin plan cli-anything --action update"
             data-api-method="POST"
             data-api-path="/plugins/plan"
@@ -96,6 +103,13 @@
             data-api-body='{"plugin_id":"cli-anything","action":"update","confirmed":true}'
             data-api-confirm="Update CLI-Anything now?"
           >Update</button>
+          <button
+            data-command="python -m cbn plugin update cli-anything --yes --allow-failed-preflight"
+            data-api-method="POST"
+            data-api-path="/plugins/execute"
+            data-api-body='{"plugin_id":"cli-anything","action":"update","confirmed":true,"allow_failed_preflight":true}'
+            data-api-confirm="Override plugin preflight blockers and update CLI-Anything now?"
+          >Update Override</button>
           <button data-command="python -m cbn plugin install cli-anything --with-codex-skill">Codex Skill Preview</button>
           <button data-command="python -m cbn plugin install cli-anything --with-codex-skill --yes">Install Codex Skill</button>
           <button
