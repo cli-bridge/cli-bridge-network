@@ -28,6 +28,7 @@ from cbn_protocol.exports import (
     export_workflow_protocol,
     list_protocol_exports,
 )
+from cbn_protocol.readiness import protocol_readiness_report
 from cbn_runtime.context import build_runtime
 from cbn_workflow.catalog import inspect_workflow, list_workflows
 from cbn_plugins.cli_anything import CliAnythingHub
@@ -57,6 +58,7 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/protocols/workflows"},
     {"method": "GET", "path": "/protocols/check"},
     {"method": "GET", "path": "/protocols/matrix"},
+    {"method": "GET", "path": "/protocols/readiness"},
     {"method": "GET", "path": "/approvals"},
     {"method": "GET", "path": "/workflows"},
     {"method": "GET", "path": "/runtime/transports"},
@@ -277,6 +279,16 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
         if parsed.path == "/protocols/matrix":
             include_workflows = query.get("include_workflows", ["false"])[0].lower() in {"1", "true", "yes"}
             self._send(200, protocol_matrix(runtime.registry, include_workflows=include_workflows))
+            return
+        if parsed.path == "/protocols/readiness":
+            include_workflows = query.get("include_workflows", ["true"])[0].lower() in {"1", "true", "yes"}
+            workflow_path = query.get("workflow_path", query.get("path", [None]))[0]
+            result = protocol_readiness_report(
+                runtime.registry,
+                workflow_path=workflow_path,
+                include_workflows=include_workflows,
+            )
+            self._send(200 if result["ok"] else 422, result)
             return
         if parsed.path == "/approvals":
             approval_id = query.get("approval_id", [None])[0]

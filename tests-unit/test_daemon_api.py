@@ -23,6 +23,7 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("POST", "/plugins/check-update"), routes)
         self.assertIn(("GET", "/protocols/check"), routes)
         self.assertIn(("GET", "/protocols/matrix"), routes)
+        self.assertIn(("GET", "/protocols/readiness"), routes)
         self.assertIn(("GET", "/protocols/workflows"), routes)
         self.assertIn(("GET", "/.well-known/agent-card.json"), routes)
         self.assertIn(("POST", "/a2a"), routes)
@@ -158,6 +159,21 @@ class DaemonApiTests(unittest.TestCase):
                 self.assertGreaterEqual(payload["capability_count"], 1)
                 self.assertGreaterEqual(payload["workflow_count"], 1)
                 self.assertTrue(any(item["kind"] == "workflow" for item in payload["rows"]))
+
+    def test_protocol_readiness_route_returns_bridge_and_protocol_gaps(self):
+        with daemon_url() as base_url:
+            with urllib.request.urlopen(
+                f"{base_url}/protocols/readiness?workflow_path=workflows/artifact-id-routing.example.json",
+                timeout=5,
+            ) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(response.status, 200)
+                self.assertEqual(payload["kind"], "ProtocolReadinessReport")
+                self.assertEqual(payload["scope"], "workflow")
+                self.assertTrue(payload["readiness"]["internal_bridge_ready"])
+                self.assertFalse(payload["readiness"]["external_protocol_wire_compatible"])
+                self.assertEqual(payload["summary"]["route_count"], 1)
+                self.assertIn("mcp", payload["protocol_gaps"])
 
     def test_message_contract_route_returns_workflow_routes(self):
         with daemon_url() as base_url:

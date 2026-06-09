@@ -83,6 +83,23 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Include workflow descriptor compatibility rows.",
     )
+    protocol_readiness = protocol_subcommands.add_parser(
+        "readiness",
+        help="Report CLI-to-CLI BridgeMessage routing and external protocol readiness.",
+    )
+    protocol_readiness.add_argument("--workflow-path", help="Optional workflow JSON path to inspect.")
+    protocol_readiness.add_argument(
+        "--include-workflows",
+        action="store_true",
+        default=True,
+        help="Include workflow routing contract evidence.",
+    )
+    protocol_readiness.add_argument(
+        "--no-workflows",
+        action="store_false",
+        dest="include_workflows",
+        help="Skip workflow routing contract evidence.",
+    )
 
     mcp_parser = subcommands.add_parser("mcp", help="Run or test the MCP stdio facade.")
     mcp_subcommands = mcp_parser.add_subparsers(dest="mcp_command")

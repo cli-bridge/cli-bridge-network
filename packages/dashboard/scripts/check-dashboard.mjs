@@ -243,6 +243,14 @@ if (!html.includes('data-api-path="/protocols/check?target=all&amp;capability_id
   throw new Error("Dashboard does not wire protocol compatibility checks to the daemon API.");
 }
 
+if (!html.includes("python -m cbn protocol readiness")) {
+  throw new Error("Dashboard does not expose the protocol readiness report command.");
+}
+
+if (!html.includes('data-api-path="/protocols/readiness"')) {
+  throw new Error("Dashboard does not wire protocol readiness to the daemon API.");
+}
+
 if (!html.includes("python -m cbn mcp serve --stdio")) {
   throw new Error("Dashboard does not expose the MCP stdio server command.");
 }

@@ -13,6 +13,7 @@ from cbn_protocol.exports import (
     export_workflow_protocol,
     list_protocol_exports,
 )
+from cbn_protocol.readiness import protocol_readiness_report
 
 
 class ProtocolExportTests(unittest.TestCase):
@@ -154,6 +155,44 @@ class ProtocolExportTests(unittest.TestCase):
         self.assertFalse(workflow["wire_compatible"])
         self.assertEqual(payload["summary"]["row_count"], len(payload["rows"]))
 
+    def test_protocol_readiness_summarizes_bridge_routes_and_wire_gaps(self):
+        payload = protocol_readiness_report(self.registry)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["kind"], "ProtocolReadinessReport")
+        self.assertEqual(payload["scope"], "project")
+        self.assertFalse(payload["wire_compatible"])
+        self.assertTrue(payload["readiness"]["internal_bridge_ready"])
+        self.assertFalse(payload["readiness"]["external_protocol_wire_compatible"])
+        self.assertGreaterEqual(payload["summary"]["capability_count"], 1)
+        self.assertGreaterEqual(payload["summary"]["route_count"], 1)
+        self.assertGreaterEqual(payload["parser_coverage"]["verified_output_count"], 1)
+        self.assertGreaterEqual(payload["parser_coverage"]["unverified_output_count"], 1)
+        self.assertTrue(
+            any(
+                route["selector"] == "artifacts[0].artifact_id"
+                for route in payload["routes"]
+            )
+        )
+        self.assertEqual(set(payload["protocol_gaps"]), {"a2a", "acp", "mcp"})
+        self.assertGreater(payload["protocol_gaps"]["mcp"]["missing_count"], 0)
+        self.assertTrue(
+            any("wire_compatible=false" in step for step in payload["next_steps"])
+        )
+
+    def test_protocol_readiness_can_focus_one_workflow(self):
+        payload = protocol_readiness_report(
+            self.registry,
+            workflow_path="workflows/artifact-id-routing.example.json",
+        )
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["scope"], "workflow")
+        self.assertEqual(payload["workflow_path"], "workflows/artifact-id-routing.example.json")
+        self.assertEqual(payload["summary"]["workflow_count"], 1)
+        self.assertEqual(payload["summary"]["route_count"], 1)
+        self.assertIn("selected_workflow_protocols", payload)
+        self.assertEqual(payload["selected_workflow_protocols"]["mcp"]["scope"], "workflow")
+        self.assertIn("missing", payload["protocol_gaps"]["mcp"])
+
     def test_cli_protocol_export(self):
         proc = subprocess.run(
             [sys.executable, "-m", "cbn", "protocol", "export", "mcp", "--capability-id", "git.status"],
@@ -288,6 +327,29 @@ class ProtocolExportTests(unittest.TestCase):
         self.assertTrue(
             any("artifacts[0].artifact_id" in item["evidence"] for item in payload["checks"])
         )
+
+    def test_cli_protocol_readiness(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "protocol",
+                "readiness",
+                "--workflow-path",
+                "workflows/artifact-id-routing.example.json",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["kind"], "ProtocolReadinessReport")
+        self.assertEqual(payload["scope"], "workflow")
+        self.assertEqual(payload["summary"]["route_count"], 1)
+        self.assertFalse(payload["wire_compatible"])
 
 
 if __name__ == "__main__":

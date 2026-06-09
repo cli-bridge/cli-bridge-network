@@ -30,6 +30,7 @@ from cbn_protocol.exports import (
     export_workflow_protocol,
     list_protocol_exports,
 )
+from cbn_protocol.readiness import protocol_readiness_report
 from cbn_protocol.mcp_stdio import serve_stdio, smoke_mcp_stdio
 from cbn_protocol.mcp_stdio import smoke_mcp_workflow_stdio
 from cbn_runtime.context import build_runtime
@@ -179,6 +180,14 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(json.dumps(payload, ensure_ascii=False, indent=2))
             return 0
+        if args.protocol_command == "readiness":
+            payload = protocol_readiness_report(
+                runtime.registry,
+                workflow_path=args.workflow_path,
+                include_workflows=args.include_workflows,
+            )
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0 if payload["ok"] else 7
 
     if args.command == "mcp":
         if args.mcp_command == "serve":
