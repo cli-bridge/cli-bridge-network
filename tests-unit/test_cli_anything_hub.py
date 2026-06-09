@@ -1302,6 +1302,59 @@ class CliAnythingHubTests(unittest.TestCase):
             self.assertIn("dependency probe failed: env:CBN_TEST_MAILCHIMP_API_KEY", candidate["blockers"])
             self.assertEqual(candidate["lifecycle"]["state"], "blocked")
 
+    def test_market_install_queue_builds_read_only_queue_from_probed_candidates(self):
+        class FakeHub(CliAnythingHub):
+            def list_market(self) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "list", "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[SAMPLE_3MF_RECORD, SAMPLE_BLENDER_RECORD],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp, patch("cbn_plugins.cli_anything.shutil.which", return_value=None):
+            result = FakeHub(root=Path(tmp)).market_install_queue(limit=10, max_installs=5)
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["kind"], "CliAnythingMarketInstallQueue")
+            self.assertEqual(result["summary"]["candidate_count"], 2)
+            self.assertEqual(result["summary"]["queued_count"], 1)
+            self.assertEqual(result["summary"]["blocked_count"], 1)
+            self.assertEqual(result["summary"]["probe_ready_count"], 1)
+            queued = result["queue"][0]
+            self.assertEqual(queued["harness_name"], "3mf")
+            self.assertTrue(queued["ready_for_install"])
+            self.assertTrue(queued["requires_confirmation"])
+            self.assertEqual(queued["plan"]["action"], "harness-install-3mf")
+            self.assertEqual(queued["plan"]["commands"][0]["argv"], ["cli-hub", "install", "3mf"])
+            self.assertIn("--write --install --yes", queued["commands"]["onboard_install"])
+            blocked = result["blocked"][0]
+            self.assertEqual(blocked["harness_name"], "blender")
+            self.assertIn("external-app:blender", blocked["readiness"]["probes"][0]["signals"])
+
+    def test_market_install_queue_respects_max_installs_and_no_blocked(self):
+        class FakeHub(CliAnythingHub):
+            def list_market(self) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "list", "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[SAMPLE_3MF_RECORD, SAMPLE_MERMAID_RECORD, SAMPLE_BLENDER_RECORD],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp, patch("cbn_plugins.cli_anything.shutil.which", return_value=None):
+            result = FakeHub(root=Path(tmp)).market_install_queue(
+                limit=10,
+                max_installs=1,
+                include_blocked=False,
+            )
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["summary"]["queued_count"], 1)
+            self.assertEqual(result["summary"]["blocked_count"], 0)
+            self.assertEqual(result["summary"]["skipped_count"], 1)
+            self.assertEqual(result["skipped"][0]["reason"], "max_installs limit reached")
+
     def test_candidate_harnesses_limits_after_ranking_full_market(self):
         class FakeHub(CliAnythingHub):
             def list_market(self) -> CliHubCommandResult:
@@ -1927,6 +1980,34 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(payload["plugin_id"], "cli-anything")
         self.assertIn("candidates", payload)
         self.assertIn("install_candidate_count", payload)
+
+    def test_cli_install_queue_handles_missing_cli_hub_without_crashing(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "plugin",
+                "install-queue",
+                "cli-anything",
+                "--query",
+                "file",
+                "--limit",
+                "5",
+                "--max-installs",
+                "2",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertIn(proc.returncode, {0, 6})
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["plugin_id"], "cli-anything")
+        self.assertEqual(payload["kind"], "CliAnythingMarketInstallQueue")
+        self.assertIn("queue", payload)
+        self.assertIn("summary", payload)
 
     def test_cli_sync_market_handles_missing_cli_hub_without_crashing(self):
         proc = subprocess.run(

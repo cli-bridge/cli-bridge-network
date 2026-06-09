@@ -585,6 +585,17 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0 if result["ok"] else 6
+        if args.plugin_command == "install-queue":
+            if args.plugin_id != "cli-anything":
+                raise KeyError(f"install-queue is not implemented for plugin: {args.plugin_id}")
+            result = CliAnythingHub().market_install_queue(
+                query=args.query,
+                limit=args.limit,
+                max_installs=args.max_installs,
+                include_blocked=args.include_blocked,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["ok"] else 6
         if args.plugin_command == "sync-market":
             if args.plugin_id != "cli-anything":
                 raise KeyError(f"sync-market is not implemented for plugin: {args.plugin_id}")

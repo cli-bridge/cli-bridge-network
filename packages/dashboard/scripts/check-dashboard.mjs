@@ -75,6 +75,14 @@ if (!html.includes("python -m cbn plugin candidates cli-anything --query file --
   throw new Error("Dashboard does not expose compact probed CLI-Anything candidate ranking.");
 }
 
+if (!html.includes("python -m cbn plugin install-queue cli-anything --query file --limit 20 --max-installs 5")) {
+  throw new Error("Dashboard does not expose the CLI-Anything market install queue.");
+}
+
+if (!html.includes('data-api-path="/plugins/cli-anything/install-queue"')) {
+  throw new Error("Dashboard does not wire the CLI-Anything market install queue to the daemon API.");
+}
+
 if (!html.includes("python -m cbn plugin live-verification cli-anything")) {
   throw new Error("Dashboard does not expose the CLI-Anything live verification command.");
 }
@@ -121,6 +129,10 @@ if (!html.includes('data-api-body=\'{"query":"file","limit":20,"compact":true}\'
 
 if (!html.includes('data-api-body=\'{"query":"file","limit":20,"with_probes":true,"compact":true}\'')) {
   throw new Error("Dashboard probed candidate ranking API body is not compact.");
+}
+
+if (!html.includes('data-api-body=\'{"query":"file","limit":20,"max_installs":5,"include_blocked":true}\'')) {
+  throw new Error("Dashboard install queue API body is not stable.");
 }
 
 if (!html.includes('data-api-path="/plugins/cli-anything/market"')) {

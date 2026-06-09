@@ -95,6 +95,7 @@ ROUTE_SUMMARY = [
     {"method": "POST", "path": "/plugins/cli-anything/onboard-harness"},
     {"method": "POST", "path": "/plugins/cli-anything/live-verification"},
     {"method": "POST", "path": "/plugins/cli-anything/candidates"},
+    {"method": "POST", "path": "/plugins/cli-anything/install-queue"},
     {"method": "POST", "path": "/plugins/cli-anything/sync-market"},
     {"method": "POST", "path": "/plugins/cli-anything/harness"},
 ]
@@ -629,6 +630,15 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 limit=int(payload.get("limit", 50)),
                 with_probes=bool(payload.get("with_probes", False)),
                 compact=bool(payload.get("compact", False)),
+            )
+            self._send(200 if result["ok"] else 502, result)
+            return
+        if self.path == "/plugins/cli-anything/install-queue":
+            result = CliAnythingHub().market_install_queue(
+                query=payload.get("query"),
+                limit=int(payload.get("limit", 50)),
+                max_installs=int(payload.get("max_installs", 10)),
+                include_blocked=bool(payload.get("include_blocked", True)),
             )
             self._send(200 if result["ok"] else 502, result)
             return

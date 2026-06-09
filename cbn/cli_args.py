@@ -499,6 +499,26 @@ def build_parser() -> argparse.ArgumentParser:
         help="Omit raw CLI-Hub market stdout and include a concise candidate summary for WebUI/API use.",
     )
 
+    plugin_install_queue = plugin_subcommands.add_parser(
+        "install-queue",
+        help="Build a read-only CLI-Anything market harness install queue from probed candidates.",
+    )
+    plugin_install_queue.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
+    plugin_install_queue.add_argument("--query", help="Optional CLI-Hub search query; omit to inspect list output.")
+    plugin_install_queue.add_argument("--limit", type=int, default=50, help="Maximum market records to rank.")
+    plugin_install_queue.add_argument(
+        "--max-installs",
+        type=int,
+        default=10,
+        help="Maximum install-ready harnesses to place in the queue.",
+    )
+    plugin_install_queue.add_argument(
+        "--no-blocked",
+        action="store_false",
+        dest="include_blocked",
+        help="Omit blocked candidates from the queue report.",
+    )
+
     plugin_sync = plugin_subcommands.add_parser(
         "sync-market",
         help="Preview or write CBN manifests for CLI-Anything market records.",

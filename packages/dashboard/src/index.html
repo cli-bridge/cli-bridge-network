@@ -183,6 +183,12 @@
             data-api-body='{"query":"file","limit":20,"with_probes":true,"compact":true}'
           >Rank + Probe</button>
           <button
+            data-command="python -m cbn plugin install-queue cli-anything --query file --limit 20 --max-installs 5"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/install-queue"
+            data-api-body='{"query":"file","limit":20,"max_installs":5,"include_blocked":true}'
+          >Install Queue</button>
+          <button
             data-command="python -m cbn plugin live-verification cli-anything"
             data-api-method="POST"
             data-api-path="/plugins/cli-anything/live-verification"

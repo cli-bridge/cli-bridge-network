@@ -325,6 +325,47 @@ class DaemonApiTests(unittest.TestCase):
                     self.assertTrue(payload["compact"])
                     self.assertTrue(payload["market"]["stdout_omitted"])
 
+    def test_cli_anything_install_queue_route_returns_read_only_queue(self):
+        class FakeHub:
+            def market_install_queue(self, query=None, limit=50, max_installs=10, include_blocked=True):
+                return {
+                    "ok": True,
+                    "plugin_id": "cli-anything",
+                    "kind": "CliAnythingMarketInstallQueue",
+                    "query": query,
+                    "limit": limit,
+                    "max_installs": max_installs,
+                    "include_blocked": include_blocked,
+                    "summary": {"queued_count": 1, "blocked_count": 1},
+                    "queue": [{"harness_name": "3mf"}],
+                    "blocked": [{"harness_name": "blender"}],
+                    "skipped": [],
+                }
+
+        with patch("api_server.server.CliAnythingHub", FakeHub):
+            with daemon_url() as base_url:
+                request = urllib.request.Request(
+                    f"{base_url}/plugins/cli-anything/install-queue",
+                    data=json.dumps(
+                        {
+                            "query": "file",
+                            "limit": 20,
+                            "max_installs": 3,
+                            "include_blocked": False,
+                        }
+                    ).encode("utf-8"),
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(payload["query"], "file")
+                    self.assertEqual(payload["limit"], 20)
+                    self.assertEqual(payload["max_installs"], 3)
+                    self.assertFalse(payload["include_blocked"])
+                    self.assertEqual(payload["queue"][0]["harness_name"], "3mf")
+
     def test_runtime_transport_status_and_plan_routes(self):
         with daemon_url() as base_url:
             with urllib.request.urlopen(f"{base_url}/runtime/transports?kind=pty", timeout=5) as response:
