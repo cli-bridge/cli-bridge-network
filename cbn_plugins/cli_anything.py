@@ -246,6 +246,13 @@ class CliAnythingHub:
             }
         gates = evaluation["gates"]
         blockers = list(evaluation["blockers"])
+        readiness = _readiness_from_evaluation(evaluation)
+        for probe in readiness["probes"]:
+            if (
+                probe["status"] in {"missing", "unavailable", "manual_required"}
+                and probe["severity"] == "blocker"
+            ):
+                blockers.append(f"dependency probe failed: {probe['id']}")
         if action == "install" and not (evaluation["install_candidate"] or gates["installed"]):
             blockers.append("harness is not an install candidate")
         if action == "update" and not gates["installed"]:
@@ -260,6 +267,7 @@ class CliAnythingHub:
             "from_market": from_market,
             "blockers": blockers,
             "evaluation": evaluation,
+            "readiness": readiness,
             "override_flag": "--allow-blocked",
         }
 
@@ -570,25 +578,22 @@ class CliAnythingHub:
         status = evaluation["status"]
         market_record = status.get("market_record") if isinstance(status.get("market_record"), dict) else None
         requires = _declared_requires(market_record, status)
-        probes = _dependency_probes(
-            requires=requires,
-            entry_point=status.get("entry_point"),
+        readiness = _readiness_summary(
+            probes=_dependency_probes(
+                requires=requires,
+                entry_point=status.get("entry_point"),
+            ),
+            install_candidate=evaluation["install_candidate"],
         )
-        blocking = [
-            item
-            for item in probes
-            if item["status"] in {"missing", "unavailable", "manual_required"}
-            and item["severity"] == "blocker"
-        ]
         return {
             "ok": True,
             "plugin_id": PLUGIN_ID,
             "harness_name": harness_name,
             "from_market": from_market,
             "capability_id": evaluation["capability_id"],
-            "ready": len(blocking) == 0 and evaluation["install_candidate"],
-            "probe_blocker_count": len(blocking),
-            "probes": probes,
+            "ready": readiness["ready"],
+            "probe_blocker_count": readiness["probe_blocker_count"],
+            "probes": readiness["probes"],
             "evaluation": evaluation,
             "next_commands": [
                 f"python -m cbn plugin probe-harness cli-anything {harness_name}",
@@ -1084,18 +1089,36 @@ def _refresh_candidate_lifecycle(item: dict[str, Any]) -> None:
 
 def _attach_candidate_readiness(item: dict[str, Any]) -> None:
     record = item.get("market_record") if isinstance(item.get("market_record"), dict) else {}
-    probes = _dependency_probes(
-        requires=_declared_requires(record, {}),
-        entry_point=record.get("entry_point"),
+    item["readiness"] = _readiness_summary(
+        probes=_dependency_probes(
+            requires=_declared_requires(record, {}),
+            entry_point=record.get("entry_point"),
+        ),
+        install_candidate=bool(item.get("install_candidate")),
     )
+
+
+def _readiness_from_evaluation(evaluation: dict[str, Any]) -> dict[str, Any]:
+    status = evaluation.get("status") if isinstance(evaluation.get("status"), dict) else {}
+    market_record = status.get("market_record") if isinstance(status.get("market_record"), dict) else None
+    return _readiness_summary(
+        probes=_dependency_probes(
+            requires=_declared_requires(market_record, status),
+            entry_point=status.get("entry_point"),
+        ),
+        install_candidate=bool(evaluation.get("install_candidate")),
+    )
+
+
+def _readiness_summary(probes: list[dict[str, Any]], install_candidate: bool) -> dict[str, Any]:
     blockers = [
         probe
         for probe in probes
         if probe["status"] in {"missing", "unavailable", "manual_required"}
         and probe["severity"] == "blocker"
     ]
-    item["readiness"] = {
-        "ready": bool(item.get("install_candidate")) and len(blockers) == 0,
+    return {
+        "ready": bool(install_candidate) and len(blockers) == 0,
         "probe_blocker_count": len(blockers),
         "probes": probes,
     }

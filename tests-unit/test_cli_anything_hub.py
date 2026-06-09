@@ -413,6 +413,8 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertTrue(gate["gated"])
         self.assertEqual(gate["blockers"], [])
         self.assertTrue(gate["evaluation"]["install_candidate"])
+        self.assertTrue(gate["readiness"]["ready"])
+        self.assertEqual(gate["readiness"]["probe_blocker_count"], 0)
 
     def test_harness_operation_gate_blocks_external_dependencies_before_install(self):
         class FakeHub(CliAnythingHub):
@@ -438,6 +440,9 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(gate["override_flag"], "--allow-blocked")
         self.assertIn("declared requirements need external app, account, token, or service", gate["blockers"])
         self.assertIn("harness is not an install candidate", gate["blockers"])
+        self.assertIn("dependency probe failed: command:gimp", gate["blockers"])
+        self.assertFalse(gate["readiness"]["ready"])
+        self.assertGreaterEqual(gate["readiness"]["probe_blocker_count"], 1)
 
     def test_harness_operation_gate_blocks_update_when_harness_is_not_installed(self):
         class FakeHub(CliAnythingHub):
