@@ -1425,6 +1425,7 @@ class CliAnythingHub:
             "smoke_report": smoke_report,
             "wrapper_path": str(wrapper_path),
             "manifest": manifest,
+            "repair_provenance": _entrypoint_repair_manifest_provenance(manifest),
             "validation": validation,
             "execution": execution,
             "next_commands": [
@@ -3157,7 +3158,11 @@ def _entrypoint_repair_manifest(
     manifest = json.loads(json.dumps(plan["evaluation"]["adaptation"]["manifest"]))
     annotations = manifest.setdefault("metadata", {}).setdefault("annotations", {})
     transport = manifest.setdefault("spec", {}).setdefault("transport", {})
+    original_transport = json.loads(json.dumps(transport))
+    module_provenance = _entrypoint_repair_module_provenance(plan, strategy)
+    policy_recheck = _entrypoint_repair_policy_recheck(plan, manifest)
     annotations["cbn.repair.kind"] = "cli-anything-entrypoint-wrapper"
+    annotations["cbn.repair.original_transport"] = json.dumps(original_transport, ensure_ascii=False, sort_keys=True)
     annotations["cbn.repair.original_command"] = str(transport.get("command", ""))
     annotations["cbn.repair.original_argsTemplate"] = json.dumps(
         transport.get("argsTemplate", []),
@@ -3165,13 +3170,146 @@ def _entrypoint_repair_manifest(
     )
     annotations["cbn.repair.wrapper_path"] = str(wrapper_path)
     annotations["cbn.repair.strategy"] = str(strategy.get("state"))
+    annotations["cbn.repair.python_executable"] = sys.executable
+    annotations["cbn.repair.module_provenance"] = json.dumps(
+        module_provenance,
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    annotations["cbn.repair.policy_recheck"] = json.dumps(
+        policy_recheck,
+        ensure_ascii=False,
+        sort_keys=True,
+    )
     if strategy.get("module"):
         annotations["cbn.repair.python_module"] = str(strategy["module"])
+    if module_provenance.get("distribution"):
+        annotations["cbn.repair.python_distribution"] = str(module_provenance["distribution"])
+    if module_provenance.get("version"):
+        annotations["cbn.repair.python_distribution_version"] = str(module_provenance["version"])
     transport["kind"] = "pty"
     transport["command"] = sys.executable
     transport["argsTemplate"] = [str(wrapper_path)]
     transport["cwdPolicy"] = transport.get("cwdPolicy", "workspace")
+    annotations["cbn.repair.wrapper_transport"] = json.dumps(transport, ensure_ascii=False, sort_keys=True)
+    manifest.setdefault("spec", {})["policy"] = _manifest_policy_from_recheck(policy_recheck["effective_policy"])
     return manifest
+
+
+def _entrypoint_repair_manifest_provenance(manifest: dict[str, Any]) -> dict[str, Any]:
+    annotations = manifest.get("metadata", {}).get("annotations", {})
+    if not isinstance(annotations, dict):
+        return {}
+    return {
+        "kind": annotations.get("cbn.repair.kind"),
+        "original_transport": _json_annotation(annotations.get("cbn.repair.original_transport")),
+        "wrapper_transport": _json_annotation(annotations.get("cbn.repair.wrapper_transport")),
+        "module_provenance": _json_annotation(annotations.get("cbn.repair.module_provenance")),
+        "policy_recheck": _json_annotation(annotations.get("cbn.repair.policy_recheck")),
+        "smoke": {
+            "module": annotations.get("cbn.repair.smoke.module"),
+            "args": _json_annotation(annotations.get("cbn.repair.smoke.args")),
+            "exit_code": annotations.get("cbn.repair.smoke.exit_code"),
+        },
+    }
+
+
+def _json_annotation(value: Any) -> Any:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return value
+
+
+def _entrypoint_repair_module_provenance(plan: dict[str, Any], strategy: dict[str, Any]) -> dict[str, Any]:
+    module = strategy.get("module")
+    module_report = strategy.get("module_report") if isinstance(strategy.get("module_report"), dict) else {}
+    distributions = plan.get("distributions") if isinstance(plan.get("distributions"), list) else []
+    distribution = _distribution_for_module(str(module) if module else "", distributions)
+    return {
+        "module": module,
+        "module_importable": module_report.get("importable"),
+        "module_origin": module_report.get("origin"),
+        "module_main": module_report.get("module_main"),
+        "distribution": distribution.get("package") if distribution else None,
+        "version": distribution.get("version") if distribution else None,
+        "location": distribution.get("location") if distribution else None,
+    }
+
+
+def _distribution_for_module(module: str, distributions: list[Any]) -> dict[str, Any] | None:
+    if not module:
+        return None
+    normalized_module = module.replace("_", "-").lower()
+    for item in distributions:
+        if not isinstance(item, dict) or not item.get("installed"):
+            continue
+        package = str(item.get("package") or "")
+        normalized_package = package.replace("_", "-").lower()
+        package_import = package.replace("-", "_")
+        if (
+            normalized_module == normalized_package
+            or module == package_import
+            or module.startswith(package_import + ".")
+        ):
+            return item
+    try:
+        dist = importlib_metadata.distribution(module.split(".", 1)[0])
+    except importlib_metadata.PackageNotFoundError:
+        return None
+    return {
+        "package": dist.metadata.get("Name") or module.split(".", 1)[0],
+        "installed": True,
+        "version": dist.version,
+        "location": str(Path(dist.locate_file(""))),
+    }
+
+
+def _entrypoint_repair_policy_recheck(plan: dict[str, Any], manifest: dict[str, Any]) -> dict[str, Any]:
+    original = manifest.get("spec", {}).get("policy", {}) if isinstance(manifest.get("spec"), dict) else {}
+    original_policy = {
+        "risk": str(original.get("risk") or "read"),
+        "requires_confirmation": _policy_requires_confirmation(original),
+        "network": str(original.get("network") or "deny"),
+    }
+    status = plan.get("evaluation", {}).get("status", {}) if isinstance(plan.get("evaluation"), dict) else {}
+    market_record = status.get("market_record") if isinstance(status, dict) and isinstance(status.get("market_record"), dict) else None
+    inferred = infer_market_policy(market_record, requested_risk=original_policy["risk"])
+    effective = {
+        "risk": _max_risk(original_policy["risk"], inferred["risk"]),
+        "requires_confirmation": bool(original_policy["requires_confirmation"] or inferred["requires_confirmation"]),
+        "network": _repair_policy_network(original_policy["network"], inferred["network"]),
+        "reasons": list(inferred.get("reasons", [])),
+    }
+    return {
+        "original_policy": original_policy,
+        "market_record_present": market_record is not None,
+        "inferred_policy": inferred,
+        "effective_policy": effective,
+        "changed": (
+            original_policy["risk"] != effective["risk"]
+            or original_policy["requires_confirmation"] != effective["requires_confirmation"]
+            or original_policy["network"] != effective["network"]
+        ),
+    }
+
+
+def _repair_policy_network(original_network: str, inferred_network: str) -> str:
+    if original_network == "requires-confirmation" or inferred_network == "requires-confirmation":
+        return "requires-confirmation"
+    if original_network == "localhost" or inferred_network == "localhost":
+        return "localhost"
+    return original_network or inferred_network or "deny"
+
+
+def _manifest_policy_from_recheck(policy: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "risk": policy["risk"],
+        "requiresConfirmation": bool(policy["requires_confirmation"]),
+        "network": policy["network"],
+    }
 
 
 def _adapter_target_package_report(package: str, limit: int = 20) -> dict[str, Any]:

@@ -1658,6 +1658,14 @@ class CliAnythingHubTests(unittest.TestCase):
                     "harness_name": harness_name,
                     "from_market": from_market,
                     "capability_id": "cli-anything.piptool.launch",
+                    "distributions": [
+                        {
+                            "package": "pip",
+                            "installed": True,
+                            "version": "25.0",
+                            "location": str(Path(sys.executable).parent),
+                        }
+                    ],
                     "modules": [{"package": "pip", "importable": True, "module_main": True}],
                     "diagnosis": {"repair_required": True},
                     "evaluation": {
@@ -1706,6 +1714,98 @@ class CliAnythingHubTests(unittest.TestCase):
             self.assertEqual(manifest["spec"]["transport"]["command"], sys.executable)
             self.assertEqual(manifest["spec"]["transport"]["argsTemplate"], [str(wrapper_path)])
             self.assertEqual(manifest["metadata"]["annotations"]["cbn.repair.python_module"], "pip")
+            annotations = manifest["metadata"]["annotations"]
+            original_transport = json.loads(annotations["cbn.repair.original_transport"])
+            wrapper_transport = json.loads(annotations["cbn.repair.wrapper_transport"])
+            module_provenance = json.loads(annotations["cbn.repair.module_provenance"])
+            policy_recheck = json.loads(annotations["cbn.repair.policy_recheck"])
+            self.assertEqual(original_transport["command"], "cli-hub")
+            self.assertEqual(original_transport["argsTemplate"], ["launch", "piptool", "--"])
+            self.assertEqual(wrapper_transport["command"], sys.executable)
+            self.assertEqual(wrapper_transport["argsTemplate"], [str(wrapper_path)])
+            self.assertEqual(module_provenance["module"], "pip")
+            self.assertEqual(module_provenance["distribution"], "pip")
+            self.assertEqual(module_provenance["version"], "25.0")
+            self.assertFalse(policy_recheck["market_record_present"])
+            self.assertFalse(policy_recheck["changed"])
+            self.assertEqual(result["repair_provenance"]["original_transport"]["command"], "cli-hub")
+            self.assertEqual(result["repair_provenance"]["wrapper_transport"]["command"], sys.executable)
+            self.assertEqual(result["repair_provenance"]["module_provenance"]["distribution"], "pip")
+            self.assertEqual(result["repair_provenance"]["policy_recheck"]["effective_policy"]["risk"], "read")
+            self.assertTrue(result["validation"]["valid"])
+
+    def test_repair_entrypoint_rechecks_policy_against_market_metadata(self):
+        class FakeHub(CliAnythingHub):
+            def entrypoint_repair_plan(self, harness_name, from_market=True):
+                return {
+                    "ok": True,
+                    "plugin_id": "cli-anything",
+                    "kind": "CliAnythingEntrypointRepairPlan",
+                    "harness_name": harness_name,
+                    "from_market": from_market,
+                    "capability_id": "cli-anything.cloudtool.launch",
+                    "distributions": [
+                        {
+                            "package": "pip",
+                            "installed": True,
+                            "version": "25.0",
+                            "location": str(Path(sys.executable).parent),
+                        }
+                    ],
+                    "modules": [{"package": "pip", "importable": True, "module_main": True}],
+                    "diagnosis": {"repair_required": True},
+                    "evaluation": {
+                        "status": {
+                            "market_record": {
+                                "name": "cloudtool",
+                                "description": "Calls a cloud API",
+                                "requires": "OPENAI_API_KEY token",
+                                "entry_point": "cli-anything-cloudtool",
+                            }
+                        },
+                        "adaptation": {
+                            "manifest_path": str(self.paths.manifests / "cli-anything.cloudtool.launch.json"),
+                            "manifest": {
+                                "apiVersion": "bridge.dev/v1alpha1",
+                                "kind": "ToolManifest",
+                                "metadata": {
+                                    "id": "cli-anything.cloudtool.launch",
+                                    "title": "Cloud Tool",
+                                    "labels": {"plugin": "cli-anything", "harness": "cloudtool"},
+                                    "annotations": {},
+                                },
+                                "spec": {
+                                    "transport": {
+                                        "kind": "pty",
+                                        "command": "cli-hub",
+                                        "argsTemplate": ["launch", "cloudtool", "--"],
+                                    },
+                                    "policy": {
+                                        "risk": "read",
+                                        "requiresConfirmation": False,
+                                        "network": "deny",
+                                    },
+                                    "output": {"parserRef": "cli-anything.raw", "verified": False},
+                                },
+                            },
+                        },
+                    },
+                }
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            result = FakeHub(root=Path(tempdir)).repair_entrypoint("cloudtool", module="pip")
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["execution"]["status"], "not_requested")
+            policy = result["manifest"]["spec"]["policy"]
+            self.assertEqual(policy["risk"], "external-network")
+            self.assertTrue(policy["requiresConfirmation"])
+            self.assertEqual(policy["network"], "requires-confirmation")
+            policy_recheck = result["repair_provenance"]["policy_recheck"]
+            self.assertTrue(policy_recheck["market_record_present"])
+            self.assertTrue(policy_recheck["changed"])
+            self.assertEqual(policy_recheck["original_policy"]["risk"], "read")
+            self.assertEqual(policy_recheck["effective_policy"]["risk"], "external-network")
+            self.assertIn("external API", " ".join(policy_recheck["effective_policy"]["reasons"]))
             self.assertTrue(result["validation"]["valid"])
 
     def test_repair_entrypoint_requires_passing_smoke_when_requested(self):
