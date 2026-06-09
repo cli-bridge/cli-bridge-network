@@ -1,6 +1,7 @@
 import json
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -180,9 +181,15 @@ class ProtocolExportTests(unittest.TestCase):
         self.assertTrue(payload["readiness"]["internal_bridge_ready"])
         self.assertFalse(payload["readiness"]["external_protocol_wire_compatible"])
         self.assertGreaterEqual(payload["summary"]["capability_count"], 1)
+        self.assertEqual(
+            payload["summary"]["portable_manifest_count"],
+            payload["summary"]["capability_count"],
+        )
+        self.assertEqual(payload["summary"]["runtime_local_overlay_count"], 0)
         self.assertGreaterEqual(payload["summary"]["route_count"], 1)
         self.assertGreaterEqual(payload["parser_coverage"]["verified_output_count"], 1)
         self.assertEqual(payload["parser_coverage"]["unverified_output_count"], 0)
+        self.assertEqual(payload["manifest_sources"]["runtime_local_overlay_capabilities"], [])
         self.assertTrue(
             any(
                 route["selector"] == "artifacts[0].artifact_id"
@@ -193,6 +200,48 @@ class ProtocolExportTests(unittest.TestCase):
         self.assertGreater(payload["protocol_gaps"]["mcp"]["missing_count"], 0)
         self.assertTrue(
             any("wire_compatible=false" in step for step in payload["next_steps"])
+        )
+
+    def test_protocol_readiness_separates_runtime_local_overlay_manifests(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            portable_dir = root / "manifests"
+            local_dir = root / "runtime" / "manifests"
+            portable_dir.mkdir(parents=True)
+            local_dir.mkdir(parents=True)
+            (portable_dir / "portable.tool.json").write_text(
+                json.dumps(_test_manifest("portable.tool", verified=True), ensure_ascii=False),
+                encoding="utf-8",
+            )
+            (local_dir / "local.tool.json").write_text(
+                json.dumps(_test_manifest("local.tool", verified=False), ensure_ascii=False),
+                encoding="utf-8",
+            )
+            registry = ManifestRegistry()
+            registry.load_dir(portable_dir)
+            registry.load_dir(local_dir, replace=True)
+
+            payload = protocol_readiness_report(registry, include_workflows=False)
+
+        self.assertEqual(payload["summary"]["capability_count"], 2)
+        self.assertEqual(payload["summary"]["portable_manifest_count"], 1)
+        self.assertEqual(payload["summary"]["runtime_local_overlay_count"], 1)
+        self.assertTrue(payload["readiness"]["portable_manifests_present"])
+        self.assertTrue(payload["readiness"]["runtime_local_overlay_present"])
+        self.assertEqual(
+            payload["manifest_sources"]["by_source_kind"],
+            {"portable_manifest": 1, "runtime_local_overlay": 1},
+        )
+        self.assertEqual(
+            payload["manifest_sources"]["runtime_local_overlay_capabilities"][0]["capability_id"],
+            "local.tool",
+        )
+        self.assertEqual(
+            payload["parser_coverage"]["unverified_capabilities"][0]["source_kind"],
+            "runtime_local_overlay",
+        )
+        self.assertTrue(
+            any("runtime/manifests" in step for step in payload["next_steps"])
         )
 
     def test_protocol_readiness_can_focus_one_workflow(self):
@@ -638,6 +687,23 @@ class ProtocolExportTests(unittest.TestCase):
         self.assertEqual(payload["kind"], "CliToCliAcceptanceQueue")
         self.assertEqual(payload["summary"]["runtime_route_failed_count"], 0)
         self.assertEqual(payload["rows"][0]["workflow_path"], "workflows/message-routing.example.json")
+
+def _test_manifest(capability_id: str, verified: bool) -> dict:
+    return {
+        "apiVersion": "bridge.dev/v1alpha1",
+        "kind": "ToolManifest",
+        "metadata": {"id": capability_id, "title": capability_id},
+        "spec": {
+            "transport": {
+                "kind": "stdio",
+                "command": sys.executable,
+                "argsTemplate": ["--version"],
+                "cwdPolicy": "workspace",
+            },
+            "policy": {"risk": "read", "requiresConfirmation": False, "network": "deny"},
+            "output": {"parserRef": "raw.text", "verified": verified},
+        },
+    }
 
 
 if __name__ == "__main__":

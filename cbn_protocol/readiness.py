@@ -37,11 +37,12 @@ def protocol_readiness_report(
         else None
     )
     parser_summary = _parser_summary(manifests)
+    source_summary = _manifest_source_summary(manifests)
     routes = _flatten_routes(contract) if contract else []
     route_summary = _route_summary(contract, routes)
     protocol_summary = _protocol_summary(matrix, selected_workflow_protocols)
-    gates = _readiness_gates(parser_summary, route_summary, protocol_summary, contract)
-    next_steps = _next_steps(parser_summary, route_summary, protocol_summary)
+    gates = _readiness_gates(parser_summary, source_summary, route_summary, protocol_summary, contract)
+    next_steps = _next_steps(parser_summary, source_summary, route_summary, protocol_summary)
 
     return {
         "ok": bool(gates["internal_bridge_ready"]),
@@ -55,12 +56,15 @@ def protocol_readiness_report(
             "workflow_count": route_summary["workflow_count"],
             "routed_workflow_count": route_summary["routed_workflow_count"],
             "route_count": route_summary["route_count"],
+            "portable_manifest_count": source_summary["portable_manifest_count"],
+            "runtime_local_overlay_count": source_summary["runtime_local_overlay_count"],
             "verified_output_count": parser_summary["verified_output_count"],
             "unverified_output_count": parser_summary["unverified_output_count"],
             "wire_compatible_protocol_count": protocol_summary["wire_compatible_protocol_count"],
         },
         "readiness": gates,
         "parser_coverage": parser_summary,
+        "manifest_sources": source_summary,
         "bridge_contract": _contract_summary(contract),
         "routes": routes,
         "protocol_matrix": {
@@ -93,6 +97,7 @@ def _parser_summary(manifests: list[Any]) -> dict[str, Any]:
                     "transport": manifest.transport.kind,
                     "risk": manifest.policy.risk,
                     "source_path": str(manifest.source_path) if manifest.source_path else None,
+                    "source_kind": _manifest_source_kind(manifest.source_path),
                 }
             )
     return {
@@ -106,6 +111,52 @@ def _parser_summary(manifests: list[Any]) -> dict[str, Any]:
         "missing_parser_capabilities": missing_parser,
         "unverified_capabilities": unverified,
     }
+
+
+def _manifest_source_summary(manifests: list[Any]) -> dict[str, Any]:
+    by_source_kind: dict[str, int] = {}
+    runtime_local_overlay_capabilities = []
+    non_portable_capabilities = []
+    for manifest in manifests:
+        source_kind = _manifest_source_kind(manifest.source_path)
+        by_source_kind[source_kind] = by_source_kind.get(source_kind, 0) + 1
+        record = {
+            "capability_id": manifest.capability_id,
+            "source_path": str(manifest.source_path) if manifest.source_path else None,
+            "parser_ref": manifest.output.parser_ref or "raw.text",
+            "verified": manifest.output.verified,
+            "transport": manifest.transport.kind,
+            "risk": manifest.policy.risk,
+        }
+        if source_kind == "runtime_local_overlay":
+            runtime_local_overlay_capabilities.append(record)
+        if source_kind != "portable_manifest":
+            non_portable_capabilities.append({**record, "source_kind": source_kind})
+    return {
+        "capability_count": len(manifests),
+        "portable_manifest_count": by_source_kind.get("portable_manifest", 0),
+        "runtime_local_overlay_count": by_source_kind.get("runtime_local_overlay", 0),
+        "in_memory_count": by_source_kind.get("in_memory", 0),
+        "other_source_count": by_source_kind.get("other", 0),
+        "by_source_kind": dict(sorted(by_source_kind.items())),
+        "runtime_local_overlay_capabilities": runtime_local_overlay_capabilities,
+        "non_portable_capabilities": non_portable_capabilities,
+    }
+
+
+def _manifest_source_kind(source_path: Any) -> str:
+    if source_path is None:
+        return "in_memory"
+    parts = [part.casefold() for part in getattr(source_path, "parts", ())]
+    if len(parts) >= 2 and parts[-2:] == ["runtime", "manifests"]:
+        return "runtime_local_overlay"
+    if "runtime" in parts and "manifests" in parts:
+        return "runtime_local_overlay"
+    if parts and parts[-1] == "manifests":
+        return "portable_manifest"
+    if "manifests" in parts and "runtime" not in parts:
+        return "portable_manifest"
+    return "other"
 
 
 def _flatten_routes(contract: dict[str, Any] | None) -> list[dict[str, Any]]:
@@ -215,6 +266,7 @@ def _protocol_summary(
 
 def _readiness_gates(
     parser_summary: dict[str, Any],
+    source_summary: dict[str, Any],
     route_summary: dict[str, int],
     protocol_summary: dict[str, Any],
     contract: dict[str, Any] | None,
@@ -223,6 +275,8 @@ def _readiness_gates(
     routed = route_summary["route_count"] > 0
     return {
         "manifest_registry_loaded": parser_summary["capability_count"] > 0,
+        "portable_manifests_present": source_summary["portable_manifest_count"] > 0,
+        "runtime_local_overlay_present": source_summary["runtime_local_overlay_count"] > 0,
         "bridge_message_contract_ready": contract_ok,
         "workflow_routing_present": routed,
         "workflow_routes_valid": route_summary["invalid_selector_count"] == 0,
@@ -254,10 +308,13 @@ def _contract_summary(contract: dict[str, Any] | None) -> dict[str, Any]:
 
 def _next_steps(
     parser_summary: dict[str, Any],
+    source_summary: dict[str, Any],
     route_summary: dict[str, int],
     protocol_summary: dict[str, Any],
 ) -> list[str]:
     steps = []
+    if source_summary["runtime_local_overlay_count"] > 0:
+        steps.append("Treat runtime/manifests capabilities as local overlays; promote only portable, verified adapters into manifests/.")
     if parser_summary["unverified_output_count"] > 0:
         steps.append("Add verified parser fixtures for unverified capabilities before treating their payload routes as stable.")
     if route_summary["route_count"] == 0:

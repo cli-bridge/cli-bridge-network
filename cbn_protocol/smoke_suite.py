@@ -132,6 +132,8 @@ def protocol_smoke_suite(
             "external_protocol_wire_compatible": readiness["readiness"]["external_protocol_wire_compatible"],
             "route_count": readiness["summary"]["route_count"],
             "unverified_output_count": readiness["parser_coverage"]["unverified_output_count"],
+            "portable_manifest_count": readiness["manifest_sources"]["portable_manifest_count"],
+            "runtime_local_overlay_count": readiness["manifest_sources"]["runtime_local_overlay_count"],
         },
         "bridge_contract": {
             "ok": contract["ok"],
