@@ -26,6 +26,7 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("POST", "/a2a"), routes)
         self.assertIn(("GET", "/workflows"), routes)
         self.assertIn(("GET", "/runtime/transports"), routes)
+        self.assertIn(("GET", "/messages/contract"), routes)
         self.assertIn(("POST", "/runtime/transports/gate"), routes)
         self.assertIn(("POST", "/runtime/transports/plan"), routes)
         self.assertIn(("POST", "/runtime/transports/install"), routes)
@@ -155,6 +156,18 @@ class DaemonApiTests(unittest.TestCase):
                 self.assertGreaterEqual(payload["capability_count"], 1)
                 self.assertGreaterEqual(payload["workflow_count"], 1)
                 self.assertTrue(any(item["kind"] == "workflow" for item in payload["rows"]))
+
+    def test_message_contract_route_returns_workflow_routes(self):
+        with daemon_url() as base_url:
+            with urllib.request.urlopen(
+                f"{base_url}/messages/contract?workflow_path=workflows/artifact-id-routing.example.json",
+                timeout=5,
+            ) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(response.status, 200)
+                self.assertTrue(payload["ok"])
+                self.assertEqual(payload["summary"]["artifact_route_count"], 1)
+                self.assertEqual(payload["workflows"][0]["routes"][0]["selector"], "artifacts[0].artifact_id")
 
     def test_workflows_route_returns_catalog(self):
         with daemon_url() as base_url:

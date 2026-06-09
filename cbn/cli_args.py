@@ -132,6 +132,11 @@ def build_parser() -> argparse.ArgumentParser:
     message_args = message_subcommands.add_parser("args", help="Convert BridgeMessage selectors into CLI argv strings.")
     message_args.add_argument("path", help="BridgeMessage JSON path, or '-' for stdin.")
     message_args.add_argument("selectors", nargs="+", help="Selectors to map into argv strings.")
+    message_contract = message_subcommands.add_parser(
+        "contract",
+        help="Report the BridgeMessage and workflow CLI-to-CLI routing contract.",
+    )
+    message_contract.add_argument("--workflow-path", help="Optional workflow JSON path to inspect.")
 
     approvals_parser = subcommands.add_parser("approvals", help="Manage the approval queue.")
     approvals_subcommands = approvals_parser.add_subparsers(dest="approvals_command")

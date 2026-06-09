@@ -6,6 +6,8 @@ import unittest
 from pathlib import Path
 
 from cbn_parsers.registry import ParserRegistry
+from cbn_core.manifest import ManifestRegistry
+from cbn_protocol.bridge_contract import workflow_bridge_contract_report
 from cbn_protocol.envelope import (
     BridgeMessage,
     bridge_args_from_selectors,
@@ -117,6 +119,24 @@ class ParserProtocolTests(unittest.TestCase):
         )
         self.assertEqual(routed["mappings"][2]["selector"], "payload.data.options")
 
+    def test_bridge_contract_report_summarizes_workflow_routes(self):
+        registry = ManifestRegistry()
+        registry.load_dir(Path("manifests"))
+        report = workflow_bridge_contract_report(
+            registry,
+            workflow_path="workflows/cli-anything-macrocli-mermaid-routing.example.json",
+        )
+        self.assertTrue(report["ok"])
+        self.assertEqual(report["apiVersion"], "bridge.dev/v1alpha1")
+        self.assertEqual(report["summary"]["workflow_count"], 1)
+        self.assertEqual(report["summary"]["route_count"], 2)
+        self.assertEqual(report["summary"]["payload_route_count"], 2)
+        workflow = report["workflows"][0]
+        self.assertEqual(workflow["workflow_id"], "example.cli-anything-macrocli-mermaid-routing")
+        self.assertEqual(workflow["routes"][0]["route_kind"], "payload")
+        self.assertEqual(workflow["routes"][0]["source_parser_ref"], "cli-anything.macrocli.backends")
+        self.assertTrue(workflow["routes"][0]["selector_valid"])
+
     def test_invalid_bridge_message_reports_errors(self):
         result = validate_bridge_message({"kind": "BridgeMessage", "payload": []})
         self.assertFalse(result["valid"])
@@ -223,6 +243,28 @@ class ParserProtocolTests(unittest.TestCase):
             payload = json.loads(args.stdout)
             self.assertEqual(payload["args"], ["git --version", "git.version"])
             self.assertEqual(payload["mappings"][0]["selector"], "payload.data.stdout")
+
+    def test_cli_message_contract_outputs_workflow_report(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "message",
+                "contract",
+                "--workflow-path",
+                "workflows/artifact-id-routing.example.json",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["summary"]["artifact_route_count"], 1)
+        self.assertEqual(payload["workflows"][0]["routes"][0]["selector"], "artifacts[0].artifact_id")
 
     def test_dry_run_uses_raw_parser_even_for_structured_capability(self):
         call = subprocess.run(

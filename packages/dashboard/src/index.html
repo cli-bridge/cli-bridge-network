@@ -436,6 +436,16 @@
           <button data-command="python -m cbn message validate &lt;message.json&gt;">Validate Message</button>
           <button data-command="python -m cbn message select &lt;message.json&gt; payload.data.stdout">Select Message Field</button>
           <button data-command="python -m cbn message args &lt;message.json&gt; payload.data.stdout artifacts[0].artifact_id">Message Args</button>
+          <button
+            data-command="python -m cbn message contract"
+            data-api-method="GET"
+            data-api-path="/messages/contract"
+          >Bridge Contract</button>
+          <button
+            data-command="python -m cbn message contract --workflow-path workflows/cli-anything-macrocli-mermaid-routing.example.json"
+            data-api-method="GET"
+            data-api-path="/messages/contract?workflow_path=workflows/cli-anything-macrocli-mermaid-routing.example.json"
+          >Bridge Workflow Contract</button>
           <button data-command="python -m cbn mcp serve --stdio">MCP stdio</button>
           <button data-command="python -m cbn mcp smoke --capability-id git.version">MCP Smoke</button>
           <button data-command="python -m cbn mcp smoke-workflow --path workflows/example.json --dry-run">MCP Workflow Smoke</button>

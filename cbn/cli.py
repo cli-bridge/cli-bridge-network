@@ -15,6 +15,7 @@ from cbn_execution.graph import WorkflowGraph
 from cbn_parsers.registry import ParserRegistry
 from cbn_plugins.cli_anything import CliAnythingHub
 from cbn_plugins.manager import PluginManager
+from cbn_protocol.bridge_contract import workflow_bridge_contract_report
 from cbn_protocol.a2a_http import agent_card, smoke_a2a_http
 from cbn_protocol.a2a_http import smoke_a2a_workflow_http
 from cbn_protocol.acp_stdio import serve_stdio as serve_acp_stdio
@@ -229,6 +230,11 @@ def main(argv: list[str] | None = None) -> int:
             return 0 if payload["ok"] else 9
 
     if args.command == "message":
+        if args.message_command == "contract":
+            runtime = build_runtime()
+            result = workflow_bridge_contract_report(runtime.registry, workflow_path=args.workflow_path)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["ok"] else 7
         message = _read_json_arg(args.path)
         if args.message_command == "validate":
             result = validate_bridge_message(message)

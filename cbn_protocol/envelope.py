@@ -163,6 +163,14 @@ def bridge_args_from_selectors(message: dict[str, Any], selectors: list[str]) ->
     }
 
 
+def validate_selector_syntax(selector: str) -> dict[str, Any]:
+    try:
+        tokens = _selector_tokens(selector)
+    except (TypeError, ValueError) as exc:
+        return {"valid": False, "selector": selector, "tokens": [], "error": str(exc)}
+    return {"valid": True, "selector": selector, "tokens": tokens, "error": None}
+
+
 def _selector_tokens(selector: str) -> list[str | int]:
     tokens: list[str | int] = []
     for part in selector.split("."):
