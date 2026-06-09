@@ -115,6 +115,14 @@ if (!html.includes('data-api-path="/plugins/cli-anything/adapter-targets"')) {
   throw new Error("Dashboard does not wire CLI-Anything adapter target discovery to the daemon API.");
 }
 
+if (!html.includes("python -m cbn plugin adaptation-gate cli-anything py4csr --from-market --module py4csr.tables.rtf_formatter")) {
+  throw new Error("Dashboard does not expose CLI-Anything harness adaptation gate.");
+}
+
+if (!html.includes('data-api-path="/plugins/cli-anything/adaptation-gate"')) {
+  throw new Error("Dashboard does not wire CLI-Anything harness adaptation gate to the daemon API.");
+}
+
 if (!html.includes("python -m cbn plugin adapter-smoke cli-anything py4csr --from-market --module py4csr.plotting.sas_compatible_rtf_generator")) {
   throw new Error("Dashboard does not expose CLI-Anything adapter target smoke planning.");
 }
@@ -189,6 +197,10 @@ if (!html.includes('data-api-body=\'{"harness_name":"py4csr","from_market":true}
 
 if (!html.includes('data-api-body=\'{"harness_name":"py4csr","from_market":true,"limit":10}\'')) {
   throw new Error("Dashboard adapter target API body is not stable.");
+}
+
+if (!html.includes('data-api-body=\'{"harness_name":"py4csr","from_market":true,"module":"py4csr.tables.rtf_formatter","require_smoke":true,"smoke_args":["--help"],"smoke_timeout_seconds":10}\'')) {
+  throw new Error("Dashboard adaptation gate API body is not stable.");
 }
 
 if (!html.includes('data-api-body=\'{"harness_name":"py4csr","from_market":true,"module":"py4csr.plotting.sas_compatible_rtf_generator","smoke_args":["--help"],"timeout_seconds":10}\'')) {

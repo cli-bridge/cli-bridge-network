@@ -586,6 +586,63 @@ class DaemonApiTests(unittest.TestCase):
                     self.assertFalse(payload["confirmed"])
                     self.assertEqual(payload["execution"]["status"], "requires_confirmation")
 
+    def test_cli_anything_adaptation_gate_route_returns_acceptance_report(self):
+        class FakeHub:
+            def adaptation_gate(
+                self,
+                harness_name,
+                from_market=True,
+                module=None,
+                require_smoke=True,
+                run_smoke=False,
+                confirmed=False,
+                smoke_args=("--help",),
+                smoke_timeout_seconds=10,
+            ):
+                return {
+                    "ok": True,
+                    "plugin_id": "cli-anything",
+                    "kind": "CliAnythingHarnessAdaptationGate",
+                    "harness_name": harness_name,
+                    "from_market": from_market,
+                    "module": module,
+                    "require_smoke": require_smoke,
+                    "run_smoke": run_smoke,
+                    "confirmed": confirmed,
+                    "smoke_args": list(smoke_args),
+                    "smoke_timeout_seconds": smoke_timeout_seconds,
+                    "summary": {"ready_for_repair_write": False},
+                    "stages": [{"id": "adapter_smoke", "status": "ready"}],
+                }
+
+        with patch("api_server.server.CliAnythingHub", FakeHub):
+            with daemon_url() as base_url:
+                request = urllib.request.Request(
+                    f"{base_url}/plugins/cli-anything/adaptation-gate",
+                    data=json.dumps(
+                        {
+                            "harness_name": "py4csr",
+                            "from_market": True,
+                            "module": "py4csr.tables.rtf_formatter",
+                            "require_smoke": True,
+                            "run_smoke": False,
+                            "confirmed": False,
+                            "smoke_args": ["--help"],
+                            "smoke_timeout_seconds": 10,
+                        }
+                    ).encode("utf-8"),
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(payload["harness_name"], "py4csr")
+                    self.assertEqual(payload["module"], "py4csr.tables.rtf_formatter")
+                    self.assertTrue(payload["require_smoke"])
+                    self.assertFalse(payload["run_smoke"])
+                    self.assertEqual(payload["stages"][0]["id"], "adapter_smoke")
+
     def test_runtime_transport_status_and_plan_routes(self):
         with daemon_url() as base_url:
             with urllib.request.urlopen(f"{base_url}/runtime/transports?kind=pty", timeout=5) as response:

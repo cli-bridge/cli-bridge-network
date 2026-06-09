@@ -1991,6 +1991,126 @@ class CliAnythingHubTests(unittest.TestCase):
             self.assertTrue(result["summary"]["smoke_ok"])
             self.assertEqual(result["summary"]["recommended_next_action"], "repair_entrypoint_with_smoked_module")
 
+    def test_adaptation_gate_reports_native_ready_harness(self):
+        class FakeHub(CliAnythingHub):
+            def evaluate_harness(self, harness_name, title=None, from_market=True):
+                return {
+                    "ok": True,
+                    "harness_name": harness_name,
+                    "gates": {
+                        "manifest_valid": True,
+                        "installed": True,
+                        "launch_ready": True,
+                    },
+                    "blockers": [],
+                }
+
+        result = FakeHub().adaptation_gate("native", from_market=True)
+        self.assertTrue(result["summary"]["native_launch_ready"])
+        self.assertEqual(result["summary"]["recommended_next_action"], "verify_harness_and_protocol_facades")
+        by_stage = {stage["id"]: stage for stage in result["stages"]}
+        self.assertEqual(by_stage["native_launch"]["status"], "completed")
+        self.assertEqual(by_stage["repair_write"]["status"], "skipped")
+
+    def test_adaptation_gate_blocks_repair_write_until_smoke_runs(self):
+        class FakeHub(CliAnythingHub):
+            def evaluate_harness(self, harness_name, title=None, from_market=True):
+                return {
+                    "ok": True,
+                    "harness_name": harness_name,
+                    "gates": {
+                        "manifest_valid": True,
+                        "installed": True,
+                        "launch_ready": False,
+                    },
+                    "blockers": ["installed harness entrypoint is missing from PATH"],
+                }
+
+            def entrypoint_repair_plan(self, harness_name, from_market=True):
+                return {"ok": True, "harness_name": harness_name, "diagnosis": {"repair_required": True}}
+
+            def adapter_targets(self, harness_name, from_market=True, package=None, limit=20):
+                return {
+                    "ok": True,
+                    "harness_name": harness_name,
+                    "targets": [{"module": "json.tool", "score": 100}],
+                    "summary": {"target_count": 1},
+                }
+
+            def adapter_target_smoke(
+                self,
+                harness_name,
+                module,
+                from_market=True,
+                smoke_args=("--help",),
+                timeout_seconds=10,
+                run=False,
+                confirmed=False,
+            ):
+                return {
+                    "ok": True,
+                    "module": module,
+                    "execution": {"status": "not_run", "exit_code": None},
+                    "summary": {"smoke_ok": False},
+                }
+
+        result = FakeHub().adaptation_gate("broken", module="json.tool")
+        self.assertEqual(result["summary"]["recommended_next_action"], "run_adapter_smoke")
+        self.assertFalse(result["summary"]["ready_for_repair_write"])
+        by_stage = {stage["id"]: stage for stage in result["stages"]}
+        self.assertEqual(by_stage["adapter_target"]["status"], "completed")
+        self.assertEqual(by_stage["adapter_smoke"]["status"], "ready")
+        self.assertEqual(by_stage["repair_write"]["status"], "blocked")
+
+    def test_adaptation_gate_allows_smoke_gated_repair_write_after_pass(self):
+        class FakeHub(CliAnythingHub):
+            def evaluate_harness(self, harness_name, title=None, from_market=True):
+                return {
+                    "ok": True,
+                    "harness_name": harness_name,
+                    "gates": {
+                        "manifest_valid": True,
+                        "installed": True,
+                        "launch_ready": False,
+                    },
+                    "blockers": ["installed harness entrypoint is missing from PATH"],
+                }
+
+            def entrypoint_repair_plan(self, harness_name, from_market=True):
+                return {"ok": True, "harness_name": harness_name, "diagnosis": {"repair_required": True}}
+
+            def adapter_targets(self, harness_name, from_market=True, package=None, limit=20):
+                return {
+                    "ok": True,
+                    "harness_name": harness_name,
+                    "targets": [{"module": "json.tool", "score": 100}],
+                    "summary": {"target_count": 1},
+                }
+
+            def adapter_target_smoke(
+                self,
+                harness_name,
+                module,
+                from_market=True,
+                smoke_args=("--help",),
+                timeout_seconds=10,
+                run=False,
+                confirmed=False,
+            ):
+                return {
+                    "ok": True,
+                    "module": module,
+                    "execution": {"status": "completed", "exit_code": 0},
+                    "summary": {"smoke_ok": True},
+                }
+
+        result = FakeHub().adaptation_gate("broken", module="json.tool", run_smoke=True, confirmed=True)
+        self.assertEqual(result["summary"]["recommended_next_action"], "write_smoke_gated_repaired_manifest")
+        self.assertTrue(result["summary"]["ready_for_repair_write"])
+        by_stage = {stage["id"]: stage for stage in result["stages"]}
+        self.assertEqual(by_stage["adapter_smoke"]["status"], "completed")
+        self.assertEqual(by_stage["repair_write"]["status"], "ready")
+
     def test_candidate_harnesses_limits_after_ranking_full_market(self):
         class FakeHub(CliAnythingHub):
             def list_market(self) -> CliHubCommandResult:
@@ -2765,6 +2885,31 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(payload["kind"], "CliAnythingAdapterTargetSmoke")
         self.assertEqual(payload["execution"]["status"], "not_run")
         self.assertIn("summary", payload)
+
+    def test_cli_adaptation_gate_outputs_acceptance_summary(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "plugin",
+                "adaptation-gate",
+                "cli-anything",
+                "py4csr",
+                "--module",
+                "py4csr.tables.rtf_formatter",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertIn(proc.returncode, {0, 6})
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["plugin_id"], "cli-anything")
+        self.assertEqual(payload["kind"], "CliAnythingHarnessAdaptationGate")
+        self.assertIn("summary", payload)
+        self.assertIn("stages", payload)
 
     def test_cli_sync_market_handles_missing_cli_hub_without_crashing(self):
         proc = subprocess.run(
