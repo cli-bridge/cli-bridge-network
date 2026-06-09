@@ -39,6 +39,8 @@ class ApprovalStore:
         risk: str,
         reason: str,
         dry_run: bool,
+        scope_hash: str | None = None,
+        scope: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         approval_id = str(uuid.uuid4())
         record = {
@@ -53,6 +55,8 @@ class ApprovalStore:
             "risk": risk,
             "reason": reason,
             "dry_run": dry_run,
+            "scope_hash": scope_hash,
+            "scope": scope,
             "history": [
                 {
                     "ts": now_iso(),
@@ -92,22 +96,38 @@ class ApprovalStore:
             raise ValueError(f"approval {approval_id} is not pending")
         return self._transition(approval_id, decision, actor=actor, reason=reason)
 
-    def use(self, approval_id: str, capability_id: str) -> dict[str, Any]:
+    def use(
+        self,
+        approval_id: str,
+        capability_id: str,
+        scope_hash: str | None = None,
+    ) -> dict[str, Any]:
         record = self.inspect(approval_id)
         if record["capability_id"] != capability_id:
             raise ValueError(
                 f"approval {approval_id} is for {record['capability_id']}, not {capability_id}"
             )
+        if scope_hash is not None and record.get("scope_hash") != scope_hash:
+            raise ValueError(f"approval {approval_id} scope does not match current request")
         if record["status"] != APPROVAL_APPROVED:
             raise ValueError(f"approval {approval_id} is not approved")
         return self._transition(approval_id, APPROVAL_USED, actor="system", reason="consumed")
 
-    def is_approved(self, approval_id: str, capability_id: str) -> bool:
+    def is_approved(
+        self,
+        approval_id: str,
+        capability_id: str,
+        scope_hash: str | None = None,
+    ) -> bool:
         try:
             record = self.inspect(approval_id)
         except KeyError:
             return False
-        return record["status"] == APPROVAL_APPROVED and record["capability_id"] == capability_id
+        if record["status"] != APPROVAL_APPROVED or record["capability_id"] != capability_id:
+            return False
+        if scope_hash is not None and record.get("scope_hash") != scope_hash:
+            return False
+        return True
 
     def _transition(
         self,

@@ -328,6 +328,9 @@ class MvpRuntimeTests(unittest.TestCase):
             blocked = executor.call("test.danger", dry_run=True)
             self.assertFalse(blocked["allowed"])
             self.assertEqual(blocked["approval"]["status"], "pending")
+            self.assertTrue(blocked["approval"]["scope_hash"])
+            self.assertEqual(blocked["approval"]["scope"]["argv"], ["python", "--version"])
+            self.assertTrue(blocked["approval"]["scope"]["dry_run"])
 
             approval_id = blocked["approval"]["approval_id"]
             approvals.decide(approval_id, "approved", actor="test")
@@ -335,6 +338,65 @@ class MvpRuntimeTests(unittest.TestCase):
             self.assertTrue(allowed["allowed"])
             self.assertEqual(allowed["approval_id"], approval_id)
             self.assertEqual(approvals.inspect(approval_id)["status"], "used")
+
+    def test_executor_rejects_approval_for_different_request_scope(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            registry = ManifestRegistry()
+            registry.register(_danger_manifest())
+            approvals = ApprovalStore(Path(tmp) / "approvals.jsonl")
+            executor = CapabilityExecutor(
+                registry,
+                AuditLog(Path(tmp) / "audit.jsonl"),
+                approval_store=approvals,
+                event_bus=EventBus(Path(tmp) / "events.jsonl"),
+                artifact_store=ArtifactStore(Path(tmp) / "artifacts"),
+            )
+            blocked = executor.call("test.danger", dry_run=True)
+            approval_id = blocked["approval"]["approval_id"]
+            approvals.decide(approval_id, "approved", actor="test")
+
+            mismatched = executor.call(
+                "test.danger",
+                extra_args=("--unexpected",),
+                dry_run=True,
+                approval_id=approval_id,
+            )
+
+            self.assertFalse(mismatched["allowed"])
+            self.assertNotEqual(mismatched["approval"]["approval_id"], approval_id)
+            self.assertEqual(approvals.inspect(approval_id)["status"], "approved")
+
+            allowed = executor.call("test.danger", dry_run=True, approval_id=approval_id)
+            self.assertTrue(allowed["allowed"])
+            self.assertEqual(approvals.inspect(approval_id)["status"], "used")
+
+    def test_approval_store_rejects_legacy_unscoped_approval_when_scope_required(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            approvals = ApprovalStore(Path(tmp) / "approvals.jsonl")
+            record = approvals.request(
+                call_id="call-1",
+                capability_id="test.danger",
+                argv=("python", "--version"),
+                cwd=None,
+                risk="privileged",
+                reason="test",
+                dry_run=True,
+            )
+            approvals.decide(record["approval_id"], "approved", actor="test")
+
+            self.assertFalse(
+                approvals.is_approved(
+                    record["approval_id"],
+                    "test.danger",
+                    scope_hash="current-scope",
+                )
+            )
+            with self.assertRaisesRegex(ValueError, "scope does not match"):
+                approvals.use(
+                    record["approval_id"],
+                    "test.danger",
+                    scope_hash="current-scope",
+                )
 
     def test_executor_writes_audit_for_dry_run(self):
         with tempfile.TemporaryDirectory() as tmp:

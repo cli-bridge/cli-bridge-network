@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import uuid
 from pathlib import Path
 from typing import Any
@@ -53,9 +55,14 @@ class CapabilityExecutor:
         call_id = str(uuid.uuid4())
         manifest = self.registry.require(capability_id)
         request = self._request_from_manifest(manifest, extra_args, cwd, dry_run)
+        approval_scope = _approval_scope(manifest, request)
         approval_confirmed = False
         if approval_id and self.approval_store:
-            approval_confirmed = self.approval_store.is_approved(approval_id, capability_id)
+            approval_confirmed = self.approval_store.is_approved(
+                approval_id,
+                capability_id,
+                scope_hash=approval_scope["scope_hash"],
+            )
         decision = self.policy.evaluate(manifest, confirmed=confirmed)
         if not decision.allowed and approval_confirmed:
             decision = self.policy.evaluate(manifest, confirmed=True)
@@ -70,6 +77,8 @@ class CapabilityExecutor:
                     risk=decision.risk,
                     reason=decision.reason,
                     dry_run=dry_run,
+                    scope_hash=approval_scope["scope_hash"],
+                    scope=approval_scope["scope"],
                 )
             event = self.audit_log.append(
                 {
@@ -79,6 +88,7 @@ class CapabilityExecutor:
                     "decision": decision.as_dict(),
                     "approval_id": approval["approval_id"] if approval else None,
                     "dry_run": dry_run,
+                    "approval_scope_hash": approval_scope["scope_hash"],
                 }
             )
             if approval:
@@ -109,13 +119,18 @@ class CapabilityExecutor:
             }
 
         if approval_id and approval_confirmed and self.approval_store:
-            self.approval_store.use(approval_id, capability_id)
+            self.approval_store.use(
+                approval_id,
+                capability_id,
+                scope_hash=approval_scope["scope_hash"],
+            )
         self.audit_log.append(
             {
                 "type": "tool_call.started",
                 "call_id": call_id,
                 "capability_id": capability_id,
                 "approval_id": approval_id if approval_confirmed else None,
+                "approval_scope_hash": approval_scope["scope_hash"] if approval_confirmed else None,
                 "argv": list(request.argv),
                 "cwd": request.cwd,
                 "dry_run": dry_run,
@@ -176,6 +191,7 @@ class CapabilityExecutor:
                 "parser_ok": parsed["payload"].get("ok"),
                 "artifact_ids": [artifact["artifact_id"] for artifact in artifacts],
                 "dry_run": dry_run,
+                "approval_scope_hash": approval_scope["scope_hash"] if approval_confirmed else None,
             },
             call_id,
         )
@@ -312,3 +328,55 @@ class CapabilityExecutor:
 
 def _tool_call_ok(result: ToolResult, parsed: dict[str, Any]) -> bool:
     return bool(result.allowed) and result.exit_code in (0, None) and parsed.get("ok") is True
+
+
+def _approval_scope(manifest: CapabilityManifest, request: ToolCall) -> dict[str, Any]:
+    manifest_digest = _digest(_manifest_scope_payload(manifest))
+    policy_digest = _digest(_policy_scope_payload(manifest))
+    scope = {
+        "capability_id": manifest.capability_id,
+        "argv": list(request.argv),
+        "cwd": request.cwd,
+        "dry_run": request.dry_run,
+        "manifest_digest": manifest_digest,
+        "policy_digest": policy_digest,
+        "actor": "local-user",
+    }
+    return {
+        "scope_hash": _digest(scope),
+        "scope": scope,
+    }
+
+
+def _manifest_scope_payload(manifest: CapabilityManifest) -> dict[str, Any]:
+    return {
+        "capability_id": manifest.capability_id,
+        "title": manifest.title,
+        "transport": {
+            "kind": manifest.transport.kind,
+            "command": manifest.transport.command,
+            "argsTemplate": list(manifest.transport.args_template),
+            "cwdPolicy": manifest.transport.cwd_policy,
+            "timeoutSeconds": manifest.transport.timeout_seconds,
+        },
+        "policy": _policy_scope_payload(manifest),
+        "output": {
+            "parserRef": manifest.output.parser_ref,
+            "verified": manifest.output.verified,
+        },
+        "labels": manifest.labels,
+        "annotations": manifest.annotations,
+    }
+
+
+def _policy_scope_payload(manifest: CapabilityManifest) -> dict[str, Any]:
+    return {
+        "risk": manifest.policy.risk,
+        "requiresConfirmation": manifest.policy.requires_confirmation,
+        "network": manifest.policy.network,
+    }
+
+
+def _digest(payload: dict[str, Any]) -> str:
+    text = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
