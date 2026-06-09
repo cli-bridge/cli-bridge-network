@@ -449,6 +449,7 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             result = CliAnythingHub().candidate_harnesses(
                 query=payload.get("query"),
                 limit=int(payload.get("limit", 50)),
+                with_probes=bool(payload.get("with_probes", False)),
             )
             self._send(200 if result["ok"] else 502, result)
             return

@@ -602,6 +602,7 @@ class CliAnythingHub:
         self,
         query: str | None = None,
         limit: int = 50,
+        with_probes: bool = False,
     ) -> dict[str, Any]:
         result = self.search_market(query) if query else self.list_market()
         records = _market_records_from_result(result.parsed_json)
@@ -611,6 +612,7 @@ class CliAnythingHub:
                 "plugin_id": PLUGIN_ID,
                 "query": query,
                 "limit": max(0, min(limit, 500)),
+                "with_probes": with_probes,
                 "error": "CLI-Anything market command failed",
                 "market": result.as_dict(),
                 "selected_count": 0,
@@ -624,6 +626,7 @@ class CliAnythingHub:
                 "plugin_id": PLUGIN_ID,
                 "query": query,
                 "limit": max(0, min(limit, 500)),
+                "with_probes": with_probes,
                 "error": "CLI-Anything market command did not return a supported JSON list shape",
                 "market": result.as_dict(),
                 "selected_count": 0,
@@ -640,6 +643,8 @@ class CliAnythingHub:
         _mark_candidate_collisions(candidates)
         for item in candidates:
             _refresh_candidate_lifecycle(item)
+            if with_probes:
+                _attach_candidate_readiness(item)
         candidates.sort(
             key=lambda item: (
                 not bool(item.get("install_candidate")),
@@ -652,19 +657,33 @@ class CliAnythingHub:
             item["rank"] = rank
         install_candidate_count = sum(1 for item in candidates if item.get("install_candidate"))
         blocked_count = sum(1 for item in candidates if not item.get("install_candidate"))
+        probe_ready_count = sum(
+            1
+            for item in candidates
+            if isinstance(item.get("readiness"), dict) and item["readiness"].get("ready")
+        )
+        probe_blocked_count = sum(
+            1
+            for item in candidates
+            if isinstance(item.get("readiness"), dict) and item["readiness"].get("probe_blocker_count", 0) > 0
+        )
         return {
             "ok": True,
             "plugin_id": PLUGIN_ID,
             "query": query,
             "limit": bounded_limit,
+            "with_probes": with_probes,
             "market_count": len(records),
             "selected_count": len(selected),
             "install_candidate_count": install_candidate_count,
             "blocked_count": blocked_count,
+            "probe_ready_count": probe_ready_count if with_probes else None,
+            "probe_blocked_count": probe_blocked_count if with_probes else None,
             "market": result.as_dict(),
             "candidates": candidates,
             "next_commands": [
                 "python -m cbn plugin candidates cli-anything --query <query> --limit 20",
+                "python -m cbn plugin candidates cli-anything --query <query> --limit 20 --with-probes",
                 "python -m cbn plugin evaluate-harness cli-anything <harness>",
                 "python -m cbn plugin adapt-harness cli-anything <harness> --from-market --write",
                 "python -m cbn plugin harness cli-anything install <harness> --yes",
@@ -1061,6 +1080,25 @@ def _refresh_candidate_lifecycle(item: dict[str, Any]) -> None:
         blockers=blockers,
         install_candidate=bool(item.get("install_candidate")),
     )
+
+
+def _attach_candidate_readiness(item: dict[str, Any]) -> None:
+    record = item.get("market_record") if isinstance(item.get("market_record"), dict) else {}
+    probes = _dependency_probes(
+        requires=_declared_requires(record, {}),
+        entry_point=record.get("entry_point"),
+    )
+    blockers = [
+        probe
+        for probe in probes
+        if probe["status"] in {"missing", "unavailable", "manual_required"}
+        and probe["severity"] == "blocker"
+    ]
+    item["readiness"] = {
+        "ready": bool(item.get("install_candidate")) and len(blockers) == 0,
+        "probe_blocker_count": len(blockers),
+        "probes": probes,
+    }
 
 
 def _policy_requires_confirmation(policy: dict[str, Any]) -> bool:

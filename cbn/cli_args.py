@@ -254,6 +254,11 @@ def build_parser() -> argparse.ArgumentParser:
     plugin_candidates.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
     plugin_candidates.add_argument("--query", help="Optional CLI-Hub search query; omit to inspect list output.")
     plugin_candidates.add_argument("--limit", type=int, default=50, help="Maximum market records to rank.")
+    plugin_candidates.add_argument(
+        "--with-probes",
+        action="store_true",
+        help="Attach read-only local dependency probe summaries to each candidate.",
+    )
 
     plugin_sync = plugin_subcommands.add_parser(
         "sync-market",

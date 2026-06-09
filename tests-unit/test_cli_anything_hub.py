@@ -492,6 +492,37 @@ class CliAnythingHubTests(unittest.TestCase):
             self.assertEqual(blocked["recommended_next_action"], "resolve_blockers")
             self.assertEqual(blocked["lifecycle"]["state"], "blocked")
             self.assertTrue(blocked["lifecycle"]["requires_override"])
+            self.assertNotIn("readiness", first)
+
+    def test_candidate_harnesses_can_attach_probe_readiness(self):
+        class FakeHub(CliAnythingHub):
+            def search_market(self, query: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "search", query, "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[SAMPLE_MARKET_RECORD, SAMPLE_MERMAID_RECORD],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result = FakeHub(root=Path(tmp)).candidate_harnesses(
+                query="image",
+                limit=10,
+                with_probes=True,
+            )
+            self.assertTrue(result["ok"])
+            self.assertTrue(result["with_probes"])
+            self.assertEqual(result["probe_ready_count"], 1)
+            self.assertEqual(result["probe_blocked_count"], 1)
+            first = result["candidates"][0]
+            self.assertEqual(first["harness_name"], "mermaid")
+            self.assertTrue(first["readiness"]["ready"])
+            blocked = result["candidates"][1]
+            self.assertEqual(blocked["harness_name"], "gimp")
+            self.assertFalse(blocked["readiness"]["ready"])
+            self.assertGreaterEqual(blocked["readiness"]["probe_blocker_count"], 1)
+            self.assertTrue(any(item["id"] == "command:gimp" for item in blocked["readiness"]["probes"]))
 
     def test_candidate_harnesses_reports_market_failures_without_crashing(self):
         hub = CliAnythingHub(entrypoint="cbn-cli-hub-that-does-not-exist")

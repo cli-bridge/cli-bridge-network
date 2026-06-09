@@ -440,6 +440,7 @@ def main(argv: list[str] | None = None) -> int:
             result = CliAnythingHub().candidate_harnesses(
                 query=args.query,
                 limit=args.limit,
+                with_probes=args.with_probes,
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0 if result["ok"] else 6
