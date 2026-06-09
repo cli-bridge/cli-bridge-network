@@ -12,6 +12,7 @@ from cbn_plugins.cli_anything import (
     CliAnythingHub,
     CliHubCommandResult,
     _adapter_target_package_report,
+    _module_report,
     infer_market_policy,
     sanitize_harness_name,
 )
@@ -1777,6 +1778,63 @@ class CliAnythingHubTests(unittest.TestCase):
             self.assertIn("summary", result)
             self.assertIn("targets", result)
 
+    def test_adapter_target_smoke_defaults_to_plan_until_confirmed(self):
+        class FakeHub(CliAnythingHub):
+            def adapter_targets(self, harness_name, from_market=True, package=None, limit=20):
+                return {
+                    "ok": True,
+                    "plugin_id": "cli-anything",
+                    "kind": "CliAnythingAdapterTargets",
+                    "harness_name": harness_name,
+                    "from_market": from_market,
+                    "targets": [{"module": "json.tool", "score": 100, "kind": "python-module-main"}],
+                    "summary": {"target_count": 1},
+                }
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            result = FakeHub(root=Path(tempdir)).adapter_target_smoke("json-tool", module="json.tool")
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["kind"], "CliAnythingAdapterTargetSmoke")
+            self.assertEqual(result["execution"]["status"], "not_run")
+            self.assertEqual(result["summary"]["recommended_next_action"], "run_adapter_smoke_with_confirmation")
+
+    def test_module_report_captures_import_probe_errors(self):
+        with patch("cbn_plugins.cli_anything.importlib_util.find_spec", side_effect=ModuleNotFoundError("missing-extra")):
+            report = _module_report("package.with.optional.extra")
+        self.assertFalse(report["importable"])
+        self.assertFalse(report["module_main"])
+        self.assertIn("missing-extra", report["error"])
+
+    def test_adapter_target_smoke_runs_when_confirmed(self):
+        class FakeHub(CliAnythingHub):
+            def adapter_targets(self, harness_name, from_market=True, package=None, limit=20):
+                return {
+                    "ok": True,
+                    "plugin_id": "cli-anything",
+                    "kind": "CliAnythingAdapterTargets",
+                    "harness_name": harness_name,
+                    "from_market": from_market,
+                    "targets": [{"module": "json.tool", "score": 100, "kind": "python-module-main"}],
+                    "summary": {"target_count": 1},
+                }
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            result = FakeHub(root=Path(tempdir)).adapter_target_smoke(
+                "json-tool",
+                module="json.tool",
+                smoke_args=("--help",),
+                run=True,
+                confirmed=True,
+            )
+            self.assertEqual(result["execution"]["status"], "completed")
+            self.assertEqual(result["execution"]["exit_code"], 0)
+            smoke_cwd = Path(result["execution"]["cwd"])
+            self.assertEqual(smoke_cwd.parent.name, "adapter-smoke")
+            self.assertTrue(smoke_cwd.name.startswith("run-"))
+            self.assertFalse(smoke_cwd.exists())
+            self.assertTrue(result["summary"]["smoke_ok"])
+            self.assertEqual(result["summary"]["recommended_next_action"], "repair_entrypoint_with_smoked_module")
+
     def test_candidate_harnesses_limits_after_ranking_full_market(self):
         class FakeHub(CliAnythingHub):
             def list_market(self) -> CliHubCommandResult:
@@ -2525,6 +2583,31 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(payload["kind"], "CliAnythingAdapterTargets")
         self.assertIn("packages", payload)
         self.assertIn("targets", payload)
+        self.assertIn("summary", payload)
+
+    def test_cli_adapter_smoke_outputs_plan_report(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "plugin",
+                "adapter-smoke",
+                "cli-anything",
+                "py4csr",
+                "--module",
+                "py4csr.plotting.sas_compatible_rtf_generator",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertIn(proc.returncode, {0, 6})
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["plugin_id"], "cli-anything")
+        self.assertEqual(payload["kind"], "CliAnythingAdapterTargetSmoke")
+        self.assertEqual(payload["execution"]["status"], "not_run")
         self.assertIn("summary", payload)
 
     def test_cli_sync_market_handles_missing_cli_hub_without_crashing(self):

@@ -100,6 +100,7 @@ ROUTE_SUMMARY = [
     {"method": "POST", "path": "/plugins/cli-anything/repair-plan"},
     {"method": "POST", "path": "/plugins/cli-anything/repair-entrypoint"},
     {"method": "POST", "path": "/plugins/cli-anything/adapter-targets"},
+    {"method": "POST", "path": "/plugins/cli-anything/adapter-smoke"},
     {"method": "POST", "path": "/plugins/cli-anything/sync-market"},
     {"method": "POST", "path": "/plugins/cli-anything/harness"},
 ]
@@ -681,6 +682,22 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 from_market=bool(payload.get("from_market", True)),
                 package=payload.get("package"),
                 limit=int(payload.get("limit", 20)),
+            )
+            self._send(200 if result["ok"] else 502, result)
+            return
+        if self.path == "/plugins/cli-anything/adapter-smoke":
+            smoke_args_raw = payload.get("smoke_args", ["--help"])
+            if not isinstance(smoke_args_raw, list) or not all(isinstance(item, str) for item in smoke_args_raw):
+                self._send(400, {"error": "smoke_args must be a list of strings"})
+                return
+            result = CliAnythingHub().adapter_target_smoke(
+                payload["harness_name"],
+                module=payload["module"],
+                from_market=bool(payload.get("from_market", True)),
+                smoke_args=tuple(smoke_args_raw),
+                timeout_seconds=int(payload.get("timeout_seconds", 10)),
+                run=bool(payload.get("run", False)),
+                confirmed=bool(payload.get("confirmed", False)),
             )
             self._send(200 if result["ok"] else 502, result)
             return

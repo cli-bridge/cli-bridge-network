@@ -638,6 +638,20 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0 if result["ok"] else 6
+        if args.plugin_command == "adapter-smoke":
+            if args.plugin_id != "cli-anything":
+                raise KeyError(f"adapter-smoke is not implemented for plugin: {args.plugin_id}")
+            result = CliAnythingHub().adapter_target_smoke(
+                args.harness_name,
+                module=args.module,
+                from_market=args.from_market,
+                smoke_args=tuple(args.smoke_arg) if args.smoke_arg else ("--help",),
+                timeout_seconds=args.timeout,
+                run=args.run,
+                confirmed=args.yes,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["ok"] else 6
         if args.plugin_command == "sync-market":
             if args.plugin_id != "cli-anything":
                 raise KeyError(f"sync-market is not implemented for plugin: {args.plugin_id}")

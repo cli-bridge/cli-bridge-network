@@ -213,6 +213,12 @@
             data-api-body='{"harness_name":"py4csr","from_market":true,"limit":10}'
           >Adapter Targets</button>
           <button
+            data-command="python -m cbn plugin adapter-smoke cli-anything py4csr --from-market --module py4csr.plotting.sas_compatible_rtf_generator"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/adapter-smoke"
+            data-api-body='{"harness_name":"py4csr","from_market":true,"module":"py4csr.plotting.sas_compatible_rtf_generator","smoke_args":["--help"],"timeout_seconds":10}'
+          >Adapter Smoke Plan</button>
+          <button
             data-command="python -m cbn plugin live-verification cli-anything"
             data-api-method="POST"
             data-api-path="/plugins/cli-anything/live-verification"

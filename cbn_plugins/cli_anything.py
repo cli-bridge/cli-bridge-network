@@ -18,6 +18,7 @@ import socket
 import subprocess
 import sys
 import sysconfig
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -1469,6 +1470,70 @@ class CliAnythingHub:
             ],
         }
 
+    def adapter_target_smoke(
+        self,
+        harness_name: str,
+        module: str,
+        from_market: bool = True,
+        smoke_args: tuple[str, ...] = ("--help",),
+        timeout_seconds: int = 10,
+        run: bool = False,
+        confirmed: bool = False,
+    ) -> dict[str, Any]:
+        targets_report = self.adapter_targets(harness_name, from_market=from_market, limit=50)
+        selected = next(
+            (target for target in targets_report.get("targets", []) if target.get("module") == module),
+            None,
+        )
+        module_report = _module_report(module)
+        argv = (sys.executable, "-m", module, *smoke_args)
+        execution = _adapter_target_smoke_execution(
+            argv=argv,
+            cwd=self.paths.root,
+            timeout_seconds=timeout_seconds,
+            run=run,
+            confirmed=confirmed,
+        )
+        return {
+            "ok": True,
+            "plugin_id": PLUGIN_ID,
+            "kind": "CliAnythingAdapterTargetSmoke",
+            "harness_name": harness_name,
+            "from_market": from_market,
+            "module": module,
+            "smoke_args": list(smoke_args),
+            "timeout_seconds": timeout_seconds,
+            "run": run,
+            "confirmed": confirmed,
+            "command": list(argv),
+            "selected_target": selected,
+            "module_report": module_report,
+            "targets_summary": targets_report["summary"],
+            "execution": execution,
+            "summary": {
+                "candidate_known": selected is not None,
+                "module_importable": bool(module_report.get("importable")),
+                "executed": execution["status"] in {"completed", "failed", "timeout", "spawn_failed"},
+                "smoke_ok": execution.get("exit_code") == 0,
+                "recommended_next_action": _adapter_target_smoke_next_action(selected, module_report, execution),
+            },
+            "next_commands": [
+                f"python -m cbn plugin adapter-targets cli-anything {harness_name} --from-market --limit 10",
+                (
+                    f"python -m cbn plugin adapter-smoke cli-anything {harness_name} "
+                    f"--from-market --module {module}"
+                ),
+                (
+                    f"python -m cbn plugin adapter-smoke cli-anything {harness_name} "
+                    f"--from-market --module {module} --run --yes"
+                ),
+                (
+                    f"python -m cbn plugin repair-entrypoint cli-anything {harness_name} "
+                    f"--from-market --module {module} --write --yes"
+                ),
+            ],
+        }
+
     def live_verification(
         self,
         harnesses: tuple[str, ...] = ("mermaid", "macrocli"),
@@ -2723,13 +2788,23 @@ def _distribution_report(package: str) -> dict[str, Any]:
 
 
 def _module_report(package: str) -> dict[str, Any]:
-    spec = importlib_util.find_spec(package)
+    try:
+        spec = importlib_util.find_spec(package)
+    except Exception as exc:
+        return {
+            "package": package,
+            "importable": False,
+            "origin": None,
+            "module_main": False,
+            "error": str(exc),
+        }
     if spec is None:
         return {
             "package": package,
             "importable": False,
             "origin": None,
             "module_main": False,
+            "error": None,
         }
     module_main = False
     if spec.submodule_search_locations:
@@ -2742,6 +2817,7 @@ def _module_report(package: str) -> dict[str, Any]:
         "importable": True,
         "origin": spec.origin,
         "module_main": module_main,
+        "error": None,
     }
 
 
@@ -3054,6 +3130,114 @@ def _is_name_main_compare(node: ast.AST) -> bool:
         and isinstance(right, ast.Constant)
         and right.value == "__main__"
     )
+
+
+def _adapter_target_smoke_execution(
+    argv: tuple[str, ...],
+    cwd: Path,
+    timeout_seconds: int,
+    run: bool,
+    confirmed: bool,
+) -> dict[str, Any]:
+    bounded_timeout = max(1, min(int(timeout_seconds), 120))
+    if not run:
+        return {
+            "status": "not_run",
+            "requires_confirmation": True,
+            "confirmed": confirmed,
+            "exit_code": None,
+            "reason": "adapter target smoke is a plan until --run is provided",
+            "cwd": str(cwd),
+            "stdout_summary": "",
+            "stderr_summary": "",
+        }
+    if not confirmed:
+        return {
+            "status": "requires_confirmation",
+            "requires_confirmation": True,
+            "confirmed": False,
+            "exit_code": None,
+            "reason": "adapter target smoke execution requires --yes or confirmed=true",
+            "cwd": str(cwd),
+            "stdout_summary": "",
+            "stderr_summary": "",
+        }
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["CBN_ADAPTER_SMOKE"] = "1"
+    smoke_root = cwd / "runtime" / "adapter-smoke"
+    smoke_root.mkdir(parents=True, exist_ok=True)
+    try:
+        with tempfile.TemporaryDirectory(prefix="run-", dir=smoke_root) as smoke_cwd:
+            proc = subprocess.run(
+                list(argv),
+                cwd=smoke_cwd,
+                env=env,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=bounded_timeout,
+            )
+            smoke_cwd_value = smoke_cwd
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "status": "timeout",
+            "requires_confirmation": True,
+            "confirmed": True,
+            "exit_code": 124,
+            "reason": f"command timed out after {bounded_timeout} seconds",
+            "cwd": str(smoke_root),
+            "stdout_summary": _clip_text(_timeout_text(exc.stdout), 2000),
+            "stderr_summary": _clip_text(_timeout_text(exc.stderr), 2000),
+        }
+    except OSError as exc:
+        return {
+            "status": "spawn_failed",
+            "requires_confirmation": True,
+            "confirmed": True,
+            "exit_code": 127,
+            "reason": str(exc),
+            "cwd": str(smoke_root),
+            "stdout_summary": "",
+            "stderr_summary": "",
+        }
+    return {
+        "status": "completed" if proc.returncode == 0 else "failed",
+        "requires_confirmation": True,
+        "confirmed": True,
+        "exit_code": proc.returncode,
+        "reason": "completed" if proc.returncode == 0 else "nonzero_exit",
+        "cwd": smoke_cwd_value,
+        "stdout_summary": _clip_text(proc.stdout, 2000),
+        "stderr_summary": _clip_text(proc.stderr, 2000),
+    }
+
+
+def _adapter_target_smoke_next_action(
+    selected: dict[str, Any] | None,
+    module_report: dict[str, Any],
+    execution: dict[str, Any],
+) -> str:
+    if not module_report.get("importable"):
+        return "choose_importable_module"
+    if selected is None:
+        return "inspect_module_before_repair"
+    if execution["status"] == "not_run":
+        return "run_adapter_smoke_with_confirmation"
+    if execution["status"] == "requires_confirmation":
+        return "confirm_adapter_smoke_execution"
+    if execution.get("exit_code") == 0:
+        return "repair_entrypoint_with_smoked_module"
+    return "inspect_smoke_failure_or_choose_another_target"
+
+
+def _clip_text(value: str | None, limit: int) -> str:
+    text = value or ""
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "\n...<truncated>"
 
 
 def _safe_plugin_report(builder: Any) -> dict[str, Any]:

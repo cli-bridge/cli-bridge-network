@@ -583,6 +583,30 @@ def build_parser() -> argparse.ArgumentParser:
     plugin_adapter_targets.add_argument("--package", help="Inspect one explicit Python distribution name.")
     plugin_adapter_targets.add_argument("--limit", type=int, default=20, help="Maximum adapter targets to return.")
 
+    plugin_adapter_smoke = plugin_subcommands.add_parser(
+        "adapter-smoke",
+        help="Plan or run a confirmed smoke test for a CLI-Anything adapter target module.",
+    )
+    plugin_adapter_smoke.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
+    plugin_adapter_smoke.add_argument("harness_name", help="Harness name from the plugin market.")
+    plugin_adapter_smoke.add_argument("--from-market", action="store_true", default=True)
+    plugin_adapter_smoke.add_argument(
+        "--offline",
+        action="store_false",
+        dest="from_market",
+        help="Smoke a module without requiring market metadata.",
+    )
+    plugin_adapter_smoke.add_argument("--module", required=True, help="Python module candidate to smoke.")
+    plugin_adapter_smoke.add_argument(
+        "--smoke-arg",
+        action="append",
+        default=[],
+        help="Argument passed to python -m <module>; defaults to --help when omitted.",
+    )
+    plugin_adapter_smoke.add_argument("--timeout", type=int, default=10, help="Smoke command timeout in seconds.")
+    plugin_adapter_smoke.add_argument("--run", action="store_true", help="Execute the smoke command.")
+    plugin_adapter_smoke.add_argument("--yes", action="store_true", help="Confirm smoke execution.")
+
     plugin_sync = plugin_subcommands.add_parser(
         "sync-market",
         help="Preview or write CBN manifests for CLI-Anything market records.",

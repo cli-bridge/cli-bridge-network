@@ -513,6 +513,60 @@ class DaemonApiTests(unittest.TestCase):
                     self.assertEqual(payload["limit"], 10)
                     self.assertEqual(payload["targets"][0]["module"], "samplecli.runner")
 
+    def test_cli_anything_adapter_smoke_route_returns_execution_report(self):
+        class FakeHub:
+            def adapter_target_smoke(
+                self,
+                harness_name,
+                module,
+                from_market=True,
+                smoke_args=("--help",),
+                timeout_seconds=10,
+                run=False,
+                confirmed=False,
+            ):
+                return {
+                    "ok": True,
+                    "plugin_id": "cli-anything",
+                    "kind": "CliAnythingAdapterTargetSmoke",
+                    "harness_name": harness_name,
+                    "module": module,
+                    "from_market": from_market,
+                    "smoke_args": list(smoke_args),
+                    "timeout_seconds": timeout_seconds,
+                    "run": run,
+                    "confirmed": confirmed,
+                    "execution": {"status": "requires_confirmation"},
+                }
+
+        with patch("api_server.server.CliAnythingHub", FakeHub):
+            with daemon_url() as base_url:
+                request = urllib.request.Request(
+                    f"{base_url}/plugins/cli-anything/adapter-smoke",
+                    data=json.dumps(
+                        {
+                            "harness_name": "py4csr",
+                            "from_market": True,
+                            "module": "py4csr.plotting.sas_compatible_rtf_generator",
+                            "smoke_args": ["--help"],
+                            "timeout_seconds": 10,
+                            "run": True,
+                            "confirmed": False,
+                        }
+                    ).encode("utf-8"),
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(payload["harness_name"], "py4csr")
+                    self.assertEqual(payload["module"], "py4csr.plotting.sas_compatible_rtf_generator")
+                    self.assertEqual(payload["smoke_args"], ["--help"])
+                    self.assertTrue(payload["run"])
+                    self.assertFalse(payload["confirmed"])
+                    self.assertEqual(payload["execution"]["status"], "requires_confirmation")
+
     def test_runtime_transport_status_and_plan_routes(self):
         with daemon_url() as base_url:
             with urllib.request.urlopen(f"{base_url}/runtime/transports?kind=pty", timeout=5) as response:
