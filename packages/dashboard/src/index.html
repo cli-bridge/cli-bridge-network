@@ -487,6 +487,18 @@
             data-api-path="/protocols/readiness?workflow_path=workflows/cli-anything-macrocli-mermaid-routing.example.json"
           >Workflow Readiness</button>
           <button
+            data-command="python -m cbn protocol accept-workflow workflows/cli-anything-macrocli-mermaid-routing.example.json"
+            data-api-method="POST"
+            data-api-path="/protocols/accept-workflow"
+            data-api-body='{"workflow_path":"workflows/cli-anything-macrocli-mermaid-routing.example.json"}'
+          >Accept CLI Route</button>
+          <button
+            data-command="python -m cbn protocol accept-workflow workflows/cli-anything-macrocli-mermaid-routing.example.json --run"
+            data-api-method="POST"
+            data-api-path="/protocols/accept-workflow"
+            data-api-body='{"workflow_path":"workflows/cli-anything-macrocli-mermaid-routing.example.json","run":true}'
+          >Run CLI Route Acceptance</button>
+          <button
             data-command="python -m cbn protocol smoke-suite --capability-id git.version --workflow-path workflows/example.json --workflow-dry-run"
             data-api-method="GET"
             data-api-path="/protocols/smoke-suite?capability_id=git.version&amp;workflow_path=workflows/example.json&amp;workflow_dry_run=true"

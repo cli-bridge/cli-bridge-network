@@ -16,6 +16,7 @@ from cbn_parsers.fixtures import run_parser_fixtures
 from cbn_parsers.registry import ParserRegistry
 from cbn_plugins.cli_anything import CliAnythingHub
 from cbn_plugins.manager import PluginManager
+from cbn_protocol.acceptance import cli_to_cli_acceptance_report
 from cbn_protocol.bridge_contract import workflow_bridge_contract_report
 from cbn_protocol.a2a_http import agent_card, smoke_a2a_http
 from cbn_protocol.a2a_http import smoke_a2a_workflow_http
@@ -211,6 +212,18 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(json.dumps(payload, ensure_ascii=False, indent=2))
             return 0 if payload["ok"] else 9
+        if args.protocol_command == "accept-workflow":
+            payload = cli_to_cli_acceptance_report(
+                runtime.registry,
+                runtime.workflow_runner,
+                args.workflow_path,
+                run=args.run,
+                dry_run=args.dry_run,
+                confirmed=args.yes,
+                include_payloads=args.include_payloads,
+            )
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0 if payload["ok"] else 10
 
     if args.command == "mcp":
         if args.mcp_command == "serve":

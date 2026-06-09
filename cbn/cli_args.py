@@ -133,6 +133,23 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Include raw per-protocol smoke payloads in the JSON report.",
     )
+    protocol_accept_workflow = protocol_subcommands.add_parser(
+        "accept-workflow",
+        help="Accept one CLI-to-CLI workflow BridgeMessage routing contract.",
+    )
+    protocol_accept_workflow.add_argument("workflow_path", help="Workflow JSON path to accept.")
+    protocol_accept_workflow.add_argument(
+        "--run",
+        action="store_true",
+        help="Execute the workflow and attach runtime route evidence.",
+    )
+    protocol_accept_workflow.add_argument("--dry-run", action="store_true", help="Dry-run workflow execution.")
+    protocol_accept_workflow.add_argument("--yes", action="store_true", help="Confirm workflow tasks when needed.")
+    protocol_accept_workflow.add_argument(
+        "--include-payloads",
+        action="store_true",
+        help="Include task messages and raw run result payloads.",
+    )
 
     mcp_parser = subcommands.add_parser("mcp", help="Run or test the MCP stdio facade.")
     mcp_subcommands = mcp_parser.add_subparsers(dest="mcp_command")

@@ -7,6 +7,8 @@ from pathlib import Path
 
 from cbn_parsers.registry import ParserRegistry
 from cbn_core.manifest import CapabilityManifest, ManifestRegistry
+from cbn_runtime.context import build_runtime
+from cbn_protocol.acceptance import cli_to_cli_acceptance_report
 from cbn_protocol.bridge_contract import workflow_bridge_contract_report
 from cbn_protocol.envelope import (
     BridgeMessage,
@@ -174,6 +176,24 @@ class ParserProtocolTests(unittest.TestCase):
         self.assertEqual(report["summary"]["route_ready_count"], 2)
         self.assertEqual(report["summary"]["blocked_route_count"], 0)
         self.assertEqual(report["summary"]["argv_mapping_ready_count"], 2)
+
+    def test_cli_to_cli_acceptance_static_and_runtime_evidence(self):
+        runtime = build_runtime()
+        report = cli_to_cli_acceptance_report(
+            runtime.registry,
+            runtime.workflow_runner,
+            "workflows/message-routing.example.json",
+            run=True,
+            dry_run=True,
+        )
+        self.assertTrue(report["ok"])
+        self.assertEqual(report["kind"], "CliToCliWorkflowAcceptance")
+        self.assertTrue(report["gates"]["workflow_contract_ready"])
+        self.assertTrue(report["gates"]["runtime_execution_completed"])
+        self.assertEqual(report["summary"]["runtime_route_count"], 1)
+        self.assertEqual(report["summary"]["runtime_route_failed_count"], 0)
+        self.assertEqual(report["runtime_routes"][0]["selector"], "payload.data.stdout")
+        self.assertTrue(report["runtime_routes"][0]["matched"])
 
     def test_bridge_contract_blocks_unverified_payload_source(self):
         registry = ManifestRegistry()
@@ -358,6 +378,30 @@ class ParserProtocolTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["summary"]["artifact_route_count"], 1)
         self.assertEqual(payload["workflows"][0]["routes"][0]["selector"], "artifacts[0].artifact_id")
+
+    def test_cli_protocol_accept_workflow_outputs_acceptance_report(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "protocol",
+                "accept-workflow",
+                "workflows/message-routing.example.json",
+                "--run",
+                "--dry-run",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["kind"], "CliToCliWorkflowAcceptance")
+        self.assertEqual(payload["summary"]["runtime_route_ready_count"], 1)
+        self.assertTrue(payload["runtime_routes"][0]["matched"])
 
     def test_dry_run_uses_raw_parser_even_for_structured_capability(self):
         call = subprocess.run(

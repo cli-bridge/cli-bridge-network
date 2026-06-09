@@ -18,6 +18,7 @@ from cbn_core.manifest import validate_manifest_path
 from cbn_execution.graph import WorkflowGraph
 from cbn_parsers.fixtures import run_parser_fixtures
 from cbn_parsers.registry import ParserRegistry
+from cbn_protocol.acceptance import cli_to_cli_acceptance_report
 from cbn_protocol.a2a_http import agent_card, handle_a2a_jsonrpc_request
 from cbn_protocol.bridge_contract import workflow_bridge_contract_report
 from cbn_protocol.envelope import bridge_args_from_selectors, select_bridge_value, validate_bridge_message
@@ -63,6 +64,7 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/protocols/matrix"},
     {"method": "GET", "path": "/protocols/readiness"},
     {"method": "GET", "path": "/protocols/smoke-suite"},
+    {"method": "POST", "path": "/protocols/accept-workflow"},
     {"method": "GET", "path": "/approvals"},
     {"method": "GET", "path": "/workflows"},
     {"method": "GET", "path": "/runtime/transports"},
@@ -376,6 +378,18 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 self._send(200 if result["valid"] else 422, result)
             except (KeyError, IndexError, TypeError, ValueError) as exc:
                 self._send(400, {"error": str(exc), "selectors": payload.get("selectors")})
+            return
+        if self.path == "/protocols/accept-workflow":
+            result = cli_to_cli_acceptance_report(
+                runtime.registry,
+                runtime.workflow_runner,
+                payload["workflow_path"],
+                run=bool(payload.get("run", False)),
+                dry_run=bool(payload.get("dry_run", False)),
+                confirmed=bool(payload.get("confirmed", False)),
+                include_payloads=bool(payload.get("include_payloads", False)),
+            )
+            self._send(200 if result["ok"] else 422, result)
             return
         if self.path == "/approvals/decide":
             approval = runtime.approval_store.decide(

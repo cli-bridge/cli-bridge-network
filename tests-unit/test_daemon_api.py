@@ -345,6 +345,28 @@ class DaemonApiTests(unittest.TestCase):
                 self.assertEqual(payload["plugin_id"], "runtime.pty")
                 self.assertTrue(payload["requires_confirmation"])
 
+    def test_protocol_accept_workflow_route_returns_runtime_evidence(self):
+        with daemon_url() as base_url:
+            request = urllib.request.Request(
+                f"{base_url}/protocols/accept-workflow",
+                data=json.dumps(
+                    {
+                        "workflow_path": "workflows/message-routing.example.json",
+                        "run": True,
+                        "dry_run": True,
+                    }
+                ).encode("utf-8"),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(request, timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(response.status, 200)
+                self.assertEqual(payload["kind"], "CliToCliWorkflowAcceptance")
+                self.assertTrue(payload["ok"])
+                self.assertEqual(payload["summary"]["runtime_route_count"], 1)
+                self.assertTrue(payload["runtime_routes"][0]["matched"])
+
     def test_runtime_transport_install_requires_confirmation(self):
         with daemon_url() as base_url:
             request = urllib.request.Request(

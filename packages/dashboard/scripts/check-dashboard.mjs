@@ -299,6 +299,22 @@ if (!html.includes('data-api-path="/protocols/readiness"')) {
   throw new Error("Dashboard does not wire protocol readiness to the daemon API.");
 }
 
+if (!html.includes("python -m cbn protocol accept-workflow workflows/cli-anything-macrocli-mermaid-routing.example.json")) {
+  throw new Error("Dashboard does not expose CLI-to-CLI workflow acceptance.");
+}
+
+if (!html.includes("python -m cbn protocol accept-workflow workflows/cli-anything-macrocli-mermaid-routing.example.json --run")) {
+  throw new Error("Dashboard does not expose runtime CLI-to-CLI workflow acceptance.");
+}
+
+if (!html.includes('data-api-path="/protocols/accept-workflow"')) {
+  throw new Error("Dashboard does not wire CLI-to-CLI workflow acceptance to the daemon API.");
+}
+
+if (!html.includes('data-api-body=\'{"workflow_path":"workflows/cli-anything-macrocli-mermaid-routing.example.json","run":true}\'')) {
+  throw new Error("Dashboard does not wire runtime CLI-to-CLI workflow acceptance payload.");
+}
+
 if (!html.includes("python -m cbn protocol smoke-suite --capability-id git.version --workflow-path workflows/example.json --workflow-dry-run")) {
   throw new Error("Dashboard does not expose the protocol smoke suite command.");
 }
