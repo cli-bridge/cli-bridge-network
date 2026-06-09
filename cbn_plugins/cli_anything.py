@@ -679,6 +679,7 @@ class CliAnythingHub:
         capability_id = evaluation["capability_id"]
         registry = ManifestRegistry()
         registry.load_dir(self.paths.manifests)
+        registry.load_dir(self.paths.local_manifests, replace=True)
         imported_manifest = registry.get(capability_id)
         effective_manifest = _effective_manifest_dict(imported_manifest, manifest)
         protocol_registry = registry if imported_manifest else ManifestRegistry()
@@ -700,8 +701,14 @@ class CliAnythingHub:
         }
         registry_status = {
             "manifest_imported": imported_manifest is not None,
-            "manifest_path": adaptation["manifest_path"],
-            "protocol_check_source": "current_registry" if imported_manifest else "generated_preview",
+            "manifest_path": str(imported_manifest.source_path) if imported_manifest else adaptation["manifest_path"],
+            "protocol_check_source": _registry_source_for_manifest(
+                imported_manifest,
+                local_manifest_dir=self.paths.local_manifests,
+            )
+            if imported_manifest
+            else "generated_preview",
+            "entrypoint_repair_active": _manifest_has_entrypoint_repair(effective_manifest),
         }
         parser_contract = _parser_contract_report(effective_manifest)
         verification_blockers = _verification_blockers(evaluation, readiness, registry_status)
@@ -1380,6 +1387,7 @@ class CliAnythingHub:
             )
         smoke_gate = _repair_entrypoint_smoke_gate(require_smoke, smoke_report)
         manifest = _entrypoint_repair_manifest(plan, strategy, wrapper_path)
+        repair_manifest_path = self.paths.local_manifests / f"{plan['capability_id']}.json"
         if smoke_report and smoke_report.get("summary", {}).get("smoke_ok"):
             annotations = manifest.setdefault("metadata", {}).setdefault("annotations", {})
             annotations["cbn.repair.smoke.module"] = str(smoke_report["module"])
@@ -1387,7 +1395,7 @@ class CliAnythingHub:
             annotations["cbn.repair.smoke.exit_code"] = str(smoke_report["execution"].get("exit_code"))
         validation = validate_manifest_dict(
             manifest,
-            source_path=Path(plan["evaluation"]["adaptation"]["manifest_path"]),
+            source_path=repair_manifest_path,
             known_parser_refs=_known_parser_refs(),
         )
         if write and not confirmed:
@@ -1404,11 +1412,10 @@ class CliAnythingHub:
             execution["blockers"] = [f"manifest validation error: {item}" for item in validation["errors"]]
         elif write and confirmed:
             _write_python_module_wrapper(wrapper_path, strategy["module"])
-            manifest_path = Path(plan["evaluation"]["adaptation"]["manifest_path"])
-            manifest_path.parent.mkdir(parents=True, exist_ok=True)
-            manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            repair_manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            repair_manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             execution["status"] = "completed"
-            execution["written"] = [str(wrapper_path), str(manifest_path)]
+            execution["written"] = [str(wrapper_path), str(repair_manifest_path)]
         return {
             "ok": True,
             "plugin_id": PLUGIN_ID,
@@ -1426,6 +1433,7 @@ class CliAnythingHub:
             "smoke_gate": smoke_gate,
             "smoke_report": smoke_report,
             "wrapper_path": str(wrapper_path),
+            "manifest_path": str(repair_manifest_path),
             "manifest": manifest,
             "repair_provenance": _entrypoint_repair_manifest_provenance(manifest),
             "validation": validation,
@@ -1436,7 +1444,7 @@ class CliAnythingHub:
                 f"python -m cbn plugin adapter-smoke cli-anything {harness_name} --from-market --module <module> --run --yes",
                 f"python -m cbn plugin repair-entrypoint cli-anything {harness_name} --from-market --module <module> --write --yes",
                 f"python -m cbn plugin repair-entrypoint cli-anything {harness_name} --from-market --module <module> --require-smoke --write --yes",
-                "python -m cbn registry validate manifests",
+                "python -m cbn registry validate runtime/manifests",
                 f"python -m cbn call {plan.get('capability_id')} --dry-run",
             ],
         }
@@ -2671,6 +2679,13 @@ def _verification_blockers(
     registry_status: dict[str, Any],
 ) -> list[str]:
     blockers = list(evaluation.get("blockers", []))
+    entrypoint_repair_active = bool(registry_status.get("entrypoint_repair_active"))
+    if entrypoint_repair_active:
+        blockers = [
+            blocker
+            for blocker in blockers
+            if blocker != "installed harness entrypoint is missing from PATH"
+        ]
     if readiness.get("probe_blocker_count", 0) > 0:
         blockers.append("dependency probes have blocker-level failures")
     if not registry_status.get("manifest_imported"):
@@ -2680,9 +2695,30 @@ def _verification_blockers(
         blockers.append("harness is not installed")
     if not gates.get("runtime_transport_ready", True):
         blockers.append("runtime transport is not ready")
-    if not gates.get("launch_ready"):
+    if not gates.get("launch_ready") and not entrypoint_repair_active:
         blockers.append("harness launch is not ready")
     return sorted(set(blockers))
+
+
+def _manifest_has_entrypoint_repair(manifest: dict[str, Any]) -> bool:
+    annotations = manifest.get("metadata", {}).get("annotations", {})
+    if not isinstance(annotations, dict):
+        return False
+    return annotations.get("cbn.repair.kind") == "cli-anything-entrypoint-wrapper"
+
+
+def _registry_source_for_manifest(
+    manifest: CapabilityManifest | None,
+    *,
+    local_manifest_dir: Path,
+) -> str:
+    if manifest is None or manifest.source_path is None:
+        return "generated_preview"
+    try:
+        manifest.source_path.resolve().relative_to(local_manifest_dir.resolve())
+        return "runtime_local_overlay"
+    except ValueError:
+        return "current_registry"
 
 
 def _verification_stages(

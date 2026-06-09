@@ -11,6 +11,7 @@ class ProjectPaths:
     root: Path
     config: Path
     manifests: Path
+    local_manifests: Path
     workflows: Path
     runtime: Path
     logs: Path
@@ -24,6 +25,7 @@ class ProjectPaths:
             "root": str(self.root),
             "config": str(self.config),
             "manifests": str(self.manifests),
+            "local_manifests": str(self.local_manifests),
             "workflows": str(self.workflows),
             "runtime": str(self.runtime),
             "logs": str(self.logs),
@@ -40,6 +42,7 @@ def resolve_project_paths(root: Path | None = None) -> ProjectPaths:
         root=base,
         config=base / "cbn.yaml",
         manifests=base / "manifests",
+        local_manifests=base / "runtime" / "manifests",
         workflows=base / "workflows",
         runtime=base / "runtime",
         logs=base / "runtime" / "logs",

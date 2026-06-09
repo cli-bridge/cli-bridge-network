@@ -1776,9 +1776,11 @@ class CliAnythingHubTests(unittest.TestCase):
             result = hub.repair_entrypoint("piptool", module="pip", write=True, confirmed=True)
             self.assertEqual(result["execution"]["status"], "completed")
             wrapper_path = Path(result["wrapper_path"])
-            manifest_path = Path(tempdir) / "manifests" / "cli-anything.piptool.launch.json"
+            manifest_path = Path(tempdir) / "runtime" / "manifests" / "cli-anything.piptool.launch.json"
             self.assertTrue(wrapper_path.exists())
             self.assertTrue(manifest_path.exists())
+            self.assertFalse((Path(tempdir) / "manifests" / "cli-anything.piptool.launch.json").exists())
+            self.assertEqual(Path(result["manifest_path"]).resolve(), manifest_path.resolve())
             wrapper_text = wrapper_path.read_text(encoding="utf-8")
             self.assertIn("wrapper_dir = str(Path(__file__).resolve().parent)", wrapper_text)
             self.assertIn("sys.path[:] = [entry for entry in sys.path", wrapper_text)
@@ -2030,7 +2032,7 @@ class CliAnythingHubTests(unittest.TestCase):
             )
             self.assertEqual(result["smoke_gate"]["status"], "passed")
             self.assertEqual(result["execution"]["status"], "completed")
-            manifest_path = Path(tempdir) / "manifests" / "cli-anything.piptool.launch.json"
+            manifest_path = Path(tempdir) / "runtime" / "manifests" / "cli-anything.piptool.launch.json"
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             annotations = manifest["metadata"]["annotations"]
             self.assertEqual(annotations["cbn.repair.smoke.module"], "pip")

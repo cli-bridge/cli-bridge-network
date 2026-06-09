@@ -134,16 +134,16 @@ class ManifestRegistry:
     def __init__(self) -> None:
         self._manifests: dict[str, CapabilityManifest] = {}
 
-    def register(self, manifest: CapabilityManifest) -> None:
-        if manifest.capability_id in self._manifests:
+    def register(self, manifest: CapabilityManifest, *, replace: bool = False) -> None:
+        if manifest.capability_id in self._manifests and not replace:
             raise ValueError(f"duplicate capability manifest: {manifest.capability_id}")
         self._manifests[manifest.capability_id] = manifest
 
-    def load_dir(self, manifest_dir: Path) -> None:
+    def load_dir(self, manifest_dir: Path, *, replace: bool = False) -> None:
         if not manifest_dir.exists():
             return
         for path in sorted(manifest_dir.glob("*.json")):
-            self.register(CapabilityManifest.from_file(path))
+            self.register(CapabilityManifest.from_file(path), replace=replace)
 
     def list(self) -> list[CapabilityManifest]:
         return [self._manifests[key] for key in sorted(self._manifests)]

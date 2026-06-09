@@ -34,6 +34,7 @@ def build_runtime(root: Path | None = None) -> RuntimeContext:
     paths = resolve_project_paths(root)
     registry = ManifestRegistry()
     registry.load_dir(paths.manifests)
+    registry.load_dir(paths.local_manifests, replace=True)
     audit_log = AuditLog(paths.logs / "cbn-audit.jsonl")
     approval_store = ApprovalStore(paths.approvals)
     event_bus = EventBus(paths.logs / "cbn-events.jsonl")

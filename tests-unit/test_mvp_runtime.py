@@ -23,6 +23,38 @@ class MvpRuntimeTests(unittest.TestCase):
         self.assertIn("git.status", ids)
         self.assertIn("ffprobe.inspect", ids)
 
+    def test_runtime_local_manifest_overlay_replaces_builtin_manifest(self):
+        def manifest(command_text: str) -> dict:
+            return {
+                "apiVersion": "bridge.dev/v1alpha1",
+                "kind": "ToolManifest",
+                "metadata": {"id": "sample.override", "title": command_text},
+                "spec": {
+                    "transport": {
+                        "kind": "stdio",
+                        "command": sys.executable,
+                        "argsTemplate": ["-c", f"print({command_text!r})"],
+                    },
+                    "policy": {"risk": "read", "requiresConfirmation": False, "network": "deny"},
+                    "output": {"parserRef": "raw.text", "verified": True},
+                },
+            }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            base_path = root / "manifests" / "sample.override.json"
+            local_path = root / "runtime" / "manifests" / "sample.override.json"
+            base_path.parent.mkdir(parents=True)
+            local_path.parent.mkdir(parents=True)
+            base_path.write_text(json.dumps(manifest("base"), ensure_ascii=False), encoding="utf-8")
+            local_path.write_text(json.dumps(manifest("local"), ensure_ascii=False), encoding="utf-8")
+
+            runtime = build_runtime(root)
+            loaded = runtime.registry.require("sample.override")
+
+            self.assertEqual(loaded.title, "local")
+            self.assertEqual(loaded.source_path.resolve(), local_path.resolve())
+
     def test_cli_registry_list_outputs_manifest_records(self):
         proc = subprocess.run(
             [sys.executable, "-m", "cbn", "registry", "list"],
