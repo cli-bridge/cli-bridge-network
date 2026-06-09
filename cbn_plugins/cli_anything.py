@@ -747,10 +747,9 @@ class CliAnythingHub:
                 "candidates": [],
             }
         bounded_limit = max(0, min(limit, 500))
-        selected = records[:bounded_limit]
         candidates = [
             self._candidate_from_market_record(record, market_index=index)
-            for index, record in enumerate(selected)
+            for index, record in enumerate(records)
         ]
         _mark_candidate_collisions(candidates)
         for item in candidates:
@@ -765,18 +764,19 @@ class CliAnythingHub:
                 item.get("market_index", 0),
             )
         )
-        for rank, item in enumerate(candidates, start=1):
+        selected = candidates[:bounded_limit]
+        for rank, item in enumerate(selected, start=1):
             item["rank"] = rank
-        install_candidate_count = sum(1 for item in candidates if item.get("install_candidate"))
-        blocked_count = sum(1 for item in candidates if not item.get("install_candidate"))
+        install_candidate_count = sum(1 for item in selected if item.get("install_candidate"))
+        blocked_count = sum(1 for item in selected if not item.get("install_candidate"))
         probe_ready_count = sum(
             1
-            for item in candidates
+            for item in selected
             if isinstance(item.get("readiness"), dict) and item["readiness"].get("ready")
         )
         probe_blocked_count = sum(
             1
-            for item in candidates
+            for item in selected
             if isinstance(item.get("readiness"), dict) and item["readiness"].get("probe_blocker_count", 0) > 0
         )
         return {
@@ -786,13 +786,14 @@ class CliAnythingHub:
             "limit": bounded_limit,
             "with_probes": with_probes,
             "market_count": len(records),
+            "evaluated_count": len(candidates),
             "selected_count": len(selected),
             "install_candidate_count": install_candidate_count,
             "blocked_count": blocked_count,
             "probe_ready_count": probe_ready_count if with_probes else None,
             "probe_blocked_count": probe_blocked_count if with_probes else None,
             "market": result.as_dict(),
-            "candidates": candidates,
+            "candidates": selected,
             "next_commands": [
                 "python -m cbn plugin candidates cli-anything --query <query> --limit 20",
                 "python -m cbn plugin candidates cli-anything --query <query> --limit 20 --with-probes",
@@ -837,9 +838,19 @@ class CliAnythingHub:
         requirements = _requirement_assessment(requires)
         platform = _platform_assessment(record, requires)
         policy = manifest["spec"]["policy"] if manifest else infer_market_policy(record)
+        transport = _transport_assessment(manifest) if manifest else {"ready": False}
+        entry_point = str(record.get("entry_point") or "") or None
+        entrypoint_path = shutil.which(entry_point) if entry_point else None
+        manifest_imported = bool(manifest_path and manifest_path.exists())
+        installed = entrypoint_path is not None
+        launch_ready = bool(installed and manifest_imported and validation["valid"] and transport.get("ready"))
         low_policy_risk = policy["risk"] in {"read", "write-workspace"} and not _policy_requires_confirmation(policy)
         gates = {
             "manifest_valid": bool(validation["valid"]),
+            "manifest_imported": manifest_imported,
+            "installed": installed,
+            "runtime_transport_ready": bool(transport.get("ready")),
+            "launch_ready": launch_ready,
             "low_policy_risk": low_policy_risk,
             "external_dependency_free": bool(requirements["external_dependency_free"]),
             "platform_compatible": bool(platform["compatible"]),
@@ -854,7 +865,16 @@ class CliAnythingHub:
         if not gates["platform_compatible"]:
             blockers.append("declared platform does not match this host")
         install_candidate = len(blockers) == 0
-        recommended_next_action = "write_manifest" if install_candidate else "resolve_blockers"
+        if gates["launch_ready"]:
+            recommended_next_action = "call_capability"
+        elif install_candidate and gates["installed"] and not gates["manifest_imported"]:
+            recommended_next_action = "write_manifest"
+        elif install_candidate and gates["manifest_imported"]:
+            recommended_next_action = "install_harness"
+        elif install_candidate:
+            recommended_next_action = "write_manifest"
+        else:
+            recommended_next_action = "resolve_blockers"
         lifecycle = _lifecycle_report(
             harness_name=harness_name,
             capability_id=capability_id,
@@ -874,8 +894,16 @@ class CliAnythingHub:
             "recommended_next_action": recommended_next_action,
             "blockers": blockers,
             "gates": gates,
+            "local_status": {
+                "manifest_imported": manifest_imported,
+                "entry_point": entry_point,
+                "entrypoint_path": entrypoint_path,
+                "entrypoint_available": installed,
+                "launch_ready": launch_ready,
+            },
             "requirements": requirements,
             "platform": platform,
+            "transport": transport,
             "policy": policy,
             "lifecycle": lifecycle,
             "validation": validation,

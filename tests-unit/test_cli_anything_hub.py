@@ -593,7 +593,7 @@ class CliAnythingHubTests(unittest.TestCase):
                     parsed_json=[SAMPLE_MARKET_RECORD, SAMPLE_MERMAID_RECORD],
                 )
 
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as tmp, patch("cbn_plugins.cli_anything.shutil.which", return_value=None):
             result = FakeHub(root=Path(tmp)).candidate_harnesses(query="image", limit=10)
             self.assertTrue(result["ok"])
             self.assertEqual(result["selected_count"], 2)
@@ -625,7 +625,7 @@ class CliAnythingHubTests(unittest.TestCase):
                     parsed_json=[SAMPLE_MARKET_RECORD, SAMPLE_MERMAID_RECORD],
                 )
 
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as tmp, patch("cbn_plugins.cli_anything.shutil.which", return_value=None):
             result = FakeHub(root=Path(tmp)).candidate_harnesses(
                 query="image",
                 limit=10,
@@ -643,6 +643,51 @@ class CliAnythingHubTests(unittest.TestCase):
             self.assertFalse(blocked["readiness"]["ready"])
             self.assertGreaterEqual(blocked["readiness"]["probe_blocker_count"], 1)
             self.assertTrue(any(item["id"] == "command:gimp" for item in blocked["readiness"]["probes"]))
+
+    def test_candidate_harnesses_limits_after_ranking_full_market(self):
+        class FakeHub(CliAnythingHub):
+            def list_market(self) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "list", "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[SAMPLE_MARKET_RECORD, SAMPLE_MERMAID_RECORD],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp, patch("cbn_plugins.cli_anything.shutil.which", return_value=None):
+            result = FakeHub(root=Path(tmp)).candidate_harnesses(limit=1)
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["market_count"], 2)
+            self.assertEqual(result["evaluated_count"], 2)
+            self.assertEqual(result["selected_count"], 1)
+            self.assertEqual(result["install_candidate_count"], 1)
+            self.assertEqual(result["candidates"][0]["harness_name"], "mermaid")
+
+    def test_candidate_harnesses_reports_local_launch_ready_status(self):
+        local_record = dict(SAMPLE_MERMAID_RECORD)
+        local_record["entry_point"] = sys.executable
+
+        class FakeHub(CliAnythingHub):
+            def list_market(self) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "list", "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[local_record],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            hub = FakeHub(root=Path(tmp))
+            hub.write_harness_manifest("mermaid", market_record=local_record)
+            result = hub.candidate_harnesses(limit=1)
+            candidate = result["candidates"][0]
+            self.assertEqual(candidate["recommended_next_action"], "call_capability")
+            self.assertTrue(candidate["local_status"]["manifest_imported"])
+            self.assertTrue(candidate["local_status"]["entrypoint_available"])
+            self.assertTrue(candidate["local_status"]["launch_ready"])
+            self.assertEqual(candidate["lifecycle"]["state"], "launch_ready")
 
     def test_candidate_harnesses_reports_market_failures_without_crashing(self):
         hub = CliAnythingHub(entrypoint="cbn-cli-hub-that-does-not-exist")
