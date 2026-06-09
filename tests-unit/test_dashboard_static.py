@@ -40,6 +40,8 @@ class DashboardStaticTests(unittest.TestCase):
             "python -m cbn plugin candidates cli-anything --query image --limit 20 --with-probes --compact",
             self.html,
         )
+        self.assertIn("python -m cbn plugin live-verification cli-anything", self.html)
+        self.assertIn("/plugins/cli-anything/live-verification", self.html)
         self.assertIn('{"query":"image","limit":20,"compact":true}', self.html)
         self.assertIn('{"query":"image","limit":20,"with_probes":true,"compact":true}', self.html)
         self.assertIn("python -m cbn plugin probe-harness cli-anything mermaid", self.html)

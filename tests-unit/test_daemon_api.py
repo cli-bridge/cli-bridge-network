@@ -17,6 +17,7 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("POST", "/plugins/cli-anything/candidates"), routes)
         self.assertIn(("POST", "/plugins/cli-anything/probe-harness"), routes)
         self.assertIn(("POST", "/plugins/cli-anything/verify-harness"), routes)
+        self.assertIn(("POST", "/plugins/cli-anything/live-verification"), routes)
         self.assertIn(("GET", "/plugins/cli-anything/provenance"), routes)
         self.assertIn(("GET", "/plugins/cli-anything/update-check"), routes)
         self.assertIn(("POST", "/plugins/gate"), routes)
@@ -411,6 +412,49 @@ class DaemonApiTests(unittest.TestCase):
                 self.assertFalse(payload["include_workflows"])
                 self.assertIn("protocols", payload)
                 self.assertIn("verification_stages", payload)
+
+    def test_cli_anything_live_verification_route_returns_snapshot(self):
+        class FakeHub:
+            def live_verification(
+                self,
+                harnesses=("mermaid", "macrocli"),
+                candidate_query="image",
+                candidate_limit=10,
+                include_candidates=True,
+                include_workflows=True,
+            ):
+                return {
+                    "ok": True,
+                    "plugin_id": "cli-anything",
+                    "kind": "CliAnythingLiveVerification",
+                    "harnesses": [{"harness_name": harnesses[0], "launch_ready": True}],
+                    "candidate_scan": {"query": candidate_query, "selected_count": candidate_limit},
+                    "workflow_readiness": {"internal_bridge_ready": include_workflows},
+                    "summary": {"verified_harness_count": 1},
+                }
+
+        with patch("api_server.server.CliAnythingHub", FakeHub):
+            with daemon_url() as base_url:
+                request = urllib.request.Request(
+                    f"{base_url}/plugins/cli-anything/live-verification",
+                    data=json.dumps(
+                        {
+                            "harnesses": ["mermaid"],
+                            "candidate_query": "image",
+                            "candidate_limit": 2,
+                            "include_candidates": True,
+                            "include_workflows": True,
+                        }
+                    ).encode("utf-8"),
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(payload["kind"], "CliAnythingLiveVerification")
+                    self.assertEqual(payload["harnesses"][0]["harness_name"], "mermaid")
+                    self.assertEqual(payload["candidate_scan"]["selected_count"], 2)
 
     def test_a2a_routes_return_agent_card_and_task(self):
         with daemon_url() as base_url:

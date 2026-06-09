@@ -183,6 +183,12 @@
             data-api-body='{"query":"image","limit":20,"with_probes":true,"compact":true}'
           >Rank + Probe</button>
           <button
+            data-command="python -m cbn plugin live-verification cli-anything"
+            data-api-method="POST"
+            data-api-path="/plugins/cli-anything/live-verification"
+            data-api-body='{"harnesses":["mermaid","macrocli"],"candidate_query":"image","candidate_limit":10,"include_candidates":true,"include_workflows":true}'
+          >Live Verification</button>
+          <button
             data-command="python -m cbn plugin market cli-anything info gimp"
             data-api-method="POST"
             data-api-path="/plugins/cli-anything/market"

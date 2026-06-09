@@ -339,6 +339,32 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip workflow reference lookup.",
     )
 
+    plugin_live = plugin_subcommands.add_parser(
+        "live-verification",
+        help="Return a read-only CLI-Anything live verification snapshot.",
+    )
+    plugin_live.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
+    plugin_live.add_argument(
+        "--harness",
+        action="append",
+        default=[],
+        help="Harness to include; repeatable. Defaults to mermaid and macrocli.",
+    )
+    plugin_live.add_argument("--candidate-query", default="image", help="Market query used for blocker sampling.")
+    plugin_live.add_argument("--candidate-limit", type=int, default=10, help="Maximum market candidates to rank.")
+    plugin_live.add_argument(
+        "--no-candidates",
+        action="store_false",
+        dest="include_candidates",
+        help="Skip market candidate sampling.",
+    )
+    plugin_live.add_argument(
+        "--no-workflows",
+        action="store_false",
+        dest="include_workflows",
+        help="Skip workflow protocol readiness.",
+    )
+
     plugin_candidates = plugin_subcommands.add_parser(
         "candidates",
         help="Rank CLI-Anything market harnesses as install candidates without installing them.",

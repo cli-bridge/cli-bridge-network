@@ -86,6 +86,7 @@ ROUTE_SUMMARY = [
     {"method": "POST", "path": "/plugins/cli-anything/evaluate-harness"},
     {"method": "POST", "path": "/plugins/cli-anything/probe-harness"},
     {"method": "POST", "path": "/plugins/cli-anything/verify-harness"},
+    {"method": "POST", "path": "/plugins/cli-anything/live-verification"},
     {"method": "POST", "path": "/plugins/cli-anything/candidates"},
     {"method": "POST", "path": "/plugins/cli-anything/sync-market"},
     {"method": "POST", "path": "/plugins/cli-anything/harness"},
@@ -544,6 +545,20 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 payload["harness_name"],
                 title=payload.get("title"),
                 from_market=bool(payload.get("from_market", True)),
+                include_workflows=bool(payload.get("include_workflows", True)),
+            )
+            self._send(200 if result["ok"] else 502, result)
+            return
+        if self.path == "/plugins/cli-anything/live-verification":
+            harnesses = payload.get("harnesses", ["mermaid", "macrocli"])
+            if not isinstance(harnesses, list) or not all(isinstance(item, str) for item in harnesses):
+                self._send(400, {"error": "harnesses must be a list of strings"})
+                return
+            result = CliAnythingHub().live_verification(
+                harnesses=tuple(harnesses),
+                candidate_query=payload.get("candidate_query", "image"),
+                candidate_limit=int(payload.get("candidate_limit", 10)),
+                include_candidates=bool(payload.get("include_candidates", True)),
                 include_workflows=bool(payload.get("include_workflows", True)),
             )
             self._send(200 if result["ok"] else 502, result)

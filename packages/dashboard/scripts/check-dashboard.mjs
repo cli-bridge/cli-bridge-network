@@ -75,6 +75,14 @@ if (!html.includes("python -m cbn plugin candidates cli-anything --query image -
   throw new Error("Dashboard does not expose compact probed CLI-Anything candidate ranking.");
 }
 
+if (!html.includes("python -m cbn plugin live-verification cli-anything")) {
+  throw new Error("Dashboard does not expose the CLI-Anything live verification command.");
+}
+
+if (!html.includes('data-api-path="/plugins/cli-anything/live-verification"')) {
+  throw new Error("Dashboard does not wire CLI-Anything live verification to the daemon API.");
+}
+
 if (!html.includes('data-api-body=\'{"query":"image","limit":20,"compact":true}\'')) {
   throw new Error("Dashboard candidate ranking API body is not compact.");
 }

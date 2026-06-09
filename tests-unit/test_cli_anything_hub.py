@@ -349,6 +349,17 @@ class CliAnythingHubTests(unittest.TestCase):
 
     def test_verify_harness_reports_runtime_ready_after_import_and_install(self):
         class FakeHub(CliAnythingHub):
+            def status(self) -> dict:
+                return {
+                    "plugin_id": "cli-anything",
+                    "entrypoint": "cli-hub",
+                    "entrypoint_path": sys.executable,
+                    "entrypoint_available": True,
+                    "source_repo_dir": "external_plugins/cli-anything/repo",
+                    "source_repo_available": True,
+                    "version": "cli-hub test",
+                }
+
             def info(self, harness_name: str) -> CliHubCommandResult:
                 return CliHubCommandResult(
                     argv=("cli-hub", "info", harness_name),
@@ -389,6 +400,64 @@ class CliAnythingHubTests(unittest.TestCase):
             self.assertEqual(stages["write_manifest"], "completed")
             self.assertEqual(stages["install_harness"], "completed")
             self.assertEqual(stages["dry_run_call"], "ready")
+
+    def test_live_verification_summarizes_harness_candidates_and_readiness(self):
+        class FakeHub(CliAnythingHub):
+            def status(self) -> dict:
+                return {
+                    "plugin_id": "cli-anything",
+                    "entrypoint": "cli-hub",
+                    "entrypoint_path": sys.executable,
+                    "entrypoint_available": True,
+                    "source_repo_dir": "external_plugins/cli-anything/repo",
+                    "source_repo_available": True,
+                    "version": "cli-hub test",
+                }
+
+            def info(self, harness_name: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "info", harness_name),
+                    exit_code=0,
+                    stdout=f"Entry point: {sys.executable}\nRequires: nothing\nStatus: installed\n",
+                    stderr="",
+                )
+
+            def search_market(self, query: str) -> CliHubCommandResult:
+                return CliHubCommandResult(
+                    argv=("cli-hub", "search", query, "--json"),
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    parsed_json=[SAMPLE_MERMAID_RECORD, SAMPLE_MARKET_RECORD],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            hub = FakeHub(root=Path(tmp))
+            hub.write_harness_manifest("mermaid", market_record=SAMPLE_MERMAID_RECORD)
+            with patch(
+                "cbn_plugins.cli_anything.pty_backend_status",
+                return_value={
+                    "kind": "pty",
+                    "platform": sys.platform,
+                    "backend": "test-pty",
+                    "available": True,
+                    "install_hint": None,
+                },
+            ):
+                result = hub.live_verification(
+                    harnesses=("mermaid",),
+                    candidate_query="image",
+                    candidate_limit=2,
+                    include_candidates=True,
+                    include_workflows=False,
+                )
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["kind"], "CliAnythingLiveVerification")
+            self.assertEqual(result["summary"]["verified_harness_count"], 1)
+            self.assertEqual(result["summary"]["launch_ready_harness_count"], 1)
+            self.assertEqual(result["harnesses"][0]["harness_name"], "mermaid")
+            self.assertIn("candidate_summary", result["candidate_scan"])
+            self.assertIsNone(result["workflow_readiness"])
 
     def test_verify_harness_blocks_runtime_when_pty_backend_missing(self):
         class FakeHub(CliAnythingHub):
@@ -1139,6 +1208,32 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(payload["harness_name"], "mermaid")
         self.assertIn("protocols", payload)
         self.assertIn("verification_stages", payload)
+
+    def test_cli_live_verification_outputs_snapshot(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "plugin",
+                "live-verification",
+                "cli-anything",
+                "--harness",
+                "mermaid",
+                "--no-candidates",
+                "--no-workflows",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertIn(proc.returncode, {0, 6})
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["plugin_id"], "cli-anything")
+        self.assertEqual(payload["kind"], "CliAnythingLiveVerification")
+        self.assertIn("summary", payload)
+        self.assertIn("harnesses", payload)
 
     def test_cli_candidates_handles_missing_cli_hub_without_crashing(self):
         proc = subprocess.run(

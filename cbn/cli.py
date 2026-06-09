@@ -502,6 +502,19 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0 if result["ok"] else 6
+        if args.plugin_command == "live-verification":
+            if args.plugin_id != "cli-anything":
+                raise KeyError(f"live-verification is not implemented for plugin: {args.plugin_id}")
+            harnesses = tuple(args.harness) if args.harness else ("mermaid", "macrocli")
+            result = CliAnythingHub().live_verification(
+                harnesses=harnesses,
+                candidate_query=args.candidate_query,
+                candidate_limit=args.candidate_limit,
+                include_candidates=args.include_candidates,
+                include_workflows=args.include_workflows,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["ok"] else 6
         if args.plugin_command == "candidates":
             if args.plugin_id != "cli-anything":
                 raise KeyError(f"candidates is not implemented for plugin: {args.plugin_id}")

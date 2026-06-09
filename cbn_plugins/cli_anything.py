@@ -22,8 +22,9 @@ from adapters.pty import pty_backend_status
 from cbn.paths import resolve_project_paths
 from cbn_core.manifest import CapabilityManifest, ManifestRegistry, validate_manifest_dict
 from cbn_parsers.registry import ParserRegistry
-from cbn_plugins.manager import PluginCommand, PluginPlan
+from cbn_plugins.manager import PluginCommand, PluginManager, PluginPlan
 from cbn_protocol.compatibility import check_all_protocols
+from cbn_protocol.readiness import protocol_readiness_report
 from cbn_workflow.catalog import list_workflows
 
 
@@ -810,6 +811,114 @@ class CliAnythingHub:
             ],
         }
 
+    def live_verification(
+        self,
+        harnesses: tuple[str, ...] = ("mermaid", "macrocli"),
+        candidate_query: str | None = "image",
+        candidate_limit: int = 10,
+        include_candidates: bool = True,
+        include_workflows: bool = True,
+    ) -> dict[str, Any]:
+        """Return a repeatable read-only verification snapshot for CLI-Anything."""
+
+        status = self.status()
+        environment = self._environment_verification()
+        harness_reports = [
+            self.verify_harness(
+                harness,
+                from_market=True,
+                include_workflows=include_workflows,
+            )
+            for harness in harnesses
+        ]
+        harness_summary = [_harness_live_summary(report) for report in harness_reports]
+        candidates = (
+            self.candidate_harnesses(
+                query=candidate_query,
+                limit=candidate_limit,
+                with_probes=True,
+                compact=True,
+            )
+            if include_candidates
+            else None
+        )
+        workflow_readiness = (
+            self._workflow_readiness("workflows/cli-anything-macrocli-mermaid-routing.example.json")
+            if include_workflows
+            else None
+        )
+        summary = _live_verification_summary(
+            status=status,
+            environment=environment,
+            harness_summary=harness_summary,
+            candidates=candidates,
+            workflow_readiness=workflow_readiness,
+        )
+        return {
+            "ok": summary["entrypoint_available"]
+            and summary["verified_harness_count"] == len(harness_summary)
+            and summary["workflow_internal_bridge_ready"] is not False,
+            "plugin_id": PLUGIN_ID,
+            "kind": "CliAnythingLiveVerification",
+            "status": status,
+            "environment": environment,
+            "harnesses": harness_summary,
+            "candidate_scan": _candidate_live_summary(candidates) if candidates else None,
+            "workflow_readiness": _workflow_live_summary(workflow_readiness) if workflow_readiness else None,
+            "summary": summary,
+            "reports": {
+                "harness_verifications": harness_reports,
+                "candidates": candidates,
+                "workflow_readiness": workflow_readiness,
+            },
+            "next_commands": [
+                "python -m cbn plugin live-verification cli-anything",
+                "python -m cbn plugin candidates cli-anything --query image --limit 10 --with-probes --compact",
+                "python -m cbn plugin verify-harness cli-anything mermaid",
+                "python -m cbn plugin verify-harness cli-anything macrocli",
+                "python -m cbn call cli-anything.macrocli.backends",
+                "python -m cbn workflow run workflows/cli-anything-macrocli-mermaid-routing.example.json",
+                "python -m cbn protocol readiness --workflow-path workflows/cli-anything-macrocli-mermaid-routing.example.json",
+            ],
+        }
+
+    def _environment_verification(self) -> dict[str, Any]:
+        manager = PluginManager(root=self.paths.root)
+        report: dict[str, Any] = {
+            "preflight": _safe_plugin_report(lambda: manager.preflight(PLUGIN_ID)),
+            "provenance": _safe_plugin_report(lambda: manager.provenance(PLUGIN_ID)),
+            "update_check": _safe_plugin_report(lambda: manager.update_check(PLUGIN_ID)),
+        }
+        preflight = report["preflight"]
+        provenance = report["provenance"]
+        update_check = report["update_check"]
+        return {
+            "ok": bool(
+                preflight.get("ready")
+                and provenance.get("source_trusted") is not False
+                and not update_check.get("blockers")
+            ),
+            "preflight_ready": preflight.get("ready"),
+            "source_downloaded": provenance.get("source_downloaded"),
+            "source_trusted": provenance.get("source_trusted"),
+            "ready_for_update": update_check.get("ready_for_update"),
+            "repository": (provenance.get("repository") or {}),
+            "entrypoints": provenance.get("entrypoints", []),
+            "reports": report,
+        }
+
+    def _workflow_readiness(self, workflow_path: str) -> dict[str, Any] | None:
+        path = self.paths.root / workflow_path
+        if not path.exists():
+            return None
+        registry = ManifestRegistry()
+        registry.load_dir(self.paths.manifests)
+        return protocol_readiness_report(
+            registry,
+            workflow_path=workflow_path,
+            include_workflows=True,
+        )
+
     def _candidate_from_market_record(
         self,
         record: dict[str, Any],
@@ -1484,6 +1593,108 @@ def _candidate_summary(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]
             }
         )
     return summary
+
+
+def _safe_plugin_report(builder: Any) -> dict[str, Any]:
+    try:
+        return builder()
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": str(exc),
+        }
+
+
+def _harness_live_summary(report: dict[str, Any]) -> dict[str, Any]:
+    evaluation = report.get("evaluation") if isinstance(report.get("evaluation"), dict) else {}
+    gates = evaluation.get("gates") if isinstance(evaluation.get("gates"), dict) else {}
+    parser_contract = report.get("parser_contract") if isinstance(report.get("parser_contract"), dict) else {}
+    return {
+        "harness_name": report.get("harness_name"),
+        "capability_id": report.get("capability_id"),
+        "ok": bool(report.get("ok")),
+        "ready_for_manifest_write": bool(report.get("ready_for_manifest_write")),
+        "ready_for_runtime_verification": bool(report.get("ready_for_runtime_verification")),
+        "verification_blockers": report.get("verification_blockers", []),
+        "readiness_ready": bool((report.get("readiness") or {}).get("ready")),
+        "manifest_imported": bool(gates.get("manifest_imported")),
+        "installed": bool(gates.get("installed")),
+        "entrypoint_available": bool((evaluation.get("status") or {}).get("entrypoint_available")),
+        "launch_ready": bool(gates.get("launch_ready")),
+        "parser_ref": parser_contract.get("parser_ref"),
+        "parser_verified": bool(parser_contract.get("verified")),
+        "protocol_wire_compatible": any(
+            protocol.get("wire_compatible")
+            for protocol in (report.get("protocols") or {}).values()
+            if isinstance(protocol, dict)
+        ),
+    }
+
+
+def _candidate_live_summary(candidates: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "ok": bool(candidates.get("ok")),
+        "query": candidates.get("query"),
+        "market_count": candidates.get("market_count"),
+        "evaluated_count": candidates.get("evaluated_count"),
+        "selected_count": candidates.get("selected_count"),
+        "install_candidate_count": candidates.get("install_candidate_count"),
+        "blocked_count": candidates.get("blocked_count"),
+        "probe_ready_count": candidates.get("probe_ready_count"),
+        "probe_blocked_count": candidates.get("probe_blocked_count"),
+        "candidate_summary": candidates.get("candidate_summary", []),
+        "market": candidates.get("market"),
+    }
+
+
+def _workflow_live_summary(workflow_readiness: dict[str, Any]) -> dict[str, Any]:
+    readiness = workflow_readiness.get("readiness") if isinstance(workflow_readiness.get("readiness"), dict) else {}
+    summary = workflow_readiness.get("summary") if isinstance(workflow_readiness.get("summary"), dict) else {}
+    return {
+        "ok": bool(workflow_readiness.get("ok")),
+        "workflow_path": workflow_readiness.get("workflow_path"),
+        "route_count": summary.get("route_count"),
+        "routed_workflow_count": summary.get("routed_workflow_count"),
+        "internal_bridge_ready": readiness.get("internal_bridge_ready"),
+        "external_protocol_wire_compatible": readiness.get("external_protocol_wire_compatible"),
+        "protocol_gaps": workflow_readiness.get("protocol_gaps", {}),
+        "next_steps": workflow_readiness.get("next_steps", []),
+    }
+
+
+def _live_verification_summary(
+    status: dict[str, Any],
+    environment: dict[str, Any],
+    harness_summary: list[dict[str, Any]],
+    candidates: dict[str, Any] | None,
+    workflow_readiness: dict[str, Any] | None,
+) -> dict[str, Any]:
+    workflow_gate = None
+    if workflow_readiness is not None:
+        readiness = workflow_readiness.get("readiness") if isinstance(workflow_readiness.get("readiness"), dict) else {}
+        workflow_gate = readiness.get("internal_bridge_ready")
+    return {
+        "entrypoint_available": bool(status.get("entrypoint_available")),
+        "source_trusted": environment.get("source_trusted"),
+        "ready_for_update": environment.get("ready_for_update"),
+        "harness_count": len(harness_summary),
+        "verified_harness_count": sum(
+            1
+            for item in harness_summary
+            if item["ok"] and item["ready_for_runtime_verification"]
+        ),
+        "launch_ready_harness_count": sum(1 for item in harness_summary if item["launch_ready"]),
+        "unverified_parser_count": sum(1 for item in harness_summary if not item["parser_verified"]),
+        "candidate_query": candidates.get("query") if candidates else None,
+        "candidate_market_count": candidates.get("market_count") if candidates else None,
+        "candidate_blocked_count": candidates.get("blocked_count") if candidates else None,
+        "candidate_install_candidate_count": candidates.get("install_candidate_count") if candidates else None,
+        "workflow_internal_bridge_ready": workflow_gate,
+        "external_protocol_wire_compatible": bool(
+            workflow_readiness
+            and (workflow_readiness.get("readiness") or {}).get("external_protocol_wire_compatible")
+        ),
+    }
 
 
 def _market_record_identity(item: dict[str, Any]) -> dict[str, str | None]:
