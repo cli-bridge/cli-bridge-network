@@ -753,6 +753,12 @@
             <button id="checkApi" type="button">Check</button>
           </div>
           <input id="apiBase" type="url" value="http://127.0.0.1:8787" aria-label="Daemon API base URL" />
+          <div class="token-row">
+            <input id="daemonToken" type="password" autocomplete="off" placeholder="Daemon session token" aria-label="Daemon session token" />
+            <button id="saveDaemonToken" type="button">Save</button>
+            <button id="clearDaemonToken" type="button">Clear</button>
+          </div>
+          <p id="daemonTokenStatus">Token: not saved</p>
           <pre id="apiResult">No API response yet.</pre>
         </section>
 

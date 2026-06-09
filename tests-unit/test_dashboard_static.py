@@ -17,6 +17,10 @@ class DashboardStaticTests(unittest.TestCase):
         self.assertIn("Operation Detail", self.html)
         self.assertIn("operationDetail", self.html)
         self.assertIn("clearOperationDetail", self.html)
+        self.assertIn("daemonToken", self.html)
+        self.assertIn("saveDaemonToken", self.html)
+        self.assertIn("clearDaemonToken", self.html)
+        self.assertIn("daemonTokenStatus", self.html)
 
     def test_cli_anything_commands_are_staged(self):
         self.assertIn("python -m cbn plugin plan cli-anything", self.html)
@@ -99,6 +103,11 @@ class DashboardStaticTests(unittest.TestCase):
         self.assertIn("renderOperationDetail", self.js)
         self.assertIn("operationBlockers", self.js)
         self.assertIn("operationCommands", self.js)
+        self.assertIn("CBN_DAEMON_TOKEN_KEY", self.js)
+        self.assertIn("localStorage", self.js)
+        self.assertIn("daemonHeaders", self.js)
+        self.assertIn("X-CBN-Session", self.js)
+        self.assertIn("session_denied", self.js)
         self.assertIn("/plugins/cli-anything/evaluate-harness", self.js)
         self.assertIn("/plugins/cli-anything/prepare-harness", self.js)
         self.assertIn("/plugins/cli-anything/harness", self.js)

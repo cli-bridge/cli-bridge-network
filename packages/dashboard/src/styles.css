@@ -127,6 +127,18 @@ input {
   padding: 6px 8px;
 }
 
+.token-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 64px 64px;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+#daemonTokenStatus {
+  margin-top: 6px;
+  font-size: 12px;
+}
+
 .highlight button {
   background: #ffffff;
 }

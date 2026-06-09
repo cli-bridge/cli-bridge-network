@@ -7,10 +7,16 @@ const apiBase = document.getElementById("apiBase");
 const apiStatus = document.getElementById("apiStatus");
 const apiMode = document.getElementById("apiMode");
 const apiResult = document.getElementById("apiResult");
+const daemonToken = document.getElementById("daemonToken");
+const saveDaemonToken = document.getElementById("saveDaemonToken");
+const clearDaemonToken = document.getElementById("clearDaemonToken");
+const daemonTokenStatus = document.getElementById("daemonTokenStatus");
 const candidateSummary = document.getElementById("candidateSummary");
 const clearCandidates = document.getElementById("clearCandidates");
 const operationDetail = document.getElementById("operationDetail");
 const clearOperationDetail = document.getElementById("clearOperationDetail");
+
+const CBN_DAEMON_TOKEN_KEY = "cbn.daemonSessionToken";
 
 let activeCommand = "";
 let logLines = ["Dashboard loaded. Daemon API calls are available when cbn daemon is running."];
@@ -59,6 +65,30 @@ function requestBody(button) {
 function apiUrl(path) {
   const base = apiBase.value.replace(/\/+$/, "");
   return `${base}${path}`;
+}
+
+function storedDaemonToken() {
+  return localStorage.getItem(CBN_DAEMON_TOKEN_KEY) || "";
+}
+
+function activeDaemonToken() {
+  return daemonToken.value.trim() || storedDaemonToken();
+}
+
+function renderDaemonTokenStatus() {
+  daemonTokenStatus.textContent = storedDaemonToken() ? "Token: saved" : "Token: not saved";
+}
+
+function daemonHeaders(hasBody) {
+  const headers = {};
+  if (hasBody) {
+    headers["Content-Type"] = "application/json";
+  }
+  const token = activeDaemonToken();
+  if (token) {
+    headers["X-CBN-Session"] = token;
+  }
+  return headers;
 }
 
 function setApiStatus(label) {
@@ -375,8 +405,8 @@ async function callApi(button) {
     return;
   }
 
-  const options = { method, headers: { "Content-Type": "application/json" } };
   const body = requestBody(button);
+  const options = { method, headers: daemonHeaders(body !== undefined) };
   if (body !== undefined) {
     options.body = renderJson(body);
   }
@@ -392,6 +422,9 @@ async function callApi(button) {
       payload = { raw: text };
     }
     apiResult.textContent = renderJson(displayPayload(path, payload));
+    if (response.status === 403 && payload?.error === "session_denied") {
+      appendLog(`${label}: daemon session token rejected.`);
+    }
     if (path === "/plugins/cli-anything/candidates") {
       renderCandidateSummary(payload);
     }
@@ -462,6 +495,29 @@ document.getElementById("checkApi").addEventListener("click", () => {
       command: "python -m cbn daemon serve --host 127.0.0.1 --port 8787",
     },
   });
+});
+
+daemonToken.value = storedDaemonToken();
+renderDaemonTokenStatus();
+
+saveDaemonToken.addEventListener("click", () => {
+  const token = daemonToken.value.trim();
+  if (!token) {
+    localStorage.removeItem(CBN_DAEMON_TOKEN_KEY);
+    renderDaemonTokenStatus();
+    appendLog("Cleared daemon session token.");
+    return;
+  }
+  localStorage.setItem(CBN_DAEMON_TOKEN_KEY, token);
+  renderDaemonTokenStatus();
+  appendLog("Saved daemon session token.");
+});
+
+clearDaemonToken.addEventListener("click", () => {
+  daemonToken.value = "";
+  localStorage.removeItem(CBN_DAEMON_TOKEN_KEY);
+  renderDaemonTokenStatus();
+  appendLog("Cleared daemon session token.");
 });
 
 renderLog();
