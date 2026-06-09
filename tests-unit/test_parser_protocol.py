@@ -31,6 +31,11 @@ class ParserProtocolTests(unittest.TestCase):
         parsed = ParserRegistry.builtins().parse("json.stdout", '{"ok": true}', "")
         self.assertEqual(parsed["data"]["json"], {"ok": True})
 
+    def test_git_version_parser_returns_version(self):
+        parsed = ParserRegistry.builtins().parse("git.version", "git version 2.49.0.windows.1\n", "")
+        self.assertEqual(parsed["data"]["version"], "2.49.0.windows.1")
+        self.assertEqual(parsed["data"]["raw"], "git version 2.49.0.windows.1")
+
     def test_cli_anything_mermaid_set_diagram_parser_returns_verified_shape(self):
         parsed = ParserRegistry.builtins().parse(
             "cli-anything.mermaid.set_diagram",
@@ -177,6 +182,7 @@ class ParserProtocolTests(unittest.TestCase):
         )
         parser_refs = {item["parser_ref"] for item in json.loads(parsers.stdout)}
         self.assertIn("git.status.short", parser_refs)
+        self.assertIn("git.version", parser_refs)
         self.assertIn("cli-anything.mermaid.set_diagram", parser_refs)
         self.assertIn("cli-anything.macrocli.backends", parser_refs)
 
@@ -192,6 +198,20 @@ class ParserProtocolTests(unittest.TestCase):
         self.assertEqual(payload["parsed"]["parser_ref"], "raw.text")
         self.assertEqual(payload["message"]["kind"], "BridgeMessage")
         self.assertEqual(payload["message"]["metadata"]["producer"], "git.version")
+
+    def test_git_version_call_uses_verified_parser(self):
+        call = subprocess.run(
+            [sys.executable, "-m", "cbn", "call", "git.version"],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(call.stdout)
+        self.assertEqual(payload["parsed"]["parser_ref"], "git.version")
+        self.assertTrue(payload["parsed"]["ok"])
+        self.assertIn("version", payload["parsed"]["data"])
 
     def test_cli_message_validate_and_select(self):
         message = BridgeMessage(

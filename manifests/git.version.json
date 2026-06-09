@@ -18,9 +18,8 @@
       "network": "deny"
     },
     "output": {
-      "parserRef": null,
+      "parserRef": "git.version",
       "verified": true
     }
   }
 }
-

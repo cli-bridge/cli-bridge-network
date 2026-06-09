@@ -34,6 +34,12 @@ class ParserRegistry:
         registry.register("raw.text", "Raw Text", "Return stdout and stderr as text.", parse_raw_text)
         registry.register("json.stdout", "JSON stdout", "Parse stdout as JSON.", parse_json_stdout)
         registry.register(
+            "git.version",
+            "Git Version",
+            "Parse `git --version` output into a version string.",
+            parse_git_version,
+        )
+        registry.register(
             "git.status.short",
             "Git short status",
             "Parse `git status --short` porcelain-ish output into entries.",
@@ -110,6 +116,20 @@ def parse_json_stdout(stdout: str, stderr: str) -> dict[str, Any]:
     if stderr.strip():
         return {"json": json.loads(stdout), "stderr": stderr}
     return {"json": json.loads(stdout)}
+
+
+def parse_git_version(stdout: str, stderr: str) -> dict[str, Any]:
+    text = stdout.strip()
+    prefix = "git version "
+    if not text.startswith(prefix):
+        raise ValueError(f"unexpected git version output: {text!r}")
+    version = text[len(prefix) :].strip()
+    if not version:
+        raise ValueError("git version output is missing a version")
+    data: dict[str, Any] = {"version": version, "raw": text}
+    if stderr.strip():
+        data["stderr"] = stderr
+    return data
 
 
 def parse_git_status_short(stdout: str, stderr: str) -> dict[str, Any]:
