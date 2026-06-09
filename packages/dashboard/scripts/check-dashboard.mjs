@@ -33,6 +33,22 @@ if (!html.includes("python -m cbn plugin plan cli-anything")) {
   throw new Error("Dashboard does not expose the CLI-Anything plan command.");
 }
 
+if (!html.includes("python -m cbn plugin check-update cli-anything")) {
+  throw new Error("Dashboard does not expose the CLI-Anything local update check command.");
+}
+
+if (!html.includes("python -m cbn plugin check-update cli-anything --remote")) {
+  throw new Error("Dashboard does not expose the CLI-Anything remote update check command.");
+}
+
+if (!html.includes('data-api-path="/plugins/cli-anything/update-check"')) {
+  throw new Error("Dashboard does not wire CLI-Anything local update checks to the daemon API.");
+}
+
+if (!html.includes('data-api-path="/plugins/cli-anything/update-check?remote=true"')) {
+  throw new Error("Dashboard does not wire CLI-Anything remote update checks to the daemon API.");
+}
+
 if (!html.includes("python -m cbn plugin preflight cli-anything")) {
   throw new Error("Dashboard does not expose the CLI-Anything preflight command.");
 }

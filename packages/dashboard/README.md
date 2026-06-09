@@ -28,12 +28,18 @@ The page currently queues command previews such as:
 
 ```powershell
 python -m cbn plugin plan cli-anything
+python -m cbn plugin check-update cli-anything
+python -m cbn plugin check-update cli-anything --remote
+python -m cbn plugin gate cli-anything --action update
+python -m cbn plugin plan cli-anything --action update
 python -m cbn plugin install cli-anything --yes
 python -m cbn plugin update cli-anything --yes
 ```
 
 Buttons with daemon API support call `http://127.0.0.1:8787` and still stage
-the equivalent command as a fallback. Confirmed install, update, manifest write,
-and harness lifecycle buttons ask for browser confirmation before sending
+the equivalent command as a fallback. Update checks are read-only by default;
+the remote update check queries upstream state but still does not execute
+`git pull` or pip changes. Confirmed install, update, manifest write, and
+harness lifecycle buttons ask for browser confirmation before sending
 `confirmed=true`. Serving from `127.0.0.1` keeps the dashboard inside the
 daemon's local Origin allowlist.

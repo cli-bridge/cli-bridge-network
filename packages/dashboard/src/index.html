@@ -121,17 +121,27 @@
             data-api-confirm="Override plugin preflight blockers and install CLI-Anything now?"
           >Install Override</button>
           <button
-            data-command="python -m cbn plugin plan cli-anything --action update"
-            data-api-method="POST"
-            data-api-path="/plugins/plan"
-            data-api-body='{"plugin_id":"cli-anything","action":"update"}'
+            data-command="python -m cbn plugin check-update cli-anything"
+            data-api-method="GET"
+            data-api-path="/plugins/cli-anything/update-check"
           >Check Updates</button>
+          <button
+            data-command="python -m cbn plugin check-update cli-anything --remote"
+            data-api-method="GET"
+            data-api-path="/plugins/cli-anything/update-check?remote=true"
+          >Remote Update Check</button>
           <button
             data-command="python -m cbn plugin gate cli-anything --action update"
             data-api-method="POST"
             data-api-path="/plugins/gate"
             data-api-body='{"plugin_id":"cli-anything","action":"update"}'
           >Update Gate</button>
+          <button
+            data-command="python -m cbn plugin plan cli-anything --action update"
+            data-api-method="POST"
+            data-api-path="/plugins/plan"
+            data-api-body='{"plugin_id":"cli-anything","action":"update"}'
+          >Update Plan</button>
           <button
             data-command="python -m cbn plugin update cli-anything --yes"
             data-api-method="POST"
