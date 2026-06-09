@@ -26,6 +26,7 @@ from cbn_protocol.acp_stdio import smoke_acp_stdio
 from cbn_protocol.acp_stdio import smoke_acp_workflow_stdio
 from cbn_protocol.envelope import bridge_args_from_selectors, select_bridge_value, validate_bridge_message
 from cbn_protocol.compatibility import check_protocol, protocol_matrix
+from cbn_protocol.conformance import protocol_conformance_plan
 from cbn_protocol.exports import (
     export_all_protocols,
     export_all_workflow_protocols,
@@ -197,6 +198,15 @@ def main(argv: list[str] | None = None) -> int:
                 runtime.registry,
                 workflow_path=args.workflow_path,
                 include_workflows=args.include_workflows,
+            )
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0 if payload["ok"] else 7
+        if args.protocol_command == "conformance-plan":
+            payload = protocol_conformance_plan(
+                runtime.registry,
+                target=args.target,
+                capability_id=args.capability_id,
+                workflow_path=args.workflow_path,
             )
             print(json.dumps(payload, ensure_ascii=False, indent=2))
             return 0 if payload["ok"] else 7

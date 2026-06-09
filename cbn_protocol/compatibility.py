@@ -21,7 +21,7 @@ PROTOCOL_SOURCES: dict[str, dict[str, str]] = {
     },
     "a2a": {
         "name": "Agent2Agent Core Protocol Specification",
-        "url": "https://agent2agent.info/specification/core/",
+        "url": "https://a2a-protocol.org/v0.3.0/specification/",
         "notes": "A2A starts with AgentCard discovery and maps operations to JSON-RPC over HTTP, gRPC, or REST bindings.",
     },
     "acp": {

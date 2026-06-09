@@ -26,6 +26,7 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("GET", "/protocols/check"), routes)
         self.assertIn(("GET", "/protocols/matrix"), routes)
         self.assertIn(("GET", "/protocols/readiness"), routes)
+        self.assertIn(("GET", "/protocols/conformance-plan"), routes)
         self.assertIn(("GET", "/protocols/smoke-suite"), routes)
         self.assertIn(("GET", "/protocols/acceptance-queue"), routes)
         self.assertIn(("POST", "/protocols/acceptance-queue"), routes)
@@ -180,6 +181,19 @@ class DaemonApiTests(unittest.TestCase):
                 self.assertFalse(payload["readiness"]["external_protocol_wire_compatible"])
                 self.assertEqual(payload["summary"]["route_count"], 1)
                 self.assertIn("mcp", payload["protocol_gaps"])
+
+    def test_protocol_conformance_plan_route_returns_promotion_gates(self):
+        with daemon_url() as base_url:
+            with urllib.request.urlopen(
+                f"{base_url}/protocols/conformance-plan?target=all&capability_id=git.version",
+                timeout=5,
+            ) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(response.status, 200)
+                self.assertEqual(payload["kind"], "ProtocolConformancePlan")
+                self.assertFalse(payload["wire_compatible"])
+                self.assertIn("mcp", payload["protocols"])
+                self.assertGreater(payload["summary"]["missing_gate_count"], 0)
 
     def test_protocol_smoke_suite_route_returns_batch_gate(self):
         def fake_suite(

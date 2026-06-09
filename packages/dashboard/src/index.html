@@ -547,6 +547,16 @@
             data-api-path="/protocols/readiness?workflow_path=workflows/cli-anything-macrocli-mermaid-routing.example.json"
           >Workflow Readiness</button>
           <button
+            data-command="python -m cbn protocol conformance-plan all"
+            data-api-method="GET"
+            data-api-path="/protocols/conformance-plan?target=all"
+          >Conformance Plan</button>
+          <button
+            data-command="python -m cbn protocol conformance-plan all --workflow-path workflows/cli-anything-macrocli-mermaid-routing.example.json"
+            data-api-method="GET"
+            data-api-path="/protocols/conformance-plan?target=all&amp;workflow_path=workflows/cli-anything-macrocli-mermaid-routing.example.json"
+          >Workflow Conformance</button>
+          <button
             data-command="python -m cbn protocol accept-workflow workflows/cli-anything-macrocli-mermaid-routing.example.json"
             data-api-method="POST"
             data-api-path="/protocols/accept-workflow"

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from cbn_core.manifest import ManifestRegistry
 from cbn_protocol.compatibility import check_protocol, protocol_matrix
+from cbn_protocol.conformance import protocol_conformance_plan
 from cbn_protocol.exports import (
     export_all_protocols,
     export_all_workflow_protocols,
@@ -204,6 +205,52 @@ class ProtocolExportTests(unittest.TestCase):
         self.assertIn("selected_workflow_protocols", payload)
         self.assertEqual(payload["selected_workflow_protocols"]["mcp"]["scope"], "workflow")
         self.assertIn("missing", payload["protocol_gaps"]["mcp"])
+
+    def test_protocol_conformance_plan_keeps_wire_compatibility_false(self):
+        payload = protocol_conformance_plan(self.registry, target="all", capability_id="git.version")
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["kind"], "ProtocolConformancePlan")
+        self.assertFalse(payload["wire_compatible"])
+        self.assertEqual(set(payload["protocols"]), {"a2a", "acp", "mcp"})
+        self.assertGreater(payload["summary"]["missing_gate_count"], 0)
+        self.assertEqual(payload["summary"]["wire_compatible_protocol_count"], 0)
+        self.assertEqual(payload["protocols"]["mcp"]["gates"][0]["id"], "descriptor_shape")
+        self.assertTrue(
+            any(gate["id"] == "sdk_conformance" and gate["status"] == "missing" for gate in payload["protocols"]["mcp"]["gates"])
+        )
+        self.assertTrue(
+            any(gate["id"] == "task_lifecycle" and gate["status"] == "missing" for gate in payload["protocols"]["a2a"]["gates"])
+        )
+        self.assertTrue(
+            any(gate["id"] == "session_lifecycle" and gate["status"] == "missing" for gate in payload["protocols"]["acp"]["gates"])
+        )
+        self.assertIn("modelcontextprotocol.io", payload["source_anchors"]["mcp"]["url"])
+
+    def test_protocol_conformance_plan_can_focus_workflow(self):
+        payload = protocol_conformance_plan(
+            self.registry,
+            target="mcp",
+            workflow_path="workflows/artifact-id-routing.example.json",
+        )
+        self.assertEqual(payload["scope"], "workflow")
+        self.assertEqual(payload["workflow_path"], "workflows/artifact-id-routing.example.json")
+        self.assertEqual(set(payload["protocols"]), {"mcp"})
+        self.assertEqual(payload["protocols"]["mcp"]["gates"][0]["status"], "present")
+        self.assertFalse(payload["protocols"]["mcp"]["ready_to_claim_wire_compatibility"])
+
+    def test_cli_protocol_conformance_plan_outputs_report(self):
+        proc = subprocess.run(
+            [sys.executable, "-m", "cbn", "protocol", "conformance-plan", "all", "--capability-id", "git.version"],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["kind"], "ProtocolConformancePlan")
+        self.assertFalse(payload["wire_compatible"])
+        self.assertGreater(payload["summary"]["missing_gate_count"], 0)
 
     def test_protocol_smoke_suite_runs_all_mvp_facades(self):
         payload = protocol_smoke_suite(

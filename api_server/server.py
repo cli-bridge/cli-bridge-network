@@ -24,6 +24,7 @@ from cbn_protocol.a2a_http import agent_card, handle_a2a_jsonrpc_request
 from cbn_protocol.bridge_contract import workflow_bridge_contract_report
 from cbn_protocol.envelope import bridge_args_from_selectors, select_bridge_value, validate_bridge_message
 from cbn_protocol.compatibility import check_protocol, protocol_matrix
+from cbn_protocol.conformance import protocol_conformance_plan
 from cbn_protocol.exports import (
     export_all_protocols,
     export_all_workflow_protocols,
@@ -64,6 +65,7 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/protocols/check"},
     {"method": "GET", "path": "/protocols/matrix"},
     {"method": "GET", "path": "/protocols/readiness"},
+    {"method": "GET", "path": "/protocols/conformance-plan"},
     {"method": "GET", "path": "/protocols/smoke-suite"},
     {"method": "GET", "path": "/protocols/acceptance-queue"},
     {"method": "POST", "path": "/protocols/accept-workflow"},
@@ -313,6 +315,18 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 runtime.registry,
                 workflow_path=workflow_path,
                 include_workflows=include_workflows,
+            )
+            self._send(200 if result["ok"] else 422, result)
+            return
+        if parsed.path == "/protocols/conformance-plan":
+            target = query.get("target", ["all"])[0]
+            capability_id = query.get("capability_id", [None])[0]
+            workflow_path = query.get("workflow_path", query.get("path", [None]))[0]
+            result = protocol_conformance_plan(
+                runtime.registry,
+                target=target,
+                capability_id=capability_id,
+                workflow_path=workflow_path,
             )
             self._send(200 if result["ok"] else 422, result)
             return
