@@ -248,6 +248,14 @@ input {
   color: var(--muted);
 }
 
+.provider-operations {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .operation-card {
   border: 1px solid var(--line);
   background: #ffffff;
@@ -288,6 +296,31 @@ input {
   margin: 0;
   padding-left: 18px;
   color: var(--ink);
+}
+
+.operation-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 6px;
+  align-items: end;
+}
+
+.operation-form label {
+  display: grid;
+  gap: 3px;
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.operation-checkbox {
+  grid-template-columns: 18px 1fr;
+  align-items: center;
+}
+
+.operation-checkbox input,
+.operation-form input[type="checkbox"] {
+  width: auto;
+  min-height: 18px;
 }
 
 .mono-list {

@@ -15,6 +15,8 @@ const candidateSummary = document.getElementById("candidateSummary");
 const clearCandidates = document.getElementById("clearCandidates");
 const operationDetail = document.getElementById("operationDetail");
 const clearOperationDetail = document.getElementById("clearOperationDetail");
+const providerOperations = document.getElementById("providerOperations");
+const clearProviderOperations = document.getElementById("clearProviderOperations");
 
 const CBN_DAEMON_TOKEN_KEY = "cbn.daemonSessionToken";
 
@@ -250,6 +252,163 @@ function candidateSummaryFromCandidates(candidates) {
   });
 }
 
+function renderProviderOperations(payload) {
+  providerOperations.replaceChildren();
+  if (payload?.kind !== "PluginProviderOperationCatalog" || !Array.isArray(payload.operations)) {
+    providerOperations.textContent = "No provider operation catalog loaded.";
+    return;
+  }
+
+  const heading = document.createElement("div");
+  heading.className = "candidate-stats";
+  const summary = payload.summary || {};
+  heading.textContent = [
+    payload.plugin_id,
+    `${summary.operation_count ?? payload.operations.length} operations`,
+    `${summary.requires_confirmation_count ?? 0} confirm`,
+    `${summary.write_or_execute_count ?? 0} side-effect`,
+  ].filter(Boolean).join(" | ");
+  providerOperations.appendChild(heading);
+
+  payload.operations.forEach((operation) => {
+    providerOperations.appendChild(providerOperationCard(payload, operation));
+  });
+}
+
+function providerOperationCard(catalog, operation) {
+  const card = document.createElement("article");
+  card.className = `operation-card ${operation.requires_confirmation ? "operation-blocked" : "operation-ok"}`;
+
+  const title = document.createElement("h3");
+  title.textContent = `${operation.title || operation.id} (${operation.kind})`;
+  card.appendChild(title);
+
+  const meta = document.createElement("p");
+  meta.textContent = operation.command || operation.api?.path || operation.id;
+  card.appendChild(meta);
+
+  const badges = document.createElement("div");
+  badges.className = "candidate-badges";
+  [
+    operation.id,
+    operation.has_required_inputs ? `${operation.input_count} inputs` : "no required inputs",
+    operation.requires_confirmation ? "confirmation required" : "read only",
+    operation.api?.method ? `${operation.api.method} ${operation.api.path}` : null,
+  ]
+    .filter(Boolean)
+    .forEach((label) => {
+      const badge = document.createElement("span");
+      badge.textContent = label;
+      badges.appendChild(badge);
+    });
+  card.appendChild(badges);
+
+  const inputNames = providerOperationInputNames(operation);
+  const form = document.createElement("div");
+  form.className = "operation-form";
+  inputNames.forEach((name) => {
+    const label = document.createElement("label");
+    label.textContent = name;
+    const input = document.createElement("input");
+    input.type = providerInputType(operation.input_schema?.[name]);
+    input.placeholder = name;
+    input.dataset.operationInput = name;
+    label.appendChild(input);
+    form.appendChild(label);
+  });
+
+  if (operation.requires_confirmation) {
+    const label = document.createElement("label");
+    label.className = "operation-checkbox";
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.dataset.operationConfirm = "true";
+    label.appendChild(input);
+    label.append(" confirmed");
+    form.appendChild(label);
+  }
+
+  const planButton = document.createElement("button");
+  planButton.type = "button";
+  planButton.textContent = "Plan";
+  planButton.addEventListener("click", () => {
+    const request = providerOperationPlanRequest(catalog.plugin_id, operation, card);
+    planButton.dataset.command = request.command;
+    planButton.dataset.apiMethod = "POST";
+    planButton.dataset.apiPath = "/plugins/operation-plan";
+    planButton.dataset.apiBody = renderJson(request.body);
+    stageCommand(request.command, `Plan ${operation.id}`);
+    callApi(planButton);
+  });
+  form.appendChild(planButton);
+  card.appendChild(form);
+
+  if (Array.isArray(operation.side_effects) && operation.side_effects.length > 0) {
+    card.appendChild(listSection("Side Effects", operation.side_effects, "operation-list"));
+  }
+
+  return card;
+}
+
+function providerOperationInputNames(operation) {
+  const names = new Set();
+  if (Array.isArray(operation.required_inputs)) {
+    operation.required_inputs.forEach((name) => names.add(name));
+  }
+  if (operation.input_schema && typeof operation.input_schema === "object" && !Array.isArray(operation.input_schema)) {
+    Object.keys(operation.input_schema).forEach((name) => names.add(name));
+  }
+  return Array.from(names).sort();
+}
+
+function providerInputType(schemaValue) {
+  if (schemaValue === "integer" || schemaValue === "number") {
+    return "number";
+  }
+  if (schemaValue === "boolean") {
+    return "checkbox";
+  }
+  return "text";
+}
+
+function providerOperationPlanRequest(pluginId, operation, card) {
+  const inputs = {};
+  card.querySelectorAll("[data-operation-input]").forEach((input) => {
+    const name = input.dataset.operationInput;
+    if (input.type === "checkbox") {
+      inputs[name] = input.checked;
+      return;
+    }
+    if (input.value.trim() !== "") {
+      inputs[name] = input.value.trim();
+    }
+  });
+  const confirmed = Boolean(card.querySelector("[data-operation-confirm]")?.checked);
+  const inputFlags = Object.entries(inputs).map(([key, value]) => `--input ${key}=${commandInputValue(value)}`);
+  return {
+    command: [
+      "python -m cbn plugin operation-plan",
+      pluginId,
+      operation.id,
+      ...inputFlags,
+      confirmed ? "--yes" : null,
+    ].filter(Boolean).join(" "),
+    body: {
+      plugin_id: pluginId,
+      operation_id: operation.id,
+      inputs,
+      confirmed,
+    },
+  };
+}
+
+function commandInputValue(value) {
+  if (typeof value === "boolean") {
+    return value ? "true" : "false";
+  }
+  return String(value);
+}
+
 function renderOperationDetail(path, payload) {
   const isPluginOperationPath =
     path.startsWith("/plugins/cli-anything/") ||
@@ -349,6 +508,12 @@ function operationBadges(payload) {
   if (payload?.commands) {
     badges.push(`${payload.commands.length} command plan`);
   }
+  if (Array.isArray(payload?.missing_inputs) && payload.missing_inputs.length > 0) {
+    badges.push(`${payload.missing_inputs.length} missing inputs`);
+  }
+  if (payload?.dispatch_ready !== undefined) {
+    badges.push(payload.dispatch_ready ? "dispatch ready" : "dispatch blocked");
+  }
   return badges;
 }
 
@@ -436,6 +601,9 @@ async function callApi(button) {
     if (path === "/plugins/cli-anything/candidates") {
       renderCandidateSummary(payload);
     }
+    if (path.startsWith("/plugins/operations") && payload?.kind === "PluginProviderOperationCatalog") {
+      renderProviderOperations(payload);
+    }
     renderOperationDetail(path, payload);
     setApiStatus(response.ok ? "Connected" : `HTTP ${response.status}`);
     appendLog(`${label}: HTTP ${response.status}`);
@@ -481,6 +649,11 @@ clearQueue.addEventListener("click", () => {
 clearCandidates.addEventListener("click", () => {
   candidateSummary.textContent = "Run Rank Candidates to inspect CLI-Anything market harnesses.";
   appendLog("Cleared candidate summary.");
+});
+
+clearProviderOperations.addEventListener("click", () => {
+  providerOperations.textContent = "Run Provider Operations to render descriptor-driven plugin controls.";
+  appendLog("Cleared provider operations.");
 });
 
 clearOperationDetail.addEventListener("click", () => {
