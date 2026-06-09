@@ -2335,6 +2335,45 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(by_stage["native_launch"]["status"], "completed")
         self.assertEqual(by_stage["repair_write"]["status"], "skipped")
 
+    def test_adaptation_gate_skips_deep_repair_scan_for_external_blockers(self):
+        class FakeHub(CliAnythingHub):
+            def evaluate_harness(self, harness_name, title=None, from_market=True):
+                return {
+                    "ok": True,
+                    "harness_name": harness_name,
+                    "gates": {
+                        "manifest_valid": True,
+                        "installed": True,
+                        "launch_ready": False,
+                    },
+                    "blockers": [
+                        "declared requirements need external app, account, token, or service",
+                    ],
+                }
+
+            def entrypoint_repair_plan(self, harness_name, from_market=True):
+                raise AssertionError("external blockers must not trigger repair plan scanning")
+
+        result = FakeHub().adaptation_gate("gimp", from_market=True, require_smoke=False)
+        self.assertFalse(result["summary"]["native_launch_ready"])
+        self.assertFalse(result["summary"]["repair_required"])
+        self.assertTrue(result["summary"]["repair_scan_skipped"])
+        self.assertEqual(result["summary"]["repair_scan_status"], "skipped")
+        self.assertEqual(
+            result["summary"]["recommended_next_action"],
+            "inspect_harness_blockers",
+        )
+        self.assertIsNone(result["repair_plan"])
+        self.assertIsNone(result["adapter_targets"])
+        self.assertEqual(result["repair_scan"]["status"], "skipped")
+        by_stage = {stage["id"]: stage for stage in result["stages"]}
+        self.assertEqual(by_stage["repair_plan"]["status"], "skipped")
+        self.assertIn(
+            "declared requirements need external app, account, token, or service",
+            by_stage["repair_plan"]["blockers"],
+        )
+        self.assertEqual(by_stage["adapter_target"]["status"], "skipped")
+
     def test_adaptation_gate_blocks_repair_write_until_smoke_runs(self):
         class FakeHub(CliAnythingHub):
             def evaluate_harness(self, harness_name, title=None, from_market=True):

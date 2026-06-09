@@ -1784,7 +1784,8 @@ class CliAnythingHub:
         selected_target = None
         selected_module = module
         smoke_report = None
-        if not native_launch_ready:
+        repair_scan = _adaptation_gate_repair_scan_decision(evaluation, native_launch_ready, module)
+        if repair_scan["scan"]:
             repair_plan = self.entrypoint_repair_plan(harness_name, from_market=from_market)
             diagnosis = repair_plan.get("diagnosis") if isinstance(repair_plan.get("diagnosis"), dict) else {}
             if diagnosis.get("repair_required"):
@@ -1816,6 +1817,7 @@ class CliAnythingHub:
             smoke_gate=smoke_gate,
             smoke_report=smoke_report,
             require_smoke=require_smoke,
+            repair_scan=repair_scan,
         )
         return {
             "ok": True,
@@ -1831,6 +1833,7 @@ class CliAnythingHub:
             "smoke_args": list(smoke_args),
             "smoke_timeout_seconds": smoke_timeout_seconds,
             "summary": summary,
+            "repair_scan": repair_scan,
             "stages": _adaptation_gate_stages(
                 evaluation=evaluation,
                 repair_plan=repair_plan,
@@ -1839,6 +1842,7 @@ class CliAnythingHub:
                 smoke_gate=smoke_gate,
                 smoke_report=smoke_report,
                 summary=summary,
+                repair_scan=repair_scan,
             ),
             "evaluation": evaluation,
             "repair_plan": repair_plan,
@@ -4271,6 +4275,63 @@ def _repair_entrypoint_smoke_gate(
     }
 
 
+_REPAIRABLE_ENTRYPOINT_BLOCKER = "installed harness entrypoint is missing from PATH"
+
+
+def _adaptation_gate_repair_scan_decision(
+    evaluation: dict[str, Any],
+    native_launch_ready: bool,
+    module: str | None,
+) -> dict[str, Any]:
+    gates = evaluation.get("gates") if isinstance(evaluation.get("gates"), dict) else {}
+    blockers = evaluation.get("blockers", []) if isinstance(evaluation.get("blockers"), list) else []
+    blocker_texts = [str(item) for item in blockers if str(item)]
+    if native_launch_ready:
+        return {
+            "scan": False,
+            "status": "not_needed",
+            "reason": "native launch is ready",
+            "blockers": [],
+        }
+    if module:
+        return {
+            "scan": True,
+            "status": "requested",
+            "reason": "explicit adapter module requested",
+            "blockers": [],
+        }
+    if not gates.get("installed"):
+        return {
+            "scan": False,
+            "status": "skipped",
+            "reason": "harness is not installed",
+            "blockers": ["harness is not installed"],
+        }
+    non_repair_blockers = [
+        blocker for blocker in blocker_texts if blocker != _REPAIRABLE_ENTRYPOINT_BLOCKER
+    ]
+    if non_repair_blockers:
+        return {
+            "scan": False,
+            "status": "skipped",
+            "reason": "candidate has blockers that entrypoint repair cannot resolve",
+            "blockers": non_repair_blockers,
+        }
+    if _REPAIRABLE_ENTRYPOINT_BLOCKER in blocker_texts:
+        return {
+            "scan": True,
+            "status": "allowed",
+            "reason": "entrypoint repair may resolve the launch blocker",
+            "blockers": [],
+        }
+    return {
+        "scan": True,
+        "status": "allowed",
+        "reason": "no non-repair blockers were reported",
+        "blockers": [],
+    }
+
+
 def _adaptation_gate_summary(
     evaluation: dict[str, Any],
     native_launch_ready: bool,
@@ -4279,10 +4340,11 @@ def _adaptation_gate_summary(
     smoke_gate: dict[str, Any],
     smoke_report: dict[str, Any] | None,
     require_smoke: bool,
+    repair_scan: dict[str, Any],
 ) -> dict[str, Any]:
     gates = evaluation.get("gates") if isinstance(evaluation.get("gates"), dict) else {}
     diagnosis = repair_plan.get("diagnosis") if isinstance(repair_plan, dict) else {}
-    repair_required = bool(diagnosis.get("repair_required")) if diagnosis else not native_launch_ready
+    repair_required = bool(diagnosis.get("repair_required")) if diagnosis else False
     smoke_passed = bool(smoke_report and smoke_report.get("summary", {}).get("smoke_ok"))
     ready_for_repair_write = bool(
         repair_required
@@ -4294,6 +4356,10 @@ def _adaptation_gate_summary(
         "installed": bool(gates.get("installed")),
         "native_launch_ready": native_launch_ready,
         "repair_required": repair_required,
+        "repair_scan_status": repair_scan["status"],
+        "repair_scan_skipped": not bool(repair_scan["scan"]),
+        "repair_scan_reason": repair_scan["reason"],
+        "repair_scan_blockers": repair_scan["blockers"],
         "selected_module": selected_module,
         "smoke_required": require_smoke,
         "smoke_passed": smoke_passed,
@@ -4340,6 +4406,7 @@ def _adaptation_gate_stages(
     smoke_gate: dict[str, Any],
     smoke_report: dict[str, Any] | None,
     summary: dict[str, Any],
+    repair_scan: dict[str, Any],
 ) -> list[dict[str, Any]]:
     gates = evaluation.get("gates") if isinstance(evaluation.get("gates"), dict) else {}
     blockers = evaluation.get("blockers", []) if isinstance(evaluation.get("blockers"), list) else []
@@ -4370,10 +4437,17 @@ def _adaptation_gate_stages(
                 "completed"
                 if repair_plan and summary["repair_required"]
                 else "skipped"
-                if summary["native_launch_ready"]
+                if summary["native_launch_ready"] or not repair_scan["scan"]
                 else "blocked"
             ),
-            "blockers": [] if repair_plan or summary["native_launch_ready"] else ["repair plan is unavailable"],
+            "repair_scan_status": repair_scan["status"],
+            "blockers": (
+                []
+                if repair_plan or summary["native_launch_ready"]
+                else repair_scan["blockers"]
+                if not repair_scan["scan"]
+                else ["repair plan is unavailable"]
+            ),
         },
         {
             "id": "adapter_target",
@@ -4381,12 +4455,16 @@ def _adaptation_gate_stages(
                 "completed"
                 if selected_module
                 else "skipped"
-                if summary["native_launch_ready"]
+                if summary["native_launch_ready"] or not summary["repair_required"]
                 else "blocked"
             ),
             "target_count": target_count,
             "selected_module": selected_module,
-            "blockers": [] if selected_module or summary["native_launch_ready"] else ["no adapter target selected"],
+            "blockers": (
+                []
+                if selected_module or summary["native_launch_ready"] or not summary["repair_required"]
+                else ["no adapter target selected"]
+            ),
         },
         {
             "id": "adapter_smoke",
@@ -4394,7 +4472,7 @@ def _adaptation_gate_stages(
                 "completed"
                 if smoke_gate["status"] == "passed"
                 else "skipped"
-                if not smoke_gate["required"]
+                if not smoke_gate["required"] or not summary["repair_required"]
                 else "ready"
                 if smoke_gate["status"] == "not_run"
                 else "blocked"
@@ -4413,10 +4491,16 @@ def _adaptation_gate_stages(
                 "ready"
                 if summary["ready_for_repair_write"]
                 else "skipped"
-                if summary["native_launch_ready"]
+                if summary["native_launch_ready"] or not summary["repair_required"]
                 else "blocked"
             ),
-            "blockers": [] if summary["ready_for_repair_write"] or summary["native_launch_ready"] else smoke_gate["blockers"],
+            "blockers": (
+                []
+                if summary["ready_for_repair_write"]
+                or summary["native_launch_ready"]
+                or not summary["repair_required"]
+                else smoke_gate["blockers"]
+            ),
         },
     ]
 
