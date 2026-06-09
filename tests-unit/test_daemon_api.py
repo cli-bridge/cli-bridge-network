@@ -402,6 +402,38 @@ class DaemonApiTests(unittest.TestCase):
                     self.assertEqual(payload["limit"], 20)
                     self.assertEqual(payload["blocked"][0]["categories"], ["external-network-or-risk"])
 
+    def test_cli_anything_repair_plan_route_returns_entrypoint_report(self):
+        class FakeHub:
+            def entrypoint_repair_plan(self, harness_name, from_market=True):
+                return {
+                    "ok": True,
+                    "plugin_id": "cli-anything",
+                    "kind": "CliAnythingEntrypointRepairPlan",
+                    "harness_name": harness_name,
+                    "from_market": from_market,
+                    "diagnosis": {"state": "installed_entrypoint_missing"},
+                }
+
+        with patch("api_server.server.CliAnythingHub", FakeHub):
+            with daemon_url() as base_url:
+                request = urllib.request.Request(
+                    f"{base_url}/plugins/cli-anything/repair-plan",
+                    data=json.dumps(
+                        {
+                            "harness_name": "py4csr",
+                            "from_market": True,
+                        }
+                    ).encode("utf-8"),
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(payload["harness_name"], "py4csr")
+                    self.assertTrue(payload["from_market"])
+                    self.assertEqual(payload["diagnosis"]["state"], "installed_entrypoint_missing")
+
     def test_runtime_transport_status_and_plan_routes(self):
         with daemon_url() as base_url:
             with urllib.request.urlopen(f"{base_url}/runtime/transports?kind=pty", timeout=5) as response:

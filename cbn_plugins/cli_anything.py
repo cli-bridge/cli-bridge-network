@@ -8,12 +8,15 @@ generates CBN manifests for installed or planned harnesses.
 from __future__ import annotations
 
 import json
+import importlib.metadata as importlib_metadata
+import importlib.util as importlib_util
 import os
 import re
 import shutil
 import socket
 import subprocess
 import sys
+import sysconfig
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -1289,6 +1292,56 @@ class CliAnythingHub:
             ],
         }
 
+    def entrypoint_repair_plan(
+        self,
+        harness_name: str,
+        from_market: bool = True,
+    ) -> dict[str, Any]:
+        evaluation = self.evaluate_harness(harness_name, from_market=from_market)
+        status = evaluation.get("status") if isinstance(evaluation.get("status"), dict) else {}
+        market_record = status.get("market_record") if isinstance(status.get("market_record"), dict) else None
+        entry_point = status.get("entry_point")
+        if not isinstance(entry_point, str) or not entry_point:
+            entry_point = None
+        entrypoint_path = shutil.which(entry_point) if entry_point else None
+        package_candidates = _entrypoint_package_candidates(harness_name, market_record, status)
+        script_candidates = _script_path_candidates(entry_point)
+        distribution_reports = [_distribution_report(package) for package in package_candidates]
+        module_reports = [_module_report(package) for package in package_candidates]
+        diagnosis = _entrypoint_diagnosis(
+            entry_point=entry_point,
+            entrypoint_path=entrypoint_path,
+            script_candidates=script_candidates,
+            distribution_reports=distribution_reports,
+            module_reports=module_reports,
+            evaluation=evaluation,
+        )
+        return {
+            "ok": True,
+            "plugin_id": PLUGIN_ID,
+            "kind": "CliAnythingEntrypointRepairPlan",
+            "harness_name": harness_name,
+            "from_market": from_market,
+            "capability_id": evaluation.get("capability_id"),
+            "entry_point": entry_point,
+            "entrypoint_path": entrypoint_path,
+            "entrypoint_available": bool(entrypoint_path),
+            "package_candidates": package_candidates,
+            "script_candidates": script_candidates,
+            "distributions": distribution_reports,
+            "modules": module_reports,
+            "diagnosis": diagnosis,
+            "evaluation": evaluation,
+            "commands": {
+                "status": f"python -m cbn plugin harness cli-anything status {harness_name} --from-market",
+                "evaluate": f"python -m cbn plugin evaluate-harness cli-anything {harness_name} --from-market",
+                "blocked_plan": f"python -m cbn plugin blocked-plan cli-anything --harness {harness_name}",
+                "where_entrypoint": f"where.exe {entry_point}" if entry_point else None,
+                "pip_show": f"python -m pip show {package_candidates[0]}" if package_candidates else None,
+                "cli_hub_launch_help": f"cli-hub launch {harness_name} -- --help",
+            },
+        }
+
     def live_verification(
         self,
         harnesses: tuple[str, ...] = ("mermaid", "macrocli"),
@@ -2433,6 +2486,196 @@ def _blocked_recommended_next_action(categories: list[str]) -> str:
     if "manifest" in categories:
         return "fix_manifest_or_market_metadata"
     return "inspect_blockers"
+
+
+def _entrypoint_package_candidates(
+    harness_name: str,
+    market_record: dict[str, Any] | None,
+    status: dict[str, Any],
+) -> list[str]:
+    candidates: list[str] = []
+    if market_record:
+        for key in ("name", "package", "pip_package", "npm_package"):
+            value = market_record.get(key)
+            if isinstance(value, str) and value.strip():
+                candidates.append(value.strip())
+        install_cmd = market_record.get("install_cmd")
+        if isinstance(install_cmd, str):
+            candidates.extend(_packages_from_install_command(install_cmd))
+    fields = status.get("cli_hub_info", {}).get("fields", {})
+    if isinstance(fields, dict):
+        install_cmd = fields.get("install_cmd")
+        if isinstance(install_cmd, str):
+            candidates.extend(_packages_from_install_command(install_cmd))
+    candidates.append(harness_name)
+    normalized = []
+    for candidate in candidates:
+        cleaned = _normalize_package_candidate(candidate)
+        if cleaned and cleaned not in normalized:
+            normalized.append(cleaned)
+    return normalized
+
+
+def _packages_from_install_command(command: str) -> list[str]:
+    tokens = command.split()
+    if "install" not in tokens:
+        return []
+    packages = []
+    seen_install = False
+    for token in tokens:
+        if not seen_install:
+            seen_install = token == "install"
+            continue
+        if token.startswith("-"):
+            continue
+        packages.append(token)
+    return packages
+
+
+def _normalize_package_candidate(candidate: str) -> str | None:
+    text = candidate.strip()
+    if not text:
+        return None
+    if text.startswith(("git+", "http://", "https://")):
+        return None
+    text = text.split("[", 1)[0]
+    text = re.split(r"[<>=!~]", text, maxsplit=1)[0]
+    text = text.strip().strip("'\"")
+    if not re.match(r"^[A-Za-z0-9_.-]+$", text):
+        return None
+    return text
+
+
+def _script_path_candidates(entry_point: str | None) -> list[dict[str, Any]]:
+    if not entry_point:
+        return []
+    names = [entry_point]
+    if os.name == "nt":
+        names.extend([f"{entry_point}.exe", f"{entry_point}.bat", f"{entry_point}.cmd", f"{entry_point}-script.py"])
+    dirs = []
+    for value in (sysconfig.get_path("scripts"), str(Path(sys.executable).parent / "Scripts")):
+        if value and value not in dirs:
+            dirs.append(value)
+    reports = []
+    for directory in dirs:
+        for name in names:
+            path = Path(directory) / name
+            reports.append(
+                {
+                    "path": str(path),
+                    "exists": path.exists(),
+                    "directory": directory,
+                }
+            )
+    return reports
+
+
+def _distribution_report(package: str) -> dict[str, Any]:
+    try:
+        dist = importlib_metadata.distribution(package)
+    except importlib_metadata.PackageNotFoundError:
+        return {
+            "package": package,
+            "installed": False,
+            "version": None,
+            "location": None,
+            "console_scripts": [],
+        }
+    console_scripts = [
+        {"name": ep.name, "value": ep.value}
+        for ep in dist.entry_points
+        if ep.group == "console_scripts"
+    ]
+    return {
+        "package": package,
+        "installed": True,
+        "version": dist.version,
+        "location": str(Path(dist.locate_file(""))),
+        "console_scripts": console_scripts,
+    }
+
+
+def _module_report(package: str) -> dict[str, Any]:
+    spec = importlib_util.find_spec(package)
+    if spec is None:
+        return {
+            "package": package,
+            "importable": False,
+            "origin": None,
+            "module_main": False,
+        }
+    module_main = False
+    if spec.submodule_search_locations:
+        for location in spec.submodule_search_locations:
+            if (Path(location) / "__main__.py").exists():
+                module_main = True
+                break
+    return {
+        "package": package,
+        "importable": True,
+        "origin": spec.origin,
+        "module_main": module_main,
+    }
+
+
+def _entrypoint_diagnosis(
+    entry_point: str | None,
+    entrypoint_path: str | None,
+    script_candidates: list[dict[str, Any]],
+    distribution_reports: list[dict[str, Any]],
+    module_reports: list[dict[str, Any]],
+    evaluation: dict[str, Any],
+) -> dict[str, Any]:
+    if entrypoint_path:
+        return {
+            "state": "entrypoint_available",
+            "repair_required": False,
+            "recommended_next_action": "verify_harness_runtime",
+            "findings": ["entrypoint is available on PATH"],
+        }
+    findings = []
+    if entry_point:
+        findings.append(f"entrypoint is not on PATH: {entry_point}")
+    installed_dists = [report for report in distribution_reports if report.get("installed")]
+    if installed_dists:
+        findings.append("python package distribution is installed")
+    else:
+        findings.append("no matching python package distribution found")
+    matching_scripts = [
+        script
+        for report in distribution_reports
+        for script in report.get("console_scripts", [])
+        if script.get("name") == entry_point
+    ]
+    if matching_scripts:
+        findings.append("matching console_script exists in package metadata")
+    elif installed_dists:
+        findings.append("installed package has no matching console_script")
+    existing_script_files = [item for item in script_candidates if item.get("exists")]
+    if existing_script_files:
+        findings.append("entrypoint file exists in a scripts directory but is not on PATH")
+    runnable_modules = [item for item in module_reports if item.get("module_main")]
+    if runnable_modules:
+        findings.append("package exposes a python -m module entry")
+    gates = evaluation.get("gates") if isinstance(evaluation.get("gates"), dict) else {}
+    if gates.get("installed") and not gates.get("entrypoint_available"):
+        state = "installed_entrypoint_missing"
+        action = "repair_market_metadata_or_create_entrypoint_wrapper"
+    elif installed_dists and not matching_scripts:
+        state = "package_without_declared_console_script"
+        action = "repair_market_metadata_or_choose_module_adapter"
+    elif existing_script_files:
+        state = "script_exists_but_path_missing"
+        action = "add_scripts_directory_to_path_or_use_absolute_entrypoint"
+    else:
+        state = "entrypoint_unresolved"
+        action = "inspect_package_and_market_metadata"
+    return {
+        "state": state,
+        "repair_required": True,
+        "recommended_next_action": action,
+        "findings": findings,
+    }
 
 
 def _safe_plugin_report(builder: Any) -> dict[str, Any]:

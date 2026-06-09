@@ -1558,6 +1558,44 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertIn("manual-dependency", by_name["unimol_tools"]["categories"])
         self.assertIn("--allow-blocked", by_name["unimol_tools"]["commands"]["onboard_install_override"])
 
+    def test_entrypoint_repair_plan_detects_installed_package_without_console_script(self):
+        class FakeHub(CliAnythingHub):
+            def evaluate_harness(self, harness_name, title=None, from_market=True):
+                return {
+                    "ok": True,
+                    "harness_name": harness_name,
+                    "capability_id": "cli-anything.broken.launch",
+                    "install_candidate": False,
+                    "recommended_next_action": "resolve_blockers",
+                    "blockers": ["installed harness entrypoint is missing from PATH"],
+                    "gates": {
+                        "installed": True,
+                        "entrypoint_available": False,
+                        "launch_ready": False,
+                    },
+                    "status": {
+                        "entry_point": "definitely-missing-pip-entrypoint",
+                        "entrypoint_available": False,
+                        "installed": True,
+                        "market_record": {
+                            "name": "pip",
+                            "install_cmd": "pip install pip",
+                            "entry_point": "definitely-missing-pip-entrypoint",
+                        },
+                    },
+                }
+
+        result = FakeHub().entrypoint_repair_plan("broken", from_market=True)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["kind"], "CliAnythingEntrypointRepairPlan")
+        self.assertFalse(result["entrypoint_available"])
+        self.assertIn("pip", result["package_candidates"])
+        pip_report = next(item for item in result["distributions"] if item["package"] == "pip")
+        self.assertTrue(pip_report["installed"])
+        self.assertEqual(result["diagnosis"]["state"], "installed_entrypoint_missing")
+        self.assertTrue(result["diagnosis"]["repair_required"])
+        self.assertIn("installed package has no matching console_script", result["diagnosis"]["findings"])
+
     def test_candidate_harnesses_limits_after_ranking_full_market(self):
         class FakeHub(CliAnythingHub):
             def list_market(self) -> CliHubCommandResult:
@@ -2235,6 +2273,29 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(payload["kind"], "CliAnythingBlockedHarnessPlan")
         self.assertIn("blocked", payload)
         self.assertIn("summary", payload)
+
+    def test_cli_repair_plan_outputs_entrypoint_report(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "plugin",
+                "repair-plan",
+                "cli-anything",
+                "py4csr",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertIn(proc.returncode, {0, 6})
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["plugin_id"], "cli-anything")
+        self.assertEqual(payload["kind"], "CliAnythingEntrypointRepairPlan")
+        self.assertIn("diagnosis", payload)
+        self.assertIn("commands", payload)
 
     def test_cli_sync_market_handles_missing_cli_hub_without_crashing(self):
         proc = subprocess.run(

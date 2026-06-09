@@ -91,6 +91,14 @@ if (!html.includes('data-api-path="/plugins/cli-anything/blocked-plan"')) {
   throw new Error("Dashboard does not wire the CLI-Anything blocked harness plan to the daemon API.");
 }
 
+if (!html.includes("python -m cbn plugin repair-plan cli-anything py4csr --from-market")) {
+  throw new Error("Dashboard does not expose the CLI-Anything entrypoint repair plan.");
+}
+
+if (!html.includes('data-api-path="/plugins/cli-anything/repair-plan"')) {
+  throw new Error("Dashboard does not wire the CLI-Anything entrypoint repair plan to the daemon API.");
+}
+
 if (!html.includes("python -m cbn plugin live-verification cli-anything")) {
   throw new Error("Dashboard does not expose the CLI-Anything live verification command.");
 }
@@ -145,6 +153,10 @@ if (!html.includes('data-api-body=\'{"query":"file","limit":20,"max_installs":5,
 
 if (!html.includes('data-api-body=\'{"harnesses":["n8n","py4csr","unimol_tools"]}\'')) {
   throw new Error("Dashboard blocked plan API body is not stable.");
+}
+
+if (!html.includes('data-api-body=\'{"harness_name":"py4csr","from_market":true}\'')) {
+  throw new Error("Dashboard repair plan API body is not stable.");
 }
 
 if (!html.includes('data-api-path="/plugins/cli-anything/market"')) {

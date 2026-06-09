@@ -533,6 +533,20 @@ def build_parser() -> argparse.ArgumentParser:
     plugin_blocked_plan.add_argument("--query", help="Optional CLI-Hub search query when no --harness is provided.")
     plugin_blocked_plan.add_argument("--limit", type=int, default=50, help="Maximum market records to inspect.")
 
+    plugin_repair_plan = plugin_subcommands.add_parser(
+        "repair-plan",
+        help="Build a read-only repair plan for a CLI-Anything harness entrypoint problem.",
+    )
+    plugin_repair_plan.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
+    plugin_repair_plan.add_argument("harness_name", help="Harness name from the plugin market.")
+    plugin_repair_plan.add_argument("--from-market", action="store_true", default=True)
+    plugin_repair_plan.add_argument(
+        "--offline",
+        action="store_false",
+        dest="from_market",
+        help="Build repair diagnostics without requiring market metadata.",
+    )
+
     plugin_sync = plugin_subcommands.add_parser(
         "sync-market",
         help="Preview or write CBN manifests for CLI-Anything market records.",
