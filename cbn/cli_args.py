@@ -239,6 +239,52 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run MCP/A2A/ACP smoke checks as part of the demo report.",
     )
 
+    import_parser = subcommands.add_parser("import", help="Create CBN manifests from external tools.")
+    import_subcommands = import_parser.add_subparsers(dest="import_command")
+    import_command = import_subcommands.add_parser(
+        "command",
+        help="Generate a ToolManifest for a plain CLI command.",
+    )
+    import_command.add_argument("capability_id", help="Stable CBN capability id, for example local.echo.")
+    import_command.add_argument(
+        "--command",
+        dest="executable",
+        required=True,
+        help="Executable command or absolute path.",
+    )
+    import_command.add_argument(
+        "--arg",
+        action="append",
+        default=[],
+        help="Argument to include in the manifest argsTemplate; repeatable.",
+    )
+    import_command.add_argument("--title", help="Human-readable capability title.")
+    import_command.add_argument("--transport", choices=["stdio", "pty"], default="stdio")
+    import_command.add_argument("--parser-ref", default="raw.text")
+    import_command.add_argument("--verified", action="store_true", help="Mark parser/output contract verified.")
+    import_command.add_argument(
+        "--risk",
+        choices=["read", "write-workspace", "privileged", "external-network"],
+        default="read",
+    )
+    import_command.add_argument("--requires-confirmation", action="store_true")
+    import_command.add_argument(
+        "--network",
+        choices=["deny", "localhost", "requires-confirmation", "allow"],
+        default="deny",
+    )
+    import_command.add_argument("--cwd-policy", default="workspace")
+    import_command.add_argument("--timeout-seconds", type=int, default=30)
+    import_command.add_argument("--label", action="append", default=[], help="Manifest label as KEY=VALUE; repeatable.")
+    import_command.add_argument(
+        "--annotation",
+        action="append",
+        default=[],
+        help="Manifest annotation as KEY=VALUE; repeatable.",
+    )
+    import_command.add_argument("--output", help="Output manifest path. Defaults to runtime/manifests/<id>.json.")
+    import_command.add_argument("--write", action="store_true", help="Write the manifest after validation.")
+
     mcp_parser = subcommands.add_parser("mcp", help="Run or test the MCP stdio facade.")
     mcp_subcommands = mcp_parser.add_subparsers(dest="mcp_command")
     mcp_serve = mcp_subcommands.add_parser("serve", help="Serve MCP over stdio.")

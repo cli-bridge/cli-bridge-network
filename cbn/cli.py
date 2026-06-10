@@ -11,6 +11,7 @@ from cbn.cli_args import build_parser
 from cbn.paths import resolve_project_paths
 from cbn.version import __version__
 from cbn_demo.killer import killer_demo_report
+from cbn_core.command_importer import command_import_report, parse_key_values
 from cbn_core.manifest import validate_manifest_path
 from cbn_execution.graph import WorkflowGraph
 from cbn_parsers.fixtures import run_parser_fixtures
@@ -301,6 +302,30 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(json.dumps(payload, ensure_ascii=False, indent=2))
             return 0 if payload["ok"] else 10
+
+    if args.command == "import":
+        if args.import_command == "command":
+            payload = command_import_report(
+                capability_id=args.capability_id,
+                command=args.executable,
+                args_template=tuple(args.arg),
+                title=args.title,
+                transport=args.transport,
+                parser_ref=args.parser_ref,
+                verified=args.verified,
+                risk=args.risk,
+                requires_confirmation=args.requires_confirmation,
+                network=args.network,
+                cwd_policy=args.cwd_policy,
+                timeout_seconds=args.timeout_seconds,
+                labels=parse_key_values(args.label),
+                annotations=parse_key_values(args.annotation),
+                write=args.write,
+                output_path=Path(args.output) if args.output else None,
+                known_parser_refs=_known_parser_refs(),
+            )
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0 if payload["ok"] else 11
 
     if args.command == "mcp":
         if args.mcp_command == "serve":
