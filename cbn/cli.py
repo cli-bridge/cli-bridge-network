@@ -326,6 +326,39 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(json.dumps(payload, ensure_ascii=False, indent=2))
             return 0 if payload["ok"] else 11
+        if args.import_command == "cli-anything":
+            if (args.write or args.install) and not args.yes:
+                return _print_cli_error(
+                    "confirmation_required",
+                    "cli-anything import side effects require --yes",
+                )
+            runtime = build_runtime() if args.install and args.yes else None
+            payload = CliAnythingHub().onboard_harness(
+                args.harness_name,
+                title=args.title,
+                from_market=args.from_market,
+                write=args.write,
+                confirmed=args.yes,
+                install=args.install,
+                allow_blocked=args.allow_blocked,
+                include_workflows=args.include_workflows,
+                run_smoke_suite=args.smoke_suite,
+                smoke_extra_args=tuple(args.smoke_extra_arg),
+                operation_runner=runtime.plugin_runner if runtime else None,
+            )
+            payload = {
+                **payload,
+                "entrypoint": "cbn import cli-anything",
+                "compatibility": {
+                    "plugin_command": (
+                        "python -m cbn plugin onboard-harness "
+                        f"cli-anything {args.harness_name}"
+                    ),
+                    "facade_for": "CliAnythingHub.onboard_harness",
+                },
+            }
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0 if payload["ok"] else 11
 
     if args.command == "mcp":
         if args.mcp_command == "serve":

@@ -160,8 +160,11 @@ Killer Demo slice 已新增可运行证据束：
 - `cbn import command` 已有最小入口：默认生成并校验 `ToolManifest`，
   显式 `--write` 时写入 `runtime/manifests/<capability-id>.json` 或指定
   `--output`。它用于把普通 CLI 快速变成 CBN capability。
-- 继续把 `cbn import cli-anything`、`cbn import skill`、`cbn import mcp`、
-  `cbn record-parser-fixture` 做成低门槛接入入口。
+- `cbn import cli-anything` 已有兼容门面：复用
+  `CliAnythingHub.onboard_harness`，默认只输出 evaluate/probe/adapt/install/verify
+  阶段报告；`--write` 或 `--install` 需要 `--yes` 才执行副作用。
+- 继续把 `cbn import skill`、`cbn import mcp`、`cbn record-parser-fixture`
+  做成低门槛接入入口。
 - 将 `cbn_plugins/cli_anything.py` 先 facade 后拆为 market、probe、
   manifest_factory、repair、verification、onboarding。
 - 把 `cbn_adapter_agent` 抽象为可参与 workflow 的 Agent node，承载自然语言
@@ -177,6 +180,7 @@ Killer Demo slice 已新增可运行证据束：
 - `python -m cbn demo killer --run --dry-run --smoke-suite`
 - `python -m unittest tests-unit.test_killer_demo`
 - `python -m unittest tests-unit.test_command_importer`
+- `python -m unittest tests-unit.test_cli_imports`
 - `python -m unittest tests-unit.test_daemon_api.DaemonApiTests.test_killer_demo_route_returns_demo_report`
 - `python -m unittest tests-unit.test_parser_protocol tests-unit.test_workflow_runner`
 - `python -m unittest tests-unit.test_protocol_exports`

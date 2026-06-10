@@ -284,6 +284,44 @@ def build_parser() -> argparse.ArgumentParser:
     )
     import_command.add_argument("--output", help="Output manifest path. Defaults to runtime/manifests/<id>.json.")
     import_command.add_argument("--write", action="store_true", help="Write the manifest after validation.")
+    import_cli_anything = import_subcommands.add_parser(
+        "cli-anything",
+        help="Import or onboard a CLI-Anything harness as a CBN capability.",
+    )
+    import_cli_anything.add_argument("harness_name", help="Harness name in CLI-Anything CLI-Hub.")
+    import_cli_anything.add_argument("--title", help="Override generated manifest title.")
+    import_cli_anything.add_argument("--from-market", action="store_true", default=True)
+    import_cli_anything.add_argument(
+        "--offline",
+        action="store_false",
+        dest="from_market",
+        help="Do not require CLI-Hub market metadata.",
+    )
+    import_cli_anything.add_argument("--write", action="store_true", help="Write manifest after gates pass.")
+    import_cli_anything.add_argument("--install", action="store_true", help="Install the harness through plugin operations.")
+    import_cli_anything.add_argument("--yes", action="store_true", help="Confirm write/install side effects.")
+    import_cli_anything.add_argument(
+        "--allow-blocked",
+        action="store_true",
+        help="Allow confirmed write/install despite onboarding blockers.",
+    )
+    import_cli_anything.add_argument(
+        "--no-workflows",
+        action="store_false",
+        dest="include_workflows",
+        help="Skip workflow reference lookup.",
+    )
+    import_cli_anything.add_argument(
+        "--smoke-suite",
+        action="store_true",
+        help="Run protocol smoke suite after onboarding checks.",
+    )
+    import_cli_anything.add_argument(
+        "--smoke-extra-arg",
+        action="append",
+        default=[],
+        help="Extra arg passed to protocol smoke capability calls; repeatable.",
+    )
 
     mcp_parser = subcommands.add_parser("mcp", help="Run or test the MCP stdio facade.")
     mcp_subcommands = mcp_parser.add_subparsers(dest="mcp_command")
