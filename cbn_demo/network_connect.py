@@ -413,7 +413,28 @@ def _quickstart_request(
     }
     if json_payload is not None:
         request["json"] = json_payload
+    request["curl"] = _quickstart_curl(method=method, url=url, headers=headers, json_payload=json_payload)
     return request
+
+
+def _quickstart_curl(
+    *,
+    method: str,
+    url: str,
+    headers: dict[str, str],
+    json_payload: dict[str, Any] | None,
+) -> str:
+    parts = ["curl", "-X", method, _shell_quote(url)]
+    for key, value in headers.items():
+        parts.extend(["-H", _shell_quote(f"{key}: {value}")])
+    if json_payload is not None:
+        parts.extend(["-H", _shell_quote("Content-Type: application/json")])
+        parts.extend(["--data", _shell_quote(json.dumps(json_payload, ensure_ascii=False))])
+    return " ".join(parts)
+
+
+def _shell_quote(value: str) -> str:
+    return "'" + value.replace("'", "'\"'\"'") + "'"
 
 
 def _absolute_url(base_url: str | None, path: str) -> str:

@@ -205,6 +205,7 @@ export interface QuickstartRequest {
   url?: string;
   headers?: Record<string, string>;
   json?: Record<string, unknown>;
+  curl?: string;
 }
 
 export interface NetworkConnectPackage {

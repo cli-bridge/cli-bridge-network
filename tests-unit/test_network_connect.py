@@ -57,11 +57,14 @@ class NetworkConnectPackageTests(unittest.TestCase):
         requests_by_id = {request["id"]: request for request in quickstart["requests"]}
         self.assertEqual(requests_by_id["health"]["method"], "GET")
         self.assertEqual(requests_by_id["health"]["headers"]["X-CBN-Session"], "test-token")
+        self.assertIn("curl -X GET", requests_by_id["health"]["curl"])
+        self.assertIn("-H 'X-CBN-Session: test-token'", requests_by_id["health"]["curl"])
         self.assertEqual(requests_by_id["plan_agent_request"]["method"], "POST")
         self.assertEqual(
             requests_by_id["plan_agent_request"]["json"]["workflow_path"],
             "workflows/cli-anything-macrocli-mermaid-routing.example.json",
         )
+        self.assertIn("--data", requests_by_id["plan_agent_request"]["curl"])
         self.assertEqual(requests_by_id["run_workflow"]["url"], "http://127.0.0.1:8787/workflows/run")
         self.assertEqual(len(quickstart["requests"]), 8)
         endpoint_paths = {endpoint["path"] for endpoint in payload["daemon_endpoints"]}
@@ -147,6 +150,7 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(payload["requests"][0]["id"], "health")
         self.assertEqual(payload["requests"][4]["id"], "run_workflow")
         self.assertEqual(payload["requests"][4]["headers"]["X-CBN-Session"], "test-token")
+        self.assertIn("curl -X POST", payload["requests"][4]["curl"])
         self.assertEqual(
             payload["entrypoints"]["run_workflow"]["json"]["path"],
             "workflows/cli-anything-macrocli-mermaid-routing.example.json",

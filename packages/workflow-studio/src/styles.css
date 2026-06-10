@@ -377,7 +377,7 @@ canvas {
 
 .request-sequence div {
   display: grid;
-  min-height: 26px;
+  min-height: 48px;
   grid-template-columns: 46px 112px minmax(0, 1fr);
   align-items: center;
   gap: 7px;
@@ -389,7 +389,8 @@ canvas {
 
 .request-sequence code,
 .request-sequence span,
-.request-sequence small {
+.request-sequence small,
+.request-sequence em {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -411,6 +412,14 @@ canvas {
 .request-sequence small {
   color: #647160;
   font-size: 11px;
+}
+
+.request-sequence em {
+  grid-column: 1 / 4;
+  color: #4c5949;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+  font-style: normal;
 }
 
 .request-sequence > span {

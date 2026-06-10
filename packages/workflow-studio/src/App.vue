@@ -517,6 +517,7 @@ onMounted(async () => {
             <code>{{ request.method || "GET" }}</code>
             <span>{{ request.id || "request" }}</span>
             <small>{{ request.url || "not loaded" }}</small>
+            <em>{{ request.curl || "curl not loaded" }}</em>
           </div>
           <span v-if="!quickstartRequests.length">No quickstart requests loaded</span>
         </div>
