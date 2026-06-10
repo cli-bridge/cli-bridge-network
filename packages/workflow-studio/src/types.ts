@@ -199,6 +199,14 @@ export interface ConnectEndpoint {
   purpose?: string;
 }
 
+export interface QuickstartRequest {
+  id?: string;
+  method?: string;
+  url?: string;
+  headers?: Record<string, string>;
+  json?: Record<string, unknown>;
+}
+
 export interface NetworkConnectPackage {
   ok?: boolean;
   kind?: "NetworkConnectPackage";
@@ -270,13 +278,7 @@ export interface NetworkConnectPackage {
       audit?: string;
       artifacts?: string;
     };
-    requests?: Array<{
-      id?: string;
-      method?: string;
-      url?: string;
-      headers?: Record<string, string>;
-      json?: Record<string, unknown>;
-    }>;
+    requests?: QuickstartRequest[];
     sequence?: string[];
   };
   next_commands?: string[];

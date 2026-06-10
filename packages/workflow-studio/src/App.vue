@@ -28,6 +28,7 @@ import type {
   KillerDemoReport,
   NetworkConnectPackage,
   ProtocolSummary,
+  QuickstartRequest,
   StudioConfig,
   WorkflowInspect,
   WorkflowRequestSummary,
@@ -75,6 +76,11 @@ const protocolSummary = computed<ProtocolSummary>(() => summarizeProtocols(demoR
 const workflowRequestSummary = computed<WorkflowRequestSummary>(() => summarizeWorkflowRequestPlan(workflowRequestPlan.value));
 const connectSummary = computed<ConnectSummary>(() => summarizeConnectPackage(connectPackage.value));
 const connectEndpoints = computed(() => (Array.isArray(connectPackage.value?.daemon_endpoints) ? connectPackage.value.daemon_endpoints : []));
+const quickstartRequests = computed<QuickstartRequest[]>(() =>
+  Array.isArray(connectPackage.value?.consumer_quickstart?.requests)
+    ? connectPackage.value.consumer_quickstart.requests
+    : [],
+);
 
 async function call(label: string, fn: () => Promise<unknown>): Promise<unknown | null> {
   loading.value = label;
@@ -505,6 +511,14 @@ onMounted(async () => {
             <span>Run workflow</span>
             <code>{{ connectSummary.runEndpoint || "not loaded" }}</code>
           </div>
+        </div>
+        <div class="request-sequence">
+          <div v-for="request in quickstartRequests.slice(0, 8)" :key="request.id || request.url">
+            <code>{{ request.method || "GET" }}</code>
+            <span>{{ request.id || "request" }}</span>
+            <small>{{ request.url || "not loaded" }}</small>
+          </div>
+          <span v-if="!quickstartRequests.length">No quickstart requests loaded</span>
         </div>
         <div class="endpoint-list">
           <div v-for="endpoint in connectEndpoints.slice(0, 6)" :key="`${endpoint.method}:${endpoint.path}`">

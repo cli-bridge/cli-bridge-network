@@ -369,6 +369,59 @@ canvas {
   white-space: nowrap;
 }
 
+.request-sequence {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.request-sequence div {
+  display: grid;
+  min-height: 26px;
+  grid-template-columns: 46px 112px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  border: 1px solid #d1dacd;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 4px 7px;
+}
+
+.request-sequence code,
+.request-sequence span,
+.request-sequence small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.request-sequence code {
+  color: #4c5949;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+}
+
+.request-sequence span {
+  color: #243026;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.request-sequence small {
+  color: #647160;
+  font-size: 11px;
+}
+
+.request-sequence > span {
+  border: 1px solid #d1dacd;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 6px;
+  color: #647160;
+  font-size: 12px;
+}
+
 .protocol-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
