@@ -235,6 +235,70 @@ canvas {
   margin-bottom: 8px;
 }
 
+.evidence-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+  margin-bottom: 8px;
+}
+
+.evidence-summary div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  border: 1px solid #d1dacd;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 6px;
+}
+
+.evidence-summary span {
+  overflow: hidden;
+  color: #647160;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.evidence-summary strong {
+  overflow: hidden;
+  color: #243026;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.evidence-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.artifact-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+  color: #647160;
+  font-size: 12px;
+}
+
+.artifact-strip code {
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid #d1dacd;
+  border-radius: 999px;
+  background: #ffffff;
+  padding: 3px 7px;
+  color: #4c5949;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .agent-summary {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;

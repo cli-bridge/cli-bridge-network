@@ -50,6 +50,43 @@ export interface KillerDemoReport {
   summary?: Record<string, unknown>;
   stages?: DemoStage[];
   workflow_path?: string;
+  evidence?: DemoEvidence;
+  next_commands?: string[];
+}
+
+export interface DemoArtifact {
+  artifact_id?: string;
+  label?: string;
+  kind?: string;
+  content_type?: string;
+  bytes?: number;
+  path?: string;
+}
+
+export interface DemoEvidence {
+  run_id?: string;
+  task_artifact_count?: number;
+  task_artifacts?: DemoArtifact[];
+  event_count?: number;
+  audit_count?: number;
+  artifact_count?: number;
+  events?: unknown[];
+  audit?: unknown[];
+  artifacts?: unknown[];
+}
+
+export interface EvidenceSummary {
+  status: string;
+  workflowStatus: string;
+  completedStages: number;
+  blockedStages: number;
+  routeCount: number;
+  taskArtifactCount: number;
+  eventCount: number;
+  auditCount: number;
+  smokeOk: string;
+  bridgeLabOk: string;
+  artifactIds: string[];
 }
 
 export interface AgentCardRecord {

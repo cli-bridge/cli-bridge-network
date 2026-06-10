@@ -20,6 +20,7 @@ import { mountWorkflowGraph, type StudioGraph } from "./graph";
 import type {
   AdapterAgentNodeBundle,
   DockState,
+  EvidenceSummary,
   KillerDemoReport,
   StudioConfig,
   WorkflowInspect,
@@ -56,6 +57,7 @@ const selectedRoutes = computed(() => selectedTask.value?.argsFrom ?? []);
 const agentCards = computed(() => (Array.isArray(agentBundle.value?.cards) ? agentBundle.value.cards : []));
 const agentTasks = computed(() => (Array.isArray(agentBundle.value?.tasks) ? agentBundle.value.tasks : []));
 const agentHandoffs = computed(() => agentBundle.value?.source_coordination_plan?.handoffs ?? []);
+const evidenceSummary = computed<EvidenceSummary>(() => summarizeEvidence(demoReport.value, dock));
 
 async function call(label: string, fn: () => Promise<unknown>): Promise<unknown | null> {
   loading.value = label;
@@ -129,6 +131,47 @@ async function loadAll() {
 
 function pretty(payload: unknown): string {
   return JSON.stringify(payload ?? null, null, 2);
+}
+
+function summarizeEvidence(report: KillerDemoReport | null, evidenceDock: DockState): EvidenceSummary {
+  const summary = report?.summary ?? {};
+  const evidence = report?.evidence ?? {};
+  const stageStatuses = Array.isArray(report?.stages) ? report.stages : [];
+  const completedStages = numberValue(summary.completed_stage_count) ?? stageStatuses.filter((stage) => stage.status === "completed").length;
+  const blockedStages = numberValue(summary.blocked_stage_count) ?? stageStatuses.filter((stage) => !["completed", "not_run"].includes(stage.status)).length;
+  const taskArtifacts = Array.isArray(evidence.task_artifacts) ? evidence.task_artifacts : [];
+  const artifactIds = taskArtifacts
+    .map((artifact) => artifact.artifact_id)
+    .filter((artifactId): artifactId is string => Boolean(artifactId))
+    .slice(0, 6);
+  return {
+    status: report?.ok ? "ready" : report ? "needs attention" : "not run",
+    workflowStatus: stringValue(summary.workflow_status) ?? "not run",
+    completedStages,
+    blockedStages,
+    routeCount: numberValue(summary.route_count) ?? 0,
+    taskArtifactCount: numberValue(summary.artifact_count) ?? numberValue(evidence.task_artifact_count) ?? 0,
+    eventCount: numberValue(evidence.event_count) ?? evidenceDock.events.length,
+    auditCount: numberValue(evidence.audit_count) ?? evidenceDock.audit.length,
+    smokeOk: statusText(summary.smoke_ok),
+    bridgeLabOk: statusText(summary.bridge_lab_ok),
+    artifactIds,
+  };
+}
+
+function numberValue(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === "string" && value ? value : null;
+}
+
+function statusText(value: unknown): string {
+  if (value === true) return "pass";
+  if (value === false) return "fail";
+  if (value === null) return "not run";
+  return "unknown";
 }
 
 watch(
@@ -254,6 +297,48 @@ onMounted(async () => {
       </section>
       <section>
         <div class="section-title"><Rocket :size="15" /> Killer Demo</div>
+        <div class="evidence-summary">
+          <div>
+            <span>Status</span>
+            <strong>{{ evidenceSummary.status }}</strong>
+          </div>
+          <div>
+            <span>Workflow</span>
+            <strong>{{ evidenceSummary.workflowStatus }}</strong>
+          </div>
+          <div>
+            <span>Stages</span>
+            <strong>{{ evidenceSummary.completedStages }}/{{ demoReport?.stages?.length || 0 }}</strong>
+          </div>
+          <div>
+            <span>Blocked</span>
+            <strong>{{ evidenceSummary.blockedStages }}</strong>
+          </div>
+          <div>
+            <span>Routes</span>
+            <strong>{{ evidenceSummary.routeCount }}</strong>
+          </div>
+          <div>
+            <span>Artifacts</span>
+            <strong>{{ evidenceSummary.taskArtifactCount }}</strong>
+          </div>
+          <div>
+            <span>Events</span>
+            <strong>{{ evidenceSummary.eventCount }}</strong>
+          </div>
+          <div>
+            <span>Audit</span>
+            <strong>{{ evidenceSummary.auditCount }}</strong>
+          </div>
+        </div>
+        <div class="evidence-row">
+          <span :class="['pill-inline', evidenceSummary.smokeOk === 'pass' ? 'ok' : 'blocked']">smoke {{ evidenceSummary.smokeOk }}</span>
+          <span :class="['pill-inline', evidenceSummary.bridgeLabOk === 'pass' ? 'ok' : 'blocked']">bridge lab {{ evidenceSummary.bridgeLabOk }}</span>
+        </div>
+        <div class="artifact-strip">
+          <code v-for="artifactId in evidenceSummary.artifactIds" :key="artifactId">{{ artifactId }}</code>
+          <span v-if="!evidenceSummary.artifactIds.length">No demo artifacts yet</span>
+        </div>
         <div class="stage-list">
           <div v-for="stage in demoReport?.stages || []" :key="stage.id" class="stage-row">
             <span :class="['dot', stage.status]"></span>
