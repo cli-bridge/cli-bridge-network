@@ -150,6 +150,10 @@ Workflow Studio slice 已新增 `packages/workflow-studio`：
 - Workflow Studio 支持 `daemonUrl`、`sessionToken`、`workflowPath`、
   `agentMessage` query 参数覆盖默认配置，便于在演示或多 daemon 端口并存时直接
   打开一条已配置好的 killer demo 链接。
+- CLI 已新增 `python -m cbn network studio-link`，用于生成预配置 Workflow Studio
+  URL；`NetworkConnectPackage.workflow_studio` 同步包含同一份
+  `WorkflowStudioDemoLink`，外部程序拿到 one-shot connect package 后可直接打开
+  带 daemon URL、workflow path、agent prompt 和可选 session token 的 Studio 页面。
 - 旧 `packages/dashboard` 保持 maintainer console，Studio 只保留一个小入口。
 
 Killer Demo slice 已新增可运行证据束：

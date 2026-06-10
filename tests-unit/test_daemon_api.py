@@ -110,6 +110,8 @@ class DaemonApiTests(unittest.TestCase):
             url = (
                 f"{base_url}/network/connect-package"
                 "?workflow_path=workflows/cli-anything-macrocli-mermaid-routing.example.json"
+                "&studio_url=http://127.0.0.1:5177"
+                "&session_token=demo-token"
             )
             with urllib.request.urlopen(url, timeout=5) as response:
                 payload = json.loads(response.read().decode("utf-8"))
@@ -127,6 +129,9 @@ class DaemonApiTests(unittest.TestCase):
             self.assertEqual(payload["agent_node_bundle"]["bridge_message_channel"], "agent.adapter.node_bundle")
             self.assertEqual(payload["agent_workflow_request"]["bridge_message_channel"], "agent.workflow.request.plan")
             self.assertEqual(payload["agent_workflow_request"]["reusable_harness"]["kind"], "NaturalLanguageWorkflowHarness")
+            self.assertEqual(payload["workflow_studio"]["kind"], "WorkflowStudioDemoLink")
+            self.assertTrue(payload["workflow_studio"]["session_token_included"])
+            self.assertIn("sessionToken=demo-token", payload["workflow_studio"]["url"])
             endpoint_paths = {endpoint["path"].split("?", 1)[0] for endpoint in payload["daemon_endpoints"]}
             self.assertIn("/workflows/run", endpoint_paths)
             self.assertIn("/adapter-agent/workflow-request-plan", endpoint_paths)

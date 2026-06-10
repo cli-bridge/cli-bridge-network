@@ -594,6 +594,8 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 runtime.registry,
                 workflow_path=workflow_path,
                 base_url=_base_url(self),
+                studio_url=query.get("studio_url", query.get("studioUrl", ["http://127.0.0.1:5177"]))[0],
+                session_token=query.get("session_token", query.get("sessionToken", [None]))[0],
                 agent_message=query.get("message", ["Connect an external program to this CBN workflow."])[0],
             )
             self._send(200 if result["ok"] else 422, result)

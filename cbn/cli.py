@@ -11,7 +11,7 @@ from cbn.cli_args import build_parser
 from cbn.paths import resolve_project_paths
 from cbn.version import __version__
 from cbn_demo.killer import killer_demo_report
-from cbn_demo.network_connect import network_connect_package
+from cbn_demo.network_connect import network_connect_package, workflow_studio_demo_link
 from cbn_core.agent_cli_importer import agent_cli_card_import_report
 from cbn_core.command_importer import command_import_report, parse_key_values
 from cbn_core.manifest import validate_manifest_path
@@ -625,7 +625,21 @@ def main(argv: list[str] | None = None) -> int:
                 runtime.registry,
                 workflow_path=args.workflow_path,
                 base_url=args.base_url,
+                studio_url=args.studio_url,
+                session_token=args.session_token,
                 agent_message=args.message,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["ok"] else 7
+        if args.network_command == "studio-link":
+            result = workflow_studio_demo_link(
+                workflow_path=args.workflow_path,
+                daemon_url=args.daemon_url,
+                studio_url=args.studio_url,
+                session_token=args.session_token,
+                agent_message=args.message,
+                dry_run=args.dry_run,
+                confirmed=args.confirmed,
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0 if result["ok"] else 7

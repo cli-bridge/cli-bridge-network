@@ -3,7 +3,7 @@ import subprocess
 import sys
 import unittest
 
-from cbn_demo.network_connect import network_connect_package
+from cbn_demo.network_connect import network_connect_package, workflow_studio_demo_link
 from cbn_runtime.context import build_runtime
 
 
@@ -14,6 +14,8 @@ class NetworkConnectPackageTests(unittest.TestCase):
             runtime.registry,
             workflow_path="workflows/cli-anything-macrocli-mermaid-routing.example.json",
             base_url="http://127.0.0.1:8787",
+            studio_url="http://127.0.0.1:5177",
+            session_token="test-token",
         )
 
         self.assertTrue(payload["ok"])
@@ -29,9 +31,31 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(payload["agent_workflow_request"]["kind"], "AdapterAgentWorkflowRequestPlan")
         self.assertEqual(payload["agent_workflow_request"]["reusable_harness"]["kind"], "NaturalLanguageWorkflowHarness")
         self.assertEqual(payload["agent_workflow_request"]["bridge_message_channel"], "agent.workflow.request.plan")
+        self.assertEqual(payload["workflow_studio"]["kind"], "WorkflowStudioDemoLink")
+        self.assertTrue(payload["workflow_studio"]["session_token_included"])
+        self.assertIn("daemonUrl=http%3A%2F%2F127.0.0.1%3A8787", payload["workflow_studio"]["url"])
+        self.assertIn("sessionToken=test-token", payload["workflow_studio"]["url"])
         endpoint_paths = {endpoint["path"] for endpoint in payload["daemon_endpoints"]}
         self.assertIn("/adapter-agent/workflow-request-plan", endpoint_paths)
         self.assertTrue(any(endpoint["url"].startswith("http://127.0.0.1:8787/") for endpoint in payload["daemon_endpoints"]))
+
+    def test_workflow_studio_demo_link_encodes_query_parameters(self):
+        payload = workflow_studio_demo_link(
+            workflow_path="workflows/demo.json",
+            daemon_url="http://127.0.0.1:8788/",
+            studio_url="http://127.0.0.1:5177/",
+            session_token="secret-token",
+            agent_message="Run CLI-CLI flow",
+        )
+
+        self.assertEqual(payload["kind"], "WorkflowStudioDemoLink")
+        self.assertEqual(payload["studio_url"], "http://127.0.0.1:5177")
+        self.assertEqual(payload["daemon_url"], "http://127.0.0.1:8788")
+        self.assertTrue(payload["session_token_included"])
+        self.assertIn("workflowPath=workflows%2Fdemo.json", payload["url"])
+        self.assertIn("daemonUrl=http%3A%2F%2F127.0.0.1%3A8788", payload["url"])
+        self.assertIn("dryRun=true", payload["url"])
+        self.assertIn("confirmed=false", payload["url"])
 
     def test_network_connect_package_cli_outputs_json(self):
         proc = subprocess.run(
@@ -58,6 +82,34 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(payload["summary"]["recommended_next_action"], "call_daemon_endpoints")
         self.assertEqual(payload["contracts"]["external"]["generated_capability_ids"], ["example.macrocli.backends"])
         self.assertEqual(payload["agent_workflow_request"]["run"]["http"]["url"], "http://127.0.0.1:8787/workflows/run")
+        self.assertEqual(payload["workflow_studio"]["daemon_url"], "http://127.0.0.1:8787")
+
+    def test_network_studio_link_cli_outputs_json(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "network",
+                "studio-link",
+                "--workflow-path",
+                "workflows/cli-anything-macrocli-mermaid-routing.example.json",
+                "--daemon-url",
+                "http://127.0.0.1:8788",
+                "--studio-url",
+                "http://127.0.0.1:5177",
+                "--session-token",
+                "test-token",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["kind"], "WorkflowStudioDemoLink")
+        self.assertIn("sessionToken=test-token", payload["url"])
 
 
 if __name__ == "__main__":

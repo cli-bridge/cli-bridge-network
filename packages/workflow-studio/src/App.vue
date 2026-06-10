@@ -42,8 +42,8 @@ const config = reactive<StudioConfig>({
   agentMessage:
     urlConfig.get("agentMessage") ||
     "Run this workflow as a reusable CLI-CLI harness agent and surface setup gates.",
-  dryRun: true,
-  confirmed: false,
+  dryRun: urlConfig.get("dryRun") !== "false",
+  confirmed: urlConfig.get("confirmed") === "true",
 });
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
 
 from cbn_adapter_agent.nodes import build_adapter_agent_node_bundle
 from cbn_adapter_agent.workflow_request import build_agent_workflow_request_plan
@@ -27,6 +28,8 @@ def network_connect_package(
     *,
     workflow_path: str = DEFAULT_KILLER_WORKFLOW_PATH,
     base_url: str | None = None,
+    studio_url: str = "http://127.0.0.1:5177",
+    session_token: str | None = None,
     agent_message: str = "Connect an external program to this CBN workflow.",
 ) -> dict[str, Any]:
     """Return the minimum stable payload another program needs to enter CBN."""
@@ -48,6 +51,15 @@ def network_connect_package(
     external_contract = _external_agent_cli_contract()
     protocol_summary = _protocol_summary(protocol_exports)
     endpoint_catalog = _endpoint_catalog(base_url=base_url, workflow_path=workflow_path)
+    studio_link = workflow_studio_demo_link(
+        workflow_path=workflow_path,
+        daemon_url=base_url,
+        studio_url=studio_url,
+        session_token=session_token,
+        agent_message=agent_message,
+        dry_run=True,
+        confirmed=False,
+    )
     ok = bool(
         workflow.get("valid")
         and bridge_contract.get("ok")
@@ -86,9 +98,48 @@ def network_connect_package(
         "daemon_endpoints": endpoint_catalog,
         "workflow": _compact_workflow(workflow),
         "protocols": protocol_summary,
+        "workflow_studio": studio_link,
         "agent_node_bundle": _compact_agent_bundle(agent_bundle),
         "agent_workflow_request": _compact_workflow_request_plan(request_plan),
         "next_commands": _next_commands(workflow_path),
+    }
+
+
+def workflow_studio_demo_link(
+    *,
+    workflow_path: str = DEFAULT_KILLER_WORKFLOW_PATH,
+    daemon_url: str | None = None,
+    studio_url: str = "http://127.0.0.1:5177",
+    session_token: str | None = None,
+    agent_message: str = "Run this workflow as a reusable CLI-CLI harness agent and surface setup gates.",
+    dry_run: bool = True,
+    confirmed: bool = False,
+) -> dict[str, Any]:
+    """Return a preconfigured Workflow Studio URL for the killer demo."""
+
+    query: dict[str, str] = {
+        "workflowPath": workflow_path,
+        "agentMessage": agent_message,
+        "dryRun": "true" if dry_run else "false",
+        "confirmed": "true" if confirmed else "false",
+    }
+    if daemon_url:
+        query["daemonUrl"] = daemon_url.rstrip("/")
+    if session_token:
+        query["sessionToken"] = session_token
+    clean_studio_url = studio_url.rstrip("/")
+    return {
+        "apiVersion": CONNECT_API_VERSION,
+        "kind": "WorkflowStudioDemoLink",
+        "ok": True,
+        "studio_url": clean_studio_url,
+        "daemon_url": daemon_url.rstrip("/") if daemon_url else None,
+        "workflow_path": workflow_path,
+        "dry_run": dry_run,
+        "confirmed": confirmed,
+        "session_token_included": bool(session_token),
+        "url": f"{clean_studio_url}/?{urlencode(query)}",
+        "query": query,
     }
 
 

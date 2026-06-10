@@ -275,9 +275,46 @@ def build_parser() -> argparse.ArgumentParser:
     )
     network_connect.add_argument("--base-url", help="Daemon base URL to embed in endpoint URLs.")
     network_connect.add_argument(
+        "--studio-url",
+        default="http://127.0.0.1:5177",
+        help="Workflow Studio base URL to embed as a preconfigured demo link.",
+    )
+    network_connect.add_argument(
+        "--session-token",
+        help="Optional daemon session token to include in the Workflow Studio demo link.",
+    )
+    network_connect.add_argument(
         "--message",
         default="Connect an external program to this CBN workflow.",
         help="Agent prompt used to shape the Adapter Agent node bundle.",
+    )
+    network_studio_link = network_subcommands.add_parser(
+        "studio-link",
+        help="Print a preconfigured Workflow Studio URL for a CBN workflow.",
+    )
+    network_studio_link.add_argument(
+        "--workflow-path",
+        default="workflows/cli-anything-macrocli-mermaid-routing.example.json",
+        help="Workflow JSON path to open in Workflow Studio.",
+    )
+    network_studio_link.add_argument(
+        "--daemon-url",
+        default="http://127.0.0.1:8787",
+        help="Daemon base URL to prefill in Workflow Studio.",
+    )
+    network_studio_link.add_argument(
+        "--studio-url",
+        default="http://127.0.0.1:5177",
+        help="Workflow Studio base URL.",
+    )
+    network_studio_link.add_argument("--session-token", help="Optional daemon session token to include.")
+    network_studio_link.add_argument("--dry-run", action="store_true", default=True)
+    network_studio_link.add_argument("--no-dry-run", action="store_false", dest="dry_run")
+    network_studio_link.add_argument("--confirmed", action="store_true")
+    network_studio_link.add_argument(
+        "--message",
+        default="Run this workflow as a reusable CLI-CLI harness agent and surface setup gates.",
+        help="Agent prompt to prefill in Workflow Studio.",
     )
 
     import_parser = subcommands.add_parser("import", help="Create CBN manifests from external tools.")
