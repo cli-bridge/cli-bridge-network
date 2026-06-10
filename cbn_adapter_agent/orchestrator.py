@@ -28,6 +28,46 @@ def build_orchestration_turn(
     root: Path | None = None,
     use_glm: bool = True,
 ) -> dict[str, Any]:
+    plan_context = build_orchestration_context(message=message, workflow_path=workflow_path, root=root)
+    target = plan_context["workflow_path"]
+    initialization = plan_context["workflow_initialization"]
+    llm = (
+        complete_with_glm(plan_context, system_prompt=ORCHESTRATION_SYSTEM_PROMPT)
+        if use_glm
+        else {
+            "kind": "AdapterAgentGLMTurn",
+            "ok": False,
+            "skipped": True,
+            "reason": "GLM disabled by request",
+        }
+    )
+    llm_content = llm.get("content") if llm.get("ok") and llm.get("content") else ""
+    llm_content_accepted = llm_content_covers_fallbacks(str(llm_content), plan_context["auth_fallbacks"])
+    assistant_message = str(llm_content) if llm_content_accepted else fallback_message(plan_context)
+    return {
+        "kind": "AdapterAgentOrchestrationTurn",
+        "apiVersion": "bridge.dev/v1alpha1",
+        "ok": initialization["ok"],
+        "status": initialization["status"],
+        "workflow_path": str(target),
+        "message_redacted": plan_context["message_redacted"],
+        "assistant_message": assistant_message,
+        "recommended_next_action": plan_context["recommended_next_action"],
+        "workflow_initialization": initialization,
+        "cli_routes": plan_context["cli_routes"],
+        "auth_fallbacks": plan_context["auth_fallbacks"],
+        "continuation": initialization["continuation"],
+        "glm_content_accepted": llm_content_accepted,
+        "glm": llm,
+    }
+
+
+def build_orchestration_context(
+    *,
+    message: str,
+    workflow_path: str | Path | None = None,
+    root: Path | None = None,
+) -> dict[str, Any]:
     target = Path(workflow_path or DEFAULT_WORKFLOW_PATH)
     paths = resolve_project_paths(root)
     source_path = target if target.is_absolute() else paths.root / target
@@ -39,40 +79,14 @@ def build_orchestration_turn(
         "kind": "AdapterAgentOrchestrationContext",
         "apiVersion": "bridge.dev/v1alpha1",
         "user_message": sanitized_message,
+        "workflow_path": str(target),
+        "message_redacted": sanitized_message != message,
         "workflow_initialization": initialization,
         "cli_routes": _cli_routes(graph),
         "auth_fallbacks": _auth_fallbacks(initialization),
         "recommended_next_action": _recommended_next_action(initialization),
     }
-    llm = (
-        complete_with_glm(plan_context, system_prompt=_SYSTEM_PROMPT)
-        if use_glm
-        else {
-            "kind": "AdapterAgentGLMTurn",
-            "ok": False,
-            "skipped": True,
-            "reason": "GLM disabled by request",
-        }
-    )
-    llm_content = llm.get("content") if llm.get("ok") and llm.get("content") else ""
-    llm_content_accepted = _llm_content_covers_fallbacks(str(llm_content), plan_context["auth_fallbacks"])
-    assistant_message = str(llm_content) if llm_content_accepted else _fallback_message(plan_context)
-    return {
-        "kind": "AdapterAgentOrchestrationTurn",
-        "apiVersion": "bridge.dev/v1alpha1",
-        "ok": initialization["ok"],
-        "status": initialization["status"],
-        "workflow_path": str(target),
-        "message_redacted": sanitized_message != message,
-        "assistant_message": assistant_message,
-        "recommended_next_action": plan_context["recommended_next_action"],
-        "workflow_initialization": initialization,
-        "cli_routes": plan_context["cli_routes"],
-        "auth_fallbacks": plan_context["auth_fallbacks"],
-        "continuation": initialization["continuation"],
-        "glm_content_accepted": llm_content_accepted,
-        "glm": llm,
-    }
+    return plan_context
 
 
 def _cli_routes(graph: WorkflowGraph) -> list[dict[str, Any]]:
@@ -122,7 +136,7 @@ def _recommended_next_action(initialization: dict[str, Any]) -> str:
     return "guide_user_setup_and_collect_inputs"
 
 
-def _fallback_message(context: dict[str, Any]) -> str:
+def fallback_message(context: dict[str, Any]) -> str:
     initialization = context["workflow_initialization"]
     lines = [
         f"Workflow {initialization['workflow']['workflow_id']} is {initialization['status']}.",
@@ -148,7 +162,7 @@ def _redact_secrets(value: str) -> str:
     return redacted
 
 
-def _llm_content_covers_fallbacks(content: str, fallbacks: list[dict[str, Any]]) -> bool:
+def llm_content_covers_fallbacks(content: str, fallbacks: list[dict[str, Any]]) -> bool:
     if not content:
         return False
     required_terms: set[str] = set()
@@ -168,12 +182,12 @@ def _llm_content_covers_fallbacks(content: str, fallbacks: list[dict[str, Any]])
     return all(term in lowered for term in required_terms)
 
 
-_SYSTEM_PROMPT = """
+ORCHESTRATION_SYSTEM_PROMPT = """
 You are the built-in GLM orchestration brain for CBN Adapter Agent.
 Use the provided WorkflowInitializationPlan and CLI routes as authoritative.
 Guide the user through workflow orchestration, CLI-to-CLI BridgeMessage routing, and fallback.
 If any task status requires setup, login, API key, authenticated session, or runtime input, do not tell the user to run the workflow yet.
-Instead summarize the exact setup guide, verification command, missing input, and continuation command.
+Prefer tool-use affordances exposed by the CBN dashboard for starting login, storing session secrets, and running verification. When user action is unavoidable, ask only for the user to complete the OAuth UI or type the secret into the dashboard secret field.
 Never ask the user to paste secrets into chat, never echo secrets, and never claim that a CLI is activated unless the plan says ready.
 Return concise operator-facing text.
 """.strip()

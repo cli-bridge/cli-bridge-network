@@ -26,6 +26,7 @@ const adapterUseGlm = document.getElementById("adapterUseGlm");
 const sendAdapterAgentTurn = document.getElementById("sendAdapterAgentTurn");
 const stageAdapterAgentResume = document.getElementById("stageAdapterAgentResume");
 const adapterAgentMessages = document.getElementById("adapterAgentMessages");
+const adapterAgentToolLog = document.getElementById("adapterAgentToolLog");
 const adapterAgentSetup = document.getElementById("adapterAgentSetup");
 const adapterAgentRoutes = document.getElementById("adapterAgentRoutes");
 
@@ -499,19 +500,21 @@ async function sendAdapterAgent() {
     adapterUseGlm.checked ? "--glm-validate" : null,
   ].filter(Boolean).join(" ");
   stageCommand(command, "Adapter Agent orchestration turn");
-  adapterAgentMessages.textContent = "Running Adapter Agent orchestration...";
-  appendLog("Calling Adapter Agent orchestration.");
+  adapterAgentMessages.textContent = "";
+  appendAdapterAgentMessage("Running Adapter Agent orchestration...\n");
+  appendLog("Calling Adapter Agent orchestration stream.");
   try {
-    const response = await fetch(apiUrl("/adapter-agent/orchestrate"), {
+    const response = await fetch(apiUrl("/adapter-agent/orchestrate-stream"), {
       method: "POST",
       headers: daemonHeaders(true),
       body: renderJson(body),
     });
-    const payload = await response.json();
-    apiResult.textContent = renderJson(payload);
-    renderAdapterAgentTurn(payload);
+    if (!response.body) {
+      throw new Error("streaming response body is unavailable");
+    }
+    await readAdapterAgentStream(response);
     setApiStatus(response.ok ? "Connected" : `HTTP ${response.status}`);
-    appendLog(`Adapter Agent: HTTP ${response.status}`);
+    appendLog(`Adapter Agent stream: HTTP ${response.status}`);
   } catch (error) {
     setApiStatus("Unavailable");
     const fallback = {
@@ -522,6 +525,64 @@ async function sendAdapterAgent() {
     adapterAgentMessages.textContent = renderJson(fallback);
     appendLog("Adapter Agent API unavailable; command remains staged.");
   }
+}
+
+async function readAdapterAgentStream(response) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let buffer = "";
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) {
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+    lines.filter(Boolean).forEach(handleAdapterAgentStreamEvent);
+  }
+  buffer += decoder.decode();
+  if (buffer.trim()) {
+    handleAdapterAgentStreamEvent(buffer);
+  }
+}
+
+function handleAdapterAgentStreamEvent(line) {
+  let event;
+  try {
+    event = JSON.parse(line);
+  } catch {
+    appendAdapterAgentMessage(`\n[stream parse error] ${line}`);
+    return;
+  }
+  apiResult.textContent = renderJson(event);
+  if (event.type === "plan" || event.type === "turn") {
+    renderAdapterAgentTurn(event.payload);
+    if (event.type === "turn") {
+      adapterAgentMessages.textContent = event.payload?.assistant_message || adapterAgentMessages.textContent;
+    }
+    return;
+  }
+  if (event.type === "delta") {
+    appendAdapterAgentMessage(event.text || "");
+    return;
+  }
+  if (event.type === "fallback") {
+    adapterAgentMessages.textContent = event.text || "";
+    return;
+  }
+  if (event.type === "error") {
+    appendAdapterAgentMessage(`\n[GLM error] ${event.error || "unknown error"}\n`);
+    return;
+  }
+  if (event.type === "done") {
+    appendLog(`Adapter Agent stream done; GLM accepted: ${Boolean(event.glm_content_accepted)}`);
+  }
+}
+
+function appendAdapterAgentMessage(text) {
+  adapterAgentMessages.textContent += text;
+  adapterAgentMessages.scrollTop = adapterAgentMessages.scrollHeight;
 }
 
 function renderAdapterAgentTurn(payload) {
@@ -562,13 +623,13 @@ function renderAdapterAgentSetup(fallbacks) {
       card.appendChild(listSection("User Steps", setup.user_steps, "operation-list"));
     }
     if (Array.isArray(setup.verification_commands) && setup.verification_commands.length > 0) {
-      card.appendChild(
-        listSection(
-          "Verification Commands",
-          setup.verification_commands.map((command) => command.argv.join(" ")),
-          "operation-list mono-list",
-        ),
+      const commandList = listSection(
+        "Verification Commands",
+        setup.verification_commands.map((command) => `${command.title || command.id}: ${command.argv.join(" ")}`),
+        "operation-list mono-list",
       );
+      card.appendChild(commandList);
+      card.appendChild(setupToolActions(setup));
     }
     if (Array.isArray(fallback.missing_runtime_inputs) && fallback.missing_runtime_inputs.length > 0) {
       card.appendChild(
@@ -581,6 +642,78 @@ function renderAdapterAgentSetup(fallbacks) {
     }
     adapterAgentSetup.appendChild(card);
   });
+}
+
+function setupToolActions(setup) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "setup-tool-actions";
+  (setup.verification_commands || []).forEach((command) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = setupCommandButtonLabel(command);
+    button.title = command.argv.join(" ");
+    button.addEventListener("click", () => {
+      callAdapterAgentTool({
+        action: "run-setup-tool",
+        workflow_path: adapterWorkflowPath.value.trim() || "workflows/auth-gated-first-run.example.json",
+        setup_id: setup.setup_id,
+        command_id: command.id,
+      });
+    });
+    wrapper.appendChild(button);
+  });
+  (setup.secret_inputs || [])
+    .filter((secret) => secret.name === "OBSIDIAN_API_KEY")
+    .forEach((secret) => {
+      const label = document.createElement("label");
+      label.textContent = secret.name;
+      const input = document.createElement("input");
+      input.type = "password";
+      input.placeholder = "Paste key into this field only";
+      label.appendChild(input);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = "Save Session Secret";
+      button.addEventListener("click", () => {
+        callAdapterAgentTool({
+          action: "store-secret",
+          name: secret.name,
+          value: input.value,
+        });
+        input.value = "";
+      });
+      wrapper.appendChild(label);
+      wrapper.appendChild(button);
+    });
+  return wrapper;
+}
+
+function setupCommandButtonLabel(command) {
+  if (command.id === "login" || command.id === "login-headless") {
+    return command.id === "login-headless" ? "Start Headless Login" : "Start Login";
+  }
+  return command.title?.toLowerCase().includes("verify") ? command.title : `Verify ${command.title || command.id}`;
+}
+
+async function callAdapterAgentTool(body) {
+  adapterAgentToolLog.textContent = "Running Adapter Agent tool use...";
+  appendLog(`Adapter Agent tool use: ${body.action}`);
+  try {
+    const response = await fetch(apiUrl("/adapter-agent/tool-use"), {
+      method: "POST",
+      headers: daemonHeaders(true),
+      body: renderJson(body),
+    });
+    const payload = await response.json();
+    adapterAgentToolLog.textContent = renderJson(payload);
+    apiResult.textContent = renderJson(payload);
+    setApiStatus(response.ok ? "Connected" : `HTTP ${response.status}`);
+    appendLog(`Adapter Agent tool use ${body.action}: HTTP ${response.status}`);
+  } catch (error) {
+    setApiStatus("Unavailable");
+    adapterAgentToolLog.textContent = renderJson({ error: String(error), action: body.action });
+    appendLog(`Adapter Agent tool use ${body.action}: API unavailable.`);
+  }
 }
 
 function renderAdapterAgentRoutes(routes) {

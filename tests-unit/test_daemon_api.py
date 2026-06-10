@@ -49,6 +49,8 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("GET", "/messages/contract"), routes)
         self.assertIn(("GET", "/parsers/fixtures"), routes)
         self.assertIn(("POST", "/adapter-agent/orchestrate"), routes)
+        self.assertIn(("POST", "/adapter-agent/orchestrate-stream"), routes)
+        self.assertIn(("POST", "/adapter-agent/tool-use"), routes)
         self.assertIn(("POST", "/runtime/transports/gate"), routes)
         self.assertIn(("POST", "/runtime/transports/plan"), routes)
         self.assertIn(("POST", "/runtime/transports/install"), routes)
@@ -109,6 +111,52 @@ class DaemonApiTests(unittest.TestCase):
             self.assertIn("jimeng-oauth-login", setup_ids)
             self.assertIn("obsidian-local-rest-api-key", setup_ids)
             self.assertTrue(any(route["task_id"] == "query-image-result" for route in payload["cli_routes"]))
+
+    def test_adapter_agent_orchestrate_stream_returns_ndjson_plan_and_done(self):
+        with daemon_url() as base_url:
+            request = urllib.request.Request(
+                f"{base_url}/adapter-agent/orchestrate-stream",
+                data=json.dumps(
+                    {
+                        "workflow_path": "workflows/auth-gated-first-run.example.json",
+                        "message": "Initialize and stream setup guidance.",
+                        "use_glm": False,
+                    }
+                ).encode("utf-8"),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(request, timeout=5) as response:
+                lines = [json.loads(line) for line in response.read().decode("utf-8").splitlines()]
+
+            self.assertEqual(response.status, 200)
+            self.assertEqual(lines[0]["type"], "plan")
+            self.assertEqual(lines[0]["payload"]["kind"], "AdapterAgentOrchestrationTurn")
+            self.assertTrue(any(event["type"] == "fallback" for event in lines))
+            self.assertEqual(lines[-1]["type"], "done")
+
+    def test_adapter_agent_tool_use_stores_session_secret_without_echo(self):
+        with daemon_url() as base_url:
+            request = urllib.request.Request(
+                f"{base_url}/adapter-agent/tool-use",
+                data=json.dumps(
+                    {
+                        "action": "store-secret",
+                        "name": "OBSIDIAN_API_KEY",
+                        "value": "test-only-secret",
+                    }
+                ).encode("utf-8"),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(request, timeout=5) as response:
+                body = response.read().decode("utf-8")
+                payload = json.loads(body)
+
+            self.assertEqual(response.status, 200)
+            self.assertTrue(payload["ok"])
+            self.assertEqual(payload["stored"], "OBSIDIAN_API_KEY")
+            self.assertNotIn("test-only-secret", body)
 
     def test_plugin_operation_plan_route_resolves_descriptor(self):
         with daemon_url() as base_url:

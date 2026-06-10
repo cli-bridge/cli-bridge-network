@@ -11,8 +11,9 @@ from cbn_adapter_agent.compiler import (
     build_adapter_draft_batch,
     write_adapter_draft,
 )
-from cbn_adapter_agent.llm_validation import _bounded_payload, validate_with_glm
+from cbn_adapter_agent.llm_validation import _bounded_payload, stream_with_glm, validate_with_glm
 from cbn_adapter_agent.orchestrator import build_orchestration_turn
+from cbn_adapter_agent.tool_use import run_setup_tool, store_session_secret
 from cbn_adapter_agent.workflow_init import build_workflow_initialization_plan
 
 
@@ -242,6 +243,33 @@ class AdapterAgentHarnessTests(unittest.TestCase):
             result = validate_with_glm({"kind": "sample"})
         self.assertTrue(result["skipped"])
         self.assertFalse(result["ok"])
+
+    def test_glm_stream_reports_missing_key_without_network(self):
+        with patch.dict("os.environ", {}, clear=True):
+            events = list(stream_with_glm({"kind": "sample"}, system_prompt="test"))
+
+        self.assertEqual(events[0]["type"], "error")
+        self.assertTrue(events[0]["skipped"])
+        self.assertFalse(events[0]["ok"])
+
+    def test_adapter_agent_tool_use_stores_secret_without_echoing_value(self):
+        env_store = {}
+        result = store_session_secret(env_store, name="OBSIDIAN_API_KEY", value="test-secret-value")
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(env_store["OBSIDIAN_API_KEY"], "test-secret-value")
+        self.assertEqual(result["stored"], "OBSIDIAN_API_KEY")
+        self.assertNotIn("test-secret-value", json.dumps(result, ensure_ascii=False))
+
+    def test_adapter_agent_tool_use_rejects_unknown_setup_command(self):
+        result = run_setup_tool(
+            workflow_path="workflows/auth-gated-first-run.example.json",
+            setup_id="jimeng-oauth-login",
+            command_id="not-declared",
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertIn("unknown command_id", result["error"])
 
     def test_glm_validation_bounds_adapter_batch_without_dropping_drafts(self):
         batch = build_adapter_draft_batch()

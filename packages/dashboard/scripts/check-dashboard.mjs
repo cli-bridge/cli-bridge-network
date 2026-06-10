@@ -356,6 +356,10 @@ if (!html.includes("adapterAgentDialog")) {
   throw new Error("Dashboard does not include the Adapter Agent dialog.");
 }
 
+if (!html.includes("adapterAgentToolLog")) {
+  throw new Error("Dashboard does not include the Adapter Agent tool-use log.");
+}
+
 if (!html.includes("python -m cbn parser list")) {
   throw new Error("Dashboard does not expose the parser registry list command.");
 }
@@ -530,6 +534,26 @@ if (!js.includes("operationCommands")) {
 
 if (!js.includes("sendAdapterAgent")) {
   throw new Error("Dashboard script does not send Adapter Agent orchestration turns.");
+}
+
+if (!js.includes("/adapter-agent/orchestrate-stream")) {
+  throw new Error("Dashboard script does not use the Adapter Agent streaming endpoint.");
+}
+
+if (!js.includes("/adapter-agent/tool-use")) {
+  throw new Error("Dashboard script does not call Adapter Agent tool-use actions.");
+}
+
+if (!js.includes("readAdapterAgentStream")) {
+  throw new Error("Dashboard script does not read Adapter Agent stream chunks.");
+}
+
+if (!js.includes("callAdapterAgentTool")) {
+  throw new Error("Dashboard script does not expose Adapter Agent setup tool-use.");
+}
+
+if (!js.includes("Save Session Secret")) {
+  throw new Error("Dashboard script does not expose session-secret storage controls.");
 }
 
 if (!js.includes("renderAdapterAgentTurn")) {

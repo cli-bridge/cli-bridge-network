@@ -6,6 +6,7 @@ import json
 import os
 import urllib.error
 import urllib.request
+from collections.abc import Iterator
 from typing import Any
 
 
@@ -143,6 +144,92 @@ def complete_with_glm(
     }
 
 
+def stream_with_glm(
+    payload: dict[str, Any],
+    *,
+    system_prompt: str,
+    base_url: str | None = None,
+    model: str | None = None,
+    api_key: str | None = None,
+    timeout_seconds: int = 60,
+) -> Iterator[dict[str, Any]]:
+    key = api_key or os.environ.get("ZAI_API_KEY")
+    endpoint = _chat_endpoint(base_url or os.environ.get("ZAI_BASE_URL") or DEFAULT_BASE_URL)
+    model_name = model or os.environ.get("ZAI_MODEL") or DEFAULT_MODEL
+    if not key:
+        yield {
+            "type": "error",
+            "kind": "AdapterAgentGLMStream",
+            "ok": False,
+            "skipped": True,
+            "endpoint": endpoint,
+            "model": model_name,
+            "reason": "ZAI_API_KEY is not set",
+        }
+        return
+    request_payload = {
+        **_chat_payload(
+            model_name,
+            system_prompt,
+            json.dumps(_bounded_payload(payload), ensure_ascii=False),
+        ),
+        "stream": True,
+    }
+    request = _chat_request(endpoint, key, request_payload)
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+            content_type = response.headers.get("Content-Type", "")
+            if "text/event-stream" not in content_type and "stream" not in content_type:
+                raw = response.read().decode("utf-8", errors="replace")
+                parsed = json.loads(raw)
+                content = _message_content(parsed)
+                if content:
+                    yield {"type": "delta", "text": content}
+                yield {"type": "done", "model": model_name, "endpoint": endpoint}
+                return
+            for raw_line in response:
+                line = raw_line.decode("utf-8", errors="replace").strip()
+                if not line or line.startswith(":"):
+                    continue
+                if line.startswith("data:"):
+                    line = line.removeprefix("data:").strip()
+                if line == "[DONE]":
+                    yield {"type": "done", "model": model_name, "endpoint": endpoint}
+                    return
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                delta = _stream_delta_content(event)
+                if delta:
+                    yield {"type": "delta", "text": delta}
+            yield {"type": "done", "model": model_name, "endpoint": endpoint}
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        yield {
+            "type": "error",
+            "kind": "AdapterAgentGLMStream",
+            "ok": False,
+            "skipped": False,
+            "endpoint": endpoint,
+            "model": model_name,
+            "error_type": "http_error",
+            "status": exc.code,
+            "body_summary": body[:1000],
+        }
+    except OSError as exc:
+        yield {
+            "type": "error",
+            "kind": "AdapterAgentGLMStream",
+            "ok": False,
+            "skipped": False,
+            "endpoint": endpoint,
+            "model": model_name,
+            "error_type": "request_error",
+            "error": str(exc),
+        }
+
+
 def _chat_payload(model_name: str, system_prompt: str, user_content: str) -> dict[str, Any]:
     return {
         "model": model_name,
@@ -180,6 +267,27 @@ def _message_content(payload: dict[str, Any]) -> str:
     first = choices[0]
     if not isinstance(first, dict):
         return ""
+    message = first.get("message")
+    if isinstance(message, dict):
+        content = message.get("content")
+        if isinstance(content, str):
+            return content
+    text = first.get("text")
+    return text if isinstance(text, str) else ""
+
+
+def _stream_delta_content(payload: dict[str, Any]) -> str:
+    choices = payload.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return ""
+    first = choices[0]
+    if not isinstance(first, dict):
+        return ""
+    delta = first.get("delta")
+    if isinstance(delta, dict):
+        content = delta.get("content")
+        if isinstance(content, str):
+            return content
     message = first.get("message")
     if isinstance(message, dict):
         content = message.get("content")
