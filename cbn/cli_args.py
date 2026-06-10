@@ -262,6 +262,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run MCP/A2A/ACP smoke checks as part of the demo report.",
     )
 
+    network_parser = subcommands.add_parser("network", help="Inspect external CBN network connection packages.")
+    network_subcommands = network_parser.add_subparsers(dest="network_command")
+    network_connect = network_subcommands.add_parser(
+        "connect-package",
+        help="Print the one-shot package another program needs to connect to CBN.",
+    )
+    network_connect.add_argument(
+        "--workflow-path",
+        default="workflows/cli-anything-macrocli-mermaid-routing.example.json",
+        help="Workflow JSON path to expose in the connect package.",
+    )
+    network_connect.add_argument("--base-url", help="Daemon base URL to embed in endpoint URLs.")
+    network_connect.add_argument(
+        "--message",
+        default="Connect an external program to this CBN workflow.",
+        help="Agent prompt used to shape the Adapter Agent node bundle.",
+    )
+
     import_parser = subcommands.add_parser("import", help="Create CBN manifests from external tools.")
     import_subcommands = import_parser.add_subparsers(dest="import_command")
     import_command = import_subcommands.add_parser(

@@ -230,6 +230,10 @@ Killer Demo slice 已新增可运行证据束：
   按钮，右侧新增 Connect Package 面板，展示 external contract、generated
   capability、daemon endpoint catalog、Bridge route、protocol export 和 agent
   card 摘要，作为“其他程序一次性接入网络”的产品化展示入口。
+- CLI 已新增 `python -m cbn network connect-package` 只读入口，输出同一份
+  `NetworkConnectPackage`。外部程序无需先接 daemon/WebUI，也能一次性读取
+  AgentCliCard/RunReceipt contract、daemon endpoint catalog、protocol facade 和
+  Agent-as-Node 摘要。
 
 ## 验证策略
 
@@ -250,6 +254,7 @@ Killer Demo slice 已新增可运行证据束：
 - `python -m unittest tests-unit.test_adapter_agent_harness.AdapterAgentHarnessTests.test_adapter_agent_node_bundle_cli_outputs_json`
 - `python -m unittest tests-unit.test_daemon_api.DaemonApiTests.test_adapter_agent_node_bundle_route_returns_agent_nodes`
 - `python -m unittest tests-unit.test_daemon_api.DaemonApiTests.test_network_connect_package_route_returns_one_shot_contract`
+- `python -m unittest tests-unit.test_network_connect`
 - `python -m unittest tests-unit.test_killer_demo`
 - `python -m unittest tests-unit.test_command_importer`
 - `python -m unittest tests-unit.test_cli_imports`

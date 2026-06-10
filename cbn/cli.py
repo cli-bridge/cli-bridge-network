@@ -11,6 +11,7 @@ from cbn.cli_args import build_parser
 from cbn.paths import resolve_project_paths
 from cbn.version import __version__
 from cbn_demo.killer import killer_demo_report
+from cbn_demo.network_connect import network_connect_package
 from cbn_core.command_importer import command_import_report, parse_key_values
 from cbn_core.manifest import validate_manifest_path
 from cbn_core.mcp_importer import load_mcp_tool_descriptor, mcp_import_report
@@ -606,6 +607,18 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0 if result["status"] == "completed" else 4
+
+    if args.command == "network":
+        runtime = build_runtime()
+        if args.network_command == "connect-package":
+            result = network_connect_package(
+                runtime.registry,
+                workflow_path=args.workflow_path,
+                base_url=args.base_url,
+                agent_message=args.message,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["ok"] else 7
 
     if args.command == "runtime":
         manager = PluginManager()
