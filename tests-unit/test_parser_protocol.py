@@ -10,11 +10,13 @@ from cbn_core.manifest import CapabilityManifest, ManifestRegistry
 from cbn_runtime.context import build_runtime
 from cbn_protocol.acceptance import cli_to_cli_acceptance_report
 from cbn_protocol.bridge_contract import workflow_bridge_contract_report
-from cbn_protocol.envelope import (
+from cbn_core.message import (
     BridgeMessage,
     bridge_args_from_selectors,
-    select_bridge_value,
     validate_bridge_message,
+)
+from cbn_core.selector import (
+    select_bridge_value,
 )
 
 
@@ -104,6 +106,19 @@ class ParserProtocolTests(unittest.TestCase):
         self.assertEqual(message["kind"], "BridgeMessage")
         self.assertEqual(message["metadata"]["producer"], "git.status")
         self.assertEqual(message["metadata"]["correlationId"], "call-1")
+
+    def test_protocol_envelope_reexports_core_bridge_message(self):
+        from cbn_protocol.envelope import BridgeMessage as CompatBridgeMessage
+        from cbn_protocol.envelope import validate_bridge_message as compat_validate_bridge_message
+
+        message = CompatBridgeMessage(
+            producer="compat.tool",
+            channel="capability.output",
+            correlation_id="call-compat",
+            payload={"parser_ref": "raw.text", "ok": True, "data": {}},
+        ).as_dict()
+        self.assertIs(CompatBridgeMessage, BridgeMessage)
+        self.assertTrue(compat_validate_bridge_message(message)["valid"])
 
     def test_bridge_message_validation_and_selectors(self):
         message = BridgeMessage(

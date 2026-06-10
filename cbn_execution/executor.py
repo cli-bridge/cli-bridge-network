@@ -18,7 +18,7 @@ from cbn_core.manifest import CapabilityManifest, ManifestRegistry
 from cbn_events.bus import EventBus
 from cbn_parsers.registry import ParserRegistry
 from cbn_policy.engine import PolicyEngine
-from cbn_protocol.envelope import BridgeMessage
+from cbn_core.message import BridgeMessage
 from protocol import EventType
 
 

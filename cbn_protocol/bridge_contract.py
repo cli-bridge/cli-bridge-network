@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from cbn_core.manifest import ManifestRegistry
-from cbn_protocol.envelope import BRIDGE_MESSAGE_API_VERSION, validate_selector_syntax
+from cbn_core.message import BRIDGE_MESSAGE_API_VERSION
+from cbn_core.selector import validate_selector_syntax
 from cbn_workflow.catalog import inspect_workflow, list_workflows
 
 

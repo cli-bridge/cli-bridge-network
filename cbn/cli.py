@@ -25,7 +25,8 @@ from cbn_protocol.a2a_http import smoke_a2a_workflow_http
 from cbn_protocol.acp_stdio import serve_stdio as serve_acp_stdio
 from cbn_protocol.acp_stdio import smoke_acp_stdio
 from cbn_protocol.acp_stdio import smoke_acp_workflow_stdio
-from cbn_protocol.envelope import bridge_args_from_selectors, select_bridge_value, validate_bridge_message
+from cbn_core.message import bridge_args_from_selectors, validate_bridge_message
+from cbn_core.selector import select_bridge_value
 from cbn_protocol.compatibility import check_protocol, protocol_matrix
 from cbn_protocol.conformance import protocol_conformance_plan
 from cbn_protocol.exports import (

@@ -11,7 +11,7 @@ from cbn_core.manifest import ManifestRegistry
 from cbn_events.bus import EventBus
 from cbn_execution.executor import CapabilityExecutor
 from cbn_execution.graph import WorkflowGraph
-from cbn_protocol.envelope import validate_bridge_message
+from cbn_core.message import validate_bridge_message
 from cbn_tools.artifact_id_summary import summarize_artifact
 from cbn_workflow.catalog import inspect_workflow, list_workflows
 from cbn_workflow.runner import WorkflowRunner

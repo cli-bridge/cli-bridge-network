@@ -9,7 +9,7 @@ from cbn_audit.log import AuditLog
 from cbn_events.bus import EventBus
 from cbn_execution.executor import CapabilityExecutor
 from cbn_execution.graph import TaskNode, WorkflowGraph
-from cbn_protocol.envelope import bridge_value_to_arg, select_bridge_value
+from cbn_core.selector import bridge_value_to_arg, select_bridge_value
 from protocol import EventType
 
 
