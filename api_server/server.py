@@ -101,6 +101,7 @@ ROUTE_SUMMARY = [
     {"method": "POST", "path": "/plugins/gate"},
     {"method": "POST", "path": "/plugins/check-update"},
     {"method": "POST", "path": "/plugins/operation-plan"},
+    {"method": "POST", "path": "/plugins/verify-plan"},
     {"method": "POST", "path": "/plugins/plan"},
     {"method": "POST", "path": "/plugins/execute"},
     {"method": "POST", "path": "/plugins/cli-anything/market"},
@@ -630,6 +631,17 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 payload["operation_id"],
                 inputs=inputs,
                 confirmed=bool(payload.get("confirmed", False)),
+            )
+            self._send(200 if result["ok"] else 409, result)
+            return
+        if self.path == "/plugins/verify-plan":
+            manager = PluginManager()
+            result = manager.verify_plan(
+                payload["plugin_id"],
+                action=payload.get("action", "install"),
+                include_codex_skill=bool(payload.get("include_codex_skill", False)),
+                run=bool(payload.get("run", False)),
+                timeout_seconds=int(payload.get("timeout_seconds", 60)),
             )
             self._send(200 if result["ok"] else 409, result)
             return

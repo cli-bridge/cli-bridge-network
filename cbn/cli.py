@@ -524,6 +524,16 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0 if result["ok"] else 13
+        if args.plugin_command == "verify-plan":
+            result = manager.verify_plan(
+                args.plugin_id,
+                action=args.action,
+                include_codex_skill=args.with_codex_skill,
+                run=args.run,
+                timeout_seconds=args.timeout_seconds,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["ok"] else 13
         if args.plugin_command == "preflight":
             result = manager.preflight(args.plugin_id)
             print(json.dumps(result, ensure_ascii=False, indent=2))

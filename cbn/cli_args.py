@@ -385,6 +385,25 @@ def build_parser() -> argparse.ArgumentParser:
     )
     plugin_operation_plan.add_argument("--yes", action="store_true", help="Confirm side-effecting operation dispatch.")
 
+    plugin_verify_plan = plugin_subcommands.add_parser(
+        "verify-plan",
+        help="Preview or run a plugin plan's post-operation verification commands.",
+    )
+    plugin_verify_plan.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
+    plugin_verify_plan.add_argument(
+        "--action",
+        choices=["install", "update"],
+        default="install",
+        help="Plugin plan action whose verification commands should be checked.",
+    )
+    plugin_verify_plan.add_argument(
+        "--with-codex-skill",
+        action="store_true",
+        help="Include optional Codex skill install steps when deriving the plugin plan.",
+    )
+    plugin_verify_plan.add_argument("--run", action="store_true", help="Run safe read-only verification commands.")
+    plugin_verify_plan.add_argument("--timeout-seconds", type=int, default=60)
+
     plugin_preflight = plugin_subcommands.add_parser("preflight", help="Run install readiness checks.")
     plugin_preflight.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
 
