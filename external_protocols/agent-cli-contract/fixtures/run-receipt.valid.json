@@ -1,0 +1,28 @@
+{
+  "apiVersion": "agent-cli.dev/v1alpha1",
+  "kind": "RunReceipt",
+  "runId": "run-001",
+  "cardId": "example.macrocli",
+  "commandId": "backends",
+  "status": "completed",
+  "startedAt": "2026-06-11T00:00:00Z",
+  "completedAt": "2026-06-11T00:00:01Z",
+  "exitCode": 0,
+  "stdout": "{\"native_api\":{\"name\":\"native_api\",\"priority\":100,\"available\":true}}",
+  "stderr": "",
+  "parsed": {
+    "backend_count": 1,
+    "available_count": 1
+  },
+  "artifacts": [
+    {
+      "id": "artifact-stdout",
+      "kind": "stdout",
+      "mediaType": "application/json",
+      "sizeBytes": 67
+    }
+  ],
+  "correlation": {
+    "traceId": "trace-001"
+  }
+}

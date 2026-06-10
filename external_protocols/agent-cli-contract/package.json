@@ -1,0 +1,13 @@
+{
+  "name": "@agent-cli/contract",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Standalone AgentCliCard and RunReceipt contract for CLI/Agent adapters.",
+  "exports": {
+    ".": "./ts/index.ts"
+  },
+  "scripts": {
+    "check": "node scripts/check.mjs"
+  }
+}

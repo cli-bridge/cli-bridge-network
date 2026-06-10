@@ -1,0 +1,41 @@
+{
+  "apiVersion": "agent-cli.dev/v1alpha1",
+  "kind": "AgentCliCard",
+  "metadata": {
+    "id": "example.macrocli",
+    "name": "Example MacroCLI",
+    "version": "0.1.0",
+    "description": "Example CLI card for a macro backend lister.",
+    "labels": {
+      "adapter": "cli-anything",
+      "domain": "automation"
+    }
+  },
+  "spec": {
+    "runtime": {
+      "kind": "stdio",
+      "command": "macrocli",
+      "cwdPolicy": "workspace"
+    },
+    "commands": [
+      {
+        "id": "backends",
+        "title": "List MacroCLI backends",
+        "argv": ["macrocli", "backends", "--json"],
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        },
+        "output": {
+          "mediaType": "application/json",
+          "parser": "macrocli.backends"
+        },
+        "policy": {
+          "risk": "read",
+          "requiresConfirmation": false,
+          "network": "deny"
+        }
+      }
+    ]
+  }
+}

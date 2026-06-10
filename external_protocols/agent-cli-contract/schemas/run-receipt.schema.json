@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-cli.dev/schemas/run-receipt.schema.json",
+  "title": "RunReceipt",
+  "type": "object",
+  "required": ["apiVersion", "kind", "runId", "cardId", "commandId", "status"],
+  "properties": {
+    "apiVersion": { "const": "agent-cli.dev/v1alpha1" },
+    "kind": { "const": "RunReceipt" },
+    "runId": { "type": "string", "minLength": 1 },
+    "cardId": { "type": "string", "minLength": 1 },
+    "commandId": { "type": "string", "minLength": 1 },
+    "status": { "enum": ["completed", "failed", "blocked", "running", "canceled"] },
+    "startedAt": { "type": "string" },
+    "completedAt": { "type": "string" },
+    "exitCode": { "type": ["integer", "null"] },
+    "stdout": { "type": "string" },
+    "stderr": { "type": "string" },
+    "parsed": { "type": "object" },
+    "artifacts": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/artifact" }
+    },
+    "error": {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" },
+        "retryable": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "correlation": {
+      "type": "object",
+      "properties": {
+        "traceId": { "type": "string" },
+        "parentRunId": { "type": "string" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "artifact": {
+      "type": "object",
+      "required": ["id", "kind"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "minLength": 1 },
+        "uri": { "type": "string" },
+        "mediaType": { "type": "string" },
+        "sizeBytes": { "type": "integer" },
+        "sha256": { "type": "string" }
+      },
+      "additionalProperties": true
+    }
+  }
+}
