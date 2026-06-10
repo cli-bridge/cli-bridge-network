@@ -14,7 +14,7 @@
       "cbn.adapter.profile": "feishu",
       "cbn.adapter.action": "doctor",
       "cbn.auth_gate": "requires configured Feishu/Lark credentials for live connectivity checks",
-      "cbn.output_contract": "future parser should extract config/auth/connectivity stage statuses"
+      "cbn.output_contract": "direct-cli.typed extracts config/auth/connectivity stage statuses"
     }
   },
   "spec": {
@@ -36,8 +36,8 @@
       "network": "requires-confirmation"
     },
     "output": {
-      "parserRef": "raw.text",
-      "verified": false
+      "parserRef": "direct-cli.typed",
+      "verified": true
     }
   }
 }

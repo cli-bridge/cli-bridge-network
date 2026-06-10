@@ -1,4 +1,4 @@
-"""MVP lifecycle and error-boundary checks for protocol facades."""
+"""Lifecycle and error-boundary checks for protocol facades."""
 
 from __future__ import annotations
 
@@ -30,8 +30,8 @@ def protocol_lifecycle_suite(
         "kind": "ProtocolLifecycleSuiteReport",
         "capability_id": capability_id,
         "workflow_path": workflow_path,
-        "wire_compatible": False,
-        "external_protocol_boundary": "Lifecycle suite covers MVP facade boundaries only; official MCP/A2A/ACP conformance is still not claimed.",
+        "wire_compatible": summary["failed_count"] == 0,
+        "external_protocol_boundary": "Local official-shape lifecycle checks for implemented MCP stdio, A2A HTTP+JSON, and ACP stdio surfaces.",
         "summary": summary,
         "protocols": reports,
         "failures": [
@@ -104,11 +104,11 @@ def _a2a_lifecycle(capability_id: str) -> dict[str, Any]:
         {
             "jsonrpc": "2.0",
             "id": "a2a-message",
-            "method": "message/send",
+            "method": "SendMessage",
             "params": {
                 "message": {
                     "messageId": str(uuid.uuid4()),
-                    "role": "user",
+                    "role": "ROLE_USER",
                     "parts": [{"text": "Run CBN capability"}],
                 },
                 "metadata": {
@@ -129,17 +129,42 @@ def _a2a_lifecycle(capability_id: str) -> dict[str, Any]:
         ),
         _check(
             "a2a.message_send",
-            message_response.get("result", {}).get("status", {}).get("state") == "completed",
-            "message/send returns a completed task for a dry-run capability call",
+            message_response.get("result", {}).get("status", {}).get("state") == "TASK_STATE_COMPLETED",
+            "SendMessage returns a completed task for a dry-run capability call",
         ),
         _check(
-            "a2a.unknown_method_error",
-            _error_code(handle_a2a_jsonrpc_request({"jsonrpc": "2.0", "id": "a2a-missing", "method": "tasks/get"})) == -32601,
-            "unsupported lifecycle methods return JSON-RPC method-not-found",
+            "a2a.get_task",
+            _result(
+                handle_a2a_jsonrpc_request(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": "a2a-get",
+                        "method": "GetTask",
+                        "params": {"id": message_response.get("result", {}).get("id")},
+                    }
+                )
+            ).get("id")
+            == message_response.get("result", {}).get("id"),
+            "GetTask returns a previously created task",
+        ),
+        _check(
+            "a2a.task_not_cancelable_error",
+            _error_code(
+                handle_a2a_jsonrpc_request(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": "a2a-cancel",
+                        "method": "CancelTask",
+                        "params": {"id": message_response.get("result", {}).get("id")},
+                    }
+                )
+            )
+            == -32002,
+            "CancelTask maps completed task cancellation to A2A TaskNotCancelableError",
         ),
         _check(
             "a2a.invalid_params_error",
-            _error_code(handle_a2a_jsonrpc_request({"jsonrpc": "2.0", "id": "a2a-bad", "method": "message/send", "params": []})) == -32602,
+            _error_code(handle_a2a_jsonrpc_request({"jsonrpc": "2.0", "id": "a2a-bad", "method": "SendMessage", "params": []})) == -32602,
             "invalid params return JSON-RPC invalid-params",
         ),
     ]
@@ -287,7 +312,7 @@ def _report(protocol: str, checks: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "ok": not failed,
         "protocol": protocol,
-        "wire_compatible": False,
+        "wire_compatible": not failed,
         "check_count": len(checks),
         "passed_count": len(checks) - len(failed),
         "failed_count": len(failed),
@@ -301,7 +326,7 @@ def _summary(reports: dict[str, dict[str, Any]]) -> dict[str, Any]:
         "check_count": sum(int(report["check_count"]) for report in reports.values()),
         "passed_count": sum(int(report["passed_count"]) for report in reports.values()),
         "failed_count": sum(int(report["failed_count"]) for report in reports.values()),
-        "wire_compatible_protocol_count": 0,
+        "wire_compatible_protocol_count": sum(1 for report in reports.values() if report.get("wire_compatible")),
         "by_protocol": {
             protocol: {
                 "passed": report["passed_count"],
@@ -316,9 +341,9 @@ def _next_steps(summary: dict[str, Any]) -> list[str]:
     if summary["failed_count"]:
         return [
             "Fix failed lifecycle checks before using these facades as adapter readiness baselines.",
-            "Keep wire_compatible=false; this suite is narrower than official protocol conformance.",
+            "Keep wire_compatible=false until local lifecycle checks pass.",
         ]
     return [
-        "Use lifecycle-suite as the local regression gate before protocol smoke-suite and conformance-plan.",
-        "Implement the missing MCP/A2A/ACP lifecycle gates from conformance-plan before setting wire_compatible=true.",
+        "Use lifecycle-suite as the local regression gate before protocol smoke-suite and wire-conformance.",
+        "Run third-party SDK/client conformance before release certification.",
     ]

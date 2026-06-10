@@ -377,8 +377,8 @@ def _initialize_result(params: Any) -> dict[str, Any]:
         "authMethods": [],
         "_meta": {
             "cbn": {
-                "description": "Minimal ACP stdio facade for CBN capability calls.",
-                "wire_compatible": False,
+                "description": "ACP stdio facade for CBN capability calls.",
+                "wire_compatible": True,
             }
         },
     }

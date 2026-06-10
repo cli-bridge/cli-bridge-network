@@ -75,11 +75,11 @@ def _a2a_workflow_roundtrip(registry: ManifestRegistry, descriptor: dict[str, An
     request = {
         "jsonrpc": "2.0",
         "id": "descriptor-roundtrip",
-        "method": "message/send",
+        "method": "SendMessage",
         "params": {
             "message": {
                 "messageId": "descriptor-roundtrip",
-                "role": "user",
+                "role": "ROLE_USER",
                 "parts": [{"text": "Run CBN workflow"}],
             },
             "metadata": {"cbn": cbn_meta},

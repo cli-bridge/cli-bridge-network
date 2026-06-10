@@ -14,7 +14,7 @@
       "cbn.adapter.profile": "jimeng",
       "cbn.adapter.action": "user-credit",
       "cbn.auth_gate": "requires Dreamina OAuth login state",
-      "cbn.output_contract": "future parser should extract available credit and account status"
+      "cbn.output_contract": "direct-cli.typed extracts available credit, account status, and auth-required setup errors"
     }
   },
   "spec": {
@@ -36,8 +36,8 @@
       "network": "requires-confirmation"
     },
     "output": {
-      "parserRef": "raw.text",
-      "verified": false
+      "parserRef": "direct-cli.typed",
+      "verified": true
     }
   }
 }

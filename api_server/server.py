@@ -38,6 +38,7 @@ from cbn_protocol.exports import (
 from cbn_protocol.lifecycle_suite import protocol_lifecycle_suite
 from cbn_protocol.readiness import protocol_readiness_report
 from cbn_protocol.smoke_suite import protocol_smoke_suite
+from cbn_protocol.wire_conformance import protocol_wire_conformance_suite
 from cbn_runtime.context import build_runtime
 from cbn_workflow.catalog import inspect_workflow, list_workflows
 from cbn_plugins.cli_anything import CliAnythingHub
@@ -74,6 +75,7 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/protocols/readiness"},
     {"method": "GET", "path": "/protocols/conformance-plan"},
     {"method": "GET", "path": "/protocols/lifecycle-suite"},
+    {"method": "GET", "path": "/protocols/wire-conformance"},
     {"method": "GET", "path": "/protocols/smoke-suite"},
     {"method": "GET", "path": "/protocols/acceptance-queue"},
     {"method": "GET", "path": "/protocols/bridge-lab"},
@@ -371,6 +373,13 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             result = protocol_lifecycle_suite(
                 capability_id=query.get("capability_id", ["git.version"])[0],
                 workflow_path=query.get("workflow_path", query.get("path", ["workflows/example.json"]))[0],
+            )
+            self._send(200 if result["ok"] else 422, result)
+            return
+        if parsed.path == "/protocols/wire-conformance":
+            result = protocol_wire_conformance_suite(
+                target=query.get("target", ["all"])[0],
+                capability_id=query.get("capability_id", ["git.version"])[0],
             )
             self._send(200 if result["ok"] else 422, result)
             return

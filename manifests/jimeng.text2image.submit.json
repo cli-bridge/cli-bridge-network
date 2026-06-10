@@ -37,8 +37,8 @@
       "network": "requires-confirmation"
     },
     "output": {
-      "parserRef": "raw.text",
-      "verified": false
+      "parserRef": "direct-cli.typed",
+      "verified": true
     }
   }
 }

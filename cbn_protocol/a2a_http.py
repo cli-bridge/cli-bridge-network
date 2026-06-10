@@ -1,4 +1,4 @@
-"""Minimal A2A HTTP JSON-RPC facade for CBN capabilities."""
+"""A2A HTTP JSON-RPC facade for CBN capabilities."""
 
 from __future__ import annotations
 
@@ -15,7 +15,8 @@ from cbn_runtime.context import build_runtime
 from cbn_workflow.catalog import list_workflows
 
 
-A2A_PROTOCOL_VERSION = "0.3"
+A2A_PROTOCOL_VERSION = "1.0.0"
+_TASKS: dict[str, dict[str, Any]] = {}
 
 
 def agent_card(base_url: str = "http://127.0.0.1:8787") -> dict[str, Any]:
@@ -29,7 +30,7 @@ def agent_card(base_url: str = "http://127.0.0.1:8787") -> dict[str, Any]:
         "supportedInterfaces": [
             {
                 "url": endpoint,
-                "protocolBinding": "JSONRPC",
+                "protocolBinding": "HTTP+JSON",
                 "protocolVersion": A2A_PROTOCOL_VERSION,
             }
         ],
@@ -51,18 +52,31 @@ def handle_a2a_jsonrpc_request(payload: dict[str, Any]) -> dict[str, Any]:
     request_id = payload.get("id")
     if payload.get("jsonrpc") != "2.0":
         return _jsonrpc_error(request_id, -32600, "jsonrpc must be 2.0")
-    if payload.get("method") != "message/send":
-        return _jsonrpc_error(request_id, -32601, f"method not found: {payload.get('method')}")
+    method = payload.get("method")
     params = payload.get("params")
+    if params is None:
+        params = {}
     if not isinstance(params, dict):
         return _jsonrpc_error(request_id, -32602, "params must be an object")
     try:
-        task = _send_message(params)
+        if method in {"SendMessage", "message/send"}:
+            task = _send_message(params)
+            return {"jsonrpc": "2.0", "id": request_id, "result": task}
+        if method in {"GetTask", "tasks/get"}:
+            return {"jsonrpc": "2.0", "id": request_id, "result": _get_task(params)}
+        if method in {"ListTasks", "tasks/list"}:
+            return {"jsonrpc": "2.0", "id": request_id, "result": {"tasks": list(_TASKS.values())}}
+        if method in {"CancelTask", "tasks/cancel"}:
+            return {"jsonrpc": "2.0", "id": request_id, "result": _cancel_task(params)}
+        return _jsonrpc_error(request_id, -32601, f"method not found: {method}")
+    except A2ATaskNotFound as exc:
+        return _jsonrpc_error(request_id, -32001, str(exc))
+    except A2ATaskNotCancelable as exc:
+        return _jsonrpc_error(request_id, -32002, str(exc))
     except KeyError as exc:
         return _jsonrpc_error(request_id, -32602, str(exc))
     except ValueError as exc:
         return _jsonrpc_error(request_id, -32602, str(exc))
-    return {"jsonrpc": "2.0", "id": request_id, "result": task}
 
 
 def smoke_a2a_http(
@@ -88,11 +102,11 @@ def smoke_a2a_http(
                 {
                     "jsonrpc": "2.0",
                     "id": "smoke-1",
-                    "method": "message/send",
+                    "method": "SendMessage",
                     "params": {
                         "message": {
                             "messageId": str(uuid.uuid4()),
-                            "role": "user",
+                            "role": "ROLE_USER",
                             "parts": [{"text": "Run CBN capability"}],
                         },
                         "metadata": {
@@ -118,7 +132,7 @@ def smoke_a2a_http(
         ok = (
             card.get("protocolVersion") == A2A_PROTOCOL_VERSION
             and any(skill.get("id") == capability_id for skill in card.get("skills", []))
-            and task.get("status", {}).get("state") == "completed"
+            and _is_completed(task.get("status", {}).get("state"))
             and task.get("metadata", {}).get("cbn", {}).get("capability_id") == capability_id
         )
         return {
@@ -154,11 +168,11 @@ def smoke_a2a_workflow_http(workflow_path: str, dry_run: bool = False, confirmed
                 {
                     "jsonrpc": "2.0",
                     "id": "workflow-smoke-1",
-                    "method": "message/send",
+                    "method": "SendMessage",
                     "params": {
                         "message": {
                             "messageId": str(uuid.uuid4()),
-                            "role": "user",
+                            "role": "ROLE_USER",
                             "parts": [{"text": "Run CBN workflow"}],
                         },
                         "metadata": {
@@ -184,7 +198,7 @@ def smoke_a2a_workflow_http(workflow_path: str, dry_run: bool = False, confirmed
         ok = (
             card.get("protocolVersion") == A2A_PROTOCOL_VERSION
             and any(skill.get("id") == f"workflow:{workflow_id}" for skill in card.get("skills", []))
-            and task.get("status", {}).get("state") == "completed"
+            and _is_completed(task.get("status", {}).get("state"))
             and _same_workflow_path(task.get("metadata", {}).get("cbn", {}).get("workflow_path"), workflow_path)
             and task.get("metadata", {}).get("cbn", {}).get("workflow_id") == workflow_id
             and task.get("metadata", {}).get("cbn", {}).get("status") == "completed"
@@ -237,9 +251,9 @@ def _send_message(params: dict[str, Any]) -> dict[str, Any]:
         "messageId": str(uuid.uuid4()),
         "contextId": context_id,
         "taskId": task_id,
-        "role": "agent",
-        "parts": [
-            {
+                    "role": "ROLE_AGENT",
+                    "parts": [
+                        {
                 "data": {
                     "capability_id": result.get("capability_id"),
                     "parsed": result.get("parsed"),
@@ -248,8 +262,9 @@ def _send_message(params: dict[str, Any]) -> dict[str, Any]:
             }
         ],
     }
-    return {
+    task = {
         "id": task_id,
+        "taskId": task_id,
         "contextId": context_id,
         "status": {
             "state": state,
@@ -268,6 +283,8 @@ def _send_message(params: dict[str, Any]) -> dict[str, Any]:
             }
         },
     }
+    _TASKS[task_id] = task
+    return task
 
 
 def _send_workflow_message(message: dict[str, Any], cbn_meta: dict[str, Any]) -> dict[str, Any]:
@@ -276,12 +293,12 @@ def _send_workflow_message(message: dict[str, Any], cbn_meta: dict[str, Any]) ->
     workflow_path = result.get("workflow_path") or cbn_meta.get("workflow_path")
     task_id = str(uuid.uuid4())
     context_id = message.get("contextId") if isinstance(message.get("contextId"), str) else str(uuid.uuid4())
-    state = "completed" if workflow_run_ok(result) else "failed"
+    state = "TASK_STATE_COMPLETED" if workflow_run_ok(result) else "TASK_STATE_FAILED"
     agent_message = {
         "messageId": str(uuid.uuid4()),
         "contextId": context_id,
         "taskId": task_id,
-        "role": "agent",
+        "role": "ROLE_AGENT",
         "parts": [
             {
                 "data": {
@@ -301,8 +318,9 @@ def _send_workflow_message(message: dict[str, Any], cbn_meta: dict[str, Any]) ->
         if not isinstance(task_result, dict):
             continue
         artifacts.extend(_artifact_from_cbn(artifact) for artifact in task_result.get("artifacts", []))
-    return {
+    task = {
         "id": task_id,
+        "taskId": task_id,
         "contextId": context_id,
         "status": {
             "state": state,
@@ -319,6 +337,8 @@ def _send_workflow_message(message: dict[str, Any], cbn_meta: dict[str, Any]) ->
             }
         },
     }
+    _TASKS[task_id] = task
+    return task
 
 
 def _skill_from_manifest(manifest: CapabilityManifest) -> dict[str, Any]:
@@ -377,10 +397,29 @@ def _artifact_from_cbn(artifact: dict[str, Any]) -> dict[str, Any]:
 
 def _task_state(result: dict[str, Any]) -> str:
     if not result.get("allowed"):
-        return "rejected"
+        return "TASK_STATE_REJECTED"
     if not result.get("ok"):
-        return "failed"
-    return "completed"
+        return "TASK_STATE_FAILED"
+    return "TASK_STATE_COMPLETED"
+
+
+def _get_task(params: dict[str, Any]) -> dict[str, Any]:
+    task_id = params.get("id") or params.get("taskId")
+    if not isinstance(task_id, str) or not task_id:
+        raise ValueError("params.id or params.taskId is required")
+    task = _TASKS.get(task_id)
+    if task is None:
+        raise A2ATaskNotFound(task_id)
+    return task
+
+
+def _cancel_task(params: dict[str, Any]) -> dict[str, Any]:
+    task = _get_task(params)
+    state = task.get("status", {}).get("state")
+    if state in {"TASK_STATE_COMPLETED", "TASK_STATE_FAILED", "TASK_STATE_REJECTED", "TASK_STATE_CANCELED"}:
+        raise A2ATaskNotCancelable(task.get("id"))
+    task["status"]["state"] = "TASK_STATE_CANCELED"
+    return task
 
 
 def _workflow_id_from_path(workflow_path: str) -> str:
@@ -403,3 +442,17 @@ def _jsonrpc_error(request_id: Any, code: int, message: str) -> dict[str, Any]:
         "id": request_id,
         "error": {"code": code, "message": message},
     }
+
+
+def _is_completed(state: Any) -> bool:
+    return state in {"TASK_STATE_COMPLETED", "completed"}
+
+
+class A2ATaskNotFound(ValueError):
+    def __init__(self, task_id: str) -> None:
+        super().__init__(f"task not found: {task_id}")
+
+
+class A2ATaskNotCancelable(ValueError):
+    def __init__(self, task_id: Any) -> None:
+        super().__init__(f"task is not cancelable: {task_id}")

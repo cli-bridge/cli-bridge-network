@@ -11,6 +11,7 @@ from cbn_protocol.conformance import protocol_conformance_plan
 from cbn_protocol.lifecycle_suite import protocol_lifecycle_suite
 from cbn_protocol.readiness import protocol_readiness_report
 from cbn_protocol.smoke_suite import protocol_smoke_suite
+from cbn_protocol.wire_conformance import protocol_wire_conformance_suite
 from cbn_workflow.runner import WorkflowRunner
 
 
@@ -73,6 +74,7 @@ def bridge_lab_report(
         target="all",
         workflow_path=selected_path,
     )
+    wire_conformance = protocol_wire_conformance_suite()
     route_catalog = _route_catalog(contract)
     summary = _summary(
         contract=contract,
@@ -81,6 +83,7 @@ def bridge_lab_report(
         lifecycle=lifecycle,
         smoke=smoke,
         conformance=conformance,
+        wire_conformance=wire_conformance,
         route_catalog=route_catalog,
     )
     return {
@@ -99,7 +102,7 @@ def bridge_lab_report(
         "confirmed": confirmed,
         "include_payloads": include_payloads,
         "run_smoke_suite": run_smoke_suite,
-        "wire_compatible": False,
+        "wire_compatible": bool(wire_conformance.get("wire_compatible")),
         "internal_protocol": bridge_message_contract(),
         "summary": summary,
         "route_catalog": route_catalog,
@@ -110,6 +113,7 @@ def bridge_lab_report(
             "protocol_lifecycle_suite": lifecycle,
             "protocol_smoke_suite": smoke,
             "conformance_plan": conformance,
+            "wire_conformance": wire_conformance,
         },
         "next_commands": _next_commands(workflow_paths, run_smoke_suite),
     }
@@ -173,12 +177,14 @@ def _summary(
     lifecycle: dict[str, Any],
     smoke: dict[str, Any],
     conformance: dict[str, Any],
+    wire_conformance: dict[str, Any],
     route_catalog: list[dict[str, Any]],
 ) -> dict[str, Any]:
     contract_summary = contract.get("summary") if isinstance(contract.get("summary"), dict) else {}
     acceptance_summary = acceptance.get("summary") if isinstance(acceptance.get("summary"), dict) else {}
     readiness_gates = readiness.get("readiness") if isinstance(readiness.get("readiness"), dict) else {}
     conformance_summary = conformance.get("summary") if isinstance(conformance.get("summary"), dict) else {}
+    wire_summary = wire_conformance.get("summary") if isinstance(wire_conformance.get("summary"), dict) else {}
     smoke_ok = smoke.get("ok") if smoke.get("run") or smoke.get("status") != "not_run" else None
     accepted_workflow_count = int(acceptance_summary.get("accepted_workflow_count", 0))
     blocked_workflow_count = int(acceptance_summary.get("blocked_workflow_count", 0))
@@ -200,7 +206,7 @@ def _summary(
         "protocol_lifecycle_ok": bool(lifecycle.get("ok")),
         "smoke_ok": smoke_ok,
         "conformance_ready_protocol_count": int(conformance_summary.get("ready_protocol_count", 0)),
-        "wire_compatible_protocol_count": int(conformance_summary.get("wire_compatible_protocol_count", 0)),
+        "wire_compatible_protocol_count": int(wire_summary.get("wire_compatible_protocol_count", 0)),
         "recommended_next_action": _recommended_next_action(
             contract_ok=bool(contract.get("ok")),
             acceptance_ok=bool(acceptance.get("ok")),
