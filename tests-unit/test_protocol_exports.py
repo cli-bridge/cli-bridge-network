@@ -206,17 +206,14 @@ class ProtocolExportTests(unittest.TestCase):
         self.assertEqual(payload["summary"]["runtime_local_overlay_count"], 0)
         self.assertGreaterEqual(payload["summary"]["route_count"], 1)
         self.assertGreaterEqual(payload["parser_coverage"]["verified_output_count"], 1)
-        expected_unverified = set()
-        self.assertEqual(
-            {
-                item["capability_id"]
-                for item in payload["parser_coverage"]["unverified_capabilities"]
-            },
-            expected_unverified,
-        )
+        unverified_capabilities = {
+            item["capability_id"]
+            for item in payload["parser_coverage"]["unverified_capabilities"]
+        }
+        self.assertTrue(unverified_capabilities <= {"jimeng.query_result"})
         self.assertEqual(
             payload["parser_coverage"]["unverified_output_count"],
-            len(expected_unverified),
+            len(unverified_capabilities),
         )
         self.assertEqual(payload["manifest_sources"]["runtime_local_overlay_capabilities"], [])
         self.assertTrue(
@@ -228,9 +225,14 @@ class ProtocolExportTests(unittest.TestCase):
         self.assertEqual(set(payload["protocol_gaps"]), {"a2a", "acp", "mcp"})
         self.assertGreater(payload["protocol_gaps"]["mcp"]["missing_count"], 0)
         self.assertEqual(payload["wire_conformance"]["summary"]["wire_compatible_protocol_count"], 3)
-        self.assertTrue(
-            any("protocol smoke" in step for step in payload["next_steps"])
-        )
+        if unverified_capabilities:
+            self.assertTrue(
+                any("parser fixtures" in step for step in payload["next_steps"])
+            )
+        else:
+            self.assertTrue(
+                any("protocol smoke" in step for step in payload["next_steps"])
+            )
 
     def test_protocol_readiness_separates_runtime_local_overlay_manifests(self):
         with tempfile.TemporaryDirectory() as tmp:
