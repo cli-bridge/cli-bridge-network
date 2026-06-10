@@ -546,6 +546,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="Extra arg passed to the harness capability when --smoke-suite is used; repeatable.",
     )
 
+    plugin_verify_harness_plan = plugin_subcommands.add_parser(
+        "verify-harness-plan",
+        help="Preview or run a CLI-Anything harness plan's post-operation verification commands.",
+    )
+    plugin_verify_harness_plan.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
+    plugin_verify_harness_plan.add_argument(
+        "harness_action",
+        choices=["install", "update", "uninstall", "launch"],
+        help="Harness lifecycle action whose verification commands should be checked.",
+    )
+    plugin_verify_harness_plan.add_argument("harness_name", help="Harness name in CLI-Hub.")
+    plugin_verify_harness_plan.add_argument("extra_args", nargs="*", help="Extra args passed to launch verification planning.")
+    plugin_verify_harness_plan.add_argument("--run", action="store_true", help="Run safe read-only verification commands.")
+    plugin_verify_harness_plan.add_argument("--timeout-seconds", type=int, default=60)
+
     plugin_onboard = plugin_subcommands.add_parser(
         "onboard-harness",
         help="Run the CLI-Anything harness discovery, adaptation, install gate, and verification onboarding report.",

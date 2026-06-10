@@ -656,6 +656,18 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0 if result["ok"] else 6
+        if args.plugin_command == "verify-harness-plan":
+            if args.plugin_id != "cli-anything":
+                raise KeyError(f"verify-harness-plan is not implemented for plugin: {args.plugin_id}")
+            result = CliAnythingHub().verify_harness_plan(
+                args.harness_action,
+                args.harness_name,
+                extra_args=tuple(args.extra_args),
+                run=args.run,
+                timeout_seconds=args.timeout_seconds,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["ok"] else 6
         if args.plugin_command == "onboard-harness":
             if args.plugin_id != "cli-anything":
                 raise KeyError(f"onboard-harness is not implemented for plugin: {args.plugin_id}")

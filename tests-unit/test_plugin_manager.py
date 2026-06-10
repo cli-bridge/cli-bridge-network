@@ -92,6 +92,7 @@ class PluginManagerTests(unittest.TestCase):
         operation_ids = {operation["id"] for operation in result["operations"]}
         self.assertIn("install-gate", operation_ids)
         self.assertIn("verify-plan", operation_ids)
+        self.assertIn("harness-verify-plan", operation_ids)
         self.assertIn("adaptation-queue", operation_ids)
         self.assertIn("repair-entrypoint", operation_ids)
         repair = next(operation for operation in result["operations"] if operation["id"] == "repair-entrypoint")

@@ -41,6 +41,7 @@ from cbn_protocol.smoke_suite import protocol_smoke_suite
 from cbn_protocol.wire_conformance import protocol_wire_conformance_suite
 from cbn_runtime.context import build_runtime
 from cbn_workflow.catalog import inspect_workflow, list_workflows
+from cbn_adapter_agent.orchestrator import DEFAULT_WORKFLOW_PATH, build_orchestration_turn
 from cbn_plugins.cli_anything import CliAnythingHub
 from cbn_plugins.manager import PluginManager
 
@@ -95,6 +96,7 @@ ROUTE_SUMMARY = [
     {"method": "POST", "path": "/workflows/validate"},
     {"method": "POST", "path": "/workflows/plan"},
     {"method": "POST", "path": "/workflows/run"},
+    {"method": "POST", "path": "/adapter-agent/orchestrate"},
     {"method": "POST", "path": "/runtime/transports/gate"},
     {"method": "POST", "path": "/runtime/transports/plan"},
     {"method": "POST", "path": "/runtime/transports/install"},
@@ -111,6 +113,7 @@ ROUTE_SUMMARY = [
     {"method": "POST", "path": "/plugins/cli-anything/evaluate-harness"},
     {"method": "POST", "path": "/plugins/cli-anything/probe-harness"},
     {"method": "POST", "path": "/plugins/cli-anything/verify-harness"},
+    {"method": "POST", "path": "/plugins/cli-anything/verify-harness-plan"},
     {"method": "POST", "path": "/plugins/cli-anything/onboard-harness"},
     {"method": "POST", "path": "/plugins/cli-anything/live-verification"},
     {"method": "POST", "path": "/plugins/cli-anything/mvp-plan"},
@@ -759,6 +762,20 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 smoke_extra_args=tuple(payload.get("smoke_extra_args", [])),
             )
             self._send(200 if result["ok"] else 502, result)
+            return
+        if self.path == "/plugins/cli-anything/verify-harness-plan":
+            extra_args_raw = payload.get("extra_args", [])
+            if not isinstance(extra_args_raw, list) or not all(isinstance(item, str) for item in extra_args_raw):
+                self._send(400, {"error": "extra_args must be a list of strings"})
+                return
+            result = CliAnythingHub().verify_harness_plan(
+                payload.get("action", "install"),
+                payload["harness_name"],
+                extra_args=tuple(extra_args_raw),
+                run=bool(payload.get("run", False)),
+                timeout_seconds=int(payload.get("timeout_seconds", 60)),
+            )
+            self._send(200 if result["ok"] else 409, result)
             return
         if self.path == "/plugins/cli-anything/onboard-harness":
             result = CliAnythingHub().onboard_harness(

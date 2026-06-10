@@ -17,6 +17,7 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("POST", "/plugins/cli-anything/candidates"), routes)
         self.assertIn(("POST", "/plugins/cli-anything/probe-harness"), routes)
         self.assertIn(("POST", "/plugins/cli-anything/verify-harness"), routes)
+        self.assertIn(("POST", "/plugins/cli-anything/verify-harness-plan"), routes)
         self.assertIn(("POST", "/plugins/cli-anything/promotion-gate"), routes)
         self.assertIn(("POST", "/plugins/cli-anything/live-verification"), routes)
         self.assertIn(("POST", "/plugins/cli-anything/mvp-plan"), routes)
@@ -1260,6 +1261,29 @@ class DaemonApiTests(unittest.TestCase):
             self.assertEqual(response.status, 200)
             self.assertTrue(payload["ok"])
             self.assertEqual(payload["kind"], "PluginPlanVerificationReport")
+            self.assertFalse(payload["run"])
+            self.assertTrue(payload["ready_to_run"])
+
+    def test_cli_anything_verify_harness_plan_route_returns_preview_report(self):
+        with daemon_url() as base_url:
+            request = urllib.request.Request(
+                f"{base_url}/plugins/cli-anything/verify-harness-plan",
+                data=json.dumps(
+                    {
+                        "action": "install",
+                        "harness_name": "mermaid",
+                    }
+                ).encode("utf-8"),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(request, timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+
+            self.assertEqual(response.status, 200)
+            self.assertTrue(payload["ok"])
+            self.assertEqual(payload["kind"], "CliAnythingHarnessPlanVerificationReport")
+            self.assertEqual(payload["harness_name"], "mermaid")
             self.assertFalse(payload["run"])
             self.assertTrue(payload["ready_to_run"])
 

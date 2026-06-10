@@ -590,38 +590,16 @@ class PluginManager:
             action=action,
             include_codex_skill=include_codex_skill,
         )
-        checks = [
-            _verification_check(command, run=run, timeout_seconds=timeout_seconds)
-            for command in plan.verification_commands
-        ]
-        unsafe_count = sum(1 for check in checks if not check["safe_to_run"])
-        executed_count = sum(1 for check in checks if check["status"] == "completed")
-        failed_count = sum(1 for check in checks if check["status"] == "failed")
-        blocked_count = sum(1 for check in checks if check["status"] == "blocked")
-        return {
-            "ok": unsafe_count == 0 and failed_count == 0 and blocked_count == 0,
-            "kind": "PluginPlanVerificationReport",
-            "plugin_api_version": "cbn.plugin.v1",
-            "plugin_id": plan.plugin_id,
-            "action": plan.action,
-            "run": run,
-            "timeout_seconds": timeout_seconds,
-            "ready_to_run": unsafe_count == 0,
-            "plan": plan.as_dict(),
-            "summary": {
-                "check_count": len(checks),
-                "safe_count": len(checks) - unsafe_count,
-                "unsafe_count": unsafe_count,
-                "executed_count": executed_count,
-                "failed_count": failed_count,
-                "blocked_count": blocked_count,
-            },
-            "checks": checks,
-            "next_commands": [
+        return verification_report_for_plan(
+            plan,
+            report_kind="PluginPlanVerificationReport",
+            run=run,
+            timeout_seconds=timeout_seconds,
+            next_commands=(
                 f"python -m cbn plugin verify-plan {plugin_id} --action {action}",
                 f"python -m cbn plugin verify-plan {plugin_id} --action {action} --run",
-            ],
-        }
+            ),
+        )
 
     def execute_plan(self, plan: PluginPlan) -> dict[str, Any]:
         self.paths.external_plugins.mkdir(parents=True, exist_ok=True)
@@ -956,6 +934,48 @@ def _run_command(argv: tuple[str, ...], timeout_seconds: int) -> dict[str, Any]:
         "stdout": proc.stdout[-4000:],
         "stderr": proc.stderr[-4000:],
     }
+
+
+def verification_report_for_plan(
+    plan: PluginPlan,
+    report_kind: str,
+    run: bool = False,
+    timeout_seconds: int = 60,
+    next_commands: tuple[str, ...] = (),
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    checks = [
+        _verification_check(command, run=run, timeout_seconds=timeout_seconds)
+        for command in plan.verification_commands
+    ]
+    unsafe_count = sum(1 for check in checks if not check["safe_to_run"])
+    executed_count = sum(1 for check in checks if check["status"] == "completed")
+    failed_count = sum(1 for check in checks if check["status"] == "failed")
+    blocked_count = sum(1 for check in checks if check["status"] == "blocked")
+    report = {
+        "ok": unsafe_count == 0 and failed_count == 0 and blocked_count == 0,
+        "kind": report_kind,
+        "plugin_api_version": "cbn.plugin.v1",
+        "plugin_id": plan.plugin_id,
+        "action": plan.action,
+        "run": run,
+        "timeout_seconds": timeout_seconds,
+        "ready_to_run": unsafe_count == 0,
+        "plan": plan.as_dict(),
+        "summary": {
+            "check_count": len(checks),
+            "safe_count": len(checks) - unsafe_count,
+            "unsafe_count": unsafe_count,
+            "executed_count": executed_count,
+            "failed_count": failed_count,
+            "blocked_count": blocked_count,
+        },
+        "checks": checks,
+        "next_commands": list(next_commands),
+    }
+    if extra:
+        report.update(extra)
+    return report
 
 
 def _verification_check(command: str, run: bool, timeout_seconds: int) -> dict[str, Any]:
@@ -1331,6 +1351,15 @@ def _provider_operations(manifest: PluginManifest) -> list[dict[str, Any]]:
             f"python -m cbn plugin bootstrap-plan {plugin_id} --harness mermaid --query file",
             api={"method": "POST", "path": f"/plugins/{plugin_id}/bootstrap-plan"},
             payload_template={"harness_name": "mermaid", "query": "file", "include_workflows": True},
+        ),
+        _operation(
+            "harness-verify-plan",
+            "Harness Post-Operation Verification",
+            "report",
+            f"python -m cbn plugin verify-harness-plan {plugin_id} install <harness>",
+            api={"method": "POST", "path": f"/plugins/{plugin_id}/verify-harness-plan"},
+            payload_template={"action": "install", "harness_name": "<harness>", "run": False},
+            input_schema={"harness": "string", "action": "string", "run": "boolean"},
         ),
         _operation(
             "harness-install",
