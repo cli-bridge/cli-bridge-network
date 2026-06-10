@@ -127,6 +127,19 @@ Workflow Studio 是用户侧主界面，旧 `packages/dashboard` 保留为 maint
   `BridgeMessage`、artifact 记录形状、audit/event correlation 记录。
 - 该 slice 仍不做 daemon 写入、不安装外部包、不改变 CLI/API 行为。
 
+Workflow Studio slice 已新增 `packages/workflow-studio`：
+
+- 技术栈为 Vue、TypeScript、Vite、LiteGraph。
+- 首屏是 workflow workbench，不是按钮墙或 landing page。
+- 左侧提供 daemon URL、session token、workflow path、dry-run、confirmed。
+- 中间使用 LiteGraph 画布展示 workflow task DAG。
+- 右侧展示 task、selector 和 run result。
+- 底部 evidence dock 展示 events、audit、artifacts。
+- 已接入 daemon API：`/health`、`/workflows`、`/workflows?path=...`、
+  `/messages/contract?workflow_path=...`、`/workflows/run`、`/events`、
+  `/audit`、`/artifacts`。
+- 旧 `packages/dashboard` 保持 maintainer console，Studio 只保留一个小入口。
+
 ## 验证策略
 
 默认只跑针对性验证。除非人工主动指定，不跑全量单测；大型测试每小时最多运行一次。
@@ -139,4 +152,6 @@ Workflow Studio 是用户侧主界面，旧 `packages/dashboard` 保留为 maint
 - `python -m unittest tests-unit.test_agent_cli_contract`
 - `python external_protocols/agent-cli-contract/scripts/conformance_smoke.py`
 - `node external_protocols/agent-cli-contract/scripts/check.mjs`
+- `npm --workspace @cli-bridge/workflow-studio run check`
+- `npm --workspace @cli-bridge/workflow-studio run build`
 - `npm --workspace @cli-bridge/dashboard run check`
