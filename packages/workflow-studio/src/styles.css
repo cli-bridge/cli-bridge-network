@@ -204,6 +204,58 @@ canvas {
   text-transform: uppercase;
 }
 
+.stage-list {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.stage-row {
+  display: grid;
+  min-height: 28px;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #d1dacd;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 5px 7px;
+  font-size: 12px;
+}
+
+.stage-row span:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stage-row code {
+  color: #4c5949;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #9ca89a;
+}
+
+.dot.completed {
+  background: #2f8a4b;
+}
+
+.dot.blocked,
+.dot.failed {
+  background: #c9493d;
+}
+
+.dot.not_run,
+.dot.skipped {
+  background: #b9852e;
+}
+
 .evidence-dock {
   display: grid;
   grid-column: 1 / 4;

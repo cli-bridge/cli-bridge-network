@@ -35,3 +35,18 @@ export interface DockState {
   audit: unknown[];
   artifacts: unknown[];
 }
+
+export interface DemoStage {
+  id: string;
+  title: string;
+  status: string;
+  evidence?: Record<string, unknown>;
+}
+
+export interface KillerDemoReport {
+  ok?: boolean;
+  kind?: string;
+  summary?: Record<string, unknown>;
+  stages?: DemoStage[];
+  workflow_path?: string;
+}

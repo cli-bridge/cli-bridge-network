@@ -16,6 +16,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from api_server.routes.health import health_payload
+from cbn_demo.killer import DEFAULT_KILLER_WORKFLOW_PATH, killer_demo_report
 from cbn_core.manifest import validate_manifest_path
 from cbn_execution.graph import WorkflowGraph
 from cbn_parsers.fixtures import run_parser_fixtures
@@ -91,9 +92,11 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/protocols/smoke-suite"},
     {"method": "GET", "path": "/protocols/acceptance-queue"},
     {"method": "GET", "path": "/protocols/bridge-lab"},
+    {"method": "GET", "path": "/demo/killer"},
     {"method": "POST", "path": "/protocols/accept-workflow"},
     {"method": "POST", "path": "/protocols/acceptance-queue"},
     {"method": "POST", "path": "/protocols/bridge-lab"},
+    {"method": "POST", "path": "/demo/killer"},
     {"method": "GET", "path": "/approvals"},
     {"method": "GET", "path": "/workflows"},
     {"method": "GET", "path": "/runtime/transports"},
@@ -563,6 +566,22 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             )
             self._send(200 if result["ok"] else 422, result)
             return
+        if parsed.path == "/demo/killer":
+            result = killer_demo_report(
+                runtime.registry,
+                runtime.workflow_runner,
+                workflow_path=query.get("workflow_path", query.get("path", [DEFAULT_KILLER_WORKFLOW_PATH]))[0],
+                run=query.get("run", ["true"])[0].lower() in {"1", "true", "yes"},
+                dry_run=query.get("dry_run", ["true"])[0].lower() in {"1", "true", "yes"},
+                confirmed=query.get("confirmed", ["false"])[0].lower() in {"1", "true", "yes"},
+                include_payloads=query.get("include_payloads", ["false"])[0].lower() in {"1", "true", "yes"},
+                run_smoke_suite=query.get("smoke_suite", ["true"])[0].lower() in {"1", "true", "yes"},
+                event_tail=runtime.event_bus.tail(limit=30),
+                audit_tail=runtime.audit_log.tail(limit=30),
+                artifact_list=runtime.artifact_store.list(limit=30),
+            )
+            self._send(200 if result["ok"] else 422, result)
+            return
         if parsed.path == "/approvals":
             approval_id = query.get("approval_id", [None])[0]
             if approval_id:
@@ -674,6 +693,22 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 confirmed=bool(payload.get("confirmed", False)),
                 include_payloads=bool(payload.get("include_payloads", False)),
                 run_smoke_suite=bool(payload.get("smoke_suite", payload.get("run_smoke_suite", False))),
+            )
+            self._send(200 if result["ok"] else 422, result)
+            return
+        if self.path == "/demo/killer":
+            result = killer_demo_report(
+                runtime.registry,
+                runtime.workflow_runner,
+                workflow_path=str(payload.get("workflow_path") or payload.get("path") or DEFAULT_KILLER_WORKFLOW_PATH),
+                run=bool(payload.get("run", True)),
+                dry_run=bool(payload.get("dry_run", True)),
+                confirmed=bool(payload.get("confirmed", False)),
+                include_payloads=bool(payload.get("include_payloads", False)),
+                run_smoke_suite=bool(payload.get("smoke_suite", payload.get("run_smoke_suite", True))),
+                event_tail=runtime.event_bus.tail(limit=30),
+                audit_tail=runtime.audit_log.tail(limit=30),
+                artifact_list=runtime.artifact_store.list(limit=30),
             )
             self._send(200 if result["ok"] else 422, result)
             return

@@ -41,6 +41,8 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("GET", "/protocols/bridge-lab"), routes)
         self.assertIn(("POST", "/protocols/acceptance-queue"), routes)
         self.assertIn(("POST", "/protocols/bridge-lab"), routes)
+        self.assertIn(("GET", "/demo/killer"), routes)
+        self.assertIn(("POST", "/demo/killer"), routes)
         self.assertIn(("GET", "/protocols/workflows"), routes)
         self.assertIn(("GET", "/.well-known/agent-card.json"), routes)
         self.assertIn(("POST", "/a2a"), routes)
@@ -83,6 +85,22 @@ class DaemonApiTests(unittest.TestCase):
             self.assertTrue(payload["ok"])
             self.assertEqual(payload["kind"], "PluginProviderOperationCatalogValidation")
             self.assertEqual(payload["summary"]["error_count"], 0)
+
+    def test_killer_demo_route_returns_demo_report(self):
+        with daemon_url() as base_url:
+            request = urllib.request.Request(
+                f"{base_url}/demo/killer",
+                data=json.dumps({"run": True, "dry_run": True, "smoke_suite": False}).encode("utf-8"),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(request, timeout=10) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(response.status, 200)
+                self.assertEqual(payload["kind"], "CbnKillerDemoReport")
+                self.assertTrue(payload["ok"])
+                self.assertEqual(payload["summary"]["workflow_status"], "completed")
+                self.assertEqual(payload["summary"]["route_count"], 2)
 
     def test_adapter_agent_orchestrate_route_returns_auth_fallback(self):
         with daemon_url() as base_url:

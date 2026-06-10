@@ -140,6 +140,30 @@ Workflow Studio slice 已新增 `packages/workflow-studio`：
   `/audit`、`/artifacts`。
 - 旧 `packages/dashboard` 保持 maintainer console，Studio 只保留一个小入口。
 
+Killer Demo slice 已新增可运行证据束：
+
+- 新增 `cbn_demo.killer.killer_demo_report`，聚合 manifest、workflow、BridgeMessage
+  contract、workflow run、artifact/event/audit evidence、protocol export 和
+  MCP/A2A/ACP smoke。
+- daemon 新增 `GET /demo/killer` 与 `POST /demo/killer`，用于 Workflow Studio
+  一键拉取演示链路证据。
+- CLI 新增 `python -m cbn demo killer --run --dry-run`，用于本地验收同一份
+  demo report。
+- Workflow Studio 新增 `Demo` 按钮和 Killer Demo 阶段展示，复用当前 workflow path、
+  dry-run、confirmed 输入流。
+- 当前 demo 链路以 `workflows/cli-anything-macrocli-mermaid-routing.example.json`
+  为默认入口，展示 macrocli -> parser payload -> Mermaid transform -> mermaid
+  consumer 的 CLI-CLI BridgeMessage 通信链。
+
+后续仍需继续推进的产品化收口：
+
+- 把 `cbn import command`、`cbn import cli-anything`、`cbn import skill`、
+  `cbn import mcp`、`cbn record-parser-fixture` 做成低门槛接入入口。
+- 将 `cbn_plugins/cli_anything.py` 先 facade 后拆为 market、probe、
+  manifest_factory、repair、verification、onboarding。
+- 把 `cbn_adapter_agent` 抽象为可参与 workflow 的 Agent node，承载自然语言
+  调度、初次设置引导和 BridgeMessage 收发。
+
 ## 验证策略
 
 默认只跑针对性验证。除非人工主动指定，不跑全量单测；大型测试每小时最多运行一次。
@@ -147,6 +171,9 @@ Workflow Studio slice 已新增 `packages/workflow-studio`：
 本 slice 的验证重点：
 
 - `python -m cbn health`
+- `python -m cbn demo killer --run --dry-run --smoke-suite`
+- `python -m unittest tests-unit.test_killer_demo`
+- `python -m unittest tests-unit.test_daemon_api.DaemonApiTests.test_killer_demo_route_returns_demo_report`
 - `python -m unittest tests-unit.test_parser_protocol tests-unit.test_workflow_runner`
 - `python -m unittest tests-unit.test_protocol_exports`
 - `python -m unittest tests-unit.test_agent_cli_contract`

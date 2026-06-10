@@ -10,12 +10,13 @@ import {
   Network,
   Play,
   RefreshCw,
+  Rocket,
   ShieldCheck,
   Wrench,
 } from "lucide-vue-next";
 import { StudioApi } from "./api";
 import { mountWorkflowGraph, type StudioGraph } from "./graph";
-import type { DockState, StudioConfig, WorkflowInspect, WorkflowTask } from "./types";
+import type { DockState, KillerDemoReport, StudioConfig, WorkflowInspect, WorkflowTask } from "./types";
 
 const config = reactive<StudioConfig>({
   daemonUrl: "http://127.0.0.1:8765",
@@ -31,6 +32,7 @@ const workflow = ref<WorkflowInspect | null>(null);
 const workflowList = ref<unknown>(null);
 const contract = ref<unknown>(null);
 const runResult = ref<unknown>(null);
+const demoReport = ref<KillerDemoReport | null>(null);
 const health = ref<unknown>(null);
 const selectedTaskId = ref("");
 const loading = ref("");
@@ -77,6 +79,12 @@ async function inspectContract() {
 
 async function runWorkflow() {
   runResult.value = await call("run", () => api.value.runWorkflow());
+  await refreshEvidence();
+}
+
+async function runKillerDemo() {
+  demoReport.value = (await call("demo", () => api.value.killerDemo())) as KillerDemoReport;
+  runResult.value = demoReport.value?.summary ? demoReport.value : runResult.value;
   await refreshEvidence();
 }
 
@@ -155,6 +163,9 @@ onMounted(async () => {
         <button title="Run selected workflow through daemon" @click="runWorkflow">
           <Play :size="16" /> Run
         </button>
+        <button title="Run the CLI-Anything macrocli to mermaid killer demo" @click="runKillerDemo">
+          <Rocket :size="16" /> Demo
+        </button>
         <button title="Inspect workflow contract" @click="inspectContract">
           <ShieldCheck :size="16" /> Contract
         </button>
@@ -196,6 +207,17 @@ onMounted(async () => {
       <section>
         <div class="section-title"><FileJson :size="15" /> Run result</div>
         <pre>{{ pretty(runResult) }}</pre>
+      </section>
+      <section>
+        <div class="section-title"><Rocket :size="15" /> Killer Demo</div>
+        <div class="stage-list">
+          <div v-for="stage in demoReport?.stages || []" :key="stage.id" class="stage-row">
+            <span :class="['dot', stage.status]"></span>
+            <span>{{ stage.title }}</span>
+            <code>{{ stage.status }}</code>
+          </div>
+        </div>
+        <pre>{{ pretty(demoReport?.summary || demoReport) }}</pre>
       </section>
     </aside>
 

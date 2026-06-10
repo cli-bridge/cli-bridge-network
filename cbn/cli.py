@@ -10,6 +10,7 @@ from api_server.routes.health import health_payload
 from cbn.cli_args import build_parser
 from cbn.paths import resolve_project_paths
 from cbn.version import __version__
+from cbn_demo.killer import killer_demo_report
 from cbn_core.manifest import validate_manifest_path
 from cbn_execution.graph import WorkflowGraph
 from cbn_parsers.fixtures import run_parser_fixtures
@@ -278,6 +279,25 @@ def main(argv: list[str] | None = None) -> int:
                 confirmed=args.yes,
                 include_payloads=args.include_payloads,
                 run_smoke_suite=args.smoke_suite,
+            )
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0 if payload["ok"] else 10
+
+    if args.command == "demo":
+        runtime = build_runtime()
+        if args.demo_command == "killer":
+            payload = killer_demo_report(
+                runtime.registry,
+                runtime.workflow_runner,
+                workflow_path=args.workflow_path,
+                run=args.run,
+                dry_run=args.dry_run,
+                confirmed=args.yes,
+                include_payloads=args.include_payloads,
+                run_smoke_suite=args.smoke_suite,
+                event_tail=runtime.event_bus.tail(limit=30),
+                audit_tail=runtime.audit_log.tail(limit=30),
+                artifact_list=runtime.artifact_store.list(limit=30),
             )
             print(json.dumps(payload, ensure_ascii=False, indent=2))
             return 0 if payload["ok"] else 10

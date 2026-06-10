@@ -218,6 +218,27 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run protocol facade smoke checks as part of the lab report.",
     )
 
+    demo_parser = subcommands.add_parser("demo", help="Run product demo evidence bundles.")
+    demo_subcommands = demo_parser.add_subparsers(dest="demo_command")
+    killer_demo = demo_subcommands.add_parser(
+        "killer",
+        help="Run the CLI-Anything macrocli -> mermaid killer demo report.",
+    )
+    killer_demo.add_argument(
+        "--workflow-path",
+        default="workflows/cli-anything-macrocli-mermaid-routing.example.json",
+        help="Workflow JSON path to use for the killer demo.",
+    )
+    killer_demo.add_argument("--run", action="store_true", help="Execute the workflow and attach runtime evidence.")
+    killer_demo.add_argument("--dry-run", action="store_true", help="Dry-run workflow execution.")
+    killer_demo.add_argument("--yes", action="store_true", help="Confirm workflow tasks when needed.")
+    killer_demo.add_argument("--include-payloads", action="store_true")
+    killer_demo.add_argument(
+        "--smoke-suite",
+        action="store_true",
+        help="Run MCP/A2A/ACP smoke checks as part of the demo report.",
+    )
+
     mcp_parser = subcommands.add_parser("mcp", help="Run or test the MCP stdio facade.")
     mcp_subcommands = mcp_parser.add_subparsers(dest="mcp_command")
     mcp_serve = mcp_subcommands.add_parser("serve", help="Serve MCP over stdio.")

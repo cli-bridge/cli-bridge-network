@@ -27,6 +27,16 @@ export class StudioApi {
     });
   }
 
+  async killerDemo(): Promise<unknown> {
+    return this.post("/demo/killer", {
+      workflow_path: this.config.workflowPath,
+      run: true,
+      dry_run: this.config.dryRun,
+      confirmed: this.config.confirmed,
+      smoke_suite: true,
+    });
+  }
+
   async events(): Promise<unknown> {
     return this.get("/events?limit=30");
   }
