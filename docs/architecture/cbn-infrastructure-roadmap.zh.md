@@ -191,6 +191,11 @@ Killer Demo slice 已新增可运行证据束：
   `cbn_plugins.cli_anything` import path 继续兼容。
 - 把 `cbn_adapter_agent` 抽象为可参与 workflow 的 Agent node，承载自然语言
   调度、初次设置引导和 BridgeMessage 收发。
+- `cbn_agent` 已新增最小核心模型层：`AgentCard`、`AgentHarness`、
+  `AgentSession`、`AgentTask`、`AgentBridgeMessage`。它复用
+  `cbn_core.message.BridgeMessage` 作为内部总线输出，先不改变
+  `cbn_adapter_agent` 现有行为，后续再逐步让 adapter agent 映射到这些稳定
+  node records。
 
 ## 验证策略
 
@@ -206,6 +211,7 @@ Killer Demo slice 已新增可运行证据束：
 - `python -m unittest tests-unit.test_cli_anything_repair`
 - `python -m unittest tests-unit.test_cli_anything_verification`
 - `python -m unittest tests-unit.test_cli_anything_onboarding`
+- `python -m unittest tests-unit.test_cbn_agent_models`
 - `python -m unittest tests-unit.test_killer_demo`
 - `python -m unittest tests-unit.test_command_importer`
 - `python -m unittest tests-unit.test_cli_imports`
