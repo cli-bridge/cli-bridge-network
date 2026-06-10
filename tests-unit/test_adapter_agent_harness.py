@@ -296,6 +296,32 @@ class AdapterAgentHarnessTests(unittest.TestCase):
         self.assertEqual(payload["agents"][0]["role_id"], "manifest-bootstrap-agent")
         self.assertEqual(proc.stderr, "")
 
+    def test_adapter_agent_node_bundle_cli_outputs_json(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn_adapter_agent",
+                "--node-bundle",
+                "--workflow-path",
+                "workflows/auth-gated-first-run.example.json",
+                "--message",
+                "initialize",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["kind"], "AdapterAgentNodeBundle")
+        self.assertEqual(payload["cards"][0]["kind"], "AgentCard")
+        self.assertEqual(payload["workflow_nodes"][0]["agent"], "manifest-bootstrap-agent")
+        validation = validate_bridge_message(payload["bridge_message"])
+        self.assertTrue(validation["valid"], validation["errors"])
+        self.assertEqual(proc.stderr, "")
+
     def test_adapter_agent_tool_call_plan_models_batches_hooks_and_loop(self):
         plan = build_agent_tool_call_plan(
             message="initialize",

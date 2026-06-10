@@ -200,6 +200,9 @@ Killer Demo slice 已新增可运行证据束：
   Adapter Agent coordination roles 映射为 `cbn_agent` cards、harnesses、tasks、
   workflow nodes 和可校验的 AgentBridgeMessage；它是只读 bundle，不改变现有
   adapter agent CLI/API 行为。
+- `python -m cbn_adapter_agent --node-bundle` 已新增只读 CLI 输出，便于 Workflow
+  Studio、daemon 或外部程序一次性读取 Adapter Agent 的 node records 和总线
+  BridgeMessage 证据。
 
 ## 验证策略
 
@@ -217,6 +220,7 @@ Killer Demo slice 已新增可运行证据束：
 - `python -m unittest tests-unit.test_cli_anything_onboarding`
 - `python -m unittest tests-unit.test_cbn_agent_models`
 - `python -m unittest tests-unit.test_adapter_agent_harness.AdapterAgentHarnessTests.test_adapter_agent_node_bundle_maps_roles_to_agent_contracts`
+- `python -m unittest tests-unit.test_adapter_agent_harness.AdapterAgentHarnessTests.test_adapter_agent_node_bundle_cli_outputs_json`
 - `python -m unittest tests-unit.test_killer_demo`
 - `python -m unittest tests-unit.test_command_importer`
 - `python -m unittest tests-unit.test_cli_imports`

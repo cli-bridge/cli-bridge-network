@@ -16,6 +16,7 @@ from cbn_adapter_agent.compiler import (
 from cbn_adapter_agent.coordinator import build_multi_agent_coordination_plan
 from cbn_adapter_agent.llm_validation import validate_with_glm
 from cbn_adapter_agent.manifest_bootstrap import build_manifest_bootstrap_plan
+from cbn_adapter_agent.nodes import build_adapter_agent_node_bundle
 from cbn_adapter_agent.orchestrator import DEFAULT_WORKFLOW_PATH, build_orchestration_turn
 from cbn_adapter_agent.tool_call_plan import build_agent_tool_call_plan, write_agent_loop_checkpoint
 from cbn_adapter_agent.workflow_init import build_workflow_initialization_plan
@@ -35,6 +36,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--workflow-init", help="Build initial workflow setup guidance for auth-gated nodes.")
     parser.add_argument("--workflow-setup", help="Build the split Workflow Setup Agent plan.")
     parser.add_argument("--coordination-plan", action="store_true", help="Build the split multi-agent coordination plan.")
+    parser.add_argument("--node-bundle", action="store_true", help="Build core cbn_agent node records for the Adapter Agent roles.")
     parser.add_argument("--tool-call-plan", action="store_true", help="Build Adapter Agent tool-call and long-loop plan.")
     parser.add_argument("--write-loop-checkpoint", action="store_true", help="Write long-loop checkpoint when used with --tool-call-plan.")
     parser.add_argument("--orchestrate", action="store_true", help="Run one Adapter Agent orchestration turn.")
@@ -60,6 +62,13 @@ def main(argv: list[str] | None = None) -> int:
         )
     elif args.coordination_plan:
         payload = build_multi_agent_coordination_plan(
+            message=args.message,
+            workflow_path=args.workflow_path,
+            profiles=tuple(args.profile) or None,
+            root=root,
+        )
+    elif args.node_bundle:
+        payload = build_adapter_agent_node_bundle(
             message=args.message,
             workflow_path=args.workflow_path,
             profiles=tuple(args.profile) or None,
@@ -108,6 +117,7 @@ def main(argv: list[str] | None = None) -> int:
         "WorkflowInitializationPlan",
         "WorkflowSetupPlan",
         "AdapterAgentCoordinationPlan",
+        "AdapterAgentNodeBundle",
         "AdapterAgentToolCallPlan",
         "AdapterAgentOrchestrationTurn",
     }:
