@@ -354,38 +354,40 @@ def _consumer_quickstart(
         "audit": _absolute_url(clean_base_url, "/audit"),
         "artifacts": _absolute_url(clean_base_url, "/artifacts"),
     }
+    requests = [
+        _quickstart_request("health", "GET", entrypoints["health"], headers=headers),
+        _quickstart_request("inspect_workflow", "GET", entrypoints["inspect_workflow"], headers=headers),
+        _quickstart_request(
+            "inspect_bridge_contract",
+            "GET",
+            entrypoints["inspect_bridge_contract"],
+            headers=headers,
+        ),
+        _quickstart_request(
+            "plan_agent_request",
+            "POST",
+            plan_url,
+            headers=headers,
+            json_payload=plan_payload,
+        ),
+        _quickstart_request(
+            "run_workflow",
+            run_http.get("method", "POST"),
+            run_url,
+            headers=headers,
+            json_payload=run_payload,
+        ),
+        _quickstart_request("events", "GET", entrypoints["events"], headers=headers),
+        _quickstart_request("audit", "GET", entrypoints["audit"], headers=headers),
+        _quickstart_request("artifacts", "GET", entrypoints["artifacts"], headers=headers),
+    ]
     return {
         "kind": "NetworkConnectQuickstart",
         "status": "ready" if clean_base_url else "ready_without_daemon_url",
         "required_headers": headers,
         "entrypoints": entrypoints,
-        "requests": [
-            _quickstart_request("health", "GET", entrypoints["health"], headers=headers),
-            _quickstart_request("inspect_workflow", "GET", entrypoints["inspect_workflow"], headers=headers),
-            _quickstart_request(
-                "inspect_bridge_contract",
-                "GET",
-                entrypoints["inspect_bridge_contract"],
-                headers=headers,
-            ),
-            _quickstart_request(
-                "plan_agent_request",
-                "POST",
-                plan_url,
-                headers=headers,
-                json_payload=plan_payload,
-            ),
-            _quickstart_request(
-                "run_workflow",
-                run_http.get("method", "POST"),
-                run_url,
-                headers=headers,
-                json_payload=run_payload,
-            ),
-            _quickstart_request("events", "GET", entrypoints["events"], headers=headers),
-            _quickstart_request("audit", "GET", entrypoints["audit"], headers=headers),
-            _quickstart_request("artifacts", "GET", entrypoints["artifacts"], headers=headers),
-        ],
+        "requests": requests,
+        "curl_script": _quickstart_curl_script(requests),
         "sequence": [
             "open_studio",
             "inspect_workflow",
@@ -415,6 +417,12 @@ def _quickstart_request(
         request["json"] = json_payload
     request["curl"] = _quickstart_curl(method=method, url=url, headers=headers, json_payload=json_payload)
     return request
+
+
+def _quickstart_curl_script(requests: list[dict[str, Any]]) -> str:
+    lines = ["set -e"]
+    lines.extend(str(request.get("curl", "")) for request in requests if request.get("curl"))
+    return "\n".join(lines)
 
 
 def _quickstart_curl(

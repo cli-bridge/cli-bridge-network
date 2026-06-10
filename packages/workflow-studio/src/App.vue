@@ -259,6 +259,7 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
     runEndpoint: stringValue(quickstart.entrypoints?.run_workflow?.url) ?? "",
     planEndpoint: stringValue(quickstart.entrypoints?.plan_agent_request?.url) ?? "",
     quickstartRequestCount: Array.isArray(quickstart.requests) ? quickstart.requests.length : 0,
+    curlScript: stringValue(quickstart.curl_script) ?? "",
   };
 }
 
@@ -520,6 +521,10 @@ onMounted(async () => {
             <em>{{ request.curl || "curl not loaded" }}</em>
           </div>
           <span v-if="!quickstartRequests.length">No quickstart requests loaded</span>
+        </div>
+        <div class="curl-script-preview">
+          <span>cURL script</span>
+          <code>{{ connectSummary.curlScript || "not loaded" }}</code>
         </div>
         <div class="endpoint-list">
           <div v-for="endpoint in connectEndpoints.slice(0, 6)" :key="`${endpoint.method}:${endpoint.path}`">

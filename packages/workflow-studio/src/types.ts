@@ -280,6 +280,7 @@ export interface NetworkConnectPackage {
       artifacts?: string;
     };
     requests?: QuickstartRequest[];
+    curl_script?: string;
     sequence?: string[];
   };
   next_commands?: string[];
@@ -303,6 +304,7 @@ export interface ConnectSummary {
   runEndpoint: string;
   planEndpoint: string;
   quickstartRequestCount: number;
+  curlScript: string;
 }
 
 export interface AgentWorkflowRequestPlan {

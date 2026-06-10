@@ -67,6 +67,8 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertIn("--data", requests_by_id["plan_agent_request"]["curl"])
         self.assertEqual(requests_by_id["run_workflow"]["url"], "http://127.0.0.1:8787/workflows/run")
         self.assertEqual(len(quickstart["requests"]), 8)
+        self.assertTrue(quickstart["curl_script"].startswith("set -e\ncurl -X GET"))
+        self.assertIn("curl -X POST 'http://127.0.0.1:8787/workflows/run'", quickstart["curl_script"])
         endpoint_paths = {endpoint["path"] for endpoint in payload["daemon_endpoints"]}
         self.assertIn("/network/quickstart", endpoint_paths)
         self.assertIn("/adapter-agent/workflow-request-plan", endpoint_paths)
@@ -151,6 +153,7 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(payload["requests"][4]["id"], "run_workflow")
         self.assertEqual(payload["requests"][4]["headers"]["X-CBN-Session"], "test-token")
         self.assertIn("curl -X POST", payload["requests"][4]["curl"])
+        self.assertIn("curl -X GET 'http://127.0.0.1:8787/health'", payload["curl_script"])
         self.assertEqual(
             payload["entrypoints"]["run_workflow"]["json"]["path"],
             "workflows/cli-anything-macrocli-mermaid-routing.example.json",

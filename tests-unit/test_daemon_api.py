@@ -163,6 +163,7 @@ class DaemonApiTests(unittest.TestCase):
                 "workflows/cli-anything-macrocli-mermaid-routing.example.json",
             )
             self.assertIn("--data", payload["requests"][4]["curl"])
+            self.assertIn("curl -X POST", payload["curl_script"])
             self.assertIn("sessionToken=header-token", payload["entrypoints"]["open_studio"])
             self.assertNotIn("contracts", payload)
 
