@@ -255,6 +255,10 @@ def _parse_direct_cli_json(payload: dict[str, Any]) -> dict[str, Any]:
             data["build_time"] = payload["build_time"]
         return data
 
+    if _looks_like_jimeng_task_payload(payload):
+        data.update(_parse_jimeng_task_payload(payload))
+        return data
+
     if "healthy" in payload:
         healthy = bool(payload.get("healthy"))
         data.update(
@@ -308,6 +312,67 @@ def _parse_direct_cli_json(payload: dict[str, Any]) -> dict[str, Any]:
         return data
 
     return data
+
+
+def _looks_like_jimeng_task_payload(payload: dict[str, Any]) -> bool:
+    return any(
+        key in payload
+        for key in (
+            "submit_id",
+            "task_id",
+            "task_status",
+            "result_urls",
+            "image_urls",
+            "video_urls",
+            "outputs",
+        )
+    )
+
+
+def _parse_jimeng_task_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    submit_id = _first_string(payload, ("submit_id", "task_id", "id"))
+    status = _first_string(payload, ("task_status", "status", "state"))
+    result_urls = _string_list(
+        payload.get("result_urls")
+        or payload.get("image_urls")
+        or payload.get("video_urls")
+        or payload.get("outputs")
+        or payload.get("urls")
+    )
+    failed = status.lower() in {"failed", "failure", "error", "canceled", "cancelled"}
+    finished = status.lower() in {"succeeded", "success", "done", "completed", "finished"}
+    action = "query-result" if status or result_urls else "text2image-submit"
+    data: dict[str, Any] = {
+        "profile": "jimeng",
+        "action": action,
+        "ready": not failed,
+        "setup_required": False,
+        "error_type": "task_failed" if failed else None,
+        "next_action": "inspect Dreamina task failure and retry generation" if failed else None,
+        "task_status": status or None,
+        "finished": finished,
+        "result_urls": result_urls,
+        "result_count": len(result_urls),
+    }
+    if submit_id:
+        data["submit_id"] = submit_id
+    return data
+
+
+def _first_string(payload: dict[str, Any], keys: tuple[str, ...]) -> str:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return ""
+
+
+def _string_list(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]
 
 
 def _parse_direct_cli_text(text: str) -> dict[str, Any]:

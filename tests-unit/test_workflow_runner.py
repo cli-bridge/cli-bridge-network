@@ -198,6 +198,68 @@ class WorkflowRunnerTests(unittest.TestCase):
             self.assertEqual(consumer["resolved_args"], ["git --version"])
             self.assertEqual(consumer["result"]["stdout"], "git --version git --version")
 
+    def test_runner_reports_recoverable_args_from_selector_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            registry = ManifestRegistry()
+            registry.load_dir(Path("manifests"))
+            executor = CapabilityExecutor(registry, AuditLog(Path(tmp) / "audit.jsonl"))
+            runner = WorkflowRunner(executor)
+            graph = WorkflowGraph.from_dict(
+                {
+                    "apiVersion": "bridge.dev/v1alpha1",
+                    "kind": "Workflow",
+                    "metadata": {"id": "bad-selector"},
+                    "spec": {
+                        "tasks": [
+                            {"id": "source", "uses": "git.version"},
+                            {
+                                "id": "consumer",
+                                "uses": "git.version",
+                                "needs": ["source"],
+                                "argsFrom": [{"task": "source", "selector": "payload.data.missing"}],
+                            },
+                        ]
+                    },
+                }
+            )
+            result = runner.run(graph, dry_run=True)
+            self.assertEqual(result["status"], "failed")
+            self.assertEqual(result["summary"]["failed_count"], 1)
+            self.assertEqual(result["recovery"]["action"], "fix_args_from_selector")
+            consumer = result["tasks"][1]
+            self.assertEqual(consumer["status"], "failed")
+            self.assertEqual(consumer["result"]["reason"], "args_resolution_failed")
+            self.assertEqual(consumer["recovery"]["resume_mode"], "rerun_after_fix")
+
+    def test_runner_marks_blocked_task_and_skips_downstream(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            registry = ManifestRegistry()
+            registry.load_dir(Path("manifests"))
+            executor = CapabilityExecutor(registry, AuditLog(Path(tmp) / "audit.jsonl"))
+            runner = WorkflowRunner(executor)
+            graph = WorkflowGraph.from_dict(
+                {
+                    "apiVersion": "bridge.dev/v1alpha1",
+                    "kind": "Workflow",
+                    "metadata": {"id": "approval-blocked"},
+                    "spec": {
+                        "tasks": [
+                            {"id": "write", "uses": "jimeng.user_credit"},
+                            {"id": "after", "uses": "git.version", "needs": ["write"]},
+                        ]
+                    },
+                }
+            )
+            result = runner.run(graph)
+            self.assertEqual(result["status"], "blocked")
+            self.assertEqual(result["summary"]["blocked_count"], 1)
+            self.assertEqual(result["summary"]["skipped_count"], 1)
+            self.assertEqual(result["recovery"]["action"], "request_approval")
+            self.assertEqual(result["tasks"][0]["status"], "blocked")
+            self.assertEqual(result["tasks"][0]["recovery"]["resume_mode"], "rerun_after_approval")
+            self.assertEqual(result["tasks"][1]["status"], "skipped")
+            self.assertEqual(result["tasks"][1]["result"]["upstream_task_id"], "write")
+
     def test_runner_routes_artifact_id_to_downstream_cli(self):
         with tempfile.TemporaryDirectory() as tmp:
             registry = ManifestRegistry()
