@@ -12,6 +12,7 @@ from cbn.paths import resolve_project_paths
 from cbn.version import __version__
 from cbn_demo.killer import killer_demo_report
 from cbn_demo.network_connect import network_connect_package
+from cbn_core.agent_cli_importer import agent_cli_card_import_report
 from cbn_core.command_importer import command_import_report, parse_key_values
 from cbn_core.manifest import validate_manifest_path
 from cbn_core.mcp_importer import load_mcp_tool_descriptor, mcp_import_report
@@ -379,6 +380,15 @@ def main(argv: list[str] | None = None) -> int:
                     "facade_for": "CliAnythingHub.onboard_harness",
                 },
             }
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0 if payload["ok"] else 11
+        if args.import_command == "agent-cli-card":
+            payload = agent_cli_card_import_report(
+                Path(args.card_file),
+                write=args.write,
+                output_dir=Path(args.output_dir) if args.output_dir else None,
+                known_parser_refs=_known_parser_refs(),
+            )
             print(json.dumps(payload, ensure_ascii=False, indent=2))
             return 0 if payload["ok"] else 11
         if args.import_command == "mcp":

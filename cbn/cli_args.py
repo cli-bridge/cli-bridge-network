@@ -363,6 +363,24 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help="Extra arg passed to protocol smoke capability calls; repeatable.",
     )
+    import_agent_cli_card = import_subcommands.add_parser(
+        "agent-cli-card",
+        help="Generate ToolManifest drafts from an AgentCliCard descriptor.",
+    )
+    import_agent_cli_card.add_argument(
+        "--card-file",
+        required=True,
+        help="UTF-8 AgentCliCard JSON file.",
+    )
+    import_agent_cli_card.add_argument(
+        "--output-dir",
+        help="Directory for generated manifests. Defaults to runtime/manifests.",
+    )
+    import_agent_cli_card.add_argument(
+        "--write",
+        action="store_true",
+        help="Write generated manifests after validation.",
+    )
     import_mcp = import_subcommands.add_parser(
         "mcp",
         help="Generate a ToolManifest draft from an external MCP tool descriptor.",

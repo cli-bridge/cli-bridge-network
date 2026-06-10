@@ -103,7 +103,8 @@ Workflow Studio 是用户侧主界面，旧 `packages/dashboard` 保留为 maint
 4. 新增 `packages/workflow-studio`，先做真实 daemon API 调用和 DAG 展示。
 5. 把 killer demo 做成 Workflow Studio 首屏可运行路径。
 6. 降低 CLI 注册成本：`cbn import command`、`cbn import cli-anything`、
-   `cbn import skill`、`cbn import mcp`、`cbn record-parser-fixture`。
+   `cbn import agent-cli-card`、`cbn import skill`、`cbn import mcp`、
+   `cbn record-parser-fixture`。
 7. 拆分 `cbn_plugins/cli_anything.py` 为 market、probe、manifest_factory、
    repair、verification、onboarding。
 8. 把 `cbn_adapter_agent` 抽象为未来 `cbn_agent` 节点模型。
@@ -173,6 +174,10 @@ Killer Demo slice 已新增可运行证据束：
 - `cbn import cli-anything` 已有兼容门面：复用
   `CliAnythingHub.onboard_harness`，默认只输出 evaluate/probe/adapt/install/verify
   阶段报告；`--write` 或 `--install` 需要 `--yes` 才执行副作用。
+- `cbn import agent-cli-card` 已有最小入口：读取外置
+  `agent-cli-contract` 的 `AgentCliCard`，复用 CBN 侧纯映射生成一个或多个
+  `ToolManifest` 草案；默认只返回验证报告，显式 `--write` 时写入
+  `runtime/manifests/<capability-id>.json` 或指定 `--output-dir`。
 - `cbn record-parser-fixture` 已有最小入口：把一次 stdout/stderr 记录为
   `ParserFixture`，先用当前 `ParserRegistry` 自校验，显式 `--write` 才写入
   `parser_fixtures/<parser>.<case>.json` 或指定 `--output`。
