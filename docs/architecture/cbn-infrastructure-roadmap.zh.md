@@ -176,9 +176,11 @@ Killer Demo slice 已新增可运行证据束：
 - `cbn_plugins/cli_anything.py` 已先 facade 后拆出
   `cbn_plugins.cli_anything_parts.manifest_factory`，集中管理
   CLI-Anything harness `ToolManifest` 生成、market metadata 映射、risk/network
-  policy 推断和已验证 parser contract 保留；旧 `cbn_plugins.cli_anything`
-  import path 继续兼容。后续仍需继续拆 market、probe、repair、verification、
-  onboarding。
+  policy 推断和已验证 parser contract 保留；并拆出
+  `cbn_plugins.cli_anything_parts.market`，集中管理 CLI-Anything market JSON
+  解析、market record identity 和 capability collision 标记。旧
+  `cbn_plugins.cli_anything` import path 继续兼容。后续仍需继续拆 probe、
+  repair、verification、onboarding。
 - 把 `cbn_adapter_agent` 抽象为可参与 workflow 的 Agent node，承载自然语言
   调度、初次设置引导和 BridgeMessage 收发。
 
@@ -191,6 +193,7 @@ Killer Demo slice 已新增可运行证据束：
 - `python -m cbn health`
 - `python -m cbn demo killer --run --dry-run --smoke-suite`
 - `python -m unittest tests-unit.test_cli_anything_manifest_factory`
+- `python -m unittest tests-unit.test_cli_anything_market`
 - `python -m unittest tests-unit.test_killer_demo`
 - `python -m unittest tests-unit.test_command_importer`
 - `python -m unittest tests-unit.test_cli_imports`

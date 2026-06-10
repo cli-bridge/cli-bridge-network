@@ -51,6 +51,12 @@ from cbn_plugins.cli_anything_parts.manifest_factory import (
     preserve_existing_parser_contract as _manifest_factory_preserve_existing_parser_contract,
     sanitize_harness_name as _manifest_factory_sanitize_harness_name,
 )
+from cbn_plugins.cli_anything_parts.market import (
+    mark_candidate_collisions as _market_parts_mark_candidate_collisions,
+    mark_capability_collisions as _market_parts_mark_capability_collisions,
+    market_record_identity as _market_parts_market_record_identity,
+    market_records_from_result as _market_parts_market_records_from_result,
+)
 from cbn_protocol.acceptance_queue import cli_to_cli_acceptance_queue
 from cbn_protocol.compatibility import check_all_protocols
 from cbn_protocol.lifecycle_suite import protocol_lifecycle_suite
@@ -60,66 +66,6 @@ from cbn_workflow.catalog import list_workflows
 
 
 PLUGIN_ID = "cli-anything"
-MARKET_LABEL_KEYS = ("category", "_source", "package_manager", "platform")
-MARKET_ANNOTATION_KEYS = (
-    "display_name",
-    "version",
-    "description",
-    "requires",
-    "homepage",
-    "docs_url",
-    "source_url",
-    "install_cmd",
-    "update_cmd",
-    "uninstall_cmd",
-    "entry_point",
-    "skill_md",
-    "npm_package",
-    "npx_cmd",
-    "contributors",
-)
-RISK_ORDER = ("read", "write-workspace", "external-network", "privileged")
-RUNTIME_TEXT_KEYS = ("description", "requires")
-LOCAL_NETWORK_MARKERS = (
-    "localhost",
-    "127.0.0.1",
-    "::1",
-)
-EXTERNAL_NETWORK_MARKERS = (
-    "api key",
-    "apikey",
-    "access token",
-    "auth token",
-    "bearer token",
-    "n8n rest api",
-    "cloud api",
-    "remote api",
-    "google_cloud_project",
-    "gemini_api_key",
-    "openai_api_key",
-    "anthropic_api_key",
-    "vertex ai",
-    "gemini",
-    "openai",
-    "anthropic",
-    "replicate",
-    "huggingface",
-    "cloud",
-)
-WRITE_WORKSPACE_MARKERS = (
-    "generate",
-    "generation",
-    "export",
-    "convert",
-    "transcode",
-    "render",
-    "edit",
-    "image",
-    "video",
-    "svg",
-    "raster",
-    "painting",
-)
 
 
 @dataclass(frozen=True)
@@ -2594,59 +2540,15 @@ def infer_market_policy(
 
 
 def _market_records_from_result(parsed_json: Any) -> list[dict[str, Any]] | None:
-    if isinstance(parsed_json, list):
-        records = parsed_json
-    elif isinstance(parsed_json, dict):
-        records = None
-        for key in ("items", "harnesses", "tools", "results", "data"):
-            value = parsed_json.get(key)
-            if isinstance(value, list):
-                records = value
-                break
-        if records is None:
-            return None
-    else:
-        return None
-    return [item for item in records if isinstance(item, dict)]
+    return _market_parts_market_records_from_result(parsed_json)
 
 
 def _mark_capability_collisions(manifests: list[dict[str, Any]]) -> None:
-    by_id: dict[str, list[dict[str, Any]]] = {}
-    for item in manifests:
-        capability_id = item.get("capability_id")
-        if isinstance(capability_id, str) and capability_id:
-            by_id.setdefault(capability_id, []).append(item)
-    for capability_id, matches in by_id.items():
-        if len(matches) < 2:
-            continue
-        sources = [_market_record_identity(item) for item in matches]
-        for item in matches:
-            item["ok"] = False
-            item["error"] = "duplicate capability_id generated from market records"
-            item["collision"] = {
-                "capability_id": capability_id,
-                "market_records": sources,
-            }
+    _market_parts_mark_capability_collisions(manifests)
 
 
 def _mark_candidate_collisions(candidates: list[dict[str, Any]]) -> None:
-    by_id: dict[str, list[dict[str, Any]]] = {}
-    for item in candidates:
-        capability_id = item.get("capability_id")
-        if isinstance(capability_id, str) and capability_id:
-            by_id.setdefault(capability_id, []).append(item)
-    for capability_id, matches in by_id.items():
-        if len(matches) < 2:
-            continue
-        sources = [_market_record_identity(item) for item in matches]
-        for item in matches:
-            item["install_candidate"] = False
-            item["recommended_next_action"] = "resolve_blockers"
-            item.setdefault("blockers", []).append("duplicate capability_id generated from market records")
-            item["collision"] = {
-                "capability_id": capability_id,
-                "market_records": sources,
-            }
+    _market_parts_mark_candidate_collisions(candidates)
 
 
 def _refresh_candidate_lifecycle(item: dict[str, Any]) -> None:
@@ -4999,15 +4901,7 @@ def _live_verification_summary(
 
 
 def _market_record_identity(item: dict[str, Any]) -> dict[str, str | None]:
-    record = item.get("market_record")
-    if not isinstance(record, dict):
-        record = {}
-    return {
-        "name": str(record.get("name")) if record.get("name") is not None else None,
-        "display_name": str(record.get("display_name")) if record.get("display_name") is not None else None,
-        "entry_point": str(record.get("entry_point")) if record.get("entry_point") is not None else None,
-        "source": str(record.get("_source")) if record.get("_source") is not None else None,
-    }
+    return _market_parts_market_record_identity(item)
 
 
 def _declared_requires(market_record: dict[str, Any] | None, status: dict[str, Any]) -> str | None:
