@@ -250,6 +250,10 @@ Killer Demo slice 已新增可运行证据束：
   展示：可直接打开预配置 Workflow Studio demo link，并显示 session token 是否
   已包含、dry-run/live 模式和原始 `WorkflowStudioDemoLink` payload，便于外部程序
   拿到 one-shot package 后立即进入可视化验收界面。
+- Workflow Studio 请求 connect package 时会把当前 Studio origin 作为
+  `studio_url` 传给 daemon，同时把当前 session token 传给 link generator；因此
+  one-shot demo link 不再隐式绑定默认 `127.0.0.1:5177`，可适配其他本地端口或远程
+  预览环境。
 - CLI 已新增 `python -m cbn network connect-package` 只读入口，输出同一份
   `NetworkConnectPackage`。外部程序无需先接 daemon/WebUI，也能一次性读取
   AgentCliCard/RunReceipt contract、daemon endpoint catalog、protocol facade 和

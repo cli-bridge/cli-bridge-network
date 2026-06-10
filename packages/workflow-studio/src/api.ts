@@ -3,7 +3,10 @@ import type { StudioConfig } from "./types";
 const REQUEST_TIMEOUT_MS = 8000;
 
 export class StudioApi {
-  constructor(private readonly config: StudioConfig) {}
+  constructor(
+    private readonly config: StudioConfig,
+    private readonly studioOrigin: string = window.location.origin,
+  ) {}
 
   async health(): Promise<unknown> {
     return this.get("/health");
@@ -42,6 +45,7 @@ export class StudioApi {
     const query = new URLSearchParams({
       workflow_path: this.config.workflowPath,
       message: this.config.agentMessage,
+      studio_url: this.studioOrigin,
     });
     if (this.config.sessionToken.trim()) {
       query.set("session_token", this.config.sessionToken.trim());
