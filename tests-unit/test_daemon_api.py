@@ -50,6 +50,7 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("GET", "/parsers/fixtures"), routes)
         self.assertIn(("POST", "/adapter-agent/orchestrate"), routes)
         self.assertIn(("POST", "/adapter-agent/orchestrate-stream"), routes)
+        self.assertIn(("POST", "/adapter-agent/tool-call-plan"), routes)
         self.assertIn(("POST", "/adapter-agent/tool-use"), routes)
         self.assertIn(("POST", "/runtime/transports/gate"), routes)
         self.assertIn(("POST", "/runtime/transports/plan"), routes)
@@ -157,6 +158,27 @@ class DaemonApiTests(unittest.TestCase):
             self.assertTrue(payload["ok"])
             self.assertEqual(payload["stored"], "OBSIDIAN_API_KEY")
             self.assertNotIn("test-only-secret", body)
+
+    def test_adapter_agent_tool_call_plan_route_returns_loop_contract(self):
+        with daemon_url() as base_url:
+            request = urllib.request.Request(
+                f"{base_url}/adapter-agent/tool-call-plan",
+                data=json.dumps(
+                    {
+                        "workflow_path": "workflows/auth-gated-first-run.example.json",
+                        "message": "Initialize setup and plan tool calls.",
+                    }
+                ).encode("utf-8"),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(request, timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+
+            self.assertEqual(response.status, 200)
+            self.assertEqual(payload["kind"], "AdapterAgentToolCallPlan")
+            self.assertEqual(payload["long_running_loop"]["kind"], "AdapterAgentLoopPlan")
+            self.assertTrue(payload["execution_batches"])
 
     def test_plugin_operation_plan_route_resolves_descriptor(self):
         with daemon_url() as base_url:

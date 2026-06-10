@@ -13,9 +13,13 @@ from cbn_adapter_agent.compiler import (
     build_adapter_draft_batch,
     write_adapter_draft,
 )
+from cbn_adapter_agent.coordinator import build_multi_agent_coordination_plan
 from cbn_adapter_agent.llm_validation import validate_with_glm
+from cbn_adapter_agent.manifest_bootstrap import build_manifest_bootstrap_plan
 from cbn_adapter_agent.orchestrator import DEFAULT_WORKFLOW_PATH, build_orchestration_turn
+from cbn_adapter_agent.tool_call_plan import build_agent_tool_call_plan, write_agent_loop_checkpoint
 from cbn_adapter_agent.workflow_init import build_workflow_initialization_plan
+from cbn_adapter_agent.workflow_setup import build_workflow_setup_plan
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -27,7 +31,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--profile", action="append", default=[], help="Built-in adapter profile to draft.")
     parser.add_argument("--all", action="store_true", help="Draft every built-in adapter profile.")
     parser.add_argument("--root", help="Project root. Defaults to the current CBN checkout.")
+    parser.add_argument("--manifest-bootstrap", action="store_true", help="Build the split Manifest Bootstrap Agent plan.")
     parser.add_argument("--workflow-init", help="Build initial workflow setup guidance for auth-gated nodes.")
+    parser.add_argument("--workflow-setup", help="Build the split Workflow Setup Agent plan.")
+    parser.add_argument("--coordination-plan", action="store_true", help="Build the split multi-agent coordination plan.")
+    parser.add_argument("--tool-call-plan", action="store_true", help="Build Adapter Agent tool-call and long-loop plan.")
+    parser.add_argument("--write-loop-checkpoint", action="store_true", help="Write long-loop checkpoint when used with --tool-call-plan.")
     parser.add_argument("--orchestrate", action="store_true", help="Run one Adapter Agent orchestration turn.")
     parser.add_argument("--message", default="", help="User message for --orchestrate.")
     parser.add_argument(
@@ -49,8 +58,27 @@ def main(argv: list[str] | None = None) -> int:
             root=root,
             use_glm=args.glm_validate,
         )
+    elif args.coordination_plan:
+        payload = build_multi_agent_coordination_plan(
+            message=args.message,
+            workflow_path=args.workflow_path,
+            profiles=tuple(args.profile) or None,
+            root=root,
+        )
+    elif args.tool_call_plan:
+        payload = build_agent_tool_call_plan(
+            message=args.message,
+            workflow_path=args.workflow_path,
+            root=root,
+        )
+        if args.write_loop_checkpoint:
+            payload = {**payload, "loop_checkpoint": write_agent_loop_checkpoint(payload, root=root)}
+    elif args.workflow_setup:
+        payload = build_workflow_setup_plan(Path(args.workflow_setup), root=root)
     elif args.workflow_init:
         payload = build_workflow_initialization_plan(Path(args.workflow_init), root=root)
+    elif args.manifest_bootstrap:
+        payload = build_manifest_bootstrap_plan(profiles=tuple(args.profile) or None, root=root)
     elif args.all:
         payload = build_adapter_draft_batch(root=root)
     else:
@@ -63,7 +91,12 @@ def main(argv: list[str] | None = None) -> int:
     written: list[dict[str, str]] = []
     if args.write_draft:
         output_dir = Path(args.out) if args.out else None
-        drafts = payload["drafts"] if payload.get("kind") == "AdapterAgentDraftBatch" else [payload]
+        if payload.get("kind") in {"AdapterAgentDraftBatch", "ManifestBootstrapPlan"}:
+            drafts = payload.get("drafts", [])
+        elif payload.get("kind") == "AdapterAgentDraft":
+            drafts = [payload]
+        else:
+            drafts = []
         written = [write_adapter_draft(draft, output_dir=output_dir, root=root) for draft in drafts]
         payload = {**payload, "written": written}
 
@@ -71,7 +104,13 @@ def main(argv: list[str] | None = None) -> int:
         payload = {**payload, "llm_validation": validate_with_glm(payload)}
 
     print(json.dumps(payload, ensure_ascii=False, indent=args.indent))
-    if payload.get("kind") in {"WorkflowInitializationPlan", "AdapterAgentOrchestrationTurn"}:
+    if payload.get("kind") in {
+        "WorkflowInitializationPlan",
+        "WorkflowSetupPlan",
+        "AdapterAgentCoordinationPlan",
+        "AdapterAgentToolCallPlan",
+        "AdapterAgentOrchestrationTurn",
+    }:
         return 0
     return 0 if payload.get("ok", True) else 6
 

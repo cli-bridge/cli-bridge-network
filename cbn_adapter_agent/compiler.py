@@ -16,6 +16,7 @@ from typing import Any
 from cbn.paths import resolve_project_paths
 from cbn_core.manifest import CapabilityManifest, ManifestRegistry, validate_manifest_path
 from cbn_parsers.fixtures import run_parser_fixtures
+from cbn_adapter_agent.agent_roles import get_agent_role
 from cbn_adapter_agent.auth_setup import build_auth_setup_guide
 from cbn_tools.external_cli import require_action
 
@@ -109,9 +110,11 @@ def build_adapter_draft(profile_id: str, root: Path | None = None) -> dict[str, 
         "kind": "AdapterAgentDraft",
         "apiVersion": "bridge.dev/v1alpha1",
         "ok": all(stage["status"] != "blocked" for stage in stages),
+        "agent_role": get_agent_role("manifest-bootstrap-agent"),
         "profile": profile.as_dict(),
         "agent_policy": {
-            "role": "initialization-compiler",
+            "role": "manifest-bootstrap-agent",
+            "legacy_role": "initialization-compiler",
             "llm_runtime_dependency": False,
             "runtime_calls_use_accepted_manifests": True,
             "writes_require_explicit_flag": True,

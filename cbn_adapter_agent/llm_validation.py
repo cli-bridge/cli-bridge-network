@@ -324,6 +324,7 @@ def _bounded_payload(payload: dict[str, Any]) -> dict[str, Any]:
             "workflow_initialization": _compact_workflow_initialization(
                 payload.get("workflow_initialization") or {}
             ),
+            "coordination_plan": _compact_coordination_plan(payload.get("coordination_plan") or {}),
             "cli_routes": payload.get("cli_routes", [])[:20],
             "auth_fallbacks": _compact_auth_fallbacks(payload.get("auth_fallbacks", [])),
             "recommended_next_action": payload.get("recommended_next_action"),
@@ -341,6 +342,7 @@ def _bounded_payload(payload: dict[str, Any]) -> dict[str, Any]:
             "workflow_initialization": _compact_workflow_initialization(
                 payload.get("workflow_initialization") or {}
             ),
+            "coordination_plan": _compact_coordination_plan(payload.get("coordination_plan") or {}),
             "cli_routes": payload.get("cli_routes", [])[:20],
             "auth_fallbacks": _compact_auth_fallbacks(payload.get("auth_fallbacks", [])),
             "continuation": payload.get("continuation"),
@@ -365,6 +367,7 @@ def _compact_adapter_draft(draft: dict[str, Any]) -> dict[str, Any]:
         "kind": draft.get("kind"),
         "apiVersion": draft.get("apiVersion"),
         "ok": draft.get("ok"),
+        "agent_role": _compact_agent_role(draft.get("agent_role")),
         "profile": draft.get("profile"),
         "agent_policy": draft.get("agent_policy"),
         "risk_summary": draft.get("risk_summary"),
@@ -437,6 +440,64 @@ def _compact_workflow_initialization(plan: dict[str, Any]) -> dict[str, Any]:
             for guide in plan.get("setup_guides", [])[:10]
         ],
         "continuation": plan.get("continuation"),
+    }
+
+
+def _compact_coordination_plan(plan: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "kind": plan.get("kind"),
+        "apiVersion": plan.get("apiVersion"),
+        "ok": plan.get("ok"),
+        "status": plan.get("status"),
+        "workflow_path": plan.get("workflow_path"),
+        "profile_scope": plan.get("profile_scope"),
+        "agents": [
+            {
+                "role_id": agent.get("role_id"),
+                "title": agent.get("title"),
+                "sequence": agent.get("sequence"),
+                "status": agent.get("status"),
+                "output_kind": agent.get("output_kind"),
+                "summary": agent.get("summary"),
+            }
+            for agent in plan.get("agents", [])[:8]
+        ],
+        "handoffs": plan.get("handoffs", [])[:8],
+        "tool_call_plan_summary": plan.get("tool_call_plan_summary"),
+        "long_running_loop": _compact_loop_plan(plan.get("long_running_loop") or {}),
+        "parallelization": plan.get("parallelization", [])[:8],
+        "next_actions": plan.get("next_actions", [])[:12],
+    }
+
+
+def _compact_loop_plan(plan: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "kind": plan.get("kind"),
+        "loop_id": plan.get("loop_id"),
+        "status": plan.get("status"),
+        "checkpoints": [
+            {
+                "id": checkpoint.get("id"),
+                "owner": checkpoint.get("owner"),
+                "status": checkpoint.get("status"),
+                "evidence": checkpoint.get("evidence"),
+            }
+            for checkpoint in plan.get("checkpoints", [])[:8]
+        ],
+        "continuation_policy": plan.get("continuation_policy"),
+        "compaction_policy": plan.get("compaction_policy"),
+    }
+
+
+def _compact_agent_role(role: object) -> dict[str, Any] | None:
+    if not isinstance(role, dict):
+        return None
+    return {
+        "role_id": role.get("role_id"),
+        "title": role.get("title"),
+        "purpose": role.get("purpose"),
+        "allowed_actions": role.get("allowed_actions"),
+        "denied_actions": role.get("denied_actions"),
     }
 
 

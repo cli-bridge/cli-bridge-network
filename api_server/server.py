@@ -51,6 +51,7 @@ from cbn_adapter_agent.orchestrator import (
     llm_content_covers_fallbacks,
 )
 from cbn_adapter_agent.tool_use import run_setup_tool, store_session_secret
+from cbn_adapter_agent.tool_call_plan import build_agent_tool_call_plan
 from cbn_plugins.cli_anything import CliAnythingHub
 from cbn_plugins.manager import PluginManager
 
@@ -107,6 +108,7 @@ ROUTE_SUMMARY = [
     {"method": "POST", "path": "/workflows/run"},
     {"method": "POST", "path": "/adapter-agent/orchestrate"},
     {"method": "POST", "path": "/adapter-agent/orchestrate-stream"},
+    {"method": "POST", "path": "/adapter-agent/tool-call-plan"},
     {"method": "POST", "path": "/adapter-agent/tool-use"},
     {"method": "POST", "path": "/runtime/transports/gate"},
     {"method": "POST", "path": "/runtime/transports/plan"},
@@ -273,12 +275,15 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
         self._write_stream_event({"type": "done", "ok": True, "glm_content_accepted": accepted})
 
     def _handle_adapter_agent_tool_use(self, payload: dict[str, Any]) -> None:
+        runtime = build_runtime()
         action = payload.get("action")
         if action == "store-secret":
             result = store_session_secret(
                 self._adapter_agent_env(),
                 name=_required_string(payload, "name"),
                 value=_required_string(payload, "value"),
+                audit_log=runtime.audit_log,
+                event_bus=runtime.event_bus,
             )
             self._send(200 if result["ok"] else 400, result)
             return
@@ -293,6 +298,8 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 command_id=_required_string(payload, "command_id"),
                 env_store=self._adapter_agent_env(),
                 timeout_seconds=int(payload.get("timeout_seconds", 30)),
+                audit_log=runtime.audit_log,
+                event_bus=runtime.event_bus,
             )
             self._send(200 if result["ok"] else 409, result)
             return
@@ -721,6 +728,17 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             return
         if self.path == "/adapter-agent/orchestrate-stream":
             self._handle_adapter_agent_stream(payload)
+            return
+        if self.path == "/adapter-agent/tool-call-plan":
+            workflow_path = payload.get("workflow_path") or payload.get("path") or DEFAULT_WORKFLOW_PATH
+            message = payload.get("message", "")
+            if not isinstance(workflow_path, str) or not workflow_path:
+                self._send_error(400, "bad_request", "workflow_path must be a non-empty string")
+                return
+            if not isinstance(message, str):
+                self._send_error(400, "bad_request", "message must be a string")
+                return
+            self._send(200, build_agent_tool_call_plan(workflow_path=workflow_path, message=message))
             return
         if self.path == "/adapter-agent/tool-use":
             self._handle_adapter_agent_tool_use(payload)

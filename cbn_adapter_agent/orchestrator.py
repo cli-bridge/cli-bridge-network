@@ -9,6 +9,7 @@ from typing import Any
 from cbn.paths import resolve_project_paths
 from cbn_execution.graph import WorkflowGraph
 
+from cbn_adapter_agent.coordinator import build_multi_agent_coordination_plan
 from cbn_adapter_agent.llm_validation import complete_with_glm
 from cbn_adapter_agent.workflow_init import build_workflow_initialization_plan
 
@@ -53,6 +54,7 @@ def build_orchestration_turn(
         "message_redacted": plan_context["message_redacted"],
         "assistant_message": assistant_message,
         "recommended_next_action": plan_context["recommended_next_action"],
+        "coordination_plan": plan_context["coordination_plan"],
         "workflow_initialization": initialization,
         "cli_routes": plan_context["cli_routes"],
         "auth_fallbacks": plan_context["auth_fallbacks"],
@@ -75,6 +77,12 @@ def build_orchestration_context(
     graph = WorkflowGraph.from_file(source_path)
     graph.validate()
     sanitized_message = _redact_secrets(message)
+    coordination_plan = build_multi_agent_coordination_plan(
+        message=sanitized_message,
+        workflow_path=target,
+        root=root,
+        workflow_setup=initialization,
+    )
     plan_context = {
         "kind": "AdapterAgentOrchestrationContext",
         "apiVersion": "bridge.dev/v1alpha1",
@@ -82,6 +90,7 @@ def build_orchestration_context(
         "workflow_path": str(target),
         "message_redacted": sanitized_message != message,
         "workflow_initialization": initialization,
+        "coordination_plan": coordination_plan,
         "cli_routes": _cli_routes(graph),
         "auth_fallbacks": _auth_fallbacks(initialization),
         "recommended_next_action": _recommended_next_action(initialization),
@@ -183,8 +192,9 @@ def llm_content_covers_fallbacks(content: str, fallbacks: list[dict[str, Any]]) 
 
 
 ORCHESTRATION_SYSTEM_PROMPT = """
-You are the built-in GLM orchestration brain for CBN Adapter Agent.
-Use the provided WorkflowInitializationPlan and CLI routes as authoritative.
+You are the built-in GLM orchestration brain for the CBN Adapter Agent coordinator.
+Use the provided WorkflowInitializationPlan, AdapterAgentCoordinationPlan, and CLI routes as authoritative.
+Respect the split between manifest-bootstrap-agent, workflow-setup-agent, orchestration-coordinator-agent, and verification-agent.
 Guide the user through workflow orchestration, CLI-to-CLI BridgeMessage routing, and fallback.
 If any task status requires setup, login, API key, authenticated session, or runtime input, do not tell the user to run the workflow yet.
 Prefer tool-use affordances exposed by the CBN dashboard for starting login, storing session secrets, and running verification. When user action is unavoidable, ask only for the user to complete the OAuth UI or type the secret into the dashboard secret field.
