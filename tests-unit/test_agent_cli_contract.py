@@ -4,6 +4,10 @@ import sys
 import unittest
 from pathlib import Path
 
+from cbn_core.agent_cli_contract import agent_cli_card_to_tool_manifests, run_receipt_to_cbn_records
+from cbn_core.manifest import validate_manifest_dict
+from cbn_core.message import validate_bridge_message
+
 
 CONTRACT_ROOT = Path("external_protocols/agent-cli-contract")
 sys.path.insert(0, str(CONTRACT_ROOT / "python"))
@@ -34,6 +38,30 @@ class AgentCliContractTests(unittest.TestCase):
         payload = json.loads(proc.stdout)
         self.assertTrue(payload["ok"])
         self.assertTrue(payload["independent_boundary"]["ok"])
+
+    def test_agent_cli_card_maps_to_cbn_tool_manifest(self):
+        card = json.loads((CONTRACT_ROOT / "fixtures/agent-cli-card.valid.json").read_text(encoding="utf-8"))
+        manifests = agent_cli_card_to_tool_manifests(card)
+        self.assertEqual(len(manifests), 1)
+        manifest = manifests[0]
+        self.assertEqual(manifest["metadata"]["id"], "example.macrocli.backends")
+        self.assertEqual(manifest["spec"]["transport"]["command"], "macrocli")
+        self.assertEqual(manifest["spec"]["transport"]["argsTemplate"], ["backends", "--json"])
+        self.assertEqual(manifest["metadata"]["annotations"]["cbn.external_protocol"], "agent-cli-contract")
+        report = validate_manifest_dict(manifest)
+        self.assertTrue(report["valid"], report["errors"])
+
+    def test_run_receipt_maps_to_bridge_message_and_correlation_records(self):
+        receipt = json.loads((CONTRACT_ROOT / "fixtures/run-receipt.valid.json").read_text(encoding="utf-8"))
+        records = run_receipt_to_cbn_records(receipt)
+        self.assertEqual(records["kind"], "AgentCliRunReceiptMapping")
+        self.assertEqual(records["audit_event"]["call_id"], "run-001")
+        self.assertEqual(records["event"]["correlation_id"], "run-001")
+        self.assertEqual(records["event"]["payload"]["artifact_count"], 1)
+        message = records["message"]
+        self.assertEqual(message["metadata"]["producer"], "example.macrocli.backends")
+        self.assertEqual(message["metadata"]["channel"], "agent-cli.run.receipt")
+        self.assertTrue(validate_bridge_message(message)["valid"])
 
 
 if __name__ == "__main__":

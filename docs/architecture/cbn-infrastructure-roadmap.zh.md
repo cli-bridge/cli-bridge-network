@@ -29,6 +29,11 @@ CBN 主仓只消费该协议，并负责映射：
 - `AgentCliCard -> ToolManifest`
 - `RunReceipt -> BridgeMessage + Artifact records + Audit/Event correlation`
 
+当前主仓内先以 `external_protocols/agent-cli-contract` 作为可拆出的包边界承载该协议。
+它包含 schema、TypeScript types、Python validator、fixtures 和 conformance smoke，
+并通过独立 smoke 保证不 import CBN 模块。未来拿到独立仓库 URL 后可迁移为
+submodule 或独立 npm/PyPI 包。
+
 ### 2. CBN 内部总线 Contract
 
 CBN 内部总线 contract 由以下对象组成：
@@ -113,6 +118,15 @@ Workflow Studio 是用户侧主界面，旧 `packages/dashboard` 保留为 maint
 - `cbn_protocol.envelope` 保留 re-export 兼容。
 - 不在同一提交中混入 Workflow Studio、协议外置仓库或 CLI-Anything 大拆分。
 
+下一 slice 已建立 Agent CLI Contract 和 CBN 侧纯映射：
+
+- `external_protocols/agent-cli-contract` 定义 `AgentCliCard` 与 `RunReceipt`。
+- `cbn_core.agent_cli_contract.agent_cli_card_to_tool_manifests` 负责生成
+  `ToolManifest` 字典。
+- `cbn_core.agent_cli_contract.run_receipt_to_cbn_records` 负责生成
+  `BridgeMessage`、artifact 记录形状、audit/event correlation 记录。
+- 该 slice 仍不做 daemon 写入、不安装外部包、不改变 CLI/API 行为。
+
 ## 验证策略
 
 默认只跑针对性验证。除非人工主动指定，不跑全量单测；大型测试每小时最多运行一次。
@@ -122,4 +136,7 @@ Workflow Studio 是用户侧主界面，旧 `packages/dashboard` 保留为 maint
 - `python -m cbn health`
 - `python -m unittest tests-unit.test_parser_protocol tests-unit.test_workflow_runner`
 - `python -m unittest tests-unit.test_protocol_exports`
+- `python -m unittest tests-unit.test_agent_cli_contract`
+- `python external_protocols/agent-cli-contract/scripts/conformance_smoke.py`
+- `node external_protocols/agent-cli-contract/scripts/check.mjs`
 - `npm --workspace @cli-bridge/dashboard run check`
