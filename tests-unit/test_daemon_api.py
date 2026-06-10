@@ -43,6 +43,7 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("POST", "/protocols/bridge-lab"), routes)
         self.assertIn(("GET", "/demo/killer"), routes)
         self.assertIn(("GET", "/network/connect-package"), routes)
+        self.assertIn(("GET", "/network/quickstart"), routes)
         self.assertIn(("POST", "/demo/killer"), routes)
         self.assertIn(("GET", "/protocols/workflows"), routes)
         self.assertIn(("GET", "/.well-known/agent-card.json"), routes)
@@ -136,6 +137,25 @@ class DaemonApiTests(unittest.TestCase):
             self.assertIn("/workflows/run", endpoint_paths)
             self.assertIn("/adapter-agent/workflow-request-plan", endpoint_paths)
             self.assertIn("/demo/killer", endpoint_paths)
+
+    def test_network_quickstart_route_returns_first_call_payload(self):
+        with daemon_url() as base_url:
+            url = (
+                f"{base_url}/network/quickstart"
+                "?workflow_path=workflows/cli-anything-macrocli-mermaid-routing.example.json"
+                "&studio_url=http://127.0.0.1:5177"
+            )
+            request = urllib.request.Request(url, headers={"X-CBN-Session": "header-token"})
+            with urllib.request.urlopen(request, timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+
+            self.assertEqual(response.status, 200)
+            self.assertEqual(payload["kind"], "NetworkConnectQuickstart")
+            self.assertEqual(payload["required_headers"]["X-CBN-Session"], "header-token")
+            self.assertEqual(payload["entrypoints"]["run_workflow"]["url"], f"{base_url}/workflows/run")
+            self.assertEqual(payload["entrypoints"]["plan_agent_request"]["method"], "POST")
+            self.assertIn("sessionToken=header-token", payload["entrypoints"]["open_studio"])
+            self.assertNotIn("contracts", payload)
 
     def test_adapter_agent_orchestrate_route_returns_auth_fallback(self):
         with daemon_url() as base_url:

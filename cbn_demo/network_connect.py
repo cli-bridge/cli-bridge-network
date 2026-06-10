@@ -176,6 +176,8 @@ def _external_agent_cli_contract() -> dict[str, Any]:
 
 def _endpoint_catalog(*, base_url: str | None, workflow_path: str) -> list[dict[str, Any]]:
     rows = [
+        ("GET", "/network/connect-package", "read the full one-shot network connection package"),
+        ("GET", "/network/quickstart", "read only the first-call quickstart payload"),
         ("GET", "/health", "confirm daemon reachability"),
         ("GET", "/workflows", "discover registered workflow descriptors"),
         ("GET", f"/workflows?path={workflow_path}", "inspect one workflow DAG"),

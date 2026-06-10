@@ -97,6 +97,7 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/protocols/bridge-lab"},
     {"method": "GET", "path": "/demo/killer"},
     {"method": "GET", "path": "/network/connect-package"},
+    {"method": "GET", "path": "/network/quickstart"},
     {"method": "POST", "path": "/protocols/accept-workflow"},
     {"method": "POST", "path": "/protocols/acceptance-queue"},
     {"method": "POST", "path": "/protocols/bridge-lab"},
@@ -588,16 +589,15 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             )
             self._send(200 if result["ok"] else 422, result)
             return
-        if parsed.path == "/network/connect-package":
-            workflow_path = query.get("workflow_path", query.get("path", [DEFAULT_KILLER_WORKFLOW_PATH]))[0]
-            result = network_connect_package(
-                runtime.registry,
-                workflow_path=workflow_path,
-                base_url=_base_url(self),
-                studio_url=query.get("studio_url", query.get("studioUrl", ["http://127.0.0.1:5177"]))[0],
-                session_token=query.get("session_token", query.get("sessionToken", [None]))[0],
-                agent_message=query.get("message", ["Connect an external program to this CBN workflow."])[0],
-            )
+        if parsed.path in {"/network/connect-package", "/network/quickstart"}:
+            result = _network_connect_package_from_query(self, runtime, query)
+            if parsed.path == "/network/quickstart":
+                quickstart = result.get("consumer_quickstart", {})
+                self._send(
+                    200 if result["ok"] and quickstart.get("kind") == "NetworkConnectQuickstart" else 422,
+                    quickstart,
+                )
+                return
             self._send(200 if result["ok"] else 422, result)
             return
         if parsed.path == "/approvals":
@@ -1358,6 +1358,25 @@ def _base_url(handler: BaseHTTPRequestHandler) -> str:
         return f"http://{host}"
     bound_host, bound_port = handler.server.server_address[:2]
     return f"http://{bound_host}:{bound_port}"
+
+
+def _network_connect_package_from_query(
+    handler: BaseHTTPRequestHandler,
+    runtime: Any,
+    query: dict[str, list[str]],
+) -> dict[str, Any]:
+    session_token = (
+        query.get("session_token", query.get("sessionToken", [None]))[0]
+        or handler.headers.get("X-CBN-Session")
+    )
+    return network_connect_package(
+        runtime.registry,
+        workflow_path=query.get("workflow_path", query.get("path", [DEFAULT_KILLER_WORKFLOW_PATH]))[0],
+        base_url=_base_url(handler),
+        studio_url=query.get("studio_url", query.get("studioUrl", ["http://127.0.0.1:5177"]))[0],
+        session_token=session_token,
+        agent_message=query.get("message", ["Connect an external program to this CBN workflow."])[0],
+    )
 
 
 def _query_profiles(query: dict[str, list[str]]) -> tuple[str, ...] | None:
