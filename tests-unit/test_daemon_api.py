@@ -54,6 +54,7 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("POST", "/adapter-agent/orchestrate"), routes)
         self.assertIn(("POST", "/adapter-agent/orchestrate-stream"), routes)
         self.assertIn(("GET", "/adapter-agent/node-bundle"), routes)
+        self.assertIn(("POST", "/adapter-agent/workflow-request-plan"), routes)
         self.assertIn(("POST", "/adapter-agent/tool-call-plan"), routes)
         self.assertIn(("POST", "/adapter-agent/tool-use"), routes)
         self.assertIn(("POST", "/runtime/transports/gate"), routes)
@@ -245,6 +246,31 @@ class DaemonApiTests(unittest.TestCase):
                 payload["bridge_message"]["metadata"]["channel"],
                 "agent.adapter.node_bundle",
             )
+
+    def test_adapter_agent_workflow_request_plan_route_returns_reusable_invocation(self):
+        with daemon_url() as base_url:
+            request = urllib.request.Request(
+                f"{base_url}/adapter-agent/workflow-request-plan",
+                data=json.dumps(
+                    {
+                        "workflow_path": "workflows/cli-anything-macrocli-mermaid-routing.example.json",
+                        "message": "Run macrocli to mermaid as a reusable agent workflow.",
+                        "dry_run": True,
+                    }
+                ).encode("utf-8"),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(request, timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+
+            self.assertEqual(response.status, 200)
+            self.assertEqual(payload["kind"], "AdapterAgentWorkflowRequestPlan")
+            self.assertTrue(payload["ok"])
+            self.assertEqual(payload["summary"]["bridge_route_count"], 2)
+            self.assertEqual(payload["run"]["http"]["url"], f"{base_url}/workflows/run")
+            self.assertEqual(payload["reusable_harness"]["kind"], "NaturalLanguageWorkflowHarness")
+            self.assertEqual(payload["bridge_message"]["metadata"]["channel"], "agent.workflow.request.plan")
 
     def test_plugin_operation_plan_route_resolves_descriptor(self):
         with daemon_url() as base_url:

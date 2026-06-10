@@ -27,6 +27,15 @@ export class StudioApi {
     return this.get(`/adapter-agent/node-bundle?${query.toString()}`);
   }
 
+  async workflowRequestPlan(): Promise<unknown> {
+    return this.post("/adapter-agent/workflow-request-plan", {
+      workflow_path: this.config.workflowPath,
+      message: this.config.agentMessage,
+      dry_run: this.config.dryRun,
+      confirmed: this.config.confirmed,
+    });
+  }
+
   async networkConnectPackage(): Promise<unknown> {
     const query = new URLSearchParams({
       workflow_path: this.config.workflowPath,

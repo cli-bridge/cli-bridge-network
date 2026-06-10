@@ -20,6 +20,7 @@ from cbn_adapter_agent.orchestrator import build_orchestration_turn
 from cbn_adapter_agent.tool_call_plan import build_agent_tool_call_plan, write_agent_loop_checkpoint
 from cbn_adapter_agent.tool_use import run_setup_tool, store_session_secret
 from cbn_adapter_agent.workflow_init import build_workflow_initialization_plan
+from cbn_adapter_agent.workflow_request import build_agent_workflow_request_plan
 from cbn_adapter_agent.workflow_setup import build_workflow_setup_plan
 from cbn_events.bus import EventBus
 from cbn_core.message import validate_bridge_message
@@ -320,6 +321,48 @@ class AdapterAgentHarnessTests(unittest.TestCase):
         self.assertEqual(payload["workflow_nodes"][0]["agent"], "manifest-bootstrap-agent")
         validation = validate_bridge_message(payload["bridge_message"])
         self.assertTrue(validation["valid"], validation["errors"])
+        self.assertEqual(proc.stderr, "")
+
+    def test_adapter_agent_workflow_request_plan_binds_prompt_to_cli_cli_workflow(self):
+        plan = build_agent_workflow_request_plan(
+            message="Run the macrocli to mermaid workflow and show the artifact.",
+            workflow_path="workflows/cli-anything-macrocli-mermaid-routing.example.json",
+        )
+
+        self.assertEqual(plan["kind"], "AdapterAgentWorkflowRequestPlan")
+        self.assertTrue(plan["ok"])
+        self.assertEqual(plan["summary"]["workflow_id"], "example.cli-anything-macrocli-mermaid-routing")
+        self.assertEqual(plan["summary"]["task_count"], 3)
+        self.assertEqual(plan["summary"]["bridge_route_count"], 2)
+        self.assertEqual(plan["reusable_harness"]["kind"], "NaturalLanguageWorkflowHarness")
+        self.assertIn("python -m cbn workflow run", plan["run"]["cli"])
+        self.assertEqual(plan["run"]["http"]["path"], "/workflows/run")
+        self.assertEqual(plan["bridge_routes"][0]["communication"], "BridgeMessage argsFrom")
+        validation = validate_bridge_message(plan["bridge_message"])
+        self.assertTrue(validation["valid"], validation["errors"])
+        self.assertEqual(validation["channel"], "agent.workflow.request.plan")
+
+    def test_adapter_agent_workflow_request_plan_cli_outputs_json(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn_adapter_agent",
+                "--workflow-request-plan",
+                "--workflow-path",
+                "workflows/cli-anything-macrocli-mermaid-routing.example.json",
+                "--message",
+                "Run this as a reusable harness.",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["kind"], "AdapterAgentWorkflowRequestPlan")
+        self.assertEqual(payload["summary"]["bridge_route_count"], 2)
         self.assertEqual(proc.stderr, "")
 
     def test_adapter_agent_tool_call_plan_models_batches_hooks_and_loop(self):

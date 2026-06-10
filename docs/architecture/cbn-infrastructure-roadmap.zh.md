@@ -239,6 +239,16 @@ Killer Demo slice 已新增可运行证据束：
   `NetworkConnectPackage`。外部程序无需先接 daemon/WebUI，也能一次性读取
   AgentCliCard/RunReceipt contract、daemon endpoint catalog、protocol facade 和
   Agent-as-Node 摘要。
+- `cbn_adapter_agent.workflow_request.build_agent_workflow_request_plan` 已新增
+  确定性自然语言请求入口：输入 agent message + workflow path，输出
+  `AdapterAgentWorkflowRequestPlan`，包含 workflow run payload、CLI/HTTP 调用方式、
+  CLI-CLI BridgeMessage selector routes、可复用 `NaturalLanguageWorkflowHarness`
+  摘要和 `agent.workflow.request.plan` BridgeMessage。它不执行 workflow、不写文件，
+  用于把“harness agent 用自然语言调用 CLI-CLI workflow”产品化成可展示、可复用
+  的契约。
+- daemon 已新增 `POST /adapter-agent/workflow-request-plan`，Workflow Studio 已新增
+  `Plan` 按钮和 Agent Workflow Plan 面板，用同一份 agent prompt 生成可扫读的
+  workflow invocation plan、Bridge route、run command 和 BridgeMessage 证据。
 
 ## 验证策略
 
@@ -257,7 +267,10 @@ Killer Demo slice 已新增可运行证据束：
 - `python -m unittest tests-unit.test_cbn_agent_models`
 - `python -m unittest tests-unit.test_adapter_agent_harness.AdapterAgentHarnessTests.test_adapter_agent_node_bundle_maps_roles_to_agent_contracts`
 - `python -m unittest tests-unit.test_adapter_agent_harness.AdapterAgentHarnessTests.test_adapter_agent_node_bundle_cli_outputs_json`
+- `python -m unittest tests-unit.test_adapter_agent_harness.AdapterAgentHarnessTests.test_adapter_agent_workflow_request_plan_binds_prompt_to_cli_cli_workflow`
+- `python -m unittest tests-unit.test_adapter_agent_harness.AdapterAgentHarnessTests.test_adapter_agent_workflow_request_plan_cli_outputs_json`
 - `python -m unittest tests-unit.test_daemon_api.DaemonApiTests.test_adapter_agent_node_bundle_route_returns_agent_nodes`
+- `python -m unittest tests-unit.test_daemon_api.DaemonApiTests.test_adapter_agent_workflow_request_plan_route_returns_reusable_invocation`
 - `python -m unittest tests-unit.test_daemon_api.DaemonApiTests.test_network_connect_package_route_returns_one_shot_contract`
 - `python -m unittest tests-unit.test_network_connect`
 - `python -m unittest tests-unit.test_killer_demo`

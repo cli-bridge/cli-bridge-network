@@ -56,6 +56,7 @@ from cbn_adapter_agent.orchestrator import (
 )
 from cbn_adapter_agent.tool_use import run_setup_tool, store_session_secret
 from cbn_adapter_agent.tool_call_plan import build_agent_tool_call_plan
+from cbn_adapter_agent.workflow_request import build_agent_workflow_request_plan
 from cbn_plugins.cli_anything import CliAnythingHub
 from cbn_plugins.manager import PluginManager
 
@@ -114,6 +115,7 @@ ROUTE_SUMMARY = [
     {"method": "POST", "path": "/workflows/plan"},
     {"method": "POST", "path": "/workflows/run"},
     {"method": "GET", "path": "/adapter-agent/node-bundle"},
+    {"method": "POST", "path": "/adapter-agent/workflow-request-plan"},
     {"method": "POST", "path": "/adapter-agent/orchestrate"},
     {"method": "POST", "path": "/adapter-agent/orchestrate-stream"},
     {"method": "POST", "path": "/adapter-agent/tool-call-plan"},
@@ -802,6 +804,24 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 self._send_error(400, "bad_request", "message must be a string")
                 return
             self._send(200, build_agent_tool_call_plan(workflow_path=workflow_path, message=message))
+            return
+        if self.path == "/adapter-agent/workflow-request-plan":
+            workflow_path = payload.get("workflow_path") or payload.get("path") or DEFAULT_KILLER_WORKFLOW_PATH
+            message = payload.get("message", "")
+            if not isinstance(workflow_path, str) or not workflow_path:
+                self._send_error(400, "bad_request", "workflow_path must be a non-empty string")
+                return
+            if not isinstance(message, str):
+                self._send_error(400, "bad_request", "message must be a string")
+                return
+            result = build_agent_workflow_request_plan(
+                workflow_path=workflow_path,
+                message=message,
+                base_url=_base_url(self),
+                dry_run=bool(payload.get("dry_run", True)),
+                confirmed=bool(payload.get("confirmed", False)),
+            )
+            self._send(200, result)
             return
         if self.path == "/adapter-agent/tool-use":
             self._handle_adapter_agent_tool_use(payload)

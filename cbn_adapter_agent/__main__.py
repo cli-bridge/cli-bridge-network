@@ -19,6 +19,7 @@ from cbn_adapter_agent.manifest_bootstrap import build_manifest_bootstrap_plan
 from cbn_adapter_agent.nodes import build_adapter_agent_node_bundle
 from cbn_adapter_agent.orchestrator import DEFAULT_WORKFLOW_PATH, build_orchestration_turn
 from cbn_adapter_agent.tool_call_plan import build_agent_tool_call_plan, write_agent_loop_checkpoint
+from cbn_adapter_agent.workflow_request import build_agent_workflow_request_plan
 from cbn_adapter_agent.workflow_init import build_workflow_initialization_plan
 from cbn_adapter_agent.workflow_setup import build_workflow_setup_plan
 
@@ -38,6 +39,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--coordination-plan", action="store_true", help="Build the split multi-agent coordination plan.")
     parser.add_argument("--node-bundle", action="store_true", help="Build core cbn_agent node records for the Adapter Agent roles.")
     parser.add_argument("--tool-call-plan", action="store_true", help="Build Adapter Agent tool-call and long-loop plan.")
+    parser.add_argument("--workflow-request-plan", action="store_true", help="Build a reusable natural-language workflow invocation plan.")
     parser.add_argument("--write-loop-checkpoint", action="store_true", help="Write long-loop checkpoint when used with --tool-call-plan.")
     parser.add_argument("--orchestrate", action="store_true", help="Run one Adapter Agent orchestration turn.")
     parser.add_argument("--message", default="", help="User message for --orchestrate.")
@@ -82,6 +84,14 @@ def main(argv: list[str] | None = None) -> int:
         )
         if args.write_loop_checkpoint:
             payload = {**payload, "loop_checkpoint": write_agent_loop_checkpoint(payload, root=root)}
+    elif args.workflow_request_plan:
+        payload = build_agent_workflow_request_plan(
+            message=args.message,
+            workflow_path=args.workflow_path,
+            root=root,
+            dry_run=True,
+            confirmed=False,
+        )
     elif args.workflow_setup:
         payload = build_workflow_setup_plan(Path(args.workflow_setup), root=root)
     elif args.workflow_init:
@@ -120,6 +130,7 @@ def main(argv: list[str] | None = None) -> int:
         "AdapterAgentNodeBundle",
         "AdapterAgentToolCallPlan",
         "AdapterAgentOrchestrationTurn",
+        "AdapterAgentWorkflowRequestPlan",
     }:
         return 0
     return 0 if payload.get("ok", True) else 6

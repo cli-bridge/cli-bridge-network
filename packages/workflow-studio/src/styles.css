@@ -342,6 +342,7 @@ canvas {
   font-size: 11px;
 }
 
+.request-summary,
 .connect-summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -349,6 +350,7 @@ canvas {
   margin-bottom: 8px;
 }
 
+.request-summary div,
 .connect-summary div {
   display: grid;
   min-width: 0;
@@ -359,6 +361,7 @@ canvas {
   padding: 6px;
 }
 
+.request-summary span,
 .connect-summary span {
   overflow: hidden;
   color: #647160;
@@ -368,6 +371,7 @@ canvas {
   white-space: nowrap;
 }
 
+.request-summary strong,
 .connect-summary strong {
   overflow: hidden;
   color: #243026;

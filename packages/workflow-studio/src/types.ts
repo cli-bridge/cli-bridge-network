@@ -249,3 +249,57 @@ export interface ConnectSummary {
   agentCards: number;
   nextAction: string;
 }
+
+export interface AgentWorkflowRequestPlan {
+  ok?: boolean;
+  kind?: "AdapterAgentWorkflowRequestPlan";
+  status?: string;
+  workflow_path?: string;
+  request?: {
+    message?: string;
+    intent?: {
+      mentions_run?: boolean;
+      mentions_reuse?: boolean;
+      mentions_artifact?: boolean;
+    };
+    binding?: string;
+  };
+  summary?: {
+    workflow_id?: string;
+    workflow_title?: string;
+    task_count?: number;
+    bridge_route_count?: number;
+    agent_card_count?: number;
+    recommended_next_action?: string;
+  };
+  run?: {
+    payload?: Record<string, unknown>;
+    cli?: string;
+    http?: {
+      method?: string;
+      path?: string;
+      url?: string;
+      json?: Record<string, unknown>;
+    };
+  };
+  reusable_harness?: {
+    kind?: string;
+    accepts?: string[];
+    emits?: string[];
+    contract?: string;
+  };
+  bridge_routes?: Array<Record<string, unknown>>;
+  bridge_message?: unknown;
+  next_commands?: string[];
+}
+
+export interface WorkflowRequestSummary {
+  status: string;
+  workflowId: string;
+  tasks: number;
+  routes: number;
+  agents: number;
+  nextAction: string;
+  harnessKind: string;
+  runCli: string;
+}

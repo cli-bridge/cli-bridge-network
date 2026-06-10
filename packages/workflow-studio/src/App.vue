@@ -5,6 +5,7 @@ import {
   Bot,
   Boxes,
   Braces,
+  ClipboardList,
   FileJson,
   Gauge,
   History,
@@ -19,6 +20,7 @@ import { StudioApi } from "./api";
 import { mountWorkflowGraph, type StudioGraph } from "./graph";
 import type {
   AdapterAgentNodeBundle,
+  AgentWorkflowRequestPlan,
   ConnectSummary,
   DockState,
   EvidenceSummary,
@@ -27,6 +29,7 @@ import type {
   ProtocolSummary,
   StudioConfig,
   WorkflowInspect,
+  WorkflowRequestSummary,
   WorkflowTask,
 } from "./types";
 
@@ -47,6 +50,7 @@ const contract = ref<unknown>(null);
 const runResult = ref<unknown>(null);
 const demoReport = ref<KillerDemoReport | null>(null);
 const agentBundle = ref<AdapterAgentNodeBundle | null>(null);
+const workflowRequestPlan = ref<AgentWorkflowRequestPlan | null>(null);
 const connectPackage = ref<NetworkConnectPackage | null>(null);
 const health = ref<unknown>(null);
 const selectedTaskId = ref("");
@@ -63,6 +67,7 @@ const agentTasks = computed(() => (Array.isArray(agentBundle.value?.tasks) ? age
 const agentHandoffs = computed(() => agentBundle.value?.source_coordination_plan?.handoffs ?? []);
 const evidenceSummary = computed<EvidenceSummary>(() => summarizeEvidence(demoReport.value, dock));
 const protocolSummary = computed<ProtocolSummary>(() => summarizeProtocols(demoReport.value));
+const workflowRequestSummary = computed<WorkflowRequestSummary>(() => summarizeWorkflowRequestPlan(workflowRequestPlan.value));
 const connectSummary = computed<ConnectSummary>(() => summarizeConnectPackage(connectPackage.value));
 const connectEndpoints = computed(() => (Array.isArray(connectPackage.value?.daemon_endpoints) ? connectPackage.value.daemon_endpoints : []));
 
@@ -105,6 +110,10 @@ async function inspectAgentBundle() {
   graphRef.value?.render(workflow.value, agentBundle.value);
 }
 
+async function inspectWorkflowRequestPlan() {
+  workflowRequestPlan.value = (await call("plan", () => api.value.workflowRequestPlan())) as AgentWorkflowRequestPlan;
+}
+
 async function inspectConnectPackage() {
   connectPackage.value = (await call("connect", () => api.value.networkConnectPackage())) as NetworkConnectPackage;
 }
@@ -137,6 +146,7 @@ async function loadAll() {
   await inspectWorkflow();
   await inspectContract();
   await inspectAgentBundle();
+  await inspectWorkflowRequestPlan();
   await inspectConnectPackage();
   await refreshEvidence();
 }
@@ -191,6 +201,20 @@ function summarizeProtocols(report: KillerDemoReport | null): ProtocolSummary {
   };
 }
 
+function summarizeWorkflowRequestPlan(payload: AgentWorkflowRequestPlan | null): WorkflowRequestSummary {
+  const summary = payload?.summary ?? {};
+  return {
+    status: payload?.ok ? "ready" : payload ? "needs attention" : "not loaded",
+    workflowId: stringValue(summary.workflow_id) ?? "unknown",
+    tasks: numberValue(summary.task_count) ?? 0,
+    routes: numberValue(summary.bridge_route_count) ?? 0,
+    agents: numberValue(summary.agent_card_count) ?? 0,
+    nextAction: stringValue(summary.recommended_next_action) ?? "load_request_plan",
+    harnessKind: payload?.reusable_harness?.kind ?? "unknown",
+    runCli: payload?.run?.cli ?? "",
+  };
+}
+
 function summarizeConnectPackage(payload: NetworkConnectPackage | null): ConnectSummary {
   const external = payload?.contracts?.external ?? {};
   const summary = payload?.summary ?? {};
@@ -239,6 +263,7 @@ watch(
     void inspectWorkflow();
     void inspectContract();
     void inspectAgentBundle();
+    void inspectWorkflowRequestPlan();
     void inspectConnectPackage();
   },
 );
@@ -300,6 +325,9 @@ onMounted(async () => {
         <button title="Load Adapter Agent node bundle" @click="inspectAgentBundle">
           <Bot :size="16" /> Agent
         </button>
+        <button title="Plan natural-language agent workflow invocation" @click="inspectWorkflowRequestPlan">
+          <ClipboardList :size="16" /> Plan
+        </button>
         <button title="Load one-shot network connection package" @click="inspectConnectPackage">
           <Network :size="16" /> Connect
         </button>
@@ -357,6 +385,43 @@ onMounted(async () => {
           </div>
         </div>
         <pre>{{ pretty({ handoffs: agentHandoffs, bridge_message: agentBundle?.bridge_message }) }}</pre>
+      </section>
+      <section>
+        <div class="section-title"><ClipboardList :size="15" /> Agent Workflow Plan</div>
+        <div class="request-summary">
+          <div>
+            <span>Status</span>
+            <strong>{{ workflowRequestSummary.status }}</strong>
+          </div>
+          <div>
+            <span>Workflow</span>
+            <strong>{{ workflowRequestSummary.workflowId }}</strong>
+          </div>
+          <div>
+            <span>Tasks</span>
+            <strong>{{ workflowRequestSummary.tasks }}</strong>
+          </div>
+          <div>
+            <span>Routes</span>
+            <strong>{{ workflowRequestSummary.routes }}</strong>
+          </div>
+          <div>
+            <span>Agents</span>
+            <strong>{{ workflowRequestSummary.agents }}</strong>
+          </div>
+          <div>
+            <span>Harness</span>
+            <strong>{{ workflowRequestSummary.harnessKind }}</strong>
+          </div>
+        </div>
+        <div class="evidence-row">
+          <span :class="['pill-inline', workflowRequestPlan?.ok ? 'ok' : 'blocked']">{{ workflowRequestSummary.nextAction }}</span>
+        </div>
+        <div class="artifact-strip">
+          <code v-if="workflowRequestSummary.runCli">{{ workflowRequestSummary.runCli }}</code>
+          <span v-else>No workflow request plan loaded</span>
+        </div>
+        <pre>{{ pretty({ request: workflowRequestPlan?.request, run: workflowRequestPlan?.run, bridge_routes: workflowRequestPlan?.bridge_routes, bridge_message: workflowRequestPlan?.bridge_message }) }}</pre>
       </section>
       <section>
         <div class="section-title"><Network :size="15" /> Connect Package</div>
