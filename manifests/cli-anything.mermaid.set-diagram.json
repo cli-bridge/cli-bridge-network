@@ -1,0 +1,49 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "ToolManifest",
+  "metadata": {
+    "id": "cli-anything.mermaid.set-diagram",
+    "title": "CLI-Anything Mermaid Set Diagram",
+    "labels": {
+      "plugin": "cli-anything",
+      "harness": "mermaid",
+      "category": "diagrams",
+      "source": "verified-fixture"
+    },
+    "annotations": {
+      "cli-anything.display_name": "Mermaid",
+      "cbn.fixture": "workflows/fixtures/mermaid-source.mmd",
+      "cbn.project_fixture": "workflows/fixtures/mermaid-project.json",
+      "cbn.description": "Verified dry-run Mermaid harness command for BridgeMessage CLI-to-CLI routing."
+    }
+  },
+  "spec": {
+    "transport": {
+      "kind": "stdio",
+      "command": "cli-hub",
+      "argsTemplate": [
+        "launch",
+        "mermaid",
+        "--",
+        "--json",
+        "--dry-run",
+        "--project",
+        "workflows/fixtures/mermaid-project.json",
+        "diagram",
+        "set",
+        "--file"
+      ],
+      "cwdPolicy": "workspace",
+      "timeoutSeconds": 600
+    },
+    "policy": {
+      "risk": "write-workspace",
+      "requiresConfirmation": false,
+      "network": "deny"
+    },
+    "output": {
+      "parserRef": "cli-anything.mermaid.set_diagram",
+      "verified": true
+    }
+  }
+}

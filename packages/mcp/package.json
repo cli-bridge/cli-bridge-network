@@ -1,0 +1,14 @@
+{
+  "name": "@cli-bridge/mcp",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "MCP export package for CLI Bridge Network.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@cli-bridge/core": "0.1.0"
+  }
+}
+

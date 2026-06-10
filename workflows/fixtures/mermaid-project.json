@@ -1,0 +1,8 @@
+{
+  "code": "flowchart TD\n  A[Start] --> B{Ready?}\n  B -->|Yes| C[Run test]\n  B -->|No| D[Fix input]\n",
+  "mermaid": "{\n  \"theme\": \"default\"\n}",
+  "updateDiagram": true,
+  "rough": false,
+  "panZoom": true,
+  "grid": true
+}

@@ -1,0 +1,44 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "ToolManifest",
+  "metadata": {
+    "id": "obsidian-cli.local-rest.help",
+    "title": "Obsidian Local REST Harness Help",
+    "labels": {
+      "adapter": "direct-cli",
+      "profile": "obsidian-cli",
+      "vendor": "obsidian",
+      "category": "knowledge-base"
+    },
+    "annotations": {
+      "cbn.adapter.profile": "obsidian-cli",
+      "cbn.adapter.action": "local-rest-help",
+      "cbn.parser_fixture": "parser_fixtures/direct-cli.raw.probes.json",
+      "cbn.thread.evidence": "cli-anything-obsidian --help validated Local REST harness command surface",
+      "cbn.control_plane": "Obsidian Local REST API harness"
+    }
+  },
+  "spec": {
+    "transport": {
+      "kind": "stdio",
+      "command": "python",
+      "argsTemplate": [
+        "-m",
+        "cbn_tools.external_cli",
+        "obsidian-cli",
+        "local-rest-help"
+      ],
+      "cwdPolicy": "workspace",
+      "timeoutSeconds": 20
+    },
+    "policy": {
+      "risk": "read",
+      "requiresConfirmation": false,
+      "network": "deny"
+    },
+    "output": {
+      "parserRef": "raw.text",
+      "verified": true
+    }
+  }
+}

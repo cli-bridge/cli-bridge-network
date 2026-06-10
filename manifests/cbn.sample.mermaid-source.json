@@ -1,0 +1,37 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "ToolManifest",
+  "metadata": {
+    "id": "cbn.sample.mermaid-source",
+    "title": "CBN Sample Mermaid Source Path",
+    "labels": {
+      "sample": "true",
+      "protocol": "bridge-message",
+      "role": "source"
+    },
+    "annotations": {
+      "cbn.sample.description": "Emits a Mermaid diagram file path for CLI-to-CLI BridgeMessage routing tests."
+    }
+  },
+  "spec": {
+    "transport": {
+      "kind": "stdio",
+      "command": "python",
+      "argsTemplate": [
+        "-c",
+        "import sys; sys.stdout.write('workflows/fixtures/mermaid-source.mmd')"
+      ],
+      "cwdPolicy": "workspace",
+      "timeoutSeconds": 30
+    },
+    "policy": {
+      "risk": "read",
+      "requiresConfirmation": false,
+      "network": "deny"
+    },
+    "output": {
+      "parserRef": "raw.text",
+      "verified": true
+    }
+  }
+}

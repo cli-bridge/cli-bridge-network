@@ -1,0 +1,155 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "ParserFixture",
+  "metadata": {
+    "id": "direct-cli.raw.probes",
+    "title": "Direct external CLI raw probe outputs",
+    "parserRef": "raw.text",
+    "verifiedCapabilities": [
+      "feishu.version",
+      "feishu.help",
+      "obsidian-cli.local-rest.help",
+      "jimeng.version",
+      "jimeng.help",
+      "caw.version",
+      "caw.help"
+    ]
+  },
+  "cases": [
+    {
+      "id": "feishu-version",
+      "stdout": "lark-cli version 1.0.50\n",
+      "stderr": "",
+      "expect": {
+        "ok": true,
+        "data": {
+          "stdout": {
+            "contains": [
+              "lark-cli version"
+            ]
+          },
+          "stderr": {
+            "equals": ""
+          }
+        }
+      }
+    },
+    {
+      "id": "feishu-help",
+      "stdout": "lark-cli -- Lark/Feishu CLI tool.\nAvailable Commands:\n  api\n  auth\n  base\n  docs\n  event\n  im\n  schema\n",
+      "stderr": "",
+      "expect": {
+        "ok": true,
+        "data": {
+          "stdout": {
+            "contains": [
+              "Lark/Feishu CLI tool",
+              "Available Commands",
+              "schema"
+            ]
+          },
+          "stderr": {
+            "equals": ""
+          }
+        }
+      }
+    },
+    {
+      "id": "obsidian-local-rest-help",
+      "stdout": "Usage: cli-anything-obsidian [OPTIONS] COMMAND [ARGS]...\nCommands:\n  command\n  note\n  search\n  server\n  session\n  vault\n",
+      "stderr": "",
+      "expect": {
+        "ok": true,
+        "data": {
+          "stdout": {
+            "contains": [
+              "cli-anything-obsidian",
+              "server",
+              "vault"
+            ]
+          },
+          "stderr": {
+            "equals": ""
+          }
+        }
+      }
+    },
+    {
+      "id": "jimeng-version",
+      "stdout": "{\n  \"version\": \"46b5b0e-dirty\",\n  \"commit\": \"46b5b0e\",\n  \"build_time\": \"2026-06-03T19:39:25Z\"\n}\n",
+      "stderr": "",
+      "expect": {
+        "ok": true,
+        "data": {
+          "stdout": {
+            "contains": [
+              "\"commit\": \"46b5b0e\"",
+              "\"build_time\""
+            ]
+          },
+          "stderr": {
+            "equals": ""
+          }
+        }
+      }
+    },
+    {
+      "id": "jimeng-help",
+      "stdout": "dreamina is the Dreamina official AIGC CLI tool.\nBuilt-in Commands:\n  login\n  user_credit\n  list_task\n  query_result\nGenerator Commands:\n  text2image\n  text2video\n",
+      "stderr": "",
+      "expect": {
+        "ok": true,
+        "data": {
+          "stdout": {
+            "contains": [
+              "dreamina",
+              "query_result",
+              "text2image"
+            ]
+          },
+          "stderr": {
+            "equals": ""
+          }
+        }
+      }
+    },
+    {
+      "id": "caw-version",
+      "stdout": "v0.2.84\n",
+      "stderr": "",
+      "expect": {
+        "ok": true,
+        "data": {
+          "stdout": {
+            "contains": [
+              "v0.2.84"
+            ]
+          },
+          "stderr": {
+            "equals": ""
+          }
+        }
+      }
+    },
+    {
+      "id": "caw-help",
+      "stdout": "caw is the command-line interface for Cobo Agentic Wallet.\nAvailable Commands:\n  wallet\n  pact\n  tx\n  payment\n  fetch\n  schema\n  status\n",
+      "stderr": "",
+      "expect": {
+        "ok": true,
+        "data": {
+          "stdout": {
+            "contains": [
+              "Cobo Agentic Wallet",
+              "payment",
+              "schema"
+            ]
+          },
+          "stderr": {
+            "equals": ""
+          }
+        }
+      }
+    }
+  ]
+}

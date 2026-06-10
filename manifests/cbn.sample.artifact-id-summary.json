@@ -1,0 +1,37 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "ToolManifest",
+  "metadata": {
+    "id": "cbn.sample.artifact-id-summary",
+    "title": "CBN Sample Artifact ID Summary",
+    "labels": {
+      "sample": "true",
+      "protocol": "bridge-message",
+      "role": "artifact-consumer"
+    },
+    "annotations": {
+      "cbn.sample.description": "Consumes a CBN artifact id and emits a JSON summary for artifact-id workflow routing tests."
+    }
+  },
+  "spec": {
+    "transport": {
+      "kind": "stdio",
+      "command": "python",
+      "argsTemplate": [
+        "-m",
+        "cbn_tools.artifact_id_summary"
+      ],
+      "cwdPolicy": "workspace",
+      "timeoutSeconds": 30
+    },
+    "policy": {
+      "risk": "read",
+      "requiresConfirmation": false,
+      "network": "deny"
+    },
+    "output": {
+      "parserRef": "json.stdout",
+      "verified": true
+    }
+  }
+}

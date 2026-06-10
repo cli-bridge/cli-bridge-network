@@ -1,0 +1,27 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "Workflow",
+  "metadata": {
+    "id": "example.artifact-id-routing",
+    "title": "Example Artifact ID Routing"
+  },
+  "spec": {
+    "tasks": [
+      {
+        "id": "artifact-source",
+        "uses": "git.version"
+      },
+      {
+        "id": "artifact-consumer",
+        "uses": "cbn.sample.artifact-id-summary",
+        "needs": ["artifact-source"],
+        "argsFrom": [
+          {
+            "task": "artifact-source",
+            "selector": "artifacts[0].artifact_id"
+          }
+        ]
+      }
+    ]
+  }
+}

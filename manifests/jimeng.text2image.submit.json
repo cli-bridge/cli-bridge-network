@@ -1,0 +1,44 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "ToolManifest",
+  "metadata": {
+    "id": "jimeng.text2image.submit",
+    "title": "Jimeng/Dreamina Text-to-Image Submit",
+    "labels": {
+      "adapter": "direct-cli",
+      "profile": "jimeng",
+      "vendor": "dreamina",
+      "category": "media-generation"
+    },
+    "annotations": {
+      "cbn.adapter.profile": "jimeng",
+      "cbn.adapter.action": "text2image-submit",
+      "cbn.auth_gate": "requires Dreamina OAuth login state and consumes credits",
+      "cbn.workflow_hint": "submit should emit media.task.submitted; query_result/list_task should poll asynchronously",
+      "cbn.output_contract": "future parser should extract submit_id, task status, and generated media artifacts"
+    }
+  },
+  "spec": {
+    "transport": {
+      "kind": "stdio",
+      "command": "python",
+      "argsTemplate": [
+        "-m",
+        "cbn_tools.external_cli",
+        "jimeng",
+        "text2image-submit"
+      ],
+      "cwdPolicy": "workspace",
+      "timeoutSeconds": 180
+    },
+    "policy": {
+      "risk": "external-network",
+      "requiresConfirmation": true,
+      "network": "requires-confirmation"
+    },
+    "output": {
+      "parserRef": "raw.text",
+      "verified": false
+    }
+  }
+}
