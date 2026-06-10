@@ -1,10 +1,10 @@
 import { LGraph, LGraphCanvas, LiteGraph } from "litegraph.js";
-import type { WorkflowInspect, WorkflowTask } from "./types";
+import type { AdapterAgentNodeBundle, WorkflowInspect } from "./types";
 
 export interface StudioGraph {
   graph: LGraph;
   canvas: LGraphCanvas;
-  render(workflow: WorkflowInspect | null): void;
+  render(workflow: WorkflowInspect | null, agentBundle?: AdapterAgentNodeBundle | null): void;
 }
 
 export function mountWorkflowGraph(canvas: HTMLCanvasElement): StudioGraph {
@@ -14,13 +14,18 @@ export function mountWorkflowGraph(canvas: HTMLCanvasElement): StudioGraph {
   return {
     graph,
     canvas: graphCanvas,
-    render(workflow: WorkflowInspect | null) {
-      renderWorkflow(graph, graphCanvas, workflow);
+    render(workflow: WorkflowInspect | null, agentBundle?: AdapterAgentNodeBundle | null) {
+      renderWorkflow(graph, graphCanvas, workflow, agentBundle);
     },
   };
 }
 
-function renderWorkflow(graph: LGraph, graphCanvas: LGraphCanvas, workflow: WorkflowInspect | null): void {
+function renderWorkflow(
+  graph: LGraph,
+  graphCanvas: LGraphCanvas,
+  workflow: WorkflowInspect | null,
+  agentBundle?: AdapterAgentNodeBundle | null,
+): void {
   graph.clear();
   const tasks = Array.isArray(workflow?.tasks) ? workflow.tasks : [];
   tasks.forEach((task, index) => {
@@ -31,6 +36,17 @@ function renderWorkflow(graph: LGraph, graphCanvas: LGraphCanvas, workflow: Work
     node.size = [240, 100];
     node.properties = {
       text: `${task.uses}\nrisk=${risk}\nneeds=${(task.needs ?? []).join(",") || "-"}`,
+    };
+    graph.add(node);
+  });
+  const agentNodes = Array.isArray(agentBundle?.workflow_nodes) ? agentBundle.workflow_nodes : [];
+  agentNodes.forEach((agentNode, index) => {
+    const node = LiteGraph.createNode("basic/text");
+    node.title = agentNode.id;
+    node.pos = [40 + (index % 3) * 280, 300 + Math.floor(index / 3) * 150];
+    node.size = [240, 94];
+    node.properties = {
+      text: `${agentNode.agent}\nuses=${agentNode.uses ?? "-"}\nagent node`,
     };
     graph.add(node);
   });

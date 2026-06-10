@@ -138,6 +138,10 @@ Workflow Studio slice 已新增 `packages/workflow-studio`：
 - 已接入 daemon API：`/health`、`/workflows`、`/workflows?path=...`、
   `/messages/contract?workflow_path=...`、`/workflows/run`、`/events`、
   `/audit`、`/artifacts`。
+- 已接入 `GET /adapter-agent/node-bundle`：左侧提供 Agent prompt，右侧展示
+  Adapter Agent 的 cards、tasks、handoffs 和 BridgeMessage，LiteGraph 画布同时
+  渲染 workflow task 与 agent workflow node，作为“自然语言 harness agent 参与
+  CLI-CLI workflow”的首版展示面。
 - 旧 `packages/dashboard` 保持 maintainer console，Studio 只保留一个小入口。
 
 Killer Demo slice 已新增可运行证据束：
@@ -207,6 +211,9 @@ Killer Demo slice 已新增可运行证据束：
   `AdapterAgentNodeBundle` 输出，便于 Workflow Studio 或外部 orchestrator 在不执行
   workflow、不写入状态的情况下读取 AgentCard、AgentTask、workflow node 和
   AgentBridgeMessage。
+- Workflow Studio 已消费该只读 API：Agent prompt 会随 workflow path 一起请求
+  node bundle，右侧 inspector 展示 AgentCard、handoff 与 BridgeMessage，画布下方
+  同步渲染 agent workflow node，形成可展示的 Agent-as-Node MVP 入口。
 
 ## 验证策略
 

@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
 import {
   Activity,
+  Bot,
   Boxes,
   Braces,
   FileJson,
@@ -16,12 +17,20 @@ import {
 } from "lucide-vue-next";
 import { StudioApi } from "./api";
 import { mountWorkflowGraph, type StudioGraph } from "./graph";
-import type { DockState, KillerDemoReport, StudioConfig, WorkflowInspect, WorkflowTask } from "./types";
+import type {
+  AdapterAgentNodeBundle,
+  DockState,
+  KillerDemoReport,
+  StudioConfig,
+  WorkflowInspect,
+  WorkflowTask,
+} from "./types";
 
 const config = reactive<StudioConfig>({
-  daemonUrl: "http://127.0.0.1:8765",
+  daemonUrl: "http://127.0.0.1:8787",
   sessionToken: "",
   workflowPath: "workflows/cli-anything-macrocli-mermaid-routing.example.json",
+  agentMessage: "Run this workflow as a reusable CLI-CLI harness agent and surface setup gates.",
   dryRun: true,
   confirmed: false,
 });
@@ -33,6 +42,7 @@ const workflowList = ref<unknown>(null);
 const contract = ref<unknown>(null);
 const runResult = ref<unknown>(null);
 const demoReport = ref<KillerDemoReport | null>(null);
+const agentBundle = ref<AdapterAgentNodeBundle | null>(null);
 const health = ref<unknown>(null);
 const selectedTaskId = ref("");
 const loading = ref("");
@@ -43,6 +53,9 @@ const api = computed(() => new StudioApi(config));
 const tasks = computed<WorkflowTask[]>(() => (Array.isArray(workflow.value?.tasks) ? workflow.value.tasks : []));
 const selectedTask = computed(() => tasks.value.find((task) => task.id === selectedTaskId.value) ?? tasks.value[0]);
 const selectedRoutes = computed(() => selectedTask.value?.argsFrom ?? []);
+const agentCards = computed(() => (Array.isArray(agentBundle.value?.cards) ? agentBundle.value.cards : []));
+const agentTasks = computed(() => (Array.isArray(agentBundle.value?.tasks) ? agentBundle.value.tasks : []));
+const agentHandoffs = computed(() => agentBundle.value?.source_coordination_plan?.handoffs ?? []);
 
 async function call(label: string, fn: () => Promise<unknown>): Promise<unknown | null> {
   loading.value = label;
@@ -70,11 +83,17 @@ async function inspectWorkflow() {
   workflow.value = payload as WorkflowInspect;
   selectedTaskId.value = tasks.value[0]?.id ?? "";
   await nextTick();
-  graphRef.value?.render(workflow.value);
+  graphRef.value?.render(workflow.value, agentBundle.value);
 }
 
 async function inspectContract() {
   contract.value = await call("contract", () => api.value.contract(config.workflowPath));
+}
+
+async function inspectAgentBundle() {
+  agentBundle.value = (await call("agent", () => api.value.adapterAgentNodeBundle())) as AdapterAgentNodeBundle;
+  await nextTick();
+  graphRef.value?.render(workflow.value, agentBundle.value);
 }
 
 async function runWorkflow() {
@@ -104,6 +123,7 @@ async function loadAll() {
   await loadWorkflows();
   await inspectWorkflow();
   await inspectContract();
+  await inspectAgentBundle();
   await refreshEvidence();
 }
 
@@ -116,6 +136,7 @@ watch(
   () => {
     void inspectWorkflow();
     void inspectContract();
+    void inspectAgentBundle();
   },
 );
 
@@ -150,6 +171,10 @@ onMounted(async () => {
         Workflow path
         <textarea v-model="config.workflowPath" spellcheck="false" rows="3" />
       </label>
+      <label>
+        Agent prompt
+        <textarea v-model="config.agentMessage" spellcheck="false" rows="3" />
+      </label>
 
       <div class="switch-row">
         <label class="check"><input v-model="config.dryRun" type="checkbox" /> dry-run</label>
@@ -168,6 +193,9 @@ onMounted(async () => {
         </button>
         <button title="Inspect workflow contract" @click="inspectContract">
           <ShieldCheck :size="16" /> Contract
+        </button>
+        <button title="Load Adapter Agent node bundle" @click="inspectAgentBundle">
+          <Bot :size="16" /> Agent
         </button>
         <button title="Open maintainer console" onclick="window.open('../dashboard/src/index.html', '_blank')">
           <Wrench :size="16" /> Console
@@ -207,6 +235,22 @@ onMounted(async () => {
       <section>
         <div class="section-title"><FileJson :size="15" /> Run result</div>
         <pre>{{ pretty(runResult) }}</pre>
+      </section>
+      <section>
+        <div class="section-title"><Bot :size="15" /> Agent Bundle</div>
+        <div class="agent-summary">
+          <span :class="['pill-inline', agentBundle?.ok ? 'ok' : 'blocked']">{{ agentBundle?.status || "not loaded" }}</span>
+          <span>{{ agentCards.length }} agents</span>
+          <span>{{ agentTasks.length }} tasks</span>
+        </div>
+        <div class="agent-card-list">
+          <div v-for="card in agentCards" :key="card.metadata.id" class="agent-card">
+            <strong>{{ card.metadata.title || card.metadata.id }}</strong>
+            <span>{{ card.metadata.status || card.spec.policy?.risk || "unknown" }}</span>
+            <code>{{ card.metadata.role || card.metadata.id }}</code>
+          </div>
+        </div>
+        <pre>{{ pretty({ handoffs: agentHandoffs, bridge_message: agentBundle?.bridge_message }) }}</pre>
       </section>
       <section>
         <div class="section-title"><Rocket :size="15" /> Killer Demo</div>

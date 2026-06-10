@@ -19,6 +19,14 @@ export class StudioApi {
     return this.get(`/messages/contract?workflow_path=${encodeURIComponent(path)}`);
   }
 
+  async adapterAgentNodeBundle(): Promise<unknown> {
+    const query = new URLSearchParams({
+      workflow_path: this.config.workflowPath,
+      message: this.config.agentMessage,
+    });
+    return this.get(`/adapter-agent/node-bundle?${query.toString()}`);
+  }
+
   async runWorkflow(): Promise<unknown> {
     return this.post("/workflows/run", {
       path: this.config.workflowPath,
