@@ -17,6 +17,7 @@ from urllib.parse import parse_qs, urlparse
 
 from api_server.routes.health import health_payload
 from cbn_demo.killer import DEFAULT_KILLER_WORKFLOW_PATH, killer_demo_report
+from cbn_demo.network_connect import network_connect_package
 from cbn_core.manifest import validate_manifest_path
 from cbn_execution.graph import WorkflowGraph
 from cbn_parsers.fixtures import run_parser_fixtures
@@ -94,6 +95,7 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/protocols/acceptance-queue"},
     {"method": "GET", "path": "/protocols/bridge-lab"},
     {"method": "GET", "path": "/demo/killer"},
+    {"method": "GET", "path": "/network/connect-package"},
     {"method": "POST", "path": "/protocols/accept-workflow"},
     {"method": "POST", "path": "/protocols/acceptance-queue"},
     {"method": "POST", "path": "/protocols/bridge-lab"},
@@ -581,6 +583,16 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 event_tail=runtime.event_bus.tail(limit=30),
                 audit_tail=runtime.audit_log.tail(limit=30),
                 artifact_list=runtime.artifact_store.list(limit=30),
+            )
+            self._send(200 if result["ok"] else 422, result)
+            return
+        if parsed.path == "/network/connect-package":
+            workflow_path = query.get("workflow_path", query.get("path", [DEFAULT_KILLER_WORKFLOW_PATH]))[0]
+            result = network_connect_package(
+                runtime.registry,
+                workflow_path=workflow_path,
+                base_url=_base_url(self),
+                agent_message=query.get("message", ["Connect an external program to this CBN workflow."])[0],
             )
             self._send(200 if result["ok"] else 422, result)
             return

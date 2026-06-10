@@ -220,6 +220,12 @@ Killer Demo slice 已新增可运行证据束：
 - Workflow Studio 已消费该只读 API：Agent prompt 会随 workflow path 一起请求
   node bundle，右侧 inspector 展示 AgentCard、handoff 与 BridgeMessage，画布下方
   同步渲染 agent workflow node，形成可展示的 Agent-as-Node MVP 入口。
+- `cbn_demo.network_connect.network_connect_package` 已新增只读
+  `NetworkConnectPackage`：汇总 AgentCliCard/RunReceipt 外部 contract、
+  ToolManifest/BridgeMessage/Artifact/selector 内部 contract、daemon endpoint
+  catalog、workflow 摘要、MCP/A2A/ACP protocol export 摘要和 Agent node 摘要。
+  daemon 已暴露 `GET /network/connect-package`，供外部程序一次性读取“如何接入
+  CBN 网络”的最小包，不执行 workflow、不写入状态。
 
 ## 验证策略
 
@@ -239,6 +245,7 @@ Killer Demo slice 已新增可运行证据束：
 - `python -m unittest tests-unit.test_adapter_agent_harness.AdapterAgentHarnessTests.test_adapter_agent_node_bundle_maps_roles_to_agent_contracts`
 - `python -m unittest tests-unit.test_adapter_agent_harness.AdapterAgentHarnessTests.test_adapter_agent_node_bundle_cli_outputs_json`
 - `python -m unittest tests-unit.test_daemon_api.DaemonApiTests.test_adapter_agent_node_bundle_route_returns_agent_nodes`
+- `python -m unittest tests-unit.test_daemon_api.DaemonApiTests.test_network_connect_package_route_returns_one_shot_contract`
 - `python -m unittest tests-unit.test_killer_demo`
 - `python -m unittest tests-unit.test_command_importer`
 - `python -m unittest tests-unit.test_cli_imports`

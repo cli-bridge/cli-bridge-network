@@ -42,6 +42,7 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("POST", "/protocols/acceptance-queue"), routes)
         self.assertIn(("POST", "/protocols/bridge-lab"), routes)
         self.assertIn(("GET", "/demo/killer"), routes)
+        self.assertIn(("GET", "/network/connect-package"), routes)
         self.assertIn(("POST", "/demo/killer"), routes)
         self.assertIn(("GET", "/protocols/workflows"), routes)
         self.assertIn(("GET", "/.well-known/agent-card.json"), routes)
@@ -102,6 +103,30 @@ class DaemonApiTests(unittest.TestCase):
                 self.assertTrue(payload["ok"])
                 self.assertEqual(payload["summary"]["workflow_status"], "completed")
                 self.assertEqual(payload["summary"]["route_count"], 2)
+
+    def test_network_connect_package_route_returns_one_shot_contract(self):
+        with daemon_url() as base_url:
+            url = (
+                f"{base_url}/network/connect-package"
+                "?workflow_path=workflows/cli-anything-macrocli-mermaid-routing.example.json"
+            )
+            with urllib.request.urlopen(url, timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+
+            self.assertEqual(response.status, 200)
+            self.assertTrue(payload["ok"])
+            self.assertEqual(payload["kind"], "NetworkConnectPackage")
+            self.assertEqual(payload["contracts"]["external"]["protocol"], "agent-cli-contract")
+            self.assertEqual(payload["contracts"]["external"]["accepted_kinds"], ["AgentCliCard", "RunReceipt"])
+            self.assertEqual(payload["contracts"]["external"]["receipt_mapping"]["message_kind"], "BridgeMessage")
+            self.assertGreaterEqual(payload["summary"]["bridge_route_count"], 1)
+            self.assertIn("mcp", payload["protocols"]["targets"])
+            self.assertEqual(payload["protocols"]["a2a"]["skill_count"], 1)
+            self.assertEqual(payload["protocols"]["acp"]["workflow_count"], 1)
+            self.assertEqual(payload["agent_node_bundle"]["bridge_message_channel"], "agent.adapter.node_bundle")
+            endpoint_paths = {endpoint["path"].split("?", 1)[0] for endpoint in payload["daemon_endpoints"]}
+            self.assertIn("/workflows/run", endpoint_paths)
+            self.assertIn("/demo/killer", endpoint_paths)
 
     def test_adapter_agent_orchestrate_route_returns_auth_fallback(self):
         with daemon_url() as base_url:
