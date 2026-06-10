@@ -58,6 +58,29 @@ def build_parser() -> argparse.ArgumentParser:
     parser_fixtures.add_argument("path", nargs="?", default="parser_fixtures", help="Fixture file or directory.")
     parser_fixtures.add_argument("--parser-ref", help="Only run fixtures for one parser ref.")
 
+    record_parser_fixture = subcommands.add_parser(
+        "record-parser-fixture",
+        help="Record observed stdout/stderr as a reusable parser fixture.",
+    )
+    record_parser_fixture.add_argument("parser_ref", help="Parser ref to validate, for example raw.text.")
+    record_parser_fixture.add_argument("case_id", help="Stable fixture case id.")
+    record_parser_fixture.add_argument("--stdout", default="", help="Observed stdout text.")
+    record_parser_fixture.add_argument("--stderr", default="", help="Observed stderr text.")
+    record_parser_fixture.add_argument("--stdout-file", help="Read stdout text from a UTF-8 file.")
+    record_parser_fixture.add_argument("--stderr-file", help="Read stderr text from a UTF-8 file.")
+    record_parser_fixture.add_argument("--title", help="Fixture title.")
+    record_parser_fixture.add_argument("--fixture-id", help="Fixture metadata id.")
+    record_parser_fixture.add_argument(
+        "--verified-capability",
+        action="append",
+        default=[],
+        help="Capability verified by this fixture; repeatable.",
+    )
+    record_parser_fixture.add_argument("--expect-failure", action="store_true")
+    record_parser_fixture.add_argument("--error-contains", help="Expected parser error substring.")
+    record_parser_fixture.add_argument("--output", help="Output fixture path. Defaults to parser_fixtures/<parser>.<case>.json.")
+    record_parser_fixture.add_argument("--write", action="store_true", help="Write the fixture after validation.")
+
     protocol_parser = subcommands.add_parser("protocol", help="Inspect protocol export descriptors.")
     protocol_subcommands = protocol_parser.add_subparsers(dest="protocol_command")
     protocol_subcommands.add_parser("list", help="List supported descriptor exports.")

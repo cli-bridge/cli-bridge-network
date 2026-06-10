@@ -15,6 +15,7 @@ from cbn_core.command_importer import command_import_report, parse_key_values
 from cbn_core.manifest import validate_manifest_path
 from cbn_execution.graph import WorkflowGraph
 from cbn_parsers.fixtures import run_parser_fixtures
+from cbn_parsers.fixture_recorder import record_parser_fixture
 from cbn_parsers.registry import ParserRegistry
 from cbn_plugins.cli_anything import CliAnythingHub
 from cbn_plugins.manager import PluginManager
@@ -160,6 +161,24 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0 if result["ok"] else 7
+
+    if args.command == "record-parser-fixture":
+        result = record_parser_fixture(
+            parser_ref=args.parser_ref,
+            case_id=args.case_id,
+            stdout=_read_text_option(args.stdout, args.stdout_file),
+            stderr=_read_text_option(args.stderr, args.stderr_file),
+            title=args.title,
+            fixture_id=args.fixture_id,
+            verified_capabilities=tuple(args.verified_capability),
+            expect_failure=args.expect_failure,
+            error_contains=args.error_contains,
+            output_path=Path(args.output) if args.output else None,
+            write=args.write,
+            registry=ParserRegistry.builtins(),
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0 if result["ok"] else 12
 
     if args.command == "protocol":
         runtime = build_runtime()
@@ -1062,6 +1081,14 @@ def _read_json_arg(path: str) -> dict:
     if path == "-":
         return json.loads(sys.stdin.read())
     return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def _read_text_option(value: str, path: str | None) -> str:
+    if path is None:
+        return value
+    if path == "-":
+        return sys.stdin.read()
+    return Path(path).read_text(encoding="utf-8")
 
 
 def _known_parser_refs() -> set[str]:
