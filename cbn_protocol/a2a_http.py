@@ -185,7 +185,7 @@ def smoke_a2a_workflow_http(workflow_path: str, dry_run: bool = False, confirmed
             card.get("protocolVersion") == A2A_PROTOCOL_VERSION
             and any(skill.get("id") == f"workflow:{workflow_id}" for skill in card.get("skills", []))
             and task.get("status", {}).get("state") == "completed"
-            and task.get("metadata", {}).get("cbn", {}).get("workflow_path") == workflow_path
+            and _same_workflow_path(task.get("metadata", {}).get("cbn", {}).get("workflow_path"), workflow_path)
             and task.get("metadata", {}).get("cbn", {}).get("workflow_id") == workflow_id
             and task.get("metadata", {}).get("cbn", {}).get("status") == "completed"
         )
@@ -389,6 +389,12 @@ def _workflow_id_from_path(workflow_path: str) -> str:
     from cbn_execution.graph import WorkflowGraph
 
     return WorkflowGraph.from_file(Path(workflow_path)).workflow_id
+
+
+def _same_workflow_path(left: Any, right: str) -> bool:
+    if not isinstance(left, str):
+        return False
+    return left.replace("\\", "/") == right.replace("\\", "/")
 
 
 def _jsonrpc_error(request_id: Any, code: int, message: str) -> dict[str, Any]:

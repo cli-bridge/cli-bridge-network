@@ -832,31 +832,35 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 query=payload.get("query"),
                 limit=int(payload.get("limit", 50)),
             )
-            self._send(200 if result["ok"] else 502, result)
+            self._send(200, result)
             return
         if self.path == "/plugins/cli-anything/repair-plan":
             result = CliAnythingHub().entrypoint_repair_plan(
-                payload["harness_name"],
+                _required_string(payload, "harness_name"),
                 from_market=bool(payload.get("from_market", True)),
             )
-            self._send(200 if result["ok"] else 502, result)
+            self._send(200 if result.get("ok") else 502, result)
             return
         if self.path == "/plugins/cli-anything/repair-entrypoint":
+            write = bool(payload.get("write", False))
+            if write and not bool(payload.get("confirmed", False)):
+                self._send_error(403, "confirmation_required", "entrypoint repair writes require confirmed=true")
+                return
             smoke_args_raw = payload.get("smoke_args", ["--help"])
             if not isinstance(smoke_args_raw, list) or not all(isinstance(item, str) for item in smoke_args_raw):
                 self._send(400, {"error": "smoke_args must be a list of strings"})
                 return
             result = CliAnythingHub().repair_entrypoint(
-                payload["harness_name"],
+                _required_string(payload, "harness_name"),
                 from_market=bool(payload.get("from_market", True)),
                 module=payload.get("module"),
-                write=bool(payload.get("write", False)),
+                write=write,
                 confirmed=bool(payload.get("confirmed", False)),
                 require_smoke=bool(payload.get("require_smoke", False)),
                 smoke_args=tuple(smoke_args_raw),
                 smoke_timeout_seconds=int(payload.get("smoke_timeout_seconds", 10)),
             )
-            self._send(200 if result["ok"] else 502, result)
+            self._send(_repair_entrypoint_status(result), result)
             return
         if self.path == "/plugins/cli-anything/promotion-gate":
             smoke_args_raw = payload.get("smoke_extra_args", [])
@@ -875,47 +879,60 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             return
         if self.path == "/plugins/cli-anything/adapter-targets":
             result = CliAnythingHub().adapter_targets(
-                payload["harness_name"],
+                _required_string(payload, "harness_name"),
                 from_market=bool(payload.get("from_market", True)),
                 package=payload.get("package"),
                 limit=int(payload.get("limit", 20)),
             )
-            self._send(200 if result["ok"] else 502, result)
+            self._send(200 if result.get("ok") else 502, result)
             return
         if self.path == "/plugins/cli-anything/adapter-smoke":
+            run = bool(payload.get("run", False))
+            if run and not bool(payload.get("confirmed", False)):
+                self._send_error(403, "confirmation_required", "adapter smoke execution requires confirmed=true")
+                return
             smoke_args_raw = payload.get("smoke_args", ["--help"])
             if not isinstance(smoke_args_raw, list) or not all(isinstance(item, str) for item in smoke_args_raw):
                 self._send(400, {"error": "smoke_args must be a list of strings"})
                 return
             result = CliAnythingHub().adapter_target_smoke(
-                payload["harness_name"],
-                module=payload["module"],
+                _required_string(payload, "harness_name"),
+                module=_required_string(payload, "module"),
                 from_market=bool(payload.get("from_market", True)),
                 smoke_args=tuple(smoke_args_raw),
                 timeout_seconds=int(payload.get("timeout_seconds", 10)),
-                run=bool(payload.get("run", False)),
+                run=run,
                 confirmed=bool(payload.get("confirmed", False)),
             )
-            self._send(200 if result["ok"] else 502, result)
+            self._send(_adapter_smoke_status(result), result)
             return
         if self.path == "/plugins/cli-anything/adaptation-gate":
+            run_smoke = bool(payload.get("run_smoke", False))
+            if run_smoke and not bool(payload.get("confirmed", False)):
+                self._send_error(403, "confirmation_required", "adaptation gate smoke execution requires confirmed=true")
+                return
             smoke_args_raw = payload.get("smoke_args", ["--help"])
             if not isinstance(smoke_args_raw, list) or not all(isinstance(item, str) for item in smoke_args_raw):
                 self._send(400, {"error": "smoke_args must be a list of strings"})
                 return
             result = CliAnythingHub().adaptation_gate(
-                payload["harness_name"],
+                _required_string(payload, "harness_name"),
                 from_market=bool(payload.get("from_market", True)),
                 module=payload.get("module"),
                 require_smoke=bool(payload.get("require_smoke", True)),
-                run_smoke=bool(payload.get("run_smoke", False)),
+                run_smoke=run_smoke,
                 confirmed=bool(payload.get("confirmed", False)),
                 smoke_args=tuple(smoke_args_raw),
                 smoke_timeout_seconds=int(payload.get("smoke_timeout_seconds", 10)),
             )
-            self._send(200 if result["ok"] else 502, result)
+            self._send(200, result)
             return
         if self.path == "/plugins/cli-anything/adaptation-queue":
+            run_smoke = bool(payload.get("run_smoke", False))
+            confirmed = bool(payload.get("confirmed", False))
+            if run_smoke and not confirmed:
+                self._send_error(403, "confirmation_required", "adaptation queue smoke execution requires confirmed=true")
+                return
             smoke_args_raw = payload.get("smoke_args", ["--help"])
             if not isinstance(smoke_args_raw, list) or not all(isinstance(item, str) for item in smoke_args_raw):
                 self._send(400, {"error": "smoke_args must be a list of strings"})
@@ -924,19 +941,27 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             if not isinstance(harnesses, list) or not all(isinstance(item, str) for item in harnesses):
                 self._send(400, {"error": "harnesses must be a list of strings"})
                 return
+            include_blocked = bool(payload.get("include_blocked", True))
+            if run_smoke and not harnesses and include_blocked:
+                self._send_error(
+                    409,
+                    "blocked",
+                    "adaptation queue smoke execution requires explicit harnesses or include_blocked=false",
+                )
+                return
             result = CliAnythingHub().adaptation_queue(
                 harnesses=tuple(harnesses),
                 query=payload.get("query"),
                 limit=int(payload.get("limit", 20)),
                 max_harnesses=int(payload.get("max_harnesses", 5)),
-                include_blocked=bool(payload.get("include_blocked", True)),
+                include_blocked=include_blocked,
                 require_smoke=bool(payload.get("require_smoke", True)),
-                run_smoke=bool(payload.get("run_smoke", False)),
-                confirmed=bool(payload.get("confirmed", False)),
+                run_smoke=run_smoke,
+                confirmed=confirmed,
                 smoke_args=tuple(smoke_args_raw),
                 smoke_timeout_seconds=int(payload.get("smoke_timeout_seconds", 10)),
             )
-            self._send(200 if result["ok"] else 502, result)
+            self._send(200, result)
             return
         if self.path == "/plugins/cli-anything/sync-market":
             write = bool(payload.get("write", False))
@@ -1015,3 +1040,34 @@ def _base_url(handler: BaseHTTPRequestHandler) -> str:
         return f"http://{host}"
     bound_host, bound_port = handler.server.server_address[:2]
     return f"http://{bound_host}:{bound_port}"
+
+
+def _required_string(payload: dict[str, Any], field: str) -> str:
+    value = payload.get(field)
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"missing required string field: {field}")
+    return value
+
+
+def _repair_entrypoint_status(result: dict[str, Any]) -> int:
+    if not result.get("ok", False):
+        return 502
+    execution = result.get("execution") if isinstance(result.get("execution"), dict) else {}
+    status = execution.get("status")
+    if status in {"blocked", "requires_confirmation"}:
+        return 409
+    if status in {"failed", "timeout", "spawn_failed"}:
+        return 502
+    return 200
+
+
+def _adapter_smoke_status(result: dict[str, Any]) -> int:
+    if not result.get("ok", False):
+        return 502
+    execution = result.get("execution") if isinstance(result.get("execution"), dict) else {}
+    status = execution.get("status")
+    if status in {"blocked", "requires_confirmation"}:
+        return 409
+    if status in {"failed", "timeout", "spawn_failed"}:
+        return 502
+    return 200

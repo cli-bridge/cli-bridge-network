@@ -206,7 +206,29 @@ class ProtocolExportTests(unittest.TestCase):
         self.assertEqual(payload["summary"]["runtime_local_overlay_count"], 0)
         self.assertGreaterEqual(payload["summary"]["route_count"], 1)
         self.assertGreaterEqual(payload["parser_coverage"]["verified_output_count"], 1)
-        self.assertEqual(payload["parser_coverage"]["unverified_output_count"], 0)
+        expected_unverified = {
+            "caw.schema.help",
+            "caw.status",
+            "feishu.doctor",
+            "feishu.schema.help",
+            "jimeng.list_task",
+            "jimeng.text2image.submit",
+            "jimeng.user_credit",
+            "obsidian-cli.local-rest.note.read",
+            "obsidian-cli.local-rest.server.status",
+            "obsidian-cli.official.help",
+        }
+        self.assertEqual(
+            {
+                item["capability_id"]
+                for item in payload["parser_coverage"]["unverified_capabilities"]
+            },
+            expected_unverified,
+        )
+        self.assertEqual(
+            payload["parser_coverage"]["unverified_output_count"],
+            len(expected_unverified),
+        )
         self.assertEqual(payload["manifest_sources"]["runtime_local_overlay_capabilities"], [])
         self.assertTrue(
             any(

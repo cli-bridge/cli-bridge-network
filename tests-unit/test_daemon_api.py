@@ -669,7 +669,7 @@ class DaemonApiTests(unittest.TestCase):
                     "smoke_args": list(smoke_args),
                     "smoke_timeout_seconds": smoke_timeout_seconds,
                     "strategy": {"state": "python_module_wrapper"},
-                    "execution": {"status": "requires_confirmation"},
+                    "execution": {"status": "completed" if confirmed else "requires_confirmation"},
                 }
 
         with patch("api_server.server.CliAnythingHub", FakeHub):
@@ -682,7 +682,7 @@ class DaemonApiTests(unittest.TestCase):
                             "from_market": True,
                             "module": "pip",
                             "write": True,
-                            "confirmed": False,
+                            "confirmed": True,
                             "require_smoke": True,
                             "smoke_args": ["--help"],
                             "smoke_timeout_seconds": 11,
@@ -697,11 +697,37 @@ class DaemonApiTests(unittest.TestCase):
                     self.assertEqual(payload["harness_name"], "py4csr")
                     self.assertEqual(payload["module"], "pip")
                     self.assertTrue(payload["write"])
-                    self.assertFalse(payload["confirmed"])
+                    self.assertTrue(payload["confirmed"])
                     self.assertTrue(payload["require_smoke"])
                     self.assertEqual(payload["smoke_args"], ["--help"])
                     self.assertEqual(payload["smoke_timeout_seconds"], 11)
-                    self.assertEqual(payload["execution"]["status"], "requires_confirmation")
+                    self.assertEqual(payload["execution"]["status"], "completed")
+
+    def test_cli_anything_repair_entrypoint_route_rejects_unconfirmed_write(self):
+        class FakeHub:
+            def repair_entrypoint(self, *args, **kwargs):
+                raise AssertionError("repair_entrypoint should not run without confirmation")
+
+        with patch("api_server.server.CliAnythingHub", FakeHub):
+            with daemon_url() as base_url:
+                request = urllib.request.Request(
+                    f"{base_url}/plugins/cli-anything/repair-entrypoint",
+                    data=json.dumps(
+                        {
+                            "harness_name": "py4csr",
+                            "module": "pip",
+                            "write": True,
+                            "confirmed": False,
+                        }
+                    ).encode("utf-8"),
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                )
+                with self.assertRaises(urllib.error.HTTPError) as raised:
+                    urllib.request.urlopen(request, timeout=5)
+                self.assertEqual(raised.exception.code, 403)
+                payload = json.loads(raised.exception.read().decode("utf-8"))
+                self.assertEqual(payload["error_type"], "confirmation_required")
 
     def test_cli_anything_promotion_gate_route_returns_overlay_report(self):
         class FakeHub:
@@ -816,7 +842,7 @@ class DaemonApiTests(unittest.TestCase):
                     "timeout_seconds": timeout_seconds,
                     "run": run,
                     "confirmed": confirmed,
-                    "execution": {"status": "requires_confirmation"},
+                    "execution": {"status": "completed" if run and confirmed else "not_run"},
                 }
 
         with patch("api_server.server.CliAnythingHub", FakeHub):
@@ -831,7 +857,7 @@ class DaemonApiTests(unittest.TestCase):
                             "smoke_args": ["--help"],
                             "timeout_seconds": 10,
                             "run": True,
-                            "confirmed": False,
+                            "confirmed": True,
                         }
                     ).encode("utf-8"),
                     method="POST",
@@ -844,8 +870,34 @@ class DaemonApiTests(unittest.TestCase):
                     self.assertEqual(payload["module"], "py4csr.plotting.sas_compatible_rtf_generator")
                     self.assertEqual(payload["smoke_args"], ["--help"])
                     self.assertTrue(payload["run"])
-                    self.assertFalse(payload["confirmed"])
-                    self.assertEqual(payload["execution"]["status"], "requires_confirmation")
+                    self.assertTrue(payload["confirmed"])
+                    self.assertEqual(payload["execution"]["status"], "completed")
+
+    def test_cli_anything_adapter_smoke_route_rejects_unconfirmed_run(self):
+        class FakeHub:
+            def adapter_target_smoke(self, *args, **kwargs):
+                raise AssertionError("adapter smoke should not run without confirmation")
+
+        with patch("api_server.server.CliAnythingHub", FakeHub):
+            with daemon_url() as base_url:
+                request = urllib.request.Request(
+                    f"{base_url}/plugins/cli-anything/adapter-smoke",
+                    data=json.dumps(
+                        {
+                            "harness_name": "py4csr",
+                            "module": "py4csr.plotting.sas_compatible_rtf_generator",
+                            "run": True,
+                            "confirmed": False,
+                        }
+                    ).encode("utf-8"),
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                )
+                with self.assertRaises(urllib.error.HTTPError) as raised:
+                    urllib.request.urlopen(request, timeout=5)
+                self.assertEqual(raised.exception.code, 403)
+                payload = json.loads(raised.exception.read().decode("utf-8"))
+                self.assertEqual(payload["error_type"], "confirmation_required")
 
     def test_cli_anything_adaptation_gate_route_returns_acceptance_report(self):
         class FakeHub:
@@ -903,6 +955,52 @@ class DaemonApiTests(unittest.TestCase):
                     self.assertTrue(payload["require_smoke"])
                     self.assertFalse(payload["run_smoke"])
                     self.assertEqual(payload["stages"][0]["id"], "adapter_smoke")
+
+    def test_cli_anything_adaptation_gate_route_rejects_unconfirmed_smoke_run(self):
+        class FakeHub:
+            def adaptation_gate(self, *args, **kwargs):
+                raise AssertionError("adaptation gate should not run smoke without confirmation")
+
+        with patch("api_server.server.CliAnythingHub", FakeHub):
+            with daemon_url() as base_url:
+                request = urllib.request.Request(
+                    f"{base_url}/plugins/cli-anything/adaptation-gate",
+                    data=json.dumps(
+                        {
+                            "harness_name": "py4csr",
+                            "module": "py4csr.tables.rtf_formatter",
+                            "run_smoke": True,
+                            "confirmed": False,
+                        }
+                    ).encode("utf-8"),
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                )
+                with self.assertRaises(urllib.error.HTTPError) as raised:
+                    urllib.request.urlopen(request, timeout=5)
+                self.assertEqual(raised.exception.code, 403)
+                payload = json.loads(raised.exception.read().decode("utf-8"))
+                self.assertEqual(payload["error_type"], "confirmation_required")
+
+    def test_cli_anything_adaptation_gate_route_reports_missing_harness_as_bad_request(self):
+        class FakeHub:
+            def adaptation_gate(self, *args, **kwargs):
+                raise AssertionError("adaptation gate should not run with invalid request body")
+
+        with patch("api_server.server.CliAnythingHub", FakeHub):
+            with daemon_url() as base_url:
+                request = urllib.request.Request(
+                    f"{base_url}/plugins/cli-anything/adaptation-gate",
+                    data=json.dumps({"module": "py4csr.tables.rtf_formatter"}).encode("utf-8"),
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                )
+                with self.assertRaises(urllib.error.HTTPError) as raised:
+                    urllib.request.urlopen(request, timeout=5)
+                self.assertEqual(raised.exception.code, 400)
+                payload = json.loads(raised.exception.read().decode("utf-8"))
+                self.assertEqual(payload["error_type"], "bad_request")
+                self.assertIn("harness_name", payload["error"])
 
     def test_cli_anything_adaptation_queue_route_returns_batch_report(self):
         class FakeHub:
@@ -965,6 +1063,58 @@ class DaemonApiTests(unittest.TestCase):
                     self.assertEqual(payload["query"], "file")
                     self.assertEqual(payload["max_harnesses"], 2)
                     self.assertEqual(payload["summary"]["harness_count"], 2)
+
+    def test_cli_anything_adaptation_queue_route_rejects_unconfirmed_smoke_run(self):
+        class FakeHub:
+            def adaptation_queue(self, *args, **kwargs):
+                raise AssertionError("adaptation queue should not run smoke without confirmation")
+
+        with patch("api_server.server.CliAnythingHub", FakeHub):
+            with daemon_url() as base_url:
+                request = urllib.request.Request(
+                    f"{base_url}/plugins/cli-anything/adaptation-queue",
+                    data=json.dumps(
+                        {
+                            "harnesses": ["py4csr"],
+                            "run_smoke": True,
+                            "confirmed": False,
+                        }
+                    ).encode("utf-8"),
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                )
+                with self.assertRaises(urllib.error.HTTPError) as raised:
+                    urllib.request.urlopen(request, timeout=5)
+                self.assertEqual(raised.exception.code, 403)
+                payload = json.loads(raised.exception.read().decode("utf-8"))
+                self.assertEqual(payload["error_type"], "confirmation_required")
+
+    def test_cli_anything_adaptation_queue_route_rejects_market_smoke_with_blocked_entries(self):
+        class FakeHub:
+            def adaptation_queue(self, *args, **kwargs):
+                raise AssertionError("adaptation queue should not auto-run blocked market entries")
+
+        with patch("api_server.server.CliAnythingHub", FakeHub):
+            with daemon_url() as base_url:
+                request = urllib.request.Request(
+                    f"{base_url}/plugins/cli-anything/adaptation-queue",
+                    data=json.dumps(
+                        {
+                            "query": "file",
+                            "harnesses": [],
+                            "include_blocked": True,
+                            "run_smoke": True,
+                            "confirmed": True,
+                        }
+                    ).encode("utf-8"),
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                )
+                with self.assertRaises(urllib.error.HTTPError) as raised:
+                    urllib.request.urlopen(request, timeout=5)
+                self.assertEqual(raised.exception.code, 409)
+                payload = json.loads(raised.exception.read().decode("utf-8"))
+                self.assertEqual(payload["error_type"], "blocked")
 
     def test_runtime_transport_status_and_plan_routes(self):
         with daemon_url() as base_url:
