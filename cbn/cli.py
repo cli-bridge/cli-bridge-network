@@ -40,6 +40,7 @@ from cbn_protocol.readiness import protocol_readiness_report
 from cbn_protocol.mcp_stdio import serve_stdio, smoke_mcp_stdio
 from cbn_protocol.mcp_stdio import smoke_mcp_workflow_stdio
 from cbn_protocol.smoke_suite import protocol_smoke_suite
+from cbn_protocol.wire_conformance import protocol_wire_conformance_suite
 from cbn_runtime.context import build_runtime
 from cbn_workflow.catalog import inspect_workflow, list_workflows
 from cbn_workflow.package import compile_workflow_package, inspect_workflow_package, run_workflow_package
@@ -217,6 +218,13 @@ def main(argv: list[str] | None = None) -> int:
             payload = protocol_lifecycle_suite(
                 capability_id=args.capability_id,
                 workflow_path=args.workflow_path,
+            )
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0 if payload["ok"] else 9
+        if args.protocol_command == "wire-conformance":
+            payload = protocol_wire_conformance_suite(
+                target=args.target,
+                capability_id=args.capability_id,
             )
             print(json.dumps(payload, ensure_ascii=False, indent=2))
             return 0 if payload["ok"] else 9
@@ -516,6 +524,16 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0 if result["ok"] else 13
+        if args.plugin_command == "verify-plan":
+            result = manager.verify_plan(
+                args.plugin_id,
+                action=args.action,
+                include_codex_skill=args.with_codex_skill,
+                run=args.run,
+                timeout_seconds=args.timeout_seconds,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["ok"] else 13
         if args.plugin_command == "preflight":
             result = manager.preflight(args.plugin_id)
             print(json.dumps(result, ensure_ascii=False, indent=2))
@@ -635,6 +653,18 @@ def main(argv: list[str] | None = None) -> int:
                 include_workflows=args.include_workflows,
                 run_smoke_suite=args.smoke_suite,
                 smoke_extra_args=tuple(args.smoke_extra_arg),
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["ok"] else 6
+        if args.plugin_command == "verify-harness-plan":
+            if args.plugin_id != "cli-anything":
+                raise KeyError(f"verify-harness-plan is not implemented for plugin: {args.plugin_id}")
+            result = CliAnythingHub().verify_harness_plan(
+                args.harness_action,
+                args.harness_name,
+                extra_args=tuple(args.extra_args),
+                run=args.run,
+                timeout_seconds=args.timeout_seconds,
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0 if result["ok"] else 6

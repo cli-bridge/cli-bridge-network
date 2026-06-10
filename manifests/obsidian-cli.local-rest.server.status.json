@@ -14,7 +14,7 @@
       "cbn.adapter.profile": "obsidian-cli",
       "cbn.adapter.action": "local-rest-server-status",
       "cbn.auth_gate": "requires Obsidian Local REST API plugin and API key",
-      "cbn.output_contract": "future parser should extract server availability and vault/session metadata"
+      "cbn.output_contract": "direct-cli.typed extracts server availability, vault/session metadata, and setup errors"
     }
   },
   "spec": {
@@ -36,8 +36,8 @@
       "network": "localhost"
     },
     "output": {
-      "parserRef": "raw.text",
-      "verified": false
+      "parserRef": "direct-cli.typed",
+      "verified": true
     }
   }
 }

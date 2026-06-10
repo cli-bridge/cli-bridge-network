@@ -276,6 +276,7 @@ class ParserProtocolTests(unittest.TestCase):
         parser_refs = {item["parser_ref"] for item in json.loads(parsers.stdout)}
         self.assertIn("git.status.short", parser_refs)
         self.assertIn("git.version", parser_refs)
+        self.assertIn("direct-cli.typed", parser_refs)
         self.assertIn("cli-anything.mermaid.set_diagram", parser_refs)
         self.assertIn("cli-anything.macrocli.backends", parser_refs)
 

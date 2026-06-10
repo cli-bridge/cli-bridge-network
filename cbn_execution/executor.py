@@ -42,6 +42,7 @@ class CapabilityExecutor:
         self.parser_registry = parser_registry or ParserRegistry.builtins()
         self.stdio = StdioAdapter()
         self.pty = PtyAdapter()
+        self.session_env: dict[str, str] = {}
 
     def call(
         self,
@@ -222,16 +223,16 @@ class CapabilityExecutor:
         cwd: Path | None,
         dry_run: bool,
     ) -> ToolCall:
-        env = None
+        env = dict(self.session_env)
         if self.artifact_store is not None:
-            env = {"CBN_ARTIFACT_ROOT": str(self.artifact_store.root)}
+            env["CBN_ARTIFACT_ROOT"] = str(self.artifact_store.root)
         return ToolCall(
             capability_id=manifest.capability_id,
             argv=manifest.transport.argv(extra_args),
             cwd=str(cwd) if cwd else None,
             dry_run=dry_run,
             timeout_seconds=manifest.transport.timeout_seconds,
-            env=env,
+            env=env or None,
         )
 
     def _dispatch(self, manifest: CapabilityManifest, request: ToolCall) -> ToolResult:

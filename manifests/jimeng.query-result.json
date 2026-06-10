@@ -2,8 +2,8 @@
   "apiVersion": "bridge.dev/v1alpha1",
   "kind": "ToolManifest",
   "metadata": {
-    "id": "jimeng.user_credit",
-    "title": "Jimeng/Dreamina User Credit",
+    "id": "jimeng.query_result",
+    "title": "Jimeng/Dreamina Query Result",
     "labels": {
       "adapter": "direct-cli",
       "profile": "jimeng",
@@ -12,9 +12,11 @@
     },
     "annotations": {
       "cbn.adapter.profile": "jimeng",
-      "cbn.adapter.action": "user-credit",
+      "cbn.adapter.action": "query-result",
       "cbn.auth_gate": "requires Dreamina OAuth login state",
-      "cbn.output_contract": "direct-cli.typed extracts available credit, account status, and auth-required setup errors"
+      "cbn.workflow_hint": "poll a submitted Dreamina async task by submit_id after media.task.submitted",
+      "cbn.output_contract": "direct-cli.typed extracts submit_id, task status, result URLs, and generated media result counts",
+      "cbn.parser_fixture": "parser_fixtures/direct-cli.typed.probes.json"
     }
   },
   "spec": {
@@ -25,10 +27,10 @@
         "-m",
         "cbn_tools.external_cli",
         "jimeng",
-        "user-credit"
+        "query-result"
       ],
       "cwdPolicy": "workspace",
-      "timeoutSeconds": 60
+      "timeoutSeconds": 120
     },
     "policy": {
       "risk": "external-network",

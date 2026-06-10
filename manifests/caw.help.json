@@ -37,7 +37,7 @@
       "network": "deny"
     },
     "output": {
-      "parserRef": "raw.text",
+      "parserRef": "direct-cli.typed",
       "verified": true
     }
   }

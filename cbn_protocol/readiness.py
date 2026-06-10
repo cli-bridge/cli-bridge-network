@@ -12,6 +12,7 @@ from typing import Any
 from cbn_core.manifest import ManifestRegistry
 from cbn_protocol.bridge_contract import workflow_bridge_contract_report
 from cbn_protocol.compatibility import PROTOCOLS, check_all_protocols, protocol_matrix
+from cbn_protocol.wire_conformance import protocol_wire_conformance_suite
 
 
 def protocol_readiness_report(
@@ -41,6 +42,9 @@ def protocol_readiness_report(
     routes = _flatten_routes(contract) if contract else []
     route_summary = _route_summary(contract, routes)
     protocol_summary = _protocol_summary(matrix, selected_workflow_protocols)
+    wire_conformance = protocol_wire_conformance_suite()
+    protocol_summary["wire_compatible_protocol_count"] = wire_conformance["summary"]["wire_compatible_protocol_count"]
+    protocol_summary["wire_conformance_failed_count"] = wire_conformance["summary"]["failed_count"]
     gates = _readiness_gates(parser_summary, source_summary, route_summary, protocol_summary, contract)
     next_steps = _next_steps(parser_summary, source_summary, route_summary, protocol_summary)
 
@@ -50,7 +54,7 @@ def protocol_readiness_report(
         "scope": "workflow" if workflow_path else "project",
         "workflow_path": workflow_path,
         "include_workflows": include_workflows,
-        "wire_compatible": False,
+        "wire_compatible": bool(wire_conformance["wire_compatible"]),
         "summary": {
             "capability_count": len(manifests),
             "workflow_count": route_summary["workflow_count"],
@@ -74,6 +78,7 @@ def protocol_readiness_report(
             "workflow_count": matrix["workflow_count"],
             "summary": matrix["summary"],
         },
+        "wire_conformance": wire_conformance,
         "selected_workflow_protocols": selected_workflow_protocols,
         "protocol_gaps": protocol_summary["gaps"],
         "next_steps": next_steps,
@@ -287,7 +292,7 @@ def _readiness_gates(
             and route_summary["invalid_selector_count"] == 0
         ),
         "external_protocol_wire_compatible": protocol_summary["wire_compatible_protocol_count"] == len(PROTOCOLS),
-        "external_protocol_boundary": "descriptor-only/partial facade until MCP/A2A/ACP conformance is proven",
+        "external_protocol_boundary": "local official-shape wire conformance; third-party SDK certification remains a release gate",
     }
 
 
@@ -322,7 +327,7 @@ def _next_steps(
     if route_summary["unverified_source_route_count"] > 0:
         steps.append("Verify parser output for every payload source task used by workflow argsFrom routes.")
     if protocol_summary["wire_compatible_protocol_count"] < len(PROTOCOLS):
-        steps.append("Keep MCP/A2A/ACP marked wire_compatible=false until official protocol lifecycle coverage is added.")
+        steps.append("Keep MCP/A2A/ACP marked wire_compatible=false until local wire conformance checks pass.")
     if not steps:
         steps.append("Run protocol smoke tests and keep this report as the adapter readiness baseline.")
     return steps

@@ -31,7 +31,12 @@ from cbn_core.manifest import CapabilityManifest, ManifestRegistry, validate_man
 from cbn_events.bus import EventBus
 from cbn_parsers.fixtures import run_parser_fixtures
 from cbn_parsers.registry import ParserRegistry
-from cbn_plugins.manager import PluginCommand, PluginManager, PluginPlan
+from cbn_plugins.manager import (
+    PluginCommand,
+    PluginManager,
+    PluginPlan,
+    verification_report_for_plan,
+)
 from cbn_plugins.operations import PluginOperationRunner
 from cbn_protocol.acceptance_queue import cli_to_cli_acceptance_queue
 from cbn_protocol.compatibility import check_all_protocols
@@ -245,6 +250,47 @@ class CliAnythingHub:
             )
             if action in {"install", "update"}
             else (),
+            verification_commands=(
+                f"python -m cbn plugin harness cli-anything status {harness_name} --from-market",
+                f"python -m cbn plugin verify-harness cli-anything {harness_name} --no-workflows",
+                f"python -m cbn call cli-anything.{safe_name}.launch --dry-run",
+            )
+            if action in {"install", "update"}
+            else (
+                f"python -m cbn plugin harness cli-anything status {harness_name} --from-market",
+            ),
+        )
+
+    def verify_harness_plan(
+        self,
+        action: str,
+        harness_name: str,
+        extra_args: tuple[str, ...] = (),
+        run: bool = False,
+        timeout_seconds: int = 60,
+    ) -> dict[str, Any]:
+        safe_name = sanitize_harness_name(harness_name)
+        plan = self.harness_plan(action, harness_name, extra_args=extra_args)
+        return verification_report_for_plan(
+            plan,
+            report_kind="CliAnythingHarnessPlanVerificationReport",
+            run=run,
+            timeout_seconds=timeout_seconds,
+            next_commands=(
+                (
+                    f"python -m cbn plugin verify-harness-plan cli-anything {action} "
+                    f"{harness_name}"
+                ),
+                (
+                    f"python -m cbn plugin verify-harness-plan cli-anything {action} "
+                    f"{harness_name} --run"
+                ),
+            ),
+            extra={
+                "harness_name": harness_name,
+                "safe_name": safe_name,
+                "capability_id": f"cli-anything.{safe_name}.launch",
+            },
         )
 
     def harness_operation_gate(

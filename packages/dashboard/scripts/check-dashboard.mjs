@@ -21,6 +21,7 @@ const required = [
   "Artifact Bus",
   "Tail Events",
   "Workflow DAG",
+  "Adapter Agent",
   "MCP",
   "A2A",
   "ACP",
@@ -343,6 +344,22 @@ if (!html.includes("python -m cbn workflow run workflows/cli-anything-macrocli-m
   throw new Error("Dashboard does not expose the MacroCLI to Mermaid routing workflow command.");
 }
 
+if (!html.includes("python -m cbn_adapter_agent --orchestrate --workflow-path workflows/auth-gated-first-run.example.json --glm-validate")) {
+  throw new Error("Dashboard does not expose the Adapter Agent orchestration command.");
+}
+
+if (!html.includes('data-api-path="/adapter-agent/orchestrate"')) {
+  throw new Error("Dashboard does not wire Adapter Agent orchestration to the daemon API.");
+}
+
+if (!html.includes("adapterAgentDialog")) {
+  throw new Error("Dashboard does not include the Adapter Agent dialog.");
+}
+
+if (!html.includes("adapterAgentToolLog")) {
+  throw new Error("Dashboard does not include the Adapter Agent tool-use log.");
+}
+
 if (!html.includes("python -m cbn parser list")) {
   throw new Error("Dashboard does not expose the parser registry list command.");
 }
@@ -515,6 +532,42 @@ if (!js.includes("operationCommands")) {
   throw new Error("Dashboard script does not surface operation plan commands.");
 }
 
+if (!js.includes("sendAdapterAgent")) {
+  throw new Error("Dashboard script does not send Adapter Agent orchestration turns.");
+}
+
+if (!js.includes("/adapter-agent/orchestrate-stream")) {
+  throw new Error("Dashboard script does not use the Adapter Agent streaming endpoint.");
+}
+
+if (!js.includes("/adapter-agent/tool-use")) {
+  throw new Error("Dashboard script does not call Adapter Agent tool-use actions.");
+}
+
+if (!js.includes("readAdapterAgentStream")) {
+  throw new Error("Dashboard script does not read Adapter Agent stream chunks.");
+}
+
+if (!js.includes("callAdapterAgentTool")) {
+  throw new Error("Dashboard script does not expose Adapter Agent setup tool-use.");
+}
+
+if (!js.includes("Save Session Secret")) {
+  throw new Error("Dashboard script does not expose session-secret storage controls.");
+}
+
+if (!js.includes("renderAdapterAgentTurn")) {
+  throw new Error("Dashboard script does not render Adapter Agent orchestration responses.");
+}
+
+if (!js.includes("renderAdapterAgentSetup")) {
+  throw new Error("Dashboard script does not render Adapter Agent auth fallback setup.");
+}
+
+if (!js.includes("renderAdapterAgentRoutes")) {
+  throw new Error("Dashboard script does not render Adapter Agent CLI routes.");
+}
+
 if (!js.includes("fetch(apiUrl(path), options)")) {
   throw new Error("Dashboard script does not call the daemon API.");
 }
@@ -537,6 +590,10 @@ if (!css.includes(".operation-detail")) {
 
 if (!css.includes("input")) {
   throw new Error("Dashboard stylesheet is missing the daemon API input styling.");
+}
+
+if (!css.includes(".agent-dialog")) {
+  throw new Error("Dashboard stylesheet is missing Adapter Agent dialog styling.");
 }
 
 if (pkg.scripts?.serve !== "node scripts/serve-static.mjs") {

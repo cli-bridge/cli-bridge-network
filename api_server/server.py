@@ -38,8 +38,20 @@ from cbn_protocol.exports import (
 from cbn_protocol.lifecycle_suite import protocol_lifecycle_suite
 from cbn_protocol.readiness import protocol_readiness_report
 from cbn_protocol.smoke_suite import protocol_smoke_suite
+from cbn_protocol.wire_conformance import protocol_wire_conformance_suite
 from cbn_runtime.context import build_runtime
 from cbn_workflow.catalog import inspect_workflow, list_workflows
+from cbn_adapter_agent.llm_validation import stream_with_glm
+from cbn_adapter_agent.orchestrator import (
+    DEFAULT_WORKFLOW_PATH,
+    ORCHESTRATION_SYSTEM_PROMPT,
+    build_orchestration_context,
+    build_orchestration_turn,
+    fallback_message,
+    llm_content_covers_fallbacks,
+)
+from cbn_adapter_agent.tool_use import run_setup_tool, store_session_secret
+from cbn_adapter_agent.tool_call_plan import build_agent_tool_call_plan
 from cbn_plugins.cli_anything import CliAnythingHub
 from cbn_plugins.manager import PluginManager
 
@@ -74,6 +86,7 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/protocols/readiness"},
     {"method": "GET", "path": "/protocols/conformance-plan"},
     {"method": "GET", "path": "/protocols/lifecycle-suite"},
+    {"method": "GET", "path": "/protocols/wire-conformance"},
     {"method": "GET", "path": "/protocols/smoke-suite"},
     {"method": "GET", "path": "/protocols/acceptance-queue"},
     {"method": "GET", "path": "/protocols/bridge-lab"},
@@ -93,12 +106,17 @@ ROUTE_SUMMARY = [
     {"method": "POST", "path": "/workflows/validate"},
     {"method": "POST", "path": "/workflows/plan"},
     {"method": "POST", "path": "/workflows/run"},
+    {"method": "POST", "path": "/adapter-agent/orchestrate"},
+    {"method": "POST", "path": "/adapter-agent/orchestrate-stream"},
+    {"method": "POST", "path": "/adapter-agent/tool-call-plan"},
+    {"method": "POST", "path": "/adapter-agent/tool-use"},
     {"method": "POST", "path": "/runtime/transports/gate"},
     {"method": "POST", "path": "/runtime/transports/plan"},
     {"method": "POST", "path": "/runtime/transports/install"},
     {"method": "POST", "path": "/plugins/gate"},
     {"method": "POST", "path": "/plugins/check-update"},
     {"method": "POST", "path": "/plugins/operation-plan"},
+    {"method": "POST", "path": "/plugins/verify-plan"},
     {"method": "POST", "path": "/plugins/plan"},
     {"method": "POST", "path": "/plugins/execute"},
     {"method": "POST", "path": "/plugins/cli-anything/market"},
@@ -108,6 +126,7 @@ ROUTE_SUMMARY = [
     {"method": "POST", "path": "/plugins/cli-anything/evaluate-harness"},
     {"method": "POST", "path": "/plugins/cli-anything/probe-harness"},
     {"method": "POST", "path": "/plugins/cli-anything/verify-harness"},
+    {"method": "POST", "path": "/plugins/cli-anything/verify-harness-plan"},
     {"method": "POST", "path": "/plugins/cli-anything/onboard-harness"},
     {"method": "POST", "path": "/plugins/cli-anything/live-verification"},
     {"method": "POST", "path": "/plugins/cli-anything/mvp-plan"},
@@ -143,6 +162,22 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_stream_headers(self) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        cors_origin = self._cors_origin()
+        if cors_origin:
+            self.send_header("Access-Control-Allow-Origin", cors_origin)
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type, X-CBN-Session")
+        self.end_headers()
+
+    def _write_stream_event(self, payload: dict[str, Any]) -> None:
+        body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        self.wfile.write(body + b"\n")
+        self.wfile.flush()
+
     def _send_error(self, status: int, error_type: str, message: str) -> None:
         self._send(
             status,
@@ -163,6 +198,112 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args: Any) -> None:
         runtime = build_runtime()
         runtime.audit_log.append({"type": "daemon.http_log", "message": fmt % args})
+
+    def _adapter_agent_env(self) -> dict[str, str]:
+        env_store = getattr(self.server, "adapter_agent_env", None)
+        if env_store is None:
+            env_store = {}
+            setattr(self.server, "adapter_agent_env", env_store)
+        return env_store
+
+    def _handle_adapter_agent_stream(self, payload: dict[str, Any]) -> None:
+        workflow_path = payload.get("workflow_path") or payload.get("path") or DEFAULT_WORKFLOW_PATH
+        message = payload.get("message", "")
+        if not isinstance(workflow_path, str) or not workflow_path:
+            self._send_error(400, "bad_request", "workflow_path must be a non-empty string")
+            return
+        if not isinstance(message, str):
+            self._send_error(400, "bad_request", "message must be a string")
+            return
+        context = build_orchestration_context(message=message, workflow_path=workflow_path)
+        self._send_stream_headers()
+        plan_turn = _adapter_agent_turn_from_context(
+            context,
+            assistant_message="Preparing Adapter Agent turn...",
+            glm={"ok": False, "streaming": True, "content": ""},
+            glm_content_accepted=False,
+        )
+        self._write_stream_event({"type": "plan", "payload": plan_turn})
+
+        if not bool(payload.get("use_glm", True)):
+            fallback = fallback_message(context)
+            final_turn = _adapter_agent_turn_from_context(
+                context,
+                assistant_message=fallback,
+                glm={"ok": False, "skipped": True, "reason": "GLM disabled by request"},
+                glm_content_accepted=False,
+            )
+            self._write_stream_event({"type": "fallback", "text": fallback})
+            self._write_stream_event({"type": "turn", "payload": final_turn})
+            self._write_stream_event({"type": "done", "ok": True, "glm_content_accepted": False})
+            return
+
+        content_parts: list[str] = []
+        stream_meta: dict[str, Any] = {"ok": True, "streaming": True}
+        for event in stream_with_glm(context, system_prompt=ORCHESTRATION_SYSTEM_PROMPT):
+            event_type = event.get("type")
+            if event_type == "delta":
+                text = str(event.get("text", ""))
+                if text:
+                    content_parts.append(text)
+                    self._write_stream_event({"type": "delta", "text": text})
+            elif event_type == "error":
+                error_message = event.get("error") or event.get("reason") or event.get("body_summary")
+                stream_meta = {"ok": False, "streaming": True, "error": error_message}
+                self._write_stream_event({"type": "error", "error": error_message})
+            elif event_type == "done":
+                stream_meta.update(
+                    {
+                        "ok": stream_meta.get("ok", True),
+                        "model": event.get("model"),
+                        "endpoint": event.get("endpoint"),
+                    }
+                )
+
+        content = "".join(content_parts)
+        accepted = llm_content_covers_fallbacks(content, context["auth_fallbacks"])
+        assistant_message = content if accepted else fallback_message(context)
+        if not accepted:
+            self._write_stream_event({"type": "fallback", "text": assistant_message})
+        final_turn = _adapter_agent_turn_from_context(
+            context,
+            assistant_message=assistant_message,
+            glm={**stream_meta, "content_chars": len(content)},
+            glm_content_accepted=accepted,
+        )
+        self._write_stream_event({"type": "turn", "payload": final_turn})
+        self._write_stream_event({"type": "done", "ok": True, "glm_content_accepted": accepted})
+
+    def _handle_adapter_agent_tool_use(self, payload: dict[str, Any]) -> None:
+        runtime = build_runtime()
+        action = payload.get("action")
+        if action == "store-secret":
+            result = store_session_secret(
+                self._adapter_agent_env(),
+                name=_required_string(payload, "name"),
+                value=_required_string(payload, "value"),
+                audit_log=runtime.audit_log,
+                event_bus=runtime.event_bus,
+            )
+            self._send(200 if result["ok"] else 400, result)
+            return
+        if action == "run-setup-tool":
+            workflow_path = payload.get("workflow_path") or payload.get("path") or DEFAULT_WORKFLOW_PATH
+            if not isinstance(workflow_path, str) or not workflow_path:
+                self._send_error(400, "bad_request", "workflow_path must be a non-empty string")
+                return
+            result = run_setup_tool(
+                workflow_path=workflow_path,
+                setup_id=_required_string(payload, "setup_id"),
+                command_id=_required_string(payload, "command_id"),
+                env_store=self._adapter_agent_env(),
+                timeout_seconds=int(payload.get("timeout_seconds", 30)),
+                audit_log=runtime.audit_log,
+                event_bus=runtime.event_bus,
+            )
+            self._send(200 if result["ok"] else 409, result)
+            return
+        self._send_error(400, "bad_request", f"unknown Adapter Agent tool-use action: {action}")
 
     def do_GET(self) -> None:
         if not self._require_allowed_origin():
@@ -374,6 +515,13 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             )
             self._send(200 if result["ok"] else 422, result)
             return
+        if parsed.path == "/protocols/wire-conformance":
+            result = protocol_wire_conformance_suite(
+                target=query.get("target", ["all"])[0],
+                capability_id=query.get("capability_id", ["git.version"])[0],
+            )
+            self._send(200 if result["ok"] else 422, result)
+            return
         if parsed.path == "/protocols/smoke-suite":
             result = protocol_smoke_suite(
                 runtime.registry,
@@ -440,6 +588,7 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
 
     def _handle_POST(self) -> None:
         runtime = build_runtime()
+        runtime.executor.session_env.update(self._adapter_agent_env())
         payload = self._read_json()
         if self.path == "/call":
             result = runtime.executor.call(
@@ -561,6 +710,39 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             )
             self._send(200 if result["status"] == "completed" else 409, result)
             return
+        if self.path == "/adapter-agent/orchestrate":
+            workflow_path = payload.get("workflow_path") or payload.get("path") or DEFAULT_WORKFLOW_PATH
+            message = payload.get("message", "")
+            if not isinstance(workflow_path, str) or not workflow_path:
+                self._send_error(400, "bad_request", "workflow_path must be a non-empty string")
+                return
+            if not isinstance(message, str):
+                self._send_error(400, "bad_request", "message must be a string")
+                return
+            result = build_orchestration_turn(
+                message=message,
+                workflow_path=workflow_path,
+                use_glm=bool(payload.get("use_glm", True)),
+            )
+            self._send(200, result)
+            return
+        if self.path == "/adapter-agent/orchestrate-stream":
+            self._handle_adapter_agent_stream(payload)
+            return
+        if self.path == "/adapter-agent/tool-call-plan":
+            workflow_path = payload.get("workflow_path") or payload.get("path") or DEFAULT_WORKFLOW_PATH
+            message = payload.get("message", "")
+            if not isinstance(workflow_path, str) or not workflow_path:
+                self._send_error(400, "bad_request", "workflow_path must be a non-empty string")
+                return
+            if not isinstance(message, str):
+                self._send_error(400, "bad_request", "message must be a string")
+                return
+            self._send(200, build_agent_tool_call_plan(workflow_path=workflow_path, message=message))
+            return
+        if self.path == "/adapter-agent/tool-use":
+            self._handle_adapter_agent_tool_use(payload)
+            return
         if self.path == "/runtime/transports/gate":
             manager = PluginManager()
             result = manager.runtime_transport_gate(payload.get("kind", "pty"))
@@ -621,6 +803,17 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 payload["operation_id"],
                 inputs=inputs,
                 confirmed=bool(payload.get("confirmed", False)),
+            )
+            self._send(200 if result["ok"] else 409, result)
+            return
+        if self.path == "/plugins/verify-plan":
+            manager = PluginManager()
+            result = manager.verify_plan(
+                payload["plugin_id"],
+                action=payload.get("action", "install"),
+                include_codex_skill=bool(payload.get("include_codex_skill", False)),
+                run=bool(payload.get("run", False)),
+                timeout_seconds=int(payload.get("timeout_seconds", 60)),
             )
             self._send(200 if result["ok"] else 409, result)
             return
@@ -738,6 +931,20 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 smoke_extra_args=tuple(payload.get("smoke_extra_args", [])),
             )
             self._send(200 if result["ok"] else 502, result)
+            return
+        if self.path == "/plugins/cli-anything/verify-harness-plan":
+            extra_args_raw = payload.get("extra_args", [])
+            if not isinstance(extra_args_raw, list) or not all(isinstance(item, str) for item in extra_args_raw):
+                self._send(400, {"error": "extra_args must be a list of strings"})
+                return
+            result = CliAnythingHub().verify_harness_plan(
+                payload.get("action", "install"),
+                payload["harness_name"],
+                extra_args=tuple(extra_args_raw),
+                run=bool(payload.get("run", False)),
+                timeout_seconds=int(payload.get("timeout_seconds", 60)),
+            )
+            self._send(200 if result["ok"] else 409, result)
             return
         if self.path == "/plugins/cli-anything/onboard-harness":
             result = CliAnythingHub().onboard_harness(
@@ -1007,6 +1214,32 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             self._send(200 if result["status"] == "completed" else 409, result)
             return
         self._send(404, {"error": "not found", "routes": ROUTE_SUMMARY})
+
+
+def _adapter_agent_turn_from_context(
+    context: dict[str, Any],
+    *,
+    assistant_message: str,
+    glm: dict[str, Any],
+    glm_content_accepted: bool,
+) -> dict[str, Any]:
+    initialization = context["workflow_initialization"]
+    return {
+        "kind": "AdapterAgentOrchestrationTurn",
+        "apiVersion": "bridge.dev/v1alpha1",
+        "ok": initialization["ok"],
+        "status": initialization["status"],
+        "workflow_path": context["workflow_path"],
+        "message_redacted": context["message_redacted"],
+        "assistant_message": assistant_message,
+        "recommended_next_action": context["recommended_next_action"],
+        "workflow_initialization": initialization,
+        "cli_routes": context["cli_routes"],
+        "auth_fallbacks": context["auth_fallbacks"],
+        "continuation": initialization["continuation"],
+        "glm_content_accepted": glm_content_accepted,
+        "glm": glm,
+    }
 
 
 def serve(host: str = "127.0.0.1", port: int = 8787) -> None:

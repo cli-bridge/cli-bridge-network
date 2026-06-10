@@ -1,9 +1,7 @@
-"""Batch smoke suite for MVP protocol facades.
+"""Batch smoke suite for protocol facades.
 
-The suite intentionally proves CBN's local adapter baseline only. It runs the
-current MCP/A2A/ACP smoke paths for selected capabilities and workflows, plus
-the BridgeMessage readiness gates, while keeping official wire conformance as
-an explicit false claim until a real conformance harness exists.
+The suite runs CBN's local adapter baseline plus readiness gates. Protocol wire
+compatibility is sourced from the dedicated wire-conformance suite.
 """
 
 from __future__ import annotations
@@ -115,8 +113,8 @@ def protocol_smoke_suite(
         "apiVersion": "bridge.dev/v1alpha1",
         "kind": "ProtocolSmokeSuiteReport",
         "scope": "project",
-        "wire_compatible": False,
-        "external_protocol_boundary": "MVP facade smoke only; official MCP/A2A/ACP wire conformance is not claimed.",
+        "wire_compatible": bool(readiness["wire_compatible"]),
+        "external_protocol_boundary": readiness["readiness"]["external_protocol_boundary"],
         "capability_ids": list(selected_capabilities),
         "workflow_paths": list(selected_workflows),
         "dry_run": dry_run,
@@ -275,9 +273,9 @@ def _next_steps(ok: bool) -> list[str]:
     if not ok:
         return [
             "Inspect failures[].evidence and rerun the failing protocol/capability pair directly.",
-            "Keep wire_compatible=false; this suite proves only the local MVP facade path.",
+            "Keep wire_compatible=false until protocol wire-conformance checks pass.",
         ]
     return [
         "Use this suite as the repeatable gate when adapting additional CLI-Anything harnesses.",
-        "Add official MCP/A2A/ACP lifecycle and conformance coverage before changing wire_compatible.",
+        "Run third-party SDK/client conformance before release certification.",
     ]

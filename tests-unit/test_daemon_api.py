@@ -17,6 +17,7 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("POST", "/plugins/cli-anything/candidates"), routes)
         self.assertIn(("POST", "/plugins/cli-anything/probe-harness"), routes)
         self.assertIn(("POST", "/plugins/cli-anything/verify-harness"), routes)
+        self.assertIn(("POST", "/plugins/cli-anything/verify-harness-plan"), routes)
         self.assertIn(("POST", "/plugins/cli-anything/promotion-gate"), routes)
         self.assertIn(("POST", "/plugins/cli-anything/live-verification"), routes)
         self.assertIn(("POST", "/plugins/cli-anything/mvp-plan"), routes)
@@ -28,11 +29,13 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("POST", "/plugins/gate"), routes)
         self.assertIn(("POST", "/plugins/check-update"), routes)
         self.assertIn(("POST", "/plugins/operation-plan"), routes)
+        self.assertIn(("POST", "/plugins/verify-plan"), routes)
         self.assertIn(("GET", "/protocols/check"), routes)
         self.assertIn(("GET", "/protocols/matrix"), routes)
         self.assertIn(("GET", "/protocols/readiness"), routes)
         self.assertIn(("GET", "/protocols/conformance-plan"), routes)
         self.assertIn(("GET", "/protocols/lifecycle-suite"), routes)
+        self.assertIn(("GET", "/protocols/wire-conformance"), routes)
         self.assertIn(("GET", "/protocols/smoke-suite"), routes)
         self.assertIn(("GET", "/protocols/acceptance-queue"), routes)
         self.assertIn(("GET", "/protocols/bridge-lab"), routes)
@@ -45,6 +48,10 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("GET", "/runtime/transports"), routes)
         self.assertIn(("GET", "/messages/contract"), routes)
         self.assertIn(("GET", "/parsers/fixtures"), routes)
+        self.assertIn(("POST", "/adapter-agent/orchestrate"), routes)
+        self.assertIn(("POST", "/adapter-agent/orchestrate-stream"), routes)
+        self.assertIn(("POST", "/adapter-agent/tool-call-plan"), routes)
+        self.assertIn(("POST", "/adapter-agent/tool-use"), routes)
         self.assertIn(("POST", "/runtime/transports/gate"), routes)
         self.assertIn(("POST", "/runtime/transports/plan"), routes)
         self.assertIn(("POST", "/runtime/transports/install"), routes)
@@ -76,6 +83,102 @@ class DaemonApiTests(unittest.TestCase):
             self.assertTrue(payload["ok"])
             self.assertEqual(payload["kind"], "PluginProviderOperationCatalogValidation")
             self.assertEqual(payload["summary"]["error_count"], 0)
+
+    def test_adapter_agent_orchestrate_route_returns_auth_fallback(self):
+        with daemon_url() as base_url:
+            request = urllib.request.Request(
+                f"{base_url}/adapter-agent/orchestrate",
+                data=json.dumps(
+                    {
+                        "workflow_path": "workflows/auth-gated-first-run.example.json",
+                        "message": "Initialize and guide login fallback.",
+                        "use_glm": False,
+                    }
+                ).encode("utf-8"),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(request, timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+
+            self.assertEqual(response.status, 200)
+            self.assertEqual(payload["kind"], "AdapterAgentOrchestrationTurn")
+            self.assertEqual(payload["status"], "requires_user_setup_and_inputs")
+            setup_ids = {
+                fallback["setup"]["setup_id"]
+                for fallback in payload["auth_fallbacks"]
+                if fallback.get("setup")
+            }
+            self.assertIn("jimeng-oauth-login", setup_ids)
+            self.assertIn("obsidian-local-rest-api-key", setup_ids)
+            self.assertTrue(any(route["task_id"] == "query-image-result" for route in payload["cli_routes"]))
+
+    def test_adapter_agent_orchestrate_stream_returns_ndjson_plan_and_done(self):
+        with daemon_url() as base_url:
+            request = urllib.request.Request(
+                f"{base_url}/adapter-agent/orchestrate-stream",
+                data=json.dumps(
+                    {
+                        "workflow_path": "workflows/auth-gated-first-run.example.json",
+                        "message": "Initialize and stream setup guidance.",
+                        "use_glm": False,
+                    }
+                ).encode("utf-8"),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(request, timeout=5) as response:
+                lines = [json.loads(line) for line in response.read().decode("utf-8").splitlines()]
+
+            self.assertEqual(response.status, 200)
+            self.assertEqual(lines[0]["type"], "plan")
+            self.assertEqual(lines[0]["payload"]["kind"], "AdapterAgentOrchestrationTurn")
+            self.assertTrue(any(event["type"] == "fallback" for event in lines))
+            self.assertEqual(lines[-1]["type"], "done")
+
+    def test_adapter_agent_tool_use_stores_session_secret_without_echo(self):
+        with daemon_url() as base_url:
+            request = urllib.request.Request(
+                f"{base_url}/adapter-agent/tool-use",
+                data=json.dumps(
+                    {
+                        "action": "store-secret",
+                        "name": "OBSIDIAN_API_KEY",
+                        "value": "test-only-secret",
+                    }
+                ).encode("utf-8"),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(request, timeout=5) as response:
+                body = response.read().decode("utf-8")
+                payload = json.loads(body)
+
+            self.assertEqual(response.status, 200)
+            self.assertTrue(payload["ok"])
+            self.assertEqual(payload["stored"], "OBSIDIAN_API_KEY")
+            self.assertNotIn("test-only-secret", body)
+
+    def test_adapter_agent_tool_call_plan_route_returns_loop_contract(self):
+        with daemon_url() as base_url:
+            request = urllib.request.Request(
+                f"{base_url}/adapter-agent/tool-call-plan",
+                data=json.dumps(
+                    {
+                        "workflow_path": "workflows/auth-gated-first-run.example.json",
+                        "message": "Initialize setup and plan tool calls.",
+                    }
+                ).encode("utf-8"),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(request, timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+
+            self.assertEqual(response.status, 200)
+            self.assertEqual(payload["kind"], "AdapterAgentToolCallPlan")
+            self.assertEqual(payload["long_running_loop"]["kind"], "AdapterAgentLoopPlan")
+            self.assertTrue(payload["execution_batches"])
 
     def test_plugin_operation_plan_route_resolves_descriptor(self):
         with daemon_url() as base_url:
@@ -311,7 +414,7 @@ class DaemonApiTests(unittest.TestCase):
                 self.assertEqual(payload["kind"], "ProtocolReadinessReport")
                 self.assertEqual(payload["scope"], "workflow")
                 self.assertTrue(payload["readiness"]["internal_bridge_ready"])
-                self.assertFalse(payload["readiness"]["external_protocol_wire_compatible"])
+                self.assertTrue(payload["readiness"]["external_protocol_wire_compatible"])
                 self.assertEqual(payload["summary"]["route_count"], 1)
                 self.assertIn("mcp", payload["protocol_gaps"])
 
@@ -338,8 +441,20 @@ class DaemonApiTests(unittest.TestCase):
                 self.assertEqual(response.status, 200)
                 self.assertEqual(payload["kind"], "ProtocolLifecycleSuiteReport")
                 self.assertTrue(payload["ok"])
-                self.assertFalse(payload["wire_compatible"])
+                self.assertTrue(payload["wire_compatible"])
                 self.assertEqual(payload["summary"]["failed_count"], 0)
+
+    def test_protocol_wire_conformance_route_returns_report(self):
+        with daemon_url() as base_url:
+            with urllib.request.urlopen(
+                f"{base_url}/protocols/wire-conformance?target=all&capability_id=git.version",
+                timeout=5,
+            ) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(response.status, 200)
+                self.assertEqual(payload["kind"], "ProtocolWireConformanceReport")
+                self.assertTrue(payload["wire_compatible"])
+                self.assertEqual(payload["summary"]["wire_compatible_protocol_count"], 3)
 
     def test_protocol_smoke_suite_route_returns_batch_gate(self):
         def fake_suite(
@@ -363,7 +478,7 @@ class DaemonApiTests(unittest.TestCase):
                 "include_payloads": include_payloads,
                 "extra_args": list(extra_args),
                 "summary": {"check_count": 6, "failed_count": 0},
-                "wire_compatible": False,
+                "wire_compatible": True,
             }
 
         with patch("api_server.server.protocol_smoke_suite", fake_suite):
@@ -383,7 +498,7 @@ class DaemonApiTests(unittest.TestCase):
                     self.assertEqual(payload["capability_ids"], ["git.version"])
                     self.assertEqual(payload["workflow_paths"], ["workflows/example.json"])
                     self.assertTrue(payload["workflow_dry_run"])
-                    self.assertFalse(payload["wire_compatible"])
+                    self.assertTrue(payload["wire_compatible"])
 
     def test_protocol_acceptance_queue_route_returns_matrix(self):
         with daemon_url() as base_url:
@@ -429,7 +544,7 @@ class DaemonApiTests(unittest.TestCase):
                 self.assertTrue(payload["ok"])
                 self.assertEqual(payload["summary"]["workflow_count"], 1)
                 self.assertEqual(payload["summary"]["runtime_route_failed_count"], 0)
-                self.assertFalse(payload["wire_compatible"])
+                self.assertTrue(payload["wire_compatible"])
 
     def test_message_contract_route_returns_workflow_routes(self):
         with daemon_url() as base_url:
@@ -1232,6 +1347,46 @@ class DaemonApiTests(unittest.TestCase):
                 self.assertIn("preflight", payload)
                 self.assertIn("provenance", payload)
 
+    def test_plugin_verify_plan_route_returns_preview_report(self):
+        with daemon_url() as base_url:
+            request = urllib.request.Request(
+                f"{base_url}/plugins/verify-plan",
+                data=json.dumps({"plugin_id": "cli-anything", "action": "install"}).encode("utf-8"),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(request, timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+
+            self.assertEqual(response.status, 200)
+            self.assertTrue(payload["ok"])
+            self.assertEqual(payload["kind"], "PluginPlanVerificationReport")
+            self.assertFalse(payload["run"])
+            self.assertTrue(payload["ready_to_run"])
+
+    def test_cli_anything_verify_harness_plan_route_returns_preview_report(self):
+        with daemon_url() as base_url:
+            request = urllib.request.Request(
+                f"{base_url}/plugins/cli-anything/verify-harness-plan",
+                data=json.dumps(
+                    {
+                        "action": "install",
+                        "harness_name": "mermaid",
+                    }
+                ).encode("utf-8"),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(request, timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+
+            self.assertEqual(response.status, 200)
+            self.assertTrue(payload["ok"])
+            self.assertEqual(payload["kind"], "CliAnythingHarnessPlanVerificationReport")
+            self.assertEqual(payload["harness_name"], "mermaid")
+            self.assertFalse(payload["run"])
+            self.assertTrue(payload["ready_to_run"])
+
     def test_cli_anything_provenance_route_returns_source_report(self):
         with daemon_url() as base_url:
             with urllib.request.urlopen(f"{base_url}/plugins/cli-anything/provenance", timeout=5) as response:
@@ -1568,11 +1723,11 @@ class DaemonApiTests(unittest.TestCase):
                     {
                         "jsonrpc": "2.0",
                         "id": "daemon-a2a",
-                        "method": "message/send",
+                        "method": "SendMessage",
                         "params": {
                             "message": {
                                 "messageId": "message-1",
-                                "role": "user",
+                                "role": "ROLE_USER",
                                 "parts": [{"text": "version"}],
                             },
                             "metadata": {"cbn": {"capability_id": "git.version"}},
@@ -1580,12 +1735,12 @@ class DaemonApiTests(unittest.TestCase):
                     }
                 ).encode("utf-8"),
                 method="POST",
-                headers={"Content-Type": "application/json", "A2A-Version": "0.3"},
+                headers={"Content-Type": "application/json", "A2A-Version": "1.0.0"},
             )
             with urllib.request.urlopen(request, timeout=10) as response:
                 rpc = json.loads(response.read().decode("utf-8"))
                 self.assertEqual(response.status, 200)
-                self.assertEqual(rpc["result"]["status"]["state"], "completed")
+                self.assertEqual(rpc["result"]["status"]["state"], "TASK_STATE_COMPLETED")
                 self.assertEqual(rpc["result"]["metadata"]["cbn"]["capability_id"], "git.version")
 
 

@@ -14,7 +14,7 @@
       "cbn.adapter.profile": "caw",
       "cbn.adapter.action": "status",
       "cbn.auth_gate": "requires Cobo Agentic Wallet pairing or API key",
-      "cbn.output_contract": "future parser should extract lifecycle, pairing, wallet health, and pending approvals",
+      "cbn.output_contract": "direct-cli.typed extracts lifecycle, pairing, wallet health, pending approvals, and setup errors",
       "cbn.risk_reason": "status can contact wallet service and reveal account state"
     }
   },
@@ -37,8 +37,8 @@
       "network": "requires-confirmation"
     },
     "output": {
-      "parserRef": "raw.text",
-      "verified": false
+      "parserRef": "direct-cli.typed",
+      "verified": true
     }
   }
 }

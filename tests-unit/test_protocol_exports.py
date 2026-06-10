@@ -126,14 +126,14 @@ class ProtocolExportTests(unittest.TestCase):
         self.assertFalse(a2a["wire_compatible"])
         self.assertTrue(
             any(
-                item["requirement"] == "A2A AgentCard and message/send smoke"
+                item["requirement"] == "A2A AgentCard and SendMessage smoke"
                 and item["status"] == "partial"
                 for item in a2a["checks"]
             )
         )
         self.assertTrue(
             any(
-                item["requirement"] == "A2A workflow message/send smoke"
+                item["requirement"] == "A2A workflow SendMessage smoke"
                 and item["status"] == "partial"
                 for item in a2a["checks"]
             )
@@ -195,9 +195,9 @@ class ProtocolExportTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["kind"], "ProtocolReadinessReport")
         self.assertEqual(payload["scope"], "project")
-        self.assertFalse(payload["wire_compatible"])
+        self.assertTrue(payload["wire_compatible"])
         self.assertTrue(payload["readiness"]["internal_bridge_ready"])
-        self.assertFalse(payload["readiness"]["external_protocol_wire_compatible"])
+        self.assertTrue(payload["readiness"]["external_protocol_wire_compatible"])
         self.assertGreaterEqual(payload["summary"]["capability_count"], 1)
         self.assertEqual(
             payload["summary"]["portable_manifest_count"],
@@ -206,28 +206,14 @@ class ProtocolExportTests(unittest.TestCase):
         self.assertEqual(payload["summary"]["runtime_local_overlay_count"], 0)
         self.assertGreaterEqual(payload["summary"]["route_count"], 1)
         self.assertGreaterEqual(payload["parser_coverage"]["verified_output_count"], 1)
-        expected_unverified = {
-            "caw.schema.help",
-            "caw.status",
-            "feishu.doctor",
-            "feishu.schema.help",
-            "jimeng.list_task",
-            "jimeng.text2image.submit",
-            "jimeng.user_credit",
-            "obsidian-cli.local-rest.note.read",
-            "obsidian-cli.local-rest.server.status",
-            "obsidian-cli.official.help",
+        unverified_capabilities = {
+            item["capability_id"]
+            for item in payload["parser_coverage"]["unverified_capabilities"]
         }
-        self.assertEqual(
-            {
-                item["capability_id"]
-                for item in payload["parser_coverage"]["unverified_capabilities"]
-            },
-            expected_unverified,
-        )
+        self.assertTrue(unverified_capabilities <= {"jimeng.query_result"})
         self.assertEqual(
             payload["parser_coverage"]["unverified_output_count"],
-            len(expected_unverified),
+            len(unverified_capabilities),
         )
         self.assertEqual(payload["manifest_sources"]["runtime_local_overlay_capabilities"], [])
         self.assertTrue(
@@ -238,9 +224,15 @@ class ProtocolExportTests(unittest.TestCase):
         )
         self.assertEqual(set(payload["protocol_gaps"]), {"a2a", "acp", "mcp"})
         self.assertGreater(payload["protocol_gaps"]["mcp"]["missing_count"], 0)
-        self.assertTrue(
-            any("wire_compatible=false" in step for step in payload["next_steps"])
-        )
+        self.assertEqual(payload["wire_conformance"]["summary"]["wire_compatible_protocol_count"], 3)
+        if unverified_capabilities:
+            self.assertTrue(
+                any("parser fixtures" in step for step in payload["next_steps"])
+            )
+        else:
+            self.assertTrue(
+                any("protocol smoke" in step for step in payload["next_steps"])
+            )
 
     def test_protocol_readiness_separates_runtime_local_overlay_manifests(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -337,14 +329,14 @@ class ProtocolExportTests(unittest.TestCase):
         )
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["kind"], "ProtocolLifecycleSuiteReport")
-        self.assertFalse(payload["wire_compatible"])
+        self.assertTrue(payload["wire_compatible"])
         self.assertEqual(set(payload["protocols"]), {"a2a", "acp", "mcp"})
         self.assertEqual(payload["summary"]["failed_count"], 0)
         self.assertTrue(
             any(check["id"] == "mcp.ping" and check["ok"] for check in payload["protocols"]["mcp"]["checks"])
         )
         self.assertTrue(
-            any(check["id"] == "a2a.unknown_method_error" and check["ok"] for check in payload["protocols"]["a2a"]["checks"])
+            any(check["id"] == "a2a.get_task" and check["ok"] for check in payload["protocols"]["a2a"]["checks"])
         )
         self.assertTrue(
             any(check["id"] == "acp.session_cancel" and check["ok"] for check in payload["protocols"]["acp"]["checks"])
@@ -390,7 +382,21 @@ class ProtocolExportTests(unittest.TestCase):
         payload = json.loads(proc.stdout)
         self.assertEqual(payload["kind"], "ProtocolLifecycleSuiteReport")
         self.assertTrue(payload["ok"])
-        self.assertFalse(payload["wire_compatible"])
+        self.assertTrue(payload["wire_compatible"])
+
+    def test_cli_protocol_wire_conformance_outputs_report(self):
+        proc = subprocess.run(
+            [sys.executable, "-m", "cbn", "protocol", "wire-conformance", "all", "--capability-id", "git.version"],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["kind"], "ProtocolWireConformanceReport")
+        self.assertTrue(payload["wire_compatible"])
+        self.assertEqual(payload["summary"]["wire_compatible_protocol_count"], 3)
 
     def test_protocol_smoke_suite_runs_all_mvp_facades(self):
         payload = protocol_smoke_suite(
@@ -401,7 +407,7 @@ class ProtocolExportTests(unittest.TestCase):
         )
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["kind"], "ProtocolSmokeSuiteReport")
-        self.assertFalse(payload["wire_compatible"])
+        self.assertTrue(payload["wire_compatible"])
         self.assertEqual(payload["summary"]["check_count"], 6)
         self.assertEqual(payload["summary"]["failed_count"], 0)
         self.assertEqual(set(payload["summary"]["by_protocol"]), {"a2a", "acp", "mcp"})
@@ -468,7 +474,7 @@ class ProtocolExportTests(unittest.TestCase):
         )
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["kind"], "BridgeMessageProtocolLab")
-        self.assertFalse(payload["wire_compatible"])
+        self.assertTrue(payload["wire_compatible"])
         self.assertEqual(payload["summary"]["route_count"], 2)
         self.assertEqual(payload["summary"]["runtime_route_failed_count"], 0)
         self.assertEqual(payload["summary"]["recommended_next_action"], "run_protocol_smoke_suite")
@@ -619,7 +625,7 @@ class ProtocolExportTests(unittest.TestCase):
         )
         self.assertTrue(
             any(
-                item["requirement"] == "A2A workflow message/send smoke"
+                item["requirement"] == "A2A workflow SendMessage smoke"
                 and "artifact-id-routing.example.json" in item["evidence"]
                 for item in a2a["checks"]
             )
@@ -698,7 +704,7 @@ class ProtocolExportTests(unittest.TestCase):
         self.assertEqual(payload["kind"], "ProtocolReadinessReport")
         self.assertEqual(payload["scope"], "workflow")
         self.assertEqual(payload["summary"]["route_count"], 1)
-        self.assertFalse(payload["wire_compatible"])
+        self.assertTrue(payload["wire_compatible"])
 
     def test_cli_protocol_smoke_suite(self):
         proc = subprocess.run(
@@ -723,7 +729,7 @@ class ProtocolExportTests(unittest.TestCase):
         payload = json.loads(proc.stdout)
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["summary"]["check_count"], 6)
-        self.assertFalse(payload["wire_compatible"])
+        self.assertTrue(payload["wire_compatible"])
 
     def test_cli_protocol_acceptance_queue(self):
         proc = subprocess.run(

@@ -28,12 +28,39 @@ class PluginManagerTests(unittest.TestCase):
         self.assertTrue(payload["requires_confirmation"])
         self.assertEqual(payload["action"], "install")
         self.assertIn("cli-anything", payload["plugin_dir"])
+        self.assertIn("verification_commands", payload)
+        self.assertIn("python -m cbn plugin provenance cli-anything", payload["verification_commands"])
 
     def test_update_plan_uses_git_pull(self):
         plan = PluginManager().plan("cli-anything", action="update")
         commands = [command.as_dict() for command in plan.commands]
         self.assertTrue(any(command["argv"][0] == "git" for command in commands))
         self.assertTrue(any("pull" in command["argv"] for command in commands))
+        self.assertIn("python -m cbn plugin check-update cli-anything", plan.as_dict()["verification_commands"])
+
+    def test_verify_plan_previews_safe_read_only_checks(self):
+        result = PluginManager().verify_plan("cli-anything")
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["run"])
+        self.assertTrue(result["ready_to_run"])
+        self.assertEqual(result["kind"], "PluginPlanVerificationReport")
+        self.assertGreater(result["summary"]["check_count"], 0)
+        self.assertEqual(result["summary"]["unsafe_count"], 0)
+        self.assertTrue(all(check["status"] == "planned" for check in result["checks"]))
+        self.assertTrue(all(check["safe_to_run"] for check in result["checks"]))
+
+    def test_verify_plan_run_executes_safe_read_only_subset(self):
+        with patch(
+            "cbn_plugins.manager._run_command",
+            return_value={"exit_code": 0, "stdout": "{}", "stderr": ""},
+        ) as run_command:
+            result = PluginManager().verify_plan("cli-anything", run=True, timeout_seconds=30)
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["run"])
+        self.assertGreater(result["summary"]["executed_count"], 0)
+        self.assertTrue(all(check["status"] == "completed" for check in result["checks"]))
+        self.assertEqual(run_command.call_count, result["summary"]["check_count"])
 
     def test_cli_anything_preflight_reports_required_checks(self):
         result = PluginManager().preflight("cli-anything")
@@ -64,6 +91,8 @@ class PluginManagerTests(unittest.TestCase):
         self.assertTrue(result["validation"]["ok"])
         operation_ids = {operation["id"] for operation in result["operations"]}
         self.assertIn("install-gate", operation_ids)
+        self.assertIn("verify-plan", operation_ids)
+        self.assertIn("harness-verify-plan", operation_ids)
         self.assertIn("adaptation-queue", operation_ids)
         self.assertIn("repair-entrypoint", operation_ids)
         repair = next(operation for operation in result["operations"] if operation["id"] == "repair-entrypoint")
@@ -226,6 +255,21 @@ class PluginManagerTests(unittest.TestCase):
         self.assertEqual(payload["required_inputs"], ["harness", "module"])
         self.assertEqual(payload["missing_inputs"], [])
         self.assertTrue(payload["resolved_payload"]["confirmed"])
+
+    def test_cli_verify_plan_command_outputs_report(self):
+        proc = subprocess.run(
+            [sys.executable, "-m", "cbn", "plugin", "verify-plan", "cli-anything"],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["kind"], "PluginPlanVerificationReport")
+        self.assertFalse(payload["run"])
+        self.assertTrue(payload["ready_to_run"])
 
     def test_provenance_handles_not_downloaded_plugin(self):
         with tempfile.TemporaryDirectory() as tmp:

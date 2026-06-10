@@ -9,8 +9,8 @@ from cbn_protocol.a2a_http import agent_card, handle_a2a_jsonrpc_request, smoke_
 class A2AHttpTests(unittest.TestCase):
     def test_agent_card_contains_supported_interface_and_skills(self):
         card = agent_card("http://127.0.0.1:8787")
-        self.assertEqual(card["protocolVersion"], "0.3")
-        self.assertEqual(card["supportedInterfaces"][0]["protocolBinding"], "JSONRPC")
+        self.assertEqual(card["protocolVersion"], "1.0.0")
+        self.assertEqual(card["supportedInterfaces"][0]["protocolBinding"], "HTTP+JSON")
         self.assertEqual(card["supportedInterfaces"][0]["url"], "http://127.0.0.1:8787/a2a")
         self.assertFalse(card["capabilities"]["streaming"])
         skill_ids = {skill["id"] for skill in card["skills"]}
@@ -22,11 +22,11 @@ class A2AHttpTests(unittest.TestCase):
             {
                 "jsonrpc": "2.0",
                 "id": "test-1",
-                "method": "message/send",
+                "method": "SendMessage",
                 "params": {
                     "message": {
                         "messageId": "message-1",
-                        "role": "user",
+                        "role": "ROLE_USER",
                         "parts": [{"text": "version"}],
                     },
                     "metadata": {"cbn": {"capability_id": "git.version"}},
@@ -35,10 +35,16 @@ class A2AHttpTests(unittest.TestCase):
         )
         task = response["result"]
         self.assertEqual(response["jsonrpc"], "2.0")
-        self.assertEqual(task["status"]["state"], "completed")
+        self.assertEqual(task["status"]["state"], "TASK_STATE_COMPLETED")
+        self.assertEqual(task["status"]["message"]["role"], "ROLE_AGENT")
         self.assertEqual(task["metadata"]["cbn"]["capability_id"], "git.version")
         self.assertEqual(task["metadata"]["cbn"]["exit_code"], 0)
         self.assertTrue(task["artifacts"])
+
+        fetched = handle_a2a_jsonrpc_request(
+            {"jsonrpc": "2.0", "id": "get-1", "method": "GetTask", "params": {"id": task["id"]}}
+        )
+        self.assertEqual(fetched["result"]["id"], task["id"])
 
     def test_message_send_can_run_workflow(self):
         response = handle_a2a_jsonrpc_request(
@@ -58,7 +64,7 @@ class A2AHttpTests(unittest.TestCase):
         )
         task = response["result"]
         self.assertEqual(response["jsonrpc"], "2.0")
-        self.assertEqual(task["status"]["state"], "completed")
+        self.assertEqual(task["status"]["state"], "TASK_STATE_COMPLETED")
         self.assertEqual(task["metadata"]["cbn"]["workflow_id"], "example.git-check")
         self.assertEqual(task["metadata"]["cbn"]["workflow_path"], "workflows/example.json")
         self.assertEqual(task["metadata"]["cbn"]["status"], "completed")
@@ -68,7 +74,7 @@ class A2AHttpTests(unittest.TestCase):
     def test_smoke_runs_real_daemon_routes(self):
         payload = smoke_a2a_http("git.version")
         self.assertTrue(payload["ok"], payload)
-        self.assertEqual(payload["response"]["result"]["status"]["state"], "completed")
+        self.assertEqual(payload["response"]["result"]["status"]["state"], "TASK_STATE_COMPLETED")
 
     def test_cli_a2a_smoke(self):
         proc = subprocess.run(

@@ -3024,11 +3024,36 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(plan.action, "harness-install-gimp")
         self.assertEqual(plan.commands[0].argv, ("cli-hub", "install", "gimp"))
         self.assertIn("evaluate-harness", plan.as_dict()["notes"][0])
+        self.assertIn(
+            "python -m cbn plugin harness cli-anything status gimp --from-market",
+            plan.as_dict()["verification_commands"],
+        )
+        self.assertIn(
+            "python -m cbn plugin verify-harness cli-anything gimp --no-workflows",
+            plan.as_dict()["verification_commands"],
+        )
 
         uninstall = CliAnythingHub().harness_plan("uninstall", "gimp")
         self.assertEqual(uninstall.action, "harness-uninstall-gimp")
         self.assertEqual(uninstall.commands[0].argv, ("cli-hub", "uninstall", "gimp"))
         self.assertEqual(uninstall.as_dict()["notes"], [])
+        self.assertEqual(
+            uninstall.as_dict()["verification_commands"],
+            ["python -m cbn plugin harness cli-anything status gimp --from-market"],
+        )
+
+    def test_verify_harness_plan_previews_safe_read_only_checks(self):
+        result = CliAnythingHub().verify_harness_plan("install", "mermaid")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["kind"], "CliAnythingHarnessPlanVerificationReport")
+        self.assertEqual(result["harness_name"], "mermaid")
+        self.assertEqual(result["capability_id"], "cli-anything.mermaid.launch")
+        self.assertFalse(result["run"])
+        self.assertTrue(result["ready_to_run"])
+        self.assertEqual(result["summary"]["check_count"], 3)
+        self.assertEqual(result["summary"]["unsafe_count"], 0)
+        self.assertTrue(all(check["safe_to_run"] for check in result["checks"]))
+        self.assertTrue(all(check["status"] == "planned" for check in result["checks"]))
 
     def test_cli_harness_plan_does_not_execute_without_yes(self):
         proc = subprocess.run(
@@ -3052,6 +3077,30 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(payload["plugin_id"], "cli-anything")
         self.assertEqual(payload["commands"][0]["argv"], ["cli-hub", "install", "gimp"])
         self.assertTrue(payload["notes"])
+
+    def test_cli_verify_harness_plan_outputs_report(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "plugin",
+                "verify-harness-plan",
+                "cli-anything",
+                "install",
+                "mermaid",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["kind"], "CliAnythingHarnessPlanVerificationReport")
+        self.assertEqual(payload["harness_name"], "mermaid")
+        self.assertTrue(payload["ready_to_run"])
 
     def test_cli_harness_uninstall_plan_does_not_execute_without_yes(self):
         proc = subprocess.run(

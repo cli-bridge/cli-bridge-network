@@ -127,6 +127,17 @@ input {
   padding: 6px 8px;
 }
 
+textarea {
+  width: 100%;
+  min-height: 96px;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 8px;
+  resize: vertical;
+}
+
 .token-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 64px 64px;
@@ -328,6 +339,58 @@ input {
   overflow-wrap: anywhere;
 }
 
+.agent-dialog {
+  width: min(1120px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  border: 1px solid var(--line);
+  padding: 14px;
+  background: var(--panel);
+  color: var(--ink);
+}
+
+.agent-dialog::backdrop {
+  background: rgb(17 24 32 / 0.42);
+}
+
+.dialog-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.agent-dialog-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.agent-dialog label {
+  display: grid;
+  gap: 4px;
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.setup-tool-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  align-items: end;
+}
+
+.setup-tool-actions label {
+  min-width: 0;
+}
+
 pre {
   margin: 8px 0 0;
   min-height: 80px;
@@ -350,5 +413,9 @@ pre {
 
   .sidecar {
     position: static;
+  }
+
+  .agent-dialog-grid {
+    grid-template-columns: 1fr;
   }
 }
