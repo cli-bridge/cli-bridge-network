@@ -1,0 +1,13 @@
+{
+  "name": "cli-bridge-network-monorepo",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Monorepo foundation for CLI Bridge Network packages.",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "check:python": "python -m unittest discover tests-unit",
+    "check:cbn": "python -m cbn health"
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "ToolManifest",
+  "metadata": {
+    "id": "feishu.doctor",
+    "title": "Feishu/Lark CLI Doctor",
+    "labels": {
+      "adapter": "direct-cli",
+      "profile": "feishu",
+      "vendor": "larksuite",
+      "category": "saas"
+    },
+    "annotations": {
+      "cbn.adapter.profile": "feishu",
+      "cbn.adapter.action": "doctor",
+      "cbn.auth_gate": "requires configured Feishu/Lark credentials for live connectivity checks",
+      "cbn.output_contract": "direct-cli.typed extracts config/auth/connectivity stage statuses"
+    }
+  },
+  "spec": {
+    "transport": {
+      "kind": "stdio",
+      "command": "python",
+      "argsTemplate": [
+        "-m",
+        "cbn_tools.external_cli",
+        "feishu",
+        "doctor"
+      ],
+      "cwdPolicy": "workspace",
+      "timeoutSeconds": 60
+    },
+    "policy": {
+      "risk": "external-network",
+      "requiresConfirmation": true,
+      "network": "requires-confirmation"
+    },
+    "output": {
+      "parserRef": "direct-cli.typed",
+      "verified": true
+    }
+  }
+}

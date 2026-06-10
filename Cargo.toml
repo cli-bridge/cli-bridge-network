@@ -1,0 +1,24 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/cbn-core",
+  "crates/cbn-cli",
+  "crates/cbn-daemon",
+  "crates/cbn-mcp",
+  "crates/cbn-discovery",
+  "crates/cbn-executor",
+  "crates/cbn-policy",
+  "crates/cbn-artifact",
+  "crates/cbn-workflow",
+  "crates/cbn-adapter-cli",
+  "crates/cbn-adapter-cli-anything",
+  "crates/cbn-adapter-mcp",
+  "crates/cbn-adapter-a2a",
+  "crates/cbn-adapter-acp",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/cli-bridge/cli-bridge-network"

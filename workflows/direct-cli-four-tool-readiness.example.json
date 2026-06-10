@@ -1,0 +1,31 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "Workflow",
+  "metadata": {
+    "id": "example.direct-cli-four-tool-readiness",
+    "title": "Direct CLI Four Tool Readiness"
+  },
+  "spec": {
+    "tasks": [
+      {
+        "id": "obsidian-official-help",
+        "uses": "obsidian-cli.official.help"
+      },
+      {
+        "id": "feishu-help",
+        "uses": "feishu.help",
+        "needs": ["obsidian-official-help"]
+      },
+      {
+        "id": "jimeng-help",
+        "uses": "jimeng.help",
+        "needs": ["feishu-help"]
+      },
+      {
+        "id": "caw-help",
+        "uses": "caw.help",
+        "needs": ["jimeng-help"]
+      }
+    ]
+  }
+}

@@ -1,0 +1,106 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "ParserFixture",
+  "metadata": {
+    "id": "cli-anything.raw.launch",
+    "title": "CLI-Anything raw launch output",
+    "parserRef": "cli-anything.raw",
+    "verifiedCapabilities": [
+      "cli-anything.mermaid.launch",
+      "cli-anything.macrocli.launch",
+      "cli-anything.3mf.launch",
+      "cli-anything.py4csr.launch"
+    ]
+  },
+  "cases": [
+    {
+      "id": "mermaid-launch-help",
+      "stdout": "cli-anything-mermaid 1.0.0\nUsage: cli-anything-mermaid [OPTIONS] COMMAND [ARGS]...\nCommands:\n  diagram\n",
+      "stderr": "",
+      "expect": {
+        "ok": true,
+        "data": {
+          "stdout": {
+            "contains": [
+              "cli-anything-mermaid",
+              "Usage:"
+            ]
+          },
+          "stderr": {
+            "equals": ""
+          }
+        }
+      }
+    },
+    {
+      "id": "macrocli-launch-help",
+      "stdout": "cli-anything-macrocli 1.0.0\nUsage: cli-anything-macrocli [OPTIONS] COMMAND [ARGS]...\nCommands:\n  backends\n",
+      "stderr": "",
+      "expect": {
+        "ok": true,
+        "data": {
+          "stdout": {
+            "contains": [
+              "cli-anything-macrocli",
+              "backends"
+            ]
+          },
+          "stderr": {
+            "equals": ""
+          }
+        }
+      }
+    },
+    {
+      "id": "3mf-launch-help",
+      "stdout": "Usage: cli-anything-3mf [OPTIONS] COMMAND [ARGS]...\n\n  3MF CLI - Mesh geometry editor for 3D printing files.\n\n  Run without a subcommand to enter interactive REPL mode.\n\nOptions:\n  --json  Output as JSON\n  --help  Show this message and exit.\n\nCommands:\n  compare  Compare two 3MF files.\n  info     Show mesh info (vertices, faces, bounds, watertight, volume).\n  inspect  Detect and list all cylindrical holes.\n  repair   Fix mesh issues (degenerate faces, duplicate vertices, normals).\n  resize   Resize cylindrical holes to specified diameter.\n",
+      "stderr": "",
+      "expect": {
+        "ok": true,
+        "data": {
+          "stdout": {
+            "contains": [
+              "cli-anything-3mf",
+              "Commands:",
+              "inspect"
+            ]
+          },
+          "stderr": {
+            "equals": ""
+          }
+        }
+      }
+    },
+    {
+      "id": "py4csr-rtf-formatter-smoke",
+      "stdout": "RTF table created successfully!\nRTF content length: 3262 characters\n",
+      "stderr": "<frozen runpy>:128: RuntimeWarning: 'py4csr.tables.rtf_formatter' found in sys.modules after import of package 'py4csr.tables', but prior to execution of 'py4csr.tables.rtf_formatter'; this may result in unpredictable behaviour\n",
+      "expect": {
+        "ok": true,
+        "data": {
+          "stdout": {
+            "contains": [
+              "RTF table created successfully!",
+              "RTF content length:"
+            ]
+          },
+          "stderr": {
+            "contains": [
+              "RuntimeWarning",
+              "py4csr.tables.rtf_formatter"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "windows-no-console-buffer-fatal",
+      "stdout": "cli-anything-mermaid 1.0.0\n",
+      "stderr": "Traceback (most recent call last):\n  File \"cli_anything_mermaid\", line 1, in <module>\nprompt_toolkit.output.win32.NoConsoleScreenBufferError: No Windows console found.\n",
+      "expect": {
+        "ok": false,
+        "errorContains": "NoConsoleScreenBufferError"
+      }
+    }
+  ]
+}

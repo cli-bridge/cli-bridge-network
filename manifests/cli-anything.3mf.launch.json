@@ -1,0 +1,49 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "ToolManifest",
+  "metadata": {
+    "id": "cli-anything.3mf.launch",
+    "title": "CLI-Anything 3MF",
+    "labels": {
+      "plugin": "cli-anything",
+      "harness": "3mf",
+      "category": "graphics",
+      "source": "harness"
+    },
+    "annotations": {
+      "cli-anything.display_name": "3MF",
+      "cli-anything.version": "1.0.0",
+      "cli-anything.description": "Mesh geometry editor for 3D printing files — detect and resize cylindrical holes, repair meshes, compare 3MF files",
+      "cli-anything.requires": "Python 3.10+; numpy, scipy, trimesh",
+      "cli-anything.homepage": "https://3mf.io",
+      "cli-anything.install_cmd": "pip install git+https://github.com/HKUDS/CLI-Anything.git#subdirectory=3MF/agent-harness",
+      "cli-anything.entry_point": "cli-anything-3mf",
+      "cli-anything.skill_md": "3MF/agent-harness/cli_anything/threemf/skills/SKILL.md",
+      "cli-anything.contributors": "[{\"name\": \"Gituheart\", \"url\": \"https://github.com/Gituheart\"}]",
+      "cbn.parser_fixture": "parser_fixtures/cli-anything.raw.launch.json",
+      "cli-anything.policy_inference": "[\"runtime appears to generate, edit, render, convert, or export artifacts\"]"
+    }
+  },
+  "spec": {
+    "transport": {
+      "kind": "pty",
+      "command": "cli-hub",
+      "argsTemplate": [
+        "launch",
+        "3mf",
+        "--"
+      ],
+      "cwdPolicy": "workspace",
+      "timeoutSeconds": 600
+    },
+    "policy": {
+      "risk": "write-workspace",
+      "requiresConfirmation": false,
+      "network": "deny"
+    },
+    "output": {
+      "parserRef": "cli-anything.raw",
+      "verified": true
+    }
+  }
+}

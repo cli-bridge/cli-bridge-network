@@ -1,0 +1,43 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "ToolManifest",
+  "metadata": {
+    "id": "feishu.schema.help",
+    "title": "Feishu/Lark CLI Schema Help",
+    "labels": {
+      "adapter": "direct-cli",
+      "profile": "feishu",
+      "vendor": "larksuite",
+      "category": "saas"
+    },
+    "annotations": {
+      "cbn.adapter.profile": "feishu",
+      "cbn.adapter.action": "schema-help",
+      "cbn.discovery.source": "lark-cli --help advertised schema command",
+      "cbn.output_contract": "future parser should promote selected service.resource.method schemas"
+    }
+  },
+  "spec": {
+    "transport": {
+      "kind": "stdio",
+      "command": "python",
+      "argsTemplate": [
+        "-m",
+        "cbn_tools.external_cli",
+        "feishu",
+        "schema-help"
+      ],
+      "cwdPolicy": "workspace",
+      "timeoutSeconds": 20
+    },
+    "policy": {
+      "risk": "read",
+      "requiresConfirmation": false,
+      "network": "deny"
+    },
+    "output": {
+      "parserRef": "direct-cli.typed",
+      "verified": true
+    }
+  }
+}

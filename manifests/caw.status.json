@@ -1,0 +1,44 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "ToolManifest",
+  "metadata": {
+    "id": "caw.status",
+    "title": "Cobo Agentic Wallet Status",
+    "labels": {
+      "adapter": "direct-cli",
+      "profile": "caw",
+      "vendor": "cobo",
+      "category": "wallet"
+    },
+    "annotations": {
+      "cbn.adapter.profile": "caw",
+      "cbn.adapter.action": "status",
+      "cbn.auth_gate": "requires Cobo Agentic Wallet pairing or API key",
+      "cbn.output_contract": "direct-cli.typed extracts lifecycle, pairing, wallet health, pending approvals, and setup errors",
+      "cbn.risk_reason": "status can contact wallet service and reveal account state"
+    }
+  },
+  "spec": {
+    "transport": {
+      "kind": "stdio",
+      "command": "python",
+      "argsTemplate": [
+        "-m",
+        "cbn_tools.external_cli",
+        "caw",
+        "status"
+      ],
+      "cwdPolicy": "workspace",
+      "timeoutSeconds": 60
+    },
+    "policy": {
+      "risk": "external-network",
+      "requiresConfirmation": true,
+      "network": "requires-confirmation"
+    },
+    "output": {
+      "parserRef": "direct-cli.typed",
+      "verified": true
+    }
+  }
+}

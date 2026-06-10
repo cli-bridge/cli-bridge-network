@@ -1,0 +1,21 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "Workflow",
+  "metadata": {
+    "id": "example.git-check",
+    "title": "Example Git Check"
+  },
+  "spec": {
+    "tasks": [
+      {
+        "id": "git-version",
+        "uses": "git.version"
+      },
+      {
+        "id": "git-status",
+        "uses": "git.status",
+        "needs": ["git-version"]
+      }
+    ]
+  }
+}

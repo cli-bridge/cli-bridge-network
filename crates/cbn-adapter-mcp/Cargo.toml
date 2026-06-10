@@ -1,0 +1,14 @@
+[package]
+name = "cbn-adapter-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+cbn-core = { path = "../cbn-core" }
+cbn-mcp = { path = "../cbn-mcp" }
+

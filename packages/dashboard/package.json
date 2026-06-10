@@ -1,0 +1,18 @@
+{
+  "name": "@cli-bridge/dashboard",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Dashboard package for CLI Bridge Network.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./static": "./src/index.html"
+  },
+  "scripts": {
+    "check": "node scripts/check-dashboard.mjs",
+    "serve": "node scripts/serve-static.mjs"
+  },
+  "dependencies": {
+    "@cli-bridge/core": "0.1.0"
+  }
+}

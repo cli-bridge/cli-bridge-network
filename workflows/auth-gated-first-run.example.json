@@ -1,0 +1,42 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "Workflow",
+  "metadata": {
+    "id": "example.auth-gated-first-run",
+    "title": "Auth Gated First Run"
+  },
+  "spec": {
+    "tasks": [
+      {
+        "id": "draft-image",
+        "uses": "jimeng.text2image.submit",
+        "args": [
+          "--prompt=workflow-ready product concept image"
+        ]
+      },
+      {
+        "id": "query-image-result",
+        "uses": "jimeng.query_result",
+        "needs": [
+          "draft-image"
+        ],
+        "argsFrom": [
+          {
+            "task": "draft-image",
+            "selector": "payload.data.submit_id"
+          }
+        ]
+      },
+      {
+        "id": "read-obsidian-note",
+        "uses": "obsidian-cli.local-rest.note.read",
+        "needs": [
+          "query-image-result"
+        ],
+        "args": [
+          "Projects/demo.md"
+        ]
+      }
+    ]
+  }
+}

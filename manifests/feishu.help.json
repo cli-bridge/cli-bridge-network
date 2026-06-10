@@ -1,0 +1,44 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "ToolManifest",
+  "metadata": {
+    "id": "feishu.help",
+    "title": "Feishu/Lark CLI Help",
+    "labels": {
+      "adapter": "direct-cli",
+      "profile": "feishu",
+      "vendor": "larksuite",
+      "category": "saas"
+    },
+    "annotations": {
+      "cbn.adapter.profile": "feishu",
+      "cbn.adapter.action": "help",
+      "cbn.parser_fixture": "parser_fixtures/direct-cli.raw.probes.json",
+      "cbn.thread.evidence": "lark-cli --help listed api/auth/base/docs/event/im/schema in thread 019eaddd-d0d3-7122-b23c-51ad06004b34",
+      "cbn.auth_gate": "none for help probe"
+    }
+  },
+  "spec": {
+    "transport": {
+      "kind": "stdio",
+      "command": "python",
+      "argsTemplate": [
+        "-m",
+        "cbn_tools.external_cli",
+        "feishu",
+        "help"
+      ],
+      "cwdPolicy": "workspace",
+      "timeoutSeconds": 20
+    },
+    "policy": {
+      "risk": "read",
+      "requiresConfirmation": false,
+      "network": "deny"
+    },
+    "output": {
+      "parserRef": "direct-cli.typed",
+      "verified": true
+    }
+  }
+}

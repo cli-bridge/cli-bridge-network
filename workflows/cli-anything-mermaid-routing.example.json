@@ -1,0 +1,29 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "Workflow",
+  "metadata": {
+    "id": "example.cli-anything-mermaid-routing",
+    "title": "CLI-Anything Mermaid BridgeMessage Routing"
+  },
+  "spec": {
+    "tasks": [
+      {
+        "id": "source-diagram",
+        "uses": "cbn.sample.mermaid-source"
+      },
+      {
+        "id": "mermaid-consumer",
+        "uses": "cli-anything.mermaid.set-diagram",
+        "needs": [
+          "source-diagram"
+        ],
+        "argsFrom": [
+          {
+            "task": "source-diagram",
+            "selector": "payload.data.stdout"
+          }
+        ]
+      }
+    ]
+  }
+}

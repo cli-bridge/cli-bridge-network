@@ -1,0 +1,105 @@
+import json
+import subprocess
+import sys
+import unittest
+
+from cbn_core.manifest import validate_manifest_path
+from cbn_runtime.context import build_runtime
+from cbn_tools.external_cli import list_actions, require_action
+
+
+DIRECT_CLI_CAPABILITIES = {
+    "feishu.version",
+    "feishu.help",
+    "feishu.doctor",
+    "feishu.schema.help",
+    "obsidian-cli.official.help",
+    "obsidian-cli.local-rest.help",
+    "obsidian-cli.local-rest.server.status",
+    "obsidian-cli.local-rest.note.read",
+    "jimeng.version",
+    "jimeng.help",
+    "jimeng.user_credit",
+    "jimeng.list_task",
+    "jimeng.query_result",
+    "jimeng.text2image.submit",
+    "caw.version",
+    "caw.help",
+    "caw.status",
+    "caw.schema.help",
+}
+
+
+class DirectCliProfileTests(unittest.TestCase):
+    def test_external_cli_profile_actions_are_listed_without_execution(self):
+        actions = {(item["profile"], item["action"]) for item in list_actions()}
+        self.assertIn(("feishu", "version"), actions)
+        self.assertIn(("obsidian-cli", "local-rest-help"), actions)
+        self.assertIn(("jimeng", "text2image-submit"), actions)
+        self.assertIn(("caw", "status"), actions)
+
+    def test_external_cli_print_plan_outputs_resolved_argv(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn_tools.external_cli",
+                "--print-plan",
+                "feishu",
+                "version",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["profile"], "feishu")
+        self.assertEqual(payload["action"], "version")
+        self.assertIn("--version", payload["argv"])
+
+    def test_external_cli_action_accepts_runtime_extra_args(self):
+        base_argv = require_action("jimeng", "text2image-submit").argv()
+        self.assertIn("text2image", base_argv)
+
+    def test_runtime_loads_direct_cli_manifests(self):
+        runtime = build_runtime()
+        loaded = {manifest.capability_id for manifest in runtime.registry.list()}
+        self.assertTrue(DIRECT_CLI_CAPABILITIES.issubset(loaded))
+        self.assertEqual(runtime.registry.require("feishu.doctor").output.parser_ref, "direct-cli.typed")
+        self.assertTrue(runtime.registry.require("jimeng.user_credit").output.verified)
+
+    def test_direct_cli_manifest_policies_keep_live_calls_gated(self):
+        runtime = build_runtime()
+        self.assertEqual(runtime.registry.require("feishu.version").policy.risk, "read")
+        self.assertFalse(runtime.registry.require("feishu.version").policy.requires_confirmation)
+
+        for capability_id in ("feishu.doctor", "jimeng.text2image.submit", "caw.status"):
+            manifest = runtime.registry.require(capability_id)
+            self.assertEqual(manifest.policy.risk, "external-network")
+            self.assertTrue(manifest.policy.requires_confirmation)
+            self.assertEqual(manifest.policy.network, "requires-confirmation")
+
+        obsidian_note = runtime.registry.require("obsidian-cli.local-rest.note.read")
+        self.assertEqual(obsidian_note.policy.network, "localhost")
+        self.assertTrue(obsidian_note.policy.requires_confirmation)
+
+    def test_manifest_validation_accepts_direct_cli_profiles(self):
+        report = validate_manifest_path(build_runtime().registry.require("feishu.version").source_path.parent)
+        self.assertTrue(report["valid"])
+        self.assertEqual(report["error_count"], 0)
+
+    def test_direct_cli_typed_parser_classifies_setup_errors(self):
+        parsed = build_runtime().parser_registry.parse(
+            "direct-cli.typed",
+            "",
+            "未检测到有效登录态，请先执行 dreamina login\n",
+        )
+        self.assertEqual(parsed["data"]["profile"], "jimeng")
+        self.assertTrue(parsed["data"]["setup_required"])
+        self.assertEqual(parsed["data"]["error_type"], "auth_required")
+
+
+if __name__ == "__main__":
+    unittest.main()

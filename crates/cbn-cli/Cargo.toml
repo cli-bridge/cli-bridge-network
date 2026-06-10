@@ -1,0 +1,14 @@
+[package]
+name = "cbn-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "cbn"
+path = "src/main.rs"
+
+[dependencies]
+cbn-core = { path = "../cbn-core" }
+

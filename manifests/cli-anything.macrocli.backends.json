@@ -1,0 +1,42 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "ToolManifest",
+  "metadata": {
+    "id": "cli-anything.macrocli.backends",
+    "title": "CLI-Anything MacroCLI Backends",
+    "labels": {
+      "plugin": "cli-anything",
+      "harness": "macrocli",
+      "category": "automation",
+      "source": "verified-fixture"
+    },
+    "annotations": {
+      "cli-anything.display_name": "MacroCLI",
+      "cbn.description": "Verified read-only MacroCLI backend status command for second harness adaptation coverage."
+    }
+  },
+  "spec": {
+    "transport": {
+      "kind": "stdio",
+      "command": "cli-hub",
+      "argsTemplate": [
+        "launch",
+        "macrocli",
+        "--",
+        "--json",
+        "backends"
+      ],
+      "cwdPolicy": "workspace",
+      "timeoutSeconds": 600
+    },
+    "policy": {
+      "risk": "read",
+      "requiresConfirmation": false,
+      "network": "deny"
+    },
+    "output": {
+      "parserRef": "cli-anything.macrocli.backends",
+      "verified": true
+    }
+  }
+}
