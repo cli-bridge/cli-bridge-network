@@ -22,6 +22,7 @@ import type {
   DockState,
   EvidenceSummary,
   KillerDemoReport,
+  ProtocolSummary,
   StudioConfig,
   WorkflowInspect,
   WorkflowTask,
@@ -58,6 +59,7 @@ const agentCards = computed(() => (Array.isArray(agentBundle.value?.cards) ? age
 const agentTasks = computed(() => (Array.isArray(agentBundle.value?.tasks) ? agentBundle.value.tasks : []));
 const agentHandoffs = computed(() => agentBundle.value?.source_coordination_plan?.handoffs ?? []);
 const evidenceSummary = computed<EvidenceSummary>(() => summarizeEvidence(demoReport.value, dock));
+const protocolSummary = computed<ProtocolSummary>(() => summarizeProtocols(demoReport.value));
 
 async function call(label: string, fn: () => Promise<unknown>): Promise<unknown | null> {
   loading.value = label;
@@ -159,6 +161,26 @@ function summarizeEvidence(report: KillerDemoReport | null, evidenceDock: DockSt
   };
 }
 
+function summarizeProtocols(report: KillerDemoReport | null): ProtocolSummary {
+  const exports = report?.protocol_exports?.exports ?? {};
+  const smokeByProtocol = report?.protocol_smoke_suite?.summary?.by_protocol ?? {};
+  return {
+    mcpWorkflowTools: Array.isArray(exports.mcp?.workflowTools) ? exports.mcp.workflowTools.length : 0,
+    a2aSkills: Array.isArray(exports.a2a?.agentCard?.skills) ? exports.a2a.agentCard.skills.length : 0,
+    acpWorkflows: Array.isArray(exports.acp?.workflows) ? exports.acp.workflows.length : 0,
+    mcpSmoke: smokeText(smokeByProtocol.mcp),
+    a2aSmoke: smokeText(smokeByProtocol.a2a),
+    acpSmoke: smokeText(smokeByProtocol.acp),
+    smokeChecks: numberValue(report?.protocol_smoke_suite?.summary?.check_count) ?? 0,
+    smokeFailures: numberValue(report?.protocol_smoke_suite?.summary?.failed_count) ?? 0,
+    wireCompatible: {
+      mcp: wireText(exports.mcp?.wire_compatible),
+      a2a: wireText(exports.a2a?.wire_compatible),
+      acp: wireText(exports.acp?.wire_compatible),
+    },
+  };
+}
+
 function numberValue(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
@@ -171,6 +193,17 @@ function statusText(value: unknown): string {
   if (value === true) return "pass";
   if (value === false) return "fail";
   if (value === null) return "not run";
+  return "unknown";
+}
+
+function smokeText(value: { passed?: number; failed?: number } | undefined): string {
+  if (!value) return "not run";
+  return `${value.passed ?? 0}/${(value.passed ?? 0) + (value.failed ?? 0)}`;
+}
+
+function wireText(value: unknown): string {
+  if (value === true) return "compatible";
+  if (value === false) return "partial";
   return "unknown";
 }
 
@@ -338,6 +371,32 @@ onMounted(async () => {
         <div class="artifact-strip">
           <code v-for="artifactId in evidenceSummary.artifactIds" :key="artifactId">{{ artifactId }}</code>
           <span v-if="!evidenceSummary.artifactIds.length">No demo artifacts yet</span>
+        </div>
+        <div class="section-title"><Network :size="15" /> Protocol Export</div>
+        <div class="protocol-grid">
+          <div>
+            <strong>MCP</strong>
+            <span>{{ protocolSummary.mcpWorkflowTools }} workflow tools</span>
+            <code>smoke {{ protocolSummary.mcpSmoke }}</code>
+            <small>wire {{ protocolSummary.wireCompatible.mcp }}</small>
+          </div>
+          <div>
+            <strong>A2A</strong>
+            <span>{{ protocolSummary.a2aSkills }} skills</span>
+            <code>smoke {{ protocolSummary.a2aSmoke }}</code>
+            <small>wire {{ protocolSummary.wireCompatible.a2a }}</small>
+          </div>
+          <div>
+            <strong>ACP</strong>
+            <span>{{ protocolSummary.acpWorkflows }} workflows</span>
+            <code>smoke {{ protocolSummary.acpSmoke }}</code>
+            <small>wire {{ protocolSummary.wireCompatible.acp }}</small>
+          </div>
+        </div>
+        <div class="evidence-row">
+          <span :class="['pill-inline', protocolSummary.smokeFailures === 0 && protocolSummary.smokeChecks > 0 ? 'ok' : 'blocked']">
+            protocol smoke {{ protocolSummary.smokeChecks - protocolSummary.smokeFailures }}/{{ protocolSummary.smokeChecks }}
+          </span>
         </div>
         <div class="stage-list">
           <div v-for="stage in demoReport?.stages || []" :key="stage.id" class="stage-row">

@@ -51,6 +51,8 @@ export interface KillerDemoReport {
   stages?: DemoStage[];
   workflow_path?: string;
   evidence?: DemoEvidence;
+  protocol_exports?: ProtocolExports;
+  protocol_smoke_suite?: ProtocolSmokeSuite;
   next_commands?: string[];
 }
 
@@ -87,6 +89,51 @@ export interface EvidenceSummary {
   smokeOk: string;
   bridgeLabOk: string;
   artifactIds: string[];
+}
+
+export interface ProtocolExports {
+  exports?: {
+    mcp?: {
+      wire_compatible?: boolean;
+      workflowTools?: unknown[];
+    };
+    a2a?: {
+      wire_compatible?: boolean;
+      agentCard?: {
+        skills?: unknown[];
+      };
+    };
+    acp?: {
+      wire_compatible?: boolean;
+      workflows?: unknown[];
+    };
+  };
+}
+
+export interface ProtocolSmokeSuite {
+  ok?: boolean;
+  summary?: {
+    failed_count?: number;
+    passed_count?: number;
+    check_count?: number;
+    by_protocol?: Record<string, { passed?: number; failed?: number }>;
+  };
+}
+
+export interface ProtocolSummary {
+  mcpWorkflowTools: number;
+  a2aSkills: number;
+  acpWorkflows: number;
+  mcpSmoke: string;
+  a2aSmoke: string;
+  acpSmoke: string;
+  smokeChecks: number;
+  smokeFailures: number;
+  wireCompatible: {
+    mcp: string;
+    a2a: string;
+    acp: string;
+  };
 }
 
 export interface AgentCardRecord {

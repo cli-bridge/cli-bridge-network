@@ -299,6 +299,49 @@ canvas {
   white-space: nowrap;
 }
 
+.protocol-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin-bottom: 8px;
+}
+
+.protocol-grid div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  border: 1px solid #d1dacd;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 7px;
+}
+
+.protocol-grid strong,
+.protocol-grid span,
+.protocol-grid code,
+.protocol-grid small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.protocol-grid strong {
+  color: #243026;
+  font-size: 12px;
+}
+
+.protocol-grid span,
+.protocol-grid small {
+  color: #647160;
+  font-size: 11px;
+}
+
+.protocol-grid code {
+  color: #4c5949;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+}
+
 .agent-summary {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;

@@ -158,6 +158,9 @@ Killer Demo slice 已新增可运行证据束：
 - Workflow Studio 新增 Killer Demo Evidence Summary，将 stage 进度、workflow
   status、route count、artifact count、event/audit count、smoke 和 bridge lab 状态
   汇总成可扫读的验收面板，同时保留原始 demo summary 供排错。
+- Workflow Studio 新增 Protocol Export 摘要，将 demo report 内的 MCP workflow
+  tools、A2A skills、ACP workflows、各协议 smoke pass/fail 和 wire facade 状态
+  提升到可扫读区块，用于说明同一条 CLI-CLI workflow 可被外部协议 facade 接入。
 - 当前 demo 链路以 `workflows/cli-anything-macrocli-mermaid-routing.example.json`
   为默认入口，展示 macrocli -> parser payload -> Mermaid transform -> mermaid
   consumer 的 CLI-CLI BridgeMessage 通信链。
