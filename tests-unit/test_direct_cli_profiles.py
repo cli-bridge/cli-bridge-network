@@ -21,6 +21,7 @@ DIRECT_CLI_CAPABILITIES = {
     "jimeng.help",
     "jimeng.user_credit",
     "jimeng.list_task",
+    "jimeng.query_result",
     "jimeng.text2image.submit",
     "caw.version",
     "caw.help",

@@ -11,7 +11,7 @@ from cbn_adapter_agent.compiler import (
     build_adapter_draft_batch,
     write_adapter_draft,
 )
-from cbn_adapter_agent.llm_validation import validate_with_glm
+from cbn_adapter_agent.llm_validation import _bounded_payload, validate_with_glm
 from cbn_adapter_agent.workflow_init import build_workflow_initialization_plan
 
 
@@ -26,8 +26,11 @@ class AdapterAgentHarnessTests(unittest.TestCase):
         candidates = {item["capability_id"]: item for item in draft["capability_candidates"]}
         self.assertIn("jimeng.version", candidates)
         self.assertIn("jimeng.text2image.submit", candidates)
+        self.assertIn("jimeng.query_result", candidates)
         self.assertEqual(candidates["jimeng.version"]["policy"]["risk"], "read")
         self.assertEqual(candidates["jimeng.text2image.submit"]["policy"]["risk"], "external-network")
+        setup_ids = {guide["setup_id"] for guide in draft["setup_guides"]}
+        self.assertIn("jimeng-oauth-login", setup_ids)
 
     def test_adapter_agent_draft_keeps_unverified_outputs_partial(self):
         draft = build_adapter_draft("caw")
@@ -111,6 +114,28 @@ class AdapterAgentHarnessTests(unittest.TestCase):
         self.assertIn("OBSIDIAN_API_KEY", missing_names)
         self.assertIn("--yes", plan["continuation"]["command"])
 
+    def test_workflow_initialization_marks_jimeng_query_result_submit_id(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workflow_path = Path(tmp) / "query-workflow.json"
+            workflow_path.write_text(
+                json.dumps(
+                    {
+                        "apiVersion": "bridge.dev/v1alpha1",
+                        "kind": "Workflow",
+                        "metadata": {"id": "query.workflow"},
+                        "spec": {"tasks": [{"id": "query", "uses": "jimeng.query_result"}]},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            plan = build_workflow_initialization_plan(workflow_path)
+
+        query_task = plan["tasks"][0]
+        missing_names = {item["name"] for item in query_task["missing_runtime_inputs"]}
+        self.assertIn("submit_id", missing_names)
+        self.assertEqual(query_task["status"], "requires_setup_and_inputs")
+
     def test_adapter_agent_workflow_init_cli_outputs_guidance(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow_path = Path(tmp) / "auth-workflow.json"
@@ -142,6 +167,17 @@ class AdapterAgentHarnessTests(unittest.TestCase):
             result = validate_with_glm({"kind": "sample"})
         self.assertTrue(result["skipped"])
         self.assertFalse(result["ok"])
+
+    def test_glm_validation_bounds_adapter_batch_without_dropping_drafts(self):
+        batch = build_adapter_draft_batch()
+        batch["padding"] = "x" * 20000
+        bounded = _bounded_payload(batch)
+
+        self.assertEqual(bounded["truncation_strategy"], "adapter-draft-summary")
+        self.assertEqual(len(bounded["drafts"]), 4)
+        first = bounded["drafts"][0]
+        self.assertIn("capability_candidates", first)
+        self.assertTrue(first["capability_candidates"])
 
 
 if __name__ == "__main__":

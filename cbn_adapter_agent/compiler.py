@@ -16,6 +16,7 @@ from typing import Any
 from cbn.paths import resolve_project_paths
 from cbn_core.manifest import CapabilityManifest, ManifestRegistry, validate_manifest_path
 from cbn_parsers.fixtures import run_parser_fixtures
+from cbn_adapter_agent.auth_setup import build_auth_setup_guide
 from cbn_tools.external_cli import require_action
 
 
@@ -62,7 +63,7 @@ BUILT_IN_PROFILES: dict[str, AdapterProfile] = {
         profile_id="jimeng",
         title="Jimeng/Dreamina CLI",
         source="WSL Dreamina binary installed from official script",
-        actions=("version", "help", "user-credit", "list-task", "text2image-submit"),
+        actions=("version", "help", "user-credit", "list-task", "query-result", "text2image-submit"),
         notes=(
             "version/help are read-only probes.",
             "generation and account commands require OAuth and can consume credits.",
@@ -96,6 +97,7 @@ def build_adapter_draft(profile_id: str, root: Path | None = None) -> dict[str, 
         for candidate in candidates
     ]
     risk_summary = _risk_summary(candidate_records)
+    setup_guides = _setup_guides(candidates, root=paths.root)
     stages = _stages(
         profile=profile,
         probe_plans=probe_plans,
@@ -118,6 +120,7 @@ def build_adapter_draft(profile_id: str, root: Path | None = None) -> dict[str, 
         "probe_plans": probe_plans,
         "capability_candidates": candidate_records,
         "risk_summary": risk_summary,
+        "setup_guides": setup_guides,
         "parser_fixture_coverage": fixture_coverage,
         "manifest_validation": {
             "valid": manifest_validation["valid"],
@@ -230,6 +233,17 @@ def _candidate_record(
         "auth_gate": manifest.annotations.get("cbn.auth_gate"),
         "workflow_hint": manifest.annotations.get("cbn.workflow_hint"),
     }
+
+
+def _setup_guides(candidates: list[CapabilityManifest], *, root: Path) -> list[dict[str, object]]:
+    by_id: dict[str, dict[str, object]] = {}
+    for manifest in candidates:
+        guide = build_auth_setup_guide(manifest, root=root)
+        if guide is None:
+            continue
+        payload = guide.as_dict()
+        by_id.setdefault(str(payload["setup_id"]), payload)
+    return list(by_id.values())
 
 
 def _fixture_coverage(fixture_dir: Path) -> dict[str, Any]:

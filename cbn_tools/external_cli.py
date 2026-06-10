@@ -136,6 +136,7 @@ def _actions() -> tuple[ExternalCliAction, ...]:
         ),
         ExternalCliAction("jimeng", "user-credit", "Jimeng/Dreamina user credit", lambda root: _dreamina(root) + ["user_credit"]),
         ExternalCliAction("jimeng", "list-task", "Jimeng/Dreamina task list", lambda root: _dreamina(root) + ["list_task"]),
+        ExternalCliAction("jimeng", "query-result", "Jimeng/Dreamina query result", lambda root: _dreamina(root) + ["query_result"]),
         ExternalCliAction("jimeng", "text2image-submit", "Jimeng/Dreamina text2image submit", lambda root: _dreamina(root) + ["text2image"]),
         ExternalCliAction("caw", "version", "Cobo Agentic Wallet version", lambda root: _caw(root) + ["--version"]),
         ExternalCliAction("caw", "help", "Cobo Agentic Wallet help", lambda root: _caw(root) + ["--help"]),

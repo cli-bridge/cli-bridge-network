@@ -96,6 +96,16 @@ def runtime_input_requirements(manifest: CapabilityManifest) -> list[dict[str, o
                 "persist_in_repo": False,
             },
         ]
+    if capability_id == "jimeng.query_result":
+        return [
+            {
+                "name": "submit_id",
+                "kind": "task-id",
+                "required": True,
+                "source": "workflow args or argsFrom from jimeng.text2image.submit",
+                "example_arg": "--submit_id=550e8400-e29b-41d4-a716-446655440000",
+            }
+        ]
     return []
 
 

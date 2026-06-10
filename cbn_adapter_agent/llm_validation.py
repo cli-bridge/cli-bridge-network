@@ -123,6 +123,21 @@ def _bounded_payload(payload: dict[str, Any]) -> dict[str, Any]:
     text = json.dumps(payload, ensure_ascii=False)
     if len(text) <= 12000:
         return payload
+    if payload.get("kind") == "AdapterAgentDraftBatch":
+        return {
+            "kind": payload.get("kind"),
+            "apiVersion": payload.get("apiVersion"),
+            "summary": payload.get("summary"),
+            "drafts": [_compact_adapter_draft(draft) for draft in payload.get("drafts", [])],
+            "truncated": True,
+            "truncation_strategy": "adapter-draft-summary",
+        }
+    if payload.get("kind") == "AdapterAgentDraft":
+        return {
+            **_compact_adapter_draft(payload),
+            "truncated": True,
+            "truncation_strategy": "adapter-draft-summary",
+        }
     return {
         "kind": payload.get("kind"),
         "apiVersion": payload.get("apiVersion"),
@@ -132,4 +147,43 @@ def _bounded_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "tasks": payload.get("tasks", [])[:20],
         "setup_guides": payload.get("setup_guides", [])[:10],
         "truncated": True,
+        "truncation_strategy": "workflow-init-summary",
+    }
+
+
+def _compact_adapter_draft(draft: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "kind": draft.get("kind"),
+        "apiVersion": draft.get("apiVersion"),
+        "ok": draft.get("ok"),
+        "profile": draft.get("profile"),
+        "agent_policy": draft.get("agent_policy"),
+        "risk_summary": draft.get("risk_summary"),
+        "setup_guides": draft.get("setup_guides"),
+        "manifest_validation": draft.get("manifest_validation"),
+        "stages": [
+            {
+                "id": stage.get("id"),
+                "status": stage.get("status"),
+                "evidence": stage.get("evidence"),
+            }
+            for stage in draft.get("stages", [])
+        ],
+        "capability_candidates": [
+            {
+                "capability_id": candidate.get("capability_id"),
+                "adapter_action": candidate.get("adapter_action"),
+                "policy": candidate.get("policy"),
+                "output": candidate.get("output"),
+                "auth_gate": candidate.get("auth_gate"),
+                "workflow_hint": candidate.get("workflow_hint"),
+            }
+            for candidate in draft.get("capability_candidates", [])
+        ],
+        "adapter_lock_preview": {
+            "profile_id": (draft.get("adapter_lock_preview") or {}).get("profile_id"),
+            "capability_count": (draft.get("adapter_lock_preview") or {}).get("capability_count"),
+            "digest": (draft.get("adapter_lock_preview") or {}).get("digest"),
+        },
+        "next_actions": draft.get("next_actions"),
     }
