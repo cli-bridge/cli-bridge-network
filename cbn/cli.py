@@ -14,6 +14,7 @@ from cbn_demo.killer import killer_demo_report
 from cbn_core.command_importer import command_import_report, parse_key_values
 from cbn_core.manifest import validate_manifest_path
 from cbn_core.mcp_importer import load_mcp_tool_descriptor, mcp_import_report
+from cbn_core.skill_importer import skill_import_report
 from cbn_execution.graph import WorkflowGraph
 from cbn_parsers.fixtures import run_parser_fixtures
 from cbn_parsers.fixture_recorder import record_parser_fixture
@@ -385,6 +386,25 @@ def main(argv: list[str] | None = None) -> int:
                 server_id=args.server_id,
                 adapter_command=args.adapter_command,
                 adapter_args=tuple(args.adapter_arg),
+                capability_id=args.capability_id,
+                title=args.title,
+                parser_ref=args.parser_ref,
+                verified=args.verified,
+                risk=args.risk,
+                requires_confirmation=args.requires_confirmation,
+                network=args.network,
+                timeout_seconds=args.timeout_seconds,
+                write=args.write,
+                output_path=Path(args.output) if args.output else None,
+                known_parser_refs=_known_parser_refs(),
+            )
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0 if payload["ok"] else 11
+        if args.import_command == "skill":
+            payload = skill_import_report(
+                Path(args.skill_file),
+                command=args.executable,
+                args_template=tuple(args.arg),
                 capability_id=args.capability_id,
                 title=args.title,
                 parser_ref=args.parser_ref,

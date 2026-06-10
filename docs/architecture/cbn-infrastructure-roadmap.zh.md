@@ -170,7 +170,9 @@ Killer Demo slice 已新增可运行证据束：
   payload，生成现有 runtime 可执行的 `ToolManifest` 草案；当前通过用户提供的
   stdio adapter command 调用外部 MCP tool，并在 annotations 中保留 MCP schema
   与 provenance。
-- 继续把 `cbn import skill` 做成低门槛接入入口。
+- `cbn import skill` 已有最小入口：读取 UTF-8 JSON/Markdown skill descriptor，
+  结合用户提供的本地 runner command 生成现有 runtime 可执行的 `ToolManifest`
+  草案，并在 annotations 中保留 skill id、source path、summary 和 version。
 - 将 `cbn_plugins/cli_anything.py` 先 facade 后拆为 market、probe、
   manifest_factory、repair、verification、onboarding。
 - 把 `cbn_adapter_agent` 抽象为可参与 workflow 的 Agent node，承载自然语言
@@ -189,6 +191,7 @@ Killer Demo slice 已新增可运行证据束：
 - `python -m unittest tests-unit.test_cli_imports`
 - `python -m unittest tests-unit.test_parser_fixture_recorder`
 - `python -m unittest tests-unit.test_mcp_importer`
+- `python -m unittest tests-unit.test_skill_importer`
 - `python -m unittest tests-unit.test_daemon_api.DaemonApiTests.test_killer_demo_route_returns_demo_report`
 - `python -m unittest tests-unit.test_parser_protocol tests-unit.test_workflow_runner`
 - `python -m unittest tests-unit.test_protocol_exports`

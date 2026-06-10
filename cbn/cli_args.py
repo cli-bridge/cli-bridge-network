@@ -377,6 +377,36 @@ def build_parser() -> argparse.ArgumentParser:
     import_mcp.add_argument("--timeout-seconds", type=int, default=60)
     import_mcp.add_argument("--output", help="Output manifest path. Defaults to runtime/manifests/<id>.json.")
     import_mcp.add_argument("--write", action="store_true", help="Write the manifest after validation.")
+    import_skill = import_subcommands.add_parser(
+        "skill",
+        help="Generate a ToolManifest draft from a local skill descriptor.",
+    )
+    import_skill.add_argument("skill_file", help="UTF-8 JSON or Markdown skill descriptor.")
+    import_skill.add_argument("--command", dest="executable", required=True, help="Local skill runner command.")
+    import_skill.add_argument(
+        "--arg",
+        action="append",
+        default=[],
+        help="Argument to include in argsTemplate. Supports the runner's own conventions; repeatable.",
+    )
+    import_skill.add_argument("--capability-id", help="Override generated capability id.")
+    import_skill.add_argument("--title", help="Override manifest title.")
+    import_skill.add_argument("--parser-ref", default="raw.text")
+    import_skill.add_argument("--verified", action="store_true")
+    import_skill.add_argument(
+        "--risk",
+        choices=["read", "write-workspace", "privileged", "external-network"],
+        default="read",
+    )
+    import_skill.add_argument("--requires-confirmation", action="store_true")
+    import_skill.add_argument(
+        "--network",
+        choices=["deny", "localhost", "requires-confirmation", "allow"],
+        default="deny",
+    )
+    import_skill.add_argument("--timeout-seconds", type=int, default=60)
+    import_skill.add_argument("--output", help="Output manifest path. Defaults to runtime/manifests/<id>.json.")
+    import_skill.add_argument("--write", action="store_true", help="Write the manifest after validation.")
 
     mcp_parser = subcommands.add_parser("mcp", help="Run or test the MCP stdio facade.")
     mcp_subcommands = mcp_parser.add_subparsers(dest="mcp_command")
