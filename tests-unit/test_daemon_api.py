@@ -154,6 +154,13 @@ class DaemonApiTests(unittest.TestCase):
             self.assertEqual(payload["required_headers"]["X-CBN-Session"], "header-token")
             self.assertEqual(payload["entrypoints"]["run_workflow"]["url"], f"{base_url}/workflows/run")
             self.assertEqual(payload["entrypoints"]["plan_agent_request"]["method"], "POST")
+            self.assertEqual(payload["requests"][0]["id"], "health")
+            self.assertEqual(payload["requests"][0]["headers"]["X-CBN-Session"], "header-token")
+            self.assertEqual(payload["requests"][4]["id"], "run_workflow")
+            self.assertEqual(
+                payload["requests"][4]["json"]["path"],
+                "workflows/cli-anything-macrocli-mermaid-routing.example.json",
+            )
             self.assertIn("sessionToken=header-token", payload["entrypoints"]["open_studio"])
             self.assertNotIn("contracts", payload)
 

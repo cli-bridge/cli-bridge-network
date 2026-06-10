@@ -333,29 +333,59 @@ def _consumer_quickstart(
         "dry_run": raw_run_payload.get("dry_run", True),
         "confirmed": raw_run_payload.get("confirmed", False),
     }
+    plan_url = _absolute_url(clean_base_url, "/adapter-agent/workflow-request-plan")
+    run_url = run_http.get("url") or _absolute_url(clean_base_url, "/workflows/run")
+    entrypoints = {
+        "open_studio": studio_link.get("url"),
+        "health": _absolute_url(clean_base_url, "/health"),
+        "inspect_workflow": _absolute_url(clean_base_url, f"/workflows?{workflow_query}"),
+        "inspect_bridge_contract": _absolute_url(clean_base_url, f"/messages/contract?{contract_query}"),
+        "plan_agent_request": {
+            "method": "POST",
+            "url": plan_url,
+            "json": plan_payload,
+        },
+        "run_workflow": {
+            "method": run_http.get("method", "POST"),
+            "url": run_url,
+            "json": run_payload,
+        },
+        "events": _absolute_url(clean_base_url, "/events"),
+        "audit": _absolute_url(clean_base_url, "/audit"),
+        "artifacts": _absolute_url(clean_base_url, "/artifacts"),
+    }
     return {
         "kind": "NetworkConnectQuickstart",
         "status": "ready" if clean_base_url else "ready_without_daemon_url",
         "required_headers": headers,
-        "entrypoints": {
-            "open_studio": studio_link.get("url"),
-            "health": _absolute_url(clean_base_url, "/health"),
-            "inspect_workflow": _absolute_url(clean_base_url, f"/workflows?{workflow_query}"),
-            "inspect_bridge_contract": _absolute_url(clean_base_url, f"/messages/contract?{contract_query}"),
-            "plan_agent_request": {
-                "method": "POST",
-                "url": _absolute_url(clean_base_url, "/adapter-agent/workflow-request-plan"),
-                "json": plan_payload,
-            },
-            "run_workflow": {
-                "method": run_http.get("method", "POST"),
-                "url": run_http.get("url") or _absolute_url(clean_base_url, "/workflows/run"),
-                "json": run_payload,
-            },
-            "events": _absolute_url(clean_base_url, "/events"),
-            "audit": _absolute_url(clean_base_url, "/audit"),
-            "artifacts": _absolute_url(clean_base_url, "/artifacts"),
-        },
+        "entrypoints": entrypoints,
+        "requests": [
+            _quickstart_request("health", "GET", entrypoints["health"], headers=headers),
+            _quickstart_request("inspect_workflow", "GET", entrypoints["inspect_workflow"], headers=headers),
+            _quickstart_request(
+                "inspect_bridge_contract",
+                "GET",
+                entrypoints["inspect_bridge_contract"],
+                headers=headers,
+            ),
+            _quickstart_request(
+                "plan_agent_request",
+                "POST",
+                plan_url,
+                headers=headers,
+                json_payload=plan_payload,
+            ),
+            _quickstart_request(
+                "run_workflow",
+                run_http.get("method", "POST"),
+                run_url,
+                headers=headers,
+                json_payload=run_payload,
+            ),
+            _quickstart_request("events", "GET", entrypoints["events"], headers=headers),
+            _quickstart_request("audit", "GET", entrypoints["audit"], headers=headers),
+            _quickstart_request("artifacts", "GET", entrypoints["artifacts"], headers=headers),
+        ],
         "sequence": [
             "open_studio",
             "inspect_workflow",
@@ -365,6 +395,25 @@ def _consumer_quickstart(
             "read_events_audit_artifacts",
         ],
     }
+
+
+def _quickstart_request(
+    request_id: str,
+    method: str,
+    url: str,
+    *,
+    headers: dict[str, str],
+    json_payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    request: dict[str, Any] = {
+        "id": request_id,
+        "method": method,
+        "url": url,
+        "headers": headers,
+    }
+    if json_payload is not None:
+        request["json"] = json_payload
+    return request
 
 
 def _absolute_url(base_url: str | None, path: str) -> str:

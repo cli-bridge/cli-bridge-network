@@ -270,6 +270,13 @@ export interface NetworkConnectPackage {
       audit?: string;
       artifacts?: string;
     };
+    requests?: Array<{
+      id?: string;
+      method?: string;
+      url?: string;
+      headers?: Record<string, string>;
+      json?: Record<string, unknown>;
+    }>;
     sequence?: string[];
   };
   next_commands?: string[];
@@ -292,6 +299,7 @@ export interface ConnectSummary {
   authHeaderStatus: string;
   runEndpoint: string;
   planEndpoint: string;
+  quickstartRequestCount: number;
 }
 
 export interface AgentWorkflowRequestPlan {

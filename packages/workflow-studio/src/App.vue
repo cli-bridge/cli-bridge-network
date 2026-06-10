@@ -252,6 +252,7 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
     authHeaderStatus: headers["X-CBN-Session"] ? "X-CBN-Session ready" : "no session header",
     runEndpoint: stringValue(quickstart.entrypoints?.run_workflow?.url) ?? "",
     planEndpoint: stringValue(quickstart.entrypoints?.plan_agent_request?.url) ?? "",
+    quickstartRequestCount: Array.isArray(quickstart.requests) ? quickstart.requests.length : 0,
   };
 }
 
@@ -482,6 +483,7 @@ onMounted(async () => {
           <span class="pill-inline">{{ connectSummary.studioMode }}</span>
           <span class="pill-inline">{{ connectSummary.quickstartStatus }}</span>
           <span class="pill-inline">{{ connectSummary.authHeaderStatus }}</span>
+          <span class="pill-inline">{{ connectSummary.quickstartRequestCount }} requests</span>
         </div>
         <div class="studio-link-row">
           <button title="Open preconfigured Workflow Studio demo link" :disabled="!connectSummary.studioLink" @click="openStudioLink">

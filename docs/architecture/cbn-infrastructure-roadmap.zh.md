@@ -266,6 +266,10 @@ Killer Demo slice 已新增可运行证据束：
   该路由复用 connect package 生成逻辑，并支持从 `X-CBN-Session` header 推导
   required headers 与预配置 Studio link，便于外部程序按标准鉴权 header 直接读取
   first-call payload。
+- `consumer_quickstart` 已新增 `requests[]` 可执行请求计划：按 health、inspect
+  workflow、inspect Bridge contract、plan agent request、run workflow、
+  events/audit/artifacts 顺序展开 method、url、headers 和 POST json，外部程序无需
+  再自行从 entrypoints 拼装首批 HTTP 调用。
 - CLI 已新增 `python -m cbn network connect-package` 只读入口，输出同一份
   `NetworkConnectPackage`。外部程序无需先接 daemon/WebUI，也能一次性读取
   AgentCliCard/RunReceipt contract、daemon endpoint catalog、protocol facade 和
