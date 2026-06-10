@@ -185,8 +185,10 @@ Killer Demo slice 已新增可运行证据束：
   推断、install command 解析、entrypoint 诊断、wrapper 模板和 repair policy
   合并；拆出 `cbn_plugins.cli_anything_parts.verification`，集中管理 parser
   contract report、protocol verification summary、verification blockers、
-  verification stages、parser fixture gate 和 smoke-suite command/status。旧
-  `cbn_plugins.cli_anything` import path 继续兼容。后续仍需继续拆 onboarding。
+  verification stages、parser fixture gate 和 smoke-suite command/status；拆出
+  `cbn_plugins.cli_anything_parts.onboarding`，集中管理 onboarding 的 probe
+  failure report、summary、stage results 和 next commands。旧
+  `cbn_plugins.cli_anything` import path 继续兼容。
 - 把 `cbn_adapter_agent` 抽象为可参与 workflow 的 Agent node，承载自然语言
   调度、初次设置引导和 BridgeMessage 收发。
 
@@ -203,6 +205,7 @@ Killer Demo slice 已新增可运行证据束：
 - `python -m unittest tests-unit.test_cli_anything_probe`
 - `python -m unittest tests-unit.test_cli_anything_repair`
 - `python -m unittest tests-unit.test_cli_anything_verification`
+- `python -m unittest tests-unit.test_cli_anything_onboarding`
 - `python -m unittest tests-unit.test_killer_demo`
 - `python -m unittest tests-unit.test_command_importer`
 - `python -m unittest tests-unit.test_cli_imports`

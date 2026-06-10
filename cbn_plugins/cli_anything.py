@@ -55,6 +55,12 @@ from cbn_plugins.cli_anything_parts.market import (
     market_record_identity as _market_parts_market_record_identity,
     market_records_from_result as _market_parts_market_records_from_result,
 )
+from cbn_plugins.cli_anything_parts.onboarding import (
+    onboarding_next_commands as _onboarding_parts_next_commands,
+    onboarding_stage_results as _onboarding_parts_stage_results,
+    onboarding_summary as _onboarding_parts_summary,
+    probe_blocked_onboarding_report as _onboarding_parts_probe_blocked_report,
+)
 from cbn_plugins.cli_anything_parts.probe import (
     declared_requires as _probe_parts_declared_requires,
     dependency_probes as _probe_parts_dependency_probes,
@@ -929,32 +935,18 @@ class CliAnythingHub:
             from_market=from_market,
         )
         if not probe["ok"]:
-            return {
-                "ok": False,
-                "plugin_id": PLUGIN_ID,
-                "kind": "CliAnythingHarnessOnboarding",
-                "harness_name": harness_name,
-                "from_market": from_market,
-                "write": write,
-                "confirmed": confirmed,
-                "install": install,
-                "allow_blocked": allow_blocked,
-                "include_workflows": include_workflows,
-                "run_smoke_suite": run_smoke_suite,
-                "error": probe["error"],
-                "stage_results": [
-                    {
-                        "id": "probe",
-                        "status": "blocked",
-                        "blockers": [probe["error"]],
-                    }
-                ],
-                "reports": {"probe": probe},
-                "next_commands": [
-                    f"python -m cbn plugin market cli-anything info {harness_name}",
-                    f"python -m cbn plugin onboard-harness cli-anything {harness_name} --offline",
-                ],
-            }
+            return _onboarding_parts_probe_blocked_report(
+                plugin_id=PLUGIN_ID,
+                harness_name=harness_name,
+                from_market=from_market,
+                write=write,
+                confirmed=confirmed,
+                install=install,
+                allow_blocked=allow_blocked,
+                include_workflows=include_workflows,
+                run_smoke_suite=run_smoke_suite,
+                probe=probe,
+            )
 
         evaluation = probe["evaluation"]
         capability_id = evaluation["capability_id"]
@@ -1031,82 +1023,28 @@ class CliAnythingHub:
         manifest_already_imported = bool(effective_evaluation["gates"].get("manifest_imported"))
         harness_already_installed = bool(effective_evaluation["gates"].get("installed"))
         smoke_suite = verification.get("protocol_smoke_suite", {}) if verification.get("ok") else {}
-        stage_results = [
-            {
-                "id": "evaluate",
-                "status": "completed",
-                "blockers": evaluation["blockers"],
-                "recommended_next_action": evaluation["recommended_next_action"],
-            },
-            {
-                "id": "probe_dependencies",
-                "status": "completed" if probe["ready"] else "blocked",
-                "blockers": [
-                    item["id"]
-                    for item in probe["probes"]
-                    if item.get("severity") == "blocker" and item.get("status") != "available"
-                ],
-            },
-            {
-                "id": "adapt_manifest",
-                "status": (
-                    "completed"
-                    if manifest_written or manifest_already_imported
-                    else "ready"
-                    if ready_for_manifest_write
-                    else "blocked"
-                ),
-                "write_requested": write,
-                "write_confirmed": confirmed,
-                "written": adaptation.get("written"),
-                "blockers": (
-                    ["manifest write blocked by harness evaluation"]
-                    if write_blocked_by_gate
-                    else [] if ready_for_manifest_write else evaluation["blockers"]
-                ),
-            },
-            {
-                "id": "install_harness",
-                "status": (
-                    "completed"
-                    if harness_already_installed or install_execution_status == "completed"
-                    else "blocked"
-                    if install_execution_status == "blocked"
-                    else "ready"
-                    if ready_for_install
-                    else "blocked"
-                ),
-                "execution": install_execution_status,
-                "install_requested": install,
-                "allow_blocked": allow_blocked,
-                "blockers": install_execution_blockers or install_gate.get("blockers", []),
-            },
-            {
-                "id": "verify_runtime",
-                "status": "completed" if ready_for_runtime_verification else "blocked",
-                "blockers": verification_blockers,
-            },
-            {
-                "id": "smoke_protocol_facades",
-                "status": (
-                    "completed"
-                    if smoke_suite.get("run") and smoke_suite.get("ok")
-                    else "blocked"
-                    if smoke_suite.get("run")
-                    else "pending"
-                ),
-                "run": bool(smoke_suite.get("run")),
-                "blockers": [] if smoke_suite.get("ok") or not smoke_suite.get("run") else ["protocol smoke suite failed"],
-            },
-        ]
-        next_commands = [
-            f"python -m cbn plugin onboard-harness cli-anything {harness_name} --from-market",
-            f"python -m cbn plugin onboard-harness cli-anything {harness_name} --from-market --write --yes",
-            f"python -m cbn plugin harness cli-anything install {harness_name} --yes",
-            "python -m cbn registry validate manifests",
-            f"python -m cbn plugin verify-harness cli-anything {harness_name} --smoke-suite --smoke-extra-arg=--help --no-workflows",
-            f"python -m cbn call {capability_id} --dry-run",
-        ]
+        stage_results = _onboarding_parts_stage_results(
+            evaluation=evaluation,
+            probe=probe,
+            adaptation=adaptation,
+            install_gate=install_gate,
+            verification_blockers=verification_blockers,
+            ready_for_manifest_write=ready_for_manifest_write,
+            ready_for_install=ready_for_install,
+            ready_for_runtime_verification=ready_for_runtime_verification,
+            manifest_written=manifest_written,
+            manifest_already_imported=manifest_already_imported,
+            harness_already_installed=harness_already_installed,
+            write=write,
+            confirmed=confirmed,
+            install=install,
+            allow_blocked=allow_blocked,
+            write_blocked_by_gate=write_blocked_by_gate,
+            install_execution_status=install_execution_status,
+            install_execution_blockers=install_execution_blockers,
+            smoke_suite=smoke_suite,
+        )
+        next_commands = _onboarding_parts_next_commands(harness_name, capability_id)
         return {
             "ok": True,
             "plugin_id": PLUGIN_ID,
@@ -1120,29 +1058,18 @@ class CliAnythingHub:
             "include_workflows": include_workflows,
             "run_smoke_suite": run_smoke_suite,
             "capability_id": capability_id,
-            "summary": {
-                "ready_for_manifest_write": ready_for_manifest_write,
-                "manifest_written": manifest_written,
-                "manifest_write_status": (
-                    "blocked"
-                    if write_blocked_by_gate
-                    else "completed"
-                    if manifest_written
-                    else "requires_confirmation"
-                    if write_requested_without_confirmation
-                    else "ready"
-                    if ready_for_manifest_write
-                    else "blocked"
-                ),
-                "write_requires_confirmation": write_requested_without_confirmation,
-                "ready_for_install": ready_for_install,
-                "install_requires_confirmation": install_requested_without_confirmation,
-                "install_executed": install_execution_status == "completed",
-                "install_execution_status": install_execution_status,
-                "ready_for_runtime_verification": ready_for_runtime_verification,
-                "smoke_suite_ready": bool(smoke_suite.get("ok")) if smoke_suite.get("run") else None,
-                "recommended_next_action": evaluation["recommended_next_action"],
-            },
+            "summary": _onboarding_parts_summary(
+                ready_for_manifest_write=ready_for_manifest_write,
+                manifest_written=manifest_written,
+                write_blocked_by_gate=write_blocked_by_gate,
+                write_requested_without_confirmation=write_requested_without_confirmation,
+                ready_for_install=ready_for_install,
+                install_requested_without_confirmation=install_requested_without_confirmation,
+                install_execution_status=install_execution_status,
+                ready_for_runtime_verification=ready_for_runtime_verification,
+                smoke_suite=smoke_suite,
+                recommended_next_action=evaluation["recommended_next_action"],
+            ),
             "stage_results": stage_results,
             "reports": {
                 "evaluation": evaluation,
