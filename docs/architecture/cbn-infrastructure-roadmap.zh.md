@@ -196,6 +196,10 @@ Killer Demo slice 已新增可运行证据束：
   `cbn_core.message.BridgeMessage` 作为内部总线输出，先不改变
   `cbn_adapter_agent` 现有行为，后续再逐步让 adapter agent 映射到这些稳定
   node records。
+- `cbn_adapter_agent.nodes.build_adapter_agent_node_bundle` 已把现有
+  Adapter Agent coordination roles 映射为 `cbn_agent` cards、harnesses、tasks、
+  workflow nodes 和可校验的 AgentBridgeMessage；它是只读 bundle，不改变现有
+  adapter agent CLI/API 行为。
 
 ## 验证策略
 
@@ -212,6 +216,7 @@ Killer Demo slice 已新增可运行证据束：
 - `python -m unittest tests-unit.test_cli_anything_verification`
 - `python -m unittest tests-unit.test_cli_anything_onboarding`
 - `python -m unittest tests-unit.test_cbn_agent_models`
+- `python -m unittest tests-unit.test_adapter_agent_harness.AdapterAgentHarnessTests.test_adapter_agent_node_bundle_maps_roles_to_agent_contracts`
 - `python -m unittest tests-unit.test_killer_demo`
 - `python -m unittest tests-unit.test_command_importer`
 - `python -m unittest tests-unit.test_cli_imports`

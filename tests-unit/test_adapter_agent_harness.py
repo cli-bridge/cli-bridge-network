@@ -15,12 +15,14 @@ from cbn_adapter_agent.compiler import (
 from cbn_adapter_agent.coordinator import build_multi_agent_coordination_plan
 from cbn_adapter_agent.llm_validation import _bounded_payload, stream_with_glm, validate_with_glm
 from cbn_adapter_agent.manifest_bootstrap import build_manifest_bootstrap_plan
+from cbn_adapter_agent.nodes import build_adapter_agent_node_bundle
 from cbn_adapter_agent.orchestrator import build_orchestration_turn
 from cbn_adapter_agent.tool_call_plan import build_agent_tool_call_plan, write_agent_loop_checkpoint
 from cbn_adapter_agent.tool_use import run_setup_tool, store_session_secret
 from cbn_adapter_agent.workflow_init import build_workflow_initialization_plan
 from cbn_adapter_agent.workflow_setup import build_workflow_setup_plan
 from cbn_events.bus import EventBus
+from cbn_core.message import validate_bridge_message
 
 
 class AdapterAgentHarnessTests(unittest.TestCase):
@@ -242,6 +244,34 @@ class AdapterAgentHarnessTests(unittest.TestCase):
         self.assertIn(("workflow-setup-agent", "orchestration-coordinator-agent"), handoff_pairs)
         self.assertEqual(plan["tool_call_plan_summary"]["tool_call_count"], 9)
         self.assertEqual(plan["long_running_loop"]["kind"], "AdapterAgentLoopPlan")
+
+    def test_adapter_agent_node_bundle_maps_roles_to_agent_contracts(self):
+        bundle = build_adapter_agent_node_bundle(
+            message="initialize",
+            workflow_path="workflows/auth-gated-first-run.example.json",
+        )
+
+        self.assertEqual(bundle["kind"], "AdapterAgentNodeBundle")
+        self.assertEqual(bundle["session"]["kind"], "AgentSession")
+        cards = {card["metadata"]["id"]: card for card in bundle["cards"]}
+        self.assertIn("manifest-bootstrap-agent", cards)
+        self.assertIn("workflow-setup-agent", cards)
+        self.assertEqual(cards["manifest-bootstrap-agent"]["kind"], "AgentCard")
+        self.assertEqual(
+            cards["manifest-bootstrap-agent"]["spec"]["transport"]["runtime"],
+            "cbn_adapter_agent",
+        )
+        harness_ids = {harness["metadata"]["id"] for harness in bundle["harnesses"]}
+        self.assertIn("manifest-bootstrap-agent.harness", harness_ids)
+        task_ids = [task["metadata"]["id"] for task in bundle["tasks"]]
+        self.assertEqual(task_ids[0], "01-manifest-bootstrap-agent")
+        workflow_node = bundle["workflow_nodes"][0]
+        self.assertEqual(workflow_node["agent"], "manifest-bootstrap-agent")
+        self.assertEqual(workflow_node["uses"], "ManifestBootstrapPlan")
+        validation = validate_bridge_message(bundle["bridge_message"])
+        self.assertTrue(validation["valid"], validation["errors"])
+        self.assertEqual(validation["producer"], "agent:orchestration-coordinator-agent")
+        self.assertEqual(validation["channel"], "agent.adapter.node_bundle")
 
     def test_adapter_agent_coordination_plan_cli_outputs_json(self):
         proc = subprocess.run(
