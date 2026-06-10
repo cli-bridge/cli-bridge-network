@@ -125,8 +125,11 @@ class DaemonApiTests(unittest.TestCase):
             self.assertEqual(payload["protocols"]["a2a"]["skill_count"], 1)
             self.assertEqual(payload["protocols"]["acp"]["workflow_count"], 1)
             self.assertEqual(payload["agent_node_bundle"]["bridge_message_channel"], "agent.adapter.node_bundle")
+            self.assertEqual(payload["agent_workflow_request"]["bridge_message_channel"], "agent.workflow.request.plan")
+            self.assertEqual(payload["agent_workflow_request"]["reusable_harness"]["kind"], "NaturalLanguageWorkflowHarness")
             endpoint_paths = {endpoint["path"].split("?", 1)[0] for endpoint in payload["daemon_endpoints"]}
             self.assertIn("/workflows/run", endpoint_paths)
+            self.assertIn("/adapter-agent/workflow-request-plan", endpoint_paths)
             self.assertIn("/demo/killer", endpoint_paths)
 
     def test_adapter_agent_orchestrate_route_returns_auth_fallback(self):

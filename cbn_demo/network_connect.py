@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from cbn_adapter_agent.nodes import build_adapter_agent_node_bundle
+from cbn_adapter_agent.workflow_request import build_agent_workflow_request_plan
 from cbn_core.agent_cli_contract import agent_cli_card_to_tool_manifests, run_receipt_to_cbn_records
 from cbn_core.manifest import ManifestRegistry
 from cbn_demo.killer import DEFAULT_KILLER_WORKFLOW_PATH
@@ -37,6 +38,13 @@ def network_connect_package(
         workflow_path=workflow_path,
         message=agent_message,
     )
+    request_plan = build_agent_workflow_request_plan(
+        workflow_path=workflow_path,
+        message=agent_message,
+        base_url=base_url,
+        dry_run=True,
+        confirmed=False,
+    )
     external_contract = _external_agent_cli_contract()
     protocol_summary = _protocol_summary(protocol_exports)
     endpoint_catalog = _endpoint_catalog(base_url=base_url, workflow_path=workflow_path)
@@ -58,6 +66,7 @@ def network_connect_package(
             "bridge_route_count": (bridge_contract.get("summary") or {}).get("route_count", 0),
             "protocol_export_count": protocol_summary["export_count"],
             "agent_card_count": len(agent_bundle.get("cards", [])),
+            "agent_workflow_request_ready": request_plan.get("ok"),
             "external_contract_ready": external_contract.get("ok"),
             "recommended_next_action": "call_daemon_endpoints" if ok else "fix_connect_package_inputs",
         },
@@ -78,6 +87,7 @@ def network_connect_package(
         "workflow": _compact_workflow(workflow),
         "protocols": protocol_summary,
         "agent_node_bundle": _compact_agent_bundle(agent_bundle),
+        "agent_workflow_request": _compact_workflow_request_plan(request_plan),
         "next_commands": _next_commands(workflow_path),
     }
 
@@ -115,6 +125,7 @@ def _endpoint_catalog(*, base_url: str | None, workflow_path: str) -> list[dict[
         ("POST", "/workflows/run", "run the workflow with dry_run/confirmed flags"),
         ("GET", f"/protocols/workflows?target=all&path={workflow_path}", "export MCP/A2A/ACP workflow descriptors"),
         ("GET", f"/adapter-agent/node-bundle?workflow_path={workflow_path}", "read reusable harness agent nodes"),
+        ("POST", "/adapter-agent/workflow-request-plan", "bind a natural-language agent request to this workflow"),
         ("POST", "/demo/killer", "run the product demo evidence bundle"),
         ("GET", "/events", "tail runtime events"),
         ("GET", "/audit", "tail runtime audit evidence"),
@@ -204,8 +215,36 @@ def _compact_agent_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _compact_workflow_request_plan(plan: dict[str, Any]) -> dict[str, Any]:
+    summary = plan.get("summary") if isinstance(plan.get("summary"), dict) else {}
+    run = plan.get("run") if isinstance(plan.get("run"), dict) else {}
+    reusable = plan.get("reusable_harness") if isinstance(plan.get("reusable_harness"), dict) else {}
+    message = plan.get("bridge_message") if isinstance(plan.get("bridge_message"), dict) else {}
+    return {
+        "kind": plan.get("kind"),
+        "ok": plan.get("ok"),
+        "status": plan.get("status"),
+        "workflow_id": summary.get("workflow_id"),
+        "bridge_route_count": summary.get("bridge_route_count", 0),
+        "recommended_next_action": summary.get("recommended_next_action"),
+        "reusable_harness": {
+            "kind": reusable.get("kind"),
+            "accepts": reusable.get("accepts", []),
+            "emits": reusable.get("emits", []),
+            "contract": reusable.get("contract"),
+        },
+        "run": {
+            "payload": run.get("payload", {}),
+            "cli": run.get("cli"),
+            "http": run.get("http", {}),
+        },
+        "bridge_message_channel": (message.get("metadata") or {}).get("channel"),
+    }
+
+
 def _next_commands(workflow_path: str) -> list[str]:
     return [
+        f"python -m cbn_adapter_agent --workflow-request-plan --workflow-path {workflow_path}",
         f"python -m cbn workflow inspect {workflow_path}",
         f"python -m cbn protocol export-workflows all --path {workflow_path}",
         f"python -m cbn demo killer --workflow-path {workflow_path} --run --dry-run",

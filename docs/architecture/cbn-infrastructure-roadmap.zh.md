@@ -249,6 +249,11 @@ Killer Demo slice 已新增可运行证据束：
 - daemon 已新增 `POST /adapter-agent/workflow-request-plan`，Workflow Studio 已新增
   `Plan` 按钮和 Agent Workflow Plan 面板，用同一份 agent prompt 生成可扫读的
   workflow invocation plan、Bridge route、run command 和 BridgeMessage 证据。
+- `NetworkConnectPackage` 已纳入 `agent_workflow_request` 摘要，并在 daemon endpoint
+  catalog 中暴露 `POST /adapter-agent/workflow-request-plan`。外部程序现在只读取一次
+  connect package，就能同时获得 AgentCliCard/RunReceipt 外部协议、CBN 内部
+  BridgeMessage/selector contract、MCP/A2A/ACP facade、Agent node bundle、自然语言
+  workflow request plan 和可直接调用的 `/workflows/run` payload。
 
 ## 验证策略
 

@@ -22,9 +22,15 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(payload["contracts"]["external"]["accepted_kinds"], ["AgentCliCard", "RunReceipt"])
         self.assertEqual(payload["contracts"]["external"]["receipt_mapping"]["message_channel"], "agent-cli.run.receipt")
         self.assertGreaterEqual(payload["summary"]["bridge_route_count"], 1)
+        self.assertTrue(payload["summary"]["agent_workflow_request_ready"])
         self.assertEqual(payload["protocols"]["mcp"]["workflow_tool_count"], 1)
         self.assertEqual(payload["protocols"]["a2a"]["skill_count"], 1)
         self.assertEqual(payload["protocols"]["acp"]["workflow_count"], 1)
+        self.assertEqual(payload["agent_workflow_request"]["kind"], "AdapterAgentWorkflowRequestPlan")
+        self.assertEqual(payload["agent_workflow_request"]["reusable_harness"]["kind"], "NaturalLanguageWorkflowHarness")
+        self.assertEqual(payload["agent_workflow_request"]["bridge_message_channel"], "agent.workflow.request.plan")
+        endpoint_paths = {endpoint["path"] for endpoint in payload["daemon_endpoints"]}
+        self.assertIn("/adapter-agent/workflow-request-plan", endpoint_paths)
         self.assertTrue(any(endpoint["url"].startswith("http://127.0.0.1:8787/") for endpoint in payload["daemon_endpoints"]))
 
     def test_network_connect_package_cli_outputs_json(self):
@@ -51,6 +57,7 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["summary"]["recommended_next_action"], "call_daemon_endpoints")
         self.assertEqual(payload["contracts"]["external"]["generated_capability_ids"], ["example.macrocli.backends"])
+        self.assertEqual(payload["agent_workflow_request"]["run"]["http"]["url"], "http://127.0.0.1:8787/workflows/run")
 
 
 if __name__ == "__main__":
