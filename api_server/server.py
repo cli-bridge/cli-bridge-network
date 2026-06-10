@@ -44,6 +44,7 @@ from cbn_protocol.wire_conformance import protocol_wire_conformance_suite
 from cbn_runtime.context import build_runtime
 from cbn_workflow.catalog import inspect_workflow, list_workflows
 from cbn_adapter_agent.llm_validation import stream_with_glm
+from cbn_adapter_agent.nodes import build_adapter_agent_node_bundle
 from cbn_adapter_agent.orchestrator import (
     DEFAULT_WORKFLOW_PATH,
     ORCHESTRATION_SYSTEM_PROMPT,
@@ -110,6 +111,7 @@ ROUTE_SUMMARY = [
     {"method": "POST", "path": "/workflows/validate"},
     {"method": "POST", "path": "/workflows/plan"},
     {"method": "POST", "path": "/workflows/run"},
+    {"method": "GET", "path": "/adapter-agent/node-bundle"},
     {"method": "POST", "path": "/adapter-agent/orchestrate"},
     {"method": "POST", "path": "/adapter-agent/orchestrate-stream"},
     {"method": "POST", "path": "/adapter-agent/tool-call-plan"},
@@ -603,6 +605,19 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             workflow_path = query.get("workflow_path", query.get("path", [None]))[0]
             result = workflow_bridge_contract_report(runtime.registry, workflow_path=workflow_path)
             self._send(200 if result["ok"] else 422, result)
+            return
+        if parsed.path == "/adapter-agent/node-bundle":
+            workflow_path = query.get("workflow_path", query.get("path", [DEFAULT_WORKFLOW_PATH]))[0]
+            message = query.get("message", [""])[0]
+            if not workflow_path:
+                self._send_error(400, "bad_request", "workflow_path must be a non-empty string")
+                return
+            result = build_adapter_agent_node_bundle(
+                workflow_path=workflow_path,
+                message=message,
+                profiles=_query_profiles(query),
+            )
+            self._send(200, result)
             return
         self._send(404, {"error": "not found", "routes": ROUTE_SUMMARY})
 
@@ -1309,6 +1324,17 @@ def _base_url(handler: BaseHTTPRequestHandler) -> str:
         return f"http://{host}"
     bound_host, bound_port = handler.server.server_address[:2]
     return f"http://{bound_host}:{bound_port}"
+
+
+def _query_profiles(query: dict[str, list[str]]) -> tuple[str, ...] | None:
+    values = query.get("profile") or query.get("profiles") or []
+    profiles: list[str] = []
+    for value in values:
+        for item in value.split(","):
+            profile = item.strip()
+            if profile:
+                profiles.append(profile)
+    return tuple(profiles) or None
 
 
 def _required_string(payload: dict[str, Any], field: str) -> str:

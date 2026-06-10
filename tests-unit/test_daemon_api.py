@@ -52,6 +52,7 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("GET", "/parsers/fixtures"), routes)
         self.assertIn(("POST", "/adapter-agent/orchestrate"), routes)
         self.assertIn(("POST", "/adapter-agent/orchestrate-stream"), routes)
+        self.assertIn(("GET", "/adapter-agent/node-bundle"), routes)
         self.assertIn(("POST", "/adapter-agent/tool-call-plan"), routes)
         self.assertIn(("POST", "/adapter-agent/tool-use"), routes)
         self.assertIn(("POST", "/runtime/transports/gate"), routes)
@@ -197,6 +198,28 @@ class DaemonApiTests(unittest.TestCase):
             self.assertEqual(payload["kind"], "AdapterAgentToolCallPlan")
             self.assertEqual(payload["long_running_loop"]["kind"], "AdapterAgentLoopPlan")
             self.assertTrue(payload["execution_batches"])
+
+    def test_adapter_agent_node_bundle_route_returns_agent_nodes(self):
+        with daemon_url() as base_url:
+            url = (
+                f"{base_url}/adapter-agent/node-bundle"
+                "?workflow_path=workflows/auth-gated-first-run.example.json"
+                "&message=Initialize%20node%20bundle"
+            )
+            with urllib.request.urlopen(url, timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+
+            self.assertEqual(response.status, 200)
+            self.assertEqual(payload["kind"], "AdapterAgentNodeBundle")
+            self.assertEqual(payload["status"], "requires_user_setup_and_inputs")
+            self.assertEqual(payload["session"]["kind"], "AgentSession")
+            self.assertTrue(any(card["kind"] == "AgentCard" for card in payload["cards"]))
+            self.assertTrue(any(node["agent"] == "orchestration-coordinator-agent" for node in payload["workflow_nodes"]))
+            self.assertEqual(payload["bridge_message"]["kind"], "BridgeMessage")
+            self.assertEqual(
+                payload["bridge_message"]["metadata"]["channel"],
+                "agent.adapter.node_bundle",
+            )
 
     def test_plugin_operation_plan_route_resolves_descriptor(self):
         with daemon_url() as base_url:
