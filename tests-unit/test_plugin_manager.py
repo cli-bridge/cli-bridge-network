@@ -28,12 +28,15 @@ class PluginManagerTests(unittest.TestCase):
         self.assertTrue(payload["requires_confirmation"])
         self.assertEqual(payload["action"], "install")
         self.assertIn("cli-anything", payload["plugin_dir"])
+        self.assertIn("verification_commands", payload)
+        self.assertIn("python -m cbn plugin provenance cli-anything", payload["verification_commands"])
 
     def test_update_plan_uses_git_pull(self):
         plan = PluginManager().plan("cli-anything", action="update")
         commands = [command.as_dict() for command in plan.commands]
         self.assertTrue(any(command["argv"][0] == "git" for command in commands))
         self.assertTrue(any("pull" in command["argv"] for command in commands))
+        self.assertIn("python -m cbn plugin check-update cli-anything", plan.as_dict()["verification_commands"])
 
     def test_cli_anything_preflight_reports_required_checks(self):
         result = PluginManager().preflight("cli-anything")

@@ -245,6 +245,15 @@ class CliAnythingHub:
             )
             if action in {"install", "update"}
             else (),
+            verification_commands=(
+                f"python -m cbn plugin harness cli-anything status {harness_name} --from-market",
+                f"python -m cbn plugin verify-harness cli-anything {harness_name} --no-workflows",
+                f"python -m cbn call cli-anything.{safe_name}.launch --dry-run",
+            )
+            if action in {"install", "update"}
+            else (
+                f"python -m cbn plugin harness cli-anything status {harness_name} --from-market",
+            ),
         )
 
     def harness_operation_gate(

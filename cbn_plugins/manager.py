@@ -50,6 +50,7 @@ class PluginPlan:
     plugin_dir: str
     commands: tuple[PluginCommand, ...]
     notes: tuple[str, ...] = ()
+    verification_commands: tuple[str, ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -59,6 +60,7 @@ class PluginPlan:
             "commands": [command.as_dict() for command in self.commands],
             "requires_confirmation": True,
             "notes": list(self.notes),
+            "verification_commands": list(self.verification_commands),
         }
 
 
@@ -490,6 +492,10 @@ class PluginManager:
             plugin_dir=str(plugin_dir),
             commands=tuple(commands),
             notes=tuple(notes),
+            verification_commands=(
+                f"python -m cbn runtime transport {kind}",
+                "python -m cbn protocol smoke-suite --workflow-dry-run",
+            ),
         )
 
     def plan(
@@ -550,11 +556,24 @@ class PluginManager:
                 )
             )
 
+        verification_commands = [
+            f"python -m cbn plugin provenance {manifest.plugin_id}",
+            f"python -m cbn plugin status {manifest.plugin_id}",
+            f"python -m cbn plugin check-update {manifest.plugin_id}",
+        ]
+        if manifest.plugin_id == "cli-anything":
+            verification_commands.extend(
+                [
+                    "python -m cbn plugin market cli-anything list",
+                    "python -m cbn plugin bootstrap-plan cli-anything --no-workflows",
+                ]
+            )
         return PluginPlan(
             plugin_id=manifest.plugin_id,
             action=action,
             plugin_dir=str(plugin_dir),
             commands=tuple(commands),
+            verification_commands=tuple(verification_commands),
         )
 
     def execute_plan(self, plan: PluginPlan) -> dict[str, Any]:

@@ -3024,11 +3024,23 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(plan.action, "harness-install-gimp")
         self.assertEqual(plan.commands[0].argv, ("cli-hub", "install", "gimp"))
         self.assertIn("evaluate-harness", plan.as_dict()["notes"][0])
+        self.assertIn(
+            "python -m cbn plugin harness cli-anything status gimp --from-market",
+            plan.as_dict()["verification_commands"],
+        )
+        self.assertIn(
+            "python -m cbn plugin verify-harness cli-anything gimp --no-workflows",
+            plan.as_dict()["verification_commands"],
+        )
 
         uninstall = CliAnythingHub().harness_plan("uninstall", "gimp")
         self.assertEqual(uninstall.action, "harness-uninstall-gimp")
         self.assertEqual(uninstall.commands[0].argv, ("cli-hub", "uninstall", "gimp"))
         self.assertEqual(uninstall.as_dict()["notes"], [])
+        self.assertEqual(
+            uninstall.as_dict()["verification_commands"],
+            ["python -m cbn plugin harness cli-anything status gimp --from-market"],
+        )
 
     def test_cli_harness_plan_does_not_execute_without_yes(self):
         proc = subprocess.run(
