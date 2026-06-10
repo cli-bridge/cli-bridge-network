@@ -1,5 +1,7 @@
 import type { StudioConfig } from "./types";
 
+const REQUEST_TIMEOUT_MS = 8000;
+
 export class StudioApi {
   constructor(private readonly config: StudioConfig) {}
 
@@ -91,14 +93,21 @@ export class StudioApi {
     if (this.config.sessionToken.trim()) {
       headers.set("X-CBN-Session", this.config.sessionToken.trim());
     }
-    const response = await fetch(`${this.config.daemonUrl.replace(/\/$/, "")}${path}`, {
-      ...init,
-      headers,
-    });
-    const payload = await response.json().catch(() => ({ error: "invalid JSON response" }));
-    if (!response.ok) {
-      return { ok: false, status: response.status, payload };
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      const response = await fetch(`${this.config.daemonUrl.replace(/\/$/, "")}${path}`, {
+        ...init,
+        headers,
+        signal: controller.signal,
+      });
+      const payload = await response.json().catch(() => ({ error: "invalid JSON response" }));
+      if (!response.ok) {
+        return { ok: false, status: response.status, payload };
+      }
+      return payload;
+    } finally {
+      window.clearTimeout(timeout);
     }
-    return payload;
   }
 }

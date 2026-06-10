@@ -133,7 +133,8 @@ Workflow Studio slice 已新增 `packages/workflow-studio`：
 - 技术栈为 Vue、TypeScript、Vite、LiteGraph。
 - 首屏是 workflow workbench，不是按钮墙或 landing page。
 - 左侧提供 daemon URL、session token、workflow path、dry-run、confirmed。
-- 中间使用 LiteGraph 画布展示 workflow task DAG。
+- 中间使用 LiteGraph 画布展示 workflow task DAG，并用端口连线表达
+  `needs/argsFrom` 的 CLI-CLI BridgeMessage selector route。
 - 右侧展示 task、selector 和 run result。
 - 底部 evidence dock 展示 events、audit、artifacts。
 - 已接入 daemon API：`/health`、`/workflows`、`/workflows?path=...`、
@@ -143,6 +144,12 @@ Workflow Studio slice 已新增 `packages/workflow-studio`：
   Adapter Agent 的 cards、tasks、handoffs 和 BridgeMessage，LiteGraph 画布同时
   渲染 workflow task 与 agent workflow node，作为“自然语言 harness agent 参与
   CLI-CLI workflow”的首版展示面。
+- Workflow Studio graph layer 已把 task `needs` 和 `argsFrom.task` 映射为
+  LiteGraph 节点连接线，并在 consumer 节点文本中显示 selector，避免 demo 中只
+  看到孤立节点而看不到 CLI-CLI 通信边。
+- Workflow Studio 支持 `daemonUrl`、`sessionToken`、`workflowPath`、
+  `agentMessage` query 参数覆盖默认配置，便于在演示或多 daemon 端口并存时直接
+  打开一条已配置好的 killer demo 链接。
 - 旧 `packages/dashboard` 保持 maintainer console，Studio 只保留一个小入口。
 
 Killer Demo slice 已新增可运行证据束：

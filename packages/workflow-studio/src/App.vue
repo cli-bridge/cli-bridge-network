@@ -33,11 +33,15 @@ import type {
   WorkflowTask,
 } from "./types";
 
+const urlConfig = new URLSearchParams(window.location.search);
+
 const config = reactive<StudioConfig>({
-  daemonUrl: "http://127.0.0.1:8787",
-  sessionToken: "",
-  workflowPath: "workflows/cli-anything-macrocli-mermaid-routing.example.json",
-  agentMessage: "Run this workflow as a reusable CLI-CLI harness agent and surface setup gates.",
+  daemonUrl: urlConfig.get("daemonUrl") || "http://127.0.0.1:8787",
+  sessionToken: urlConfig.get("sessionToken") || "",
+  workflowPath: urlConfig.get("workflowPath") || "workflows/cli-anything-macrocli-mermaid-routing.example.json",
+  agentMessage:
+    urlConfig.get("agentMessage") ||
+    "Run this workflow as a reusable CLI-CLI harness agent and surface setup gates.",
   dryRun: true,
   confirmed: false,
 });
@@ -141,14 +145,16 @@ async function refreshEvidence() {
 }
 
 async function loadAll() {
-  await loadHealth();
-  await loadWorkflows();
-  await inspectWorkflow();
-  await inspectContract();
-  await inspectAgentBundle();
-  await inspectWorkflowRequestPlan();
-  await inspectConnectPackage();
-  await refreshEvidence();
+  await Promise.all([
+    loadHealth(),
+    loadWorkflows(),
+    inspectWorkflow(),
+    inspectContract(),
+    inspectAgentBundle(),
+    inspectWorkflowRequestPlan(),
+    inspectConnectPackage(),
+    refreshEvidence(),
+  ]);
 }
 
 function pretty(payload: unknown): string {
