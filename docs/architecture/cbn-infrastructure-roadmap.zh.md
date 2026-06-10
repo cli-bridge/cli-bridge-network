@@ -254,6 +254,11 @@ Killer Demo slice 已新增可运行证据束：
   `studio_url` 传给 daemon，同时把当前 session token 传给 link generator；因此
   one-shot demo link 不再隐式绑定默认 `127.0.0.1:5177`，可适配其他本地端口或远程
   预览环境。
+- `NetworkConnectPackage` 已新增 `consumer_quickstart`：为外部程序提供机器可读
+  first-call 指南，包括 required headers、open Studio URL、inspect workflow、
+  inspect Bridge contract、plan agent request、run workflow、events/audit/artifacts
+  入口和建议调用顺序。Workflow Studio Connect 面板同步展示 quickstart status、
+  鉴权 header 状态和 plan/run endpoint。
 - CLI 已新增 `python -m cbn network connect-package` 只读入口，输出同一份
   `NetworkConnectPackage`。外部程序无需先接 daemon/WebUI，也能一次性读取
   AgentCliCard/RunReceipt contract、daemon endpoint catalog、protocol facade 和

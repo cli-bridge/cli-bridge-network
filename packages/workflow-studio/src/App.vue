@@ -233,6 +233,8 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
   const external = payload?.contracts?.external ?? {};
   const summary = payload?.summary ?? {};
   const studio = payload?.workflow_studio ?? {};
+  const quickstart = payload?.consumer_quickstart ?? {};
+  const headers = quickstart.required_headers ?? {};
   return {
     status: payload?.ok ? "ready" : payload ? "needs attention" : "not loaded",
     externalProtocol: external.protocol ?? "unknown",
@@ -246,6 +248,10 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
     studioLink: stringValue(studio.url) ?? "",
     studioToken: studio.session_token_included ? "token included" : "token not included",
     studioMode: studio.dry_run === false ? "live run" : "dry-run",
+    quickstartStatus: quickstart.status ?? "not loaded",
+    authHeaderStatus: headers["X-CBN-Session"] ? "X-CBN-Session ready" : "no session header",
+    runEndpoint: stringValue(quickstart.entrypoints?.run_workflow?.url) ?? "",
+    planEndpoint: stringValue(quickstart.entrypoints?.plan_agent_request?.url) ?? "",
   };
 }
 
@@ -474,6 +480,8 @@ onMounted(async () => {
           <span class="pill-inline">{{ connectSummary.nextAction }}</span>
           <span class="pill-inline">{{ connectSummary.studioToken }}</span>
           <span class="pill-inline">{{ connectSummary.studioMode }}</span>
+          <span class="pill-inline">{{ connectSummary.quickstartStatus }}</span>
+          <span class="pill-inline">{{ connectSummary.authHeaderStatus }}</span>
         </div>
         <div class="studio-link-row">
           <button title="Open preconfigured Workflow Studio demo link" :disabled="!connectSummary.studioLink" @click="openStudioLink">
@@ -486,13 +494,23 @@ onMounted(async () => {
           <code v-for="capabilityId in connectSummary.generatedCapabilities" :key="capabilityId">{{ capabilityId }}</code>
           <span v-if="!connectSummary.generatedCapabilities.length">No external capabilities loaded</span>
         </div>
+        <div class="quickstart-grid">
+          <div>
+            <span>Plan request</span>
+            <code>{{ connectSummary.planEndpoint || "not loaded" }}</code>
+          </div>
+          <div>
+            <span>Run workflow</span>
+            <code>{{ connectSummary.runEndpoint || "not loaded" }}</code>
+          </div>
+        </div>
         <div class="endpoint-list">
           <div v-for="endpoint in connectEndpoints.slice(0, 6)" :key="`${endpoint.method}:${endpoint.path}`">
             <code>{{ endpoint.method }}</code>
             <span>{{ endpoint.path }}</span>
           </div>
         </div>
-        <pre>{{ pretty({ workflow_studio: connectPackage?.workflow_studio, protocols: connectPackage?.protocols, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
+        <pre>{{ pretty({ workflow_studio: connectPackage?.workflow_studio, consumer_quickstart: connectPackage?.consumer_quickstart, protocols: connectPackage?.protocols, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
       </section>
       <section>
         <div class="section-title"><Rocket :size="15" /> Killer Demo</div>

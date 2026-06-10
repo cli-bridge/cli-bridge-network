@@ -35,6 +35,25 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertTrue(payload["workflow_studio"]["session_token_included"])
         self.assertIn("daemonUrl=http%3A%2F%2F127.0.0.1%3A8787", payload["workflow_studio"]["url"])
         self.assertIn("sessionToken=test-token", payload["workflow_studio"]["url"])
+        quickstart = payload["consumer_quickstart"]
+        self.assertEqual(quickstart["kind"], "NetworkConnectQuickstart")
+        self.assertEqual(quickstart["status"], "ready")
+        self.assertEqual(quickstart["required_headers"]["X-CBN-Session"], "test-token")
+        self.assertEqual(quickstart["entrypoints"]["open_studio"], payload["workflow_studio"]["url"])
+        self.assertEqual(
+            quickstart["entrypoints"]["plan_agent_request"]["url"],
+            "http://127.0.0.1:8787/adapter-agent/workflow-request-plan",
+        )
+        self.assertEqual(
+            quickstart["entrypoints"]["run_workflow"]["url"],
+            "http://127.0.0.1:8787/workflows/run",
+        )
+        self.assertEqual(
+            quickstart["entrypoints"]["run_workflow"]["json"]["path"],
+            "workflows/cli-anything-macrocli-mermaid-routing.example.json",
+        )
+        self.assertEqual(quickstart["sequence"][0], "open_studio")
+        self.assertIn("run_workflow", quickstart["sequence"])
         endpoint_paths = {endpoint["path"] for endpoint in payload["daemon_endpoints"]}
         self.assertIn("/adapter-agent/workflow-request-plan", endpoint_paths)
         self.assertTrue(any(endpoint["url"].startswith("http://127.0.0.1:8787/") for endpoint in payload["daemon_endpoints"]))
@@ -83,6 +102,7 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(payload["contracts"]["external"]["generated_capability_ids"], ["example.macrocli.backends"])
         self.assertEqual(payload["agent_workflow_request"]["run"]["http"]["url"], "http://127.0.0.1:8787/workflows/run")
         self.assertEqual(payload["workflow_studio"]["daemon_url"], "http://127.0.0.1:8787")
+        self.assertEqual(payload["consumer_quickstart"]["entrypoints"]["run_workflow"]["url"], "http://127.0.0.1:8787/workflows/run")
 
     def test_network_studio_link_cli_outputs_json(self):
         proc = subprocess.run(

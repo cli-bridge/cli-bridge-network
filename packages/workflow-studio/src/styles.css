@@ -334,6 +334,41 @@ canvas {
   font-family: inherit;
 }
 
+.quickstart-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 7px;
+  margin-bottom: 8px;
+}
+
+.quickstart-grid div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  border: 1px solid #d1dacd;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 6px;
+}
+
+.quickstart-grid span {
+  overflow: hidden;
+  color: #647160;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.quickstart-grid code {
+  overflow: hidden;
+  color: #4c5949;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .protocol-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

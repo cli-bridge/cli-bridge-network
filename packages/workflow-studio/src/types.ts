@@ -247,6 +247,31 @@ export interface NetworkConnectPackage {
     task_count?: number;
     bridge_message_channel?: string;
   };
+  consumer_quickstart?: {
+    kind?: "NetworkConnectQuickstart";
+    status?: string;
+    required_headers?: Record<string, string>;
+    entrypoints?: {
+      open_studio?: string;
+      health?: string;
+      inspect_workflow?: string;
+      inspect_bridge_contract?: string;
+      plan_agent_request?: {
+        method?: string;
+        url?: string;
+        json?: Record<string, unknown>;
+      };
+      run_workflow?: {
+        method?: string;
+        url?: string;
+        json?: Record<string, unknown>;
+      };
+      events?: string;
+      audit?: string;
+      artifacts?: string;
+    };
+    sequence?: string[];
+  };
   next_commands?: string[];
 }
 
@@ -263,6 +288,10 @@ export interface ConnectSummary {
   studioLink: string;
   studioToken: string;
   studioMode: string;
+  quickstartStatus: string;
+  authHeaderStatus: string;
+  runEndpoint: string;
+  planEndpoint: string;
 }
 
 export interface AgentWorkflowRequestPlan {

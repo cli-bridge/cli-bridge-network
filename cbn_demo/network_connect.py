@@ -101,6 +101,13 @@ def network_connect_package(
         "workflow_studio": studio_link,
         "agent_node_bundle": _compact_agent_bundle(agent_bundle),
         "agent_workflow_request": _compact_workflow_request_plan(request_plan),
+        "consumer_quickstart": _consumer_quickstart(
+            base_url=base_url,
+            workflow_path=workflow_path,
+            session_token=session_token,
+            studio_link=studio_link,
+            request_plan=request_plan,
+        ),
         "next_commands": _next_commands(workflow_path),
     }
 
@@ -291,6 +298,75 @@ def _compact_workflow_request_plan(plan: dict[str, Any]) -> dict[str, Any]:
         },
         "bridge_message_channel": (message.get("metadata") or {}).get("channel"),
     }
+
+
+def _consumer_quickstart(
+    *,
+    base_url: str | None,
+    workflow_path: str,
+    session_token: str | None,
+    studio_link: dict[str, Any],
+    request_plan: dict[str, Any],
+) -> dict[str, Any]:
+    """Return machine-readable first calls for external consumers."""
+
+    clean_base_url = base_url.rstrip("/") if base_url else None
+    workflow_query = urlencode({"path": workflow_path})
+    contract_query = urlencode({"workflow_path": workflow_path})
+    headers = {"X-CBN-Session": session_token} if session_token else {}
+    plan_payload = {
+        "workflow_path": workflow_path,
+        "message": (request_plan.get("request") or {}).get(
+            "message",
+            "Connect an external program to this CBN workflow.",
+        ),
+        "dry_run": True,
+        "confirmed": False,
+    }
+    run = request_plan.get("run") if isinstance(request_plan.get("run"), dict) else {}
+    run_http = run.get("http") if isinstance(run.get("http"), dict) else {}
+    raw_run_payload = run.get("payload") if isinstance(run.get("payload"), dict) else {}
+    run_payload = {
+        "path": workflow_path,
+        "dry_run": raw_run_payload.get("dry_run", True),
+        "confirmed": raw_run_payload.get("confirmed", False),
+    }
+    return {
+        "kind": "NetworkConnectQuickstart",
+        "status": "ready" if clean_base_url else "ready_without_daemon_url",
+        "required_headers": headers,
+        "entrypoints": {
+            "open_studio": studio_link.get("url"),
+            "health": _absolute_url(clean_base_url, "/health"),
+            "inspect_workflow": _absolute_url(clean_base_url, f"/workflows?{workflow_query}"),
+            "inspect_bridge_contract": _absolute_url(clean_base_url, f"/messages/contract?{contract_query}"),
+            "plan_agent_request": {
+                "method": "POST",
+                "url": _absolute_url(clean_base_url, "/adapter-agent/workflow-request-plan"),
+                "json": plan_payload,
+            },
+            "run_workflow": {
+                "method": run_http.get("method", "POST"),
+                "url": run_http.get("url") or _absolute_url(clean_base_url, "/workflows/run"),
+                "json": run_payload,
+            },
+            "events": _absolute_url(clean_base_url, "/events"),
+            "audit": _absolute_url(clean_base_url, "/audit"),
+            "artifacts": _absolute_url(clean_base_url, "/artifacts"),
+        },
+        "sequence": [
+            "open_studio",
+            "inspect_workflow",
+            "inspect_bridge_contract",
+            "plan_agent_request",
+            "run_workflow",
+            "read_events_audit_artifacts",
+        ],
+    }
+
+
+def _absolute_url(base_url: str | None, path: str) -> str:
+    return f"{base_url}{path}" if base_url else path
 
 
 def _next_commands(workflow_path: str) -> list[str]:
