@@ -246,6 +246,10 @@ Killer Demo slice 已新增可运行证据束：
   按钮，右侧新增 Connect Package 面板，展示 external contract、generated
   capability、daemon endpoint catalog、Bridge route、protocol export 和 agent
   card 摘要，作为“其他程序一次性接入网络”的产品化展示入口。
+- Connect Package 面板已把 `NetworkConnectPackage.workflow_studio` 提升为一等
+  展示：可直接打开预配置 Workflow Studio demo link，并显示 session token 是否
+  已包含、dry-run/live 模式和原始 `WorkflowStudioDemoLink` payload，便于外部程序
+  拿到 one-shot package 后立即进入可视化验收界面。
 - CLI 已新增 `python -m cbn network connect-package` 只读入口，输出同一份
   `NetworkConnectPackage`。外部程序无需先接 daemon/WebUI，也能一次性读取
   AgentCliCard/RunReceipt contract、daemon endpoint catalog、protocol facade 和

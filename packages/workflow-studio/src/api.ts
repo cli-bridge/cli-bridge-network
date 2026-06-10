@@ -43,6 +43,9 @@ export class StudioApi {
       workflow_path: this.config.workflowPath,
       message: this.config.agentMessage,
     });
+    if (this.config.sessionToken.trim()) {
+      query.set("session_token", this.config.sessionToken.trim());
+    }
     return this.get(`/network/connect-package?${query.toString()}`);
   }
 

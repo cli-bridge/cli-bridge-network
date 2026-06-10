@@ -6,6 +6,7 @@ import {
   Boxes,
   Braces,
   ClipboardList,
+  ExternalLink,
   FileJson,
   Gauge,
   History,
@@ -122,6 +123,13 @@ async function inspectConnectPackage() {
   connectPackage.value = (await call("connect", () => api.value.networkConnectPackage())) as NetworkConnectPackage;
 }
 
+function openStudioLink() {
+  const url = connectSummary.value.studioLink;
+  if (url) {
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+}
+
 async function runWorkflow() {
   runResult.value = await call("run", () => api.value.runWorkflow());
   await refreshEvidence();
@@ -224,6 +232,7 @@ function summarizeWorkflowRequestPlan(payload: AgentWorkflowRequestPlan | null):
 function summarizeConnectPackage(payload: NetworkConnectPackage | null): ConnectSummary {
   const external = payload?.contracts?.external ?? {};
   const summary = payload?.summary ?? {};
+  const studio = payload?.workflow_studio ?? {};
   return {
     status: payload?.ok ? "ready" : payload ? "needs attention" : "not loaded",
     externalProtocol: external.protocol ?? "unknown",
@@ -234,6 +243,9 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
     protocolExports: numberValue(summary.protocol_export_count) ?? 0,
     agentCards: numberValue(summary.agent_card_count) ?? 0,
     nextAction: stringValue(summary.recommended_next_action) ?? "load_connect_package",
+    studioLink: stringValue(studio.url) ?? "",
+    studioToken: studio.session_token_included ? "token included" : "token not included",
+    studioMode: studio.dry_run === false ? "live run" : "dry-run",
   };
 }
 
@@ -460,6 +472,15 @@ onMounted(async () => {
         <div class="evidence-row">
           <span :class="['pill-inline', connectPackage?.ok ? 'ok' : 'blocked']">{{ connectSummary.acceptedKinds }}</span>
           <span class="pill-inline">{{ connectSummary.nextAction }}</span>
+          <span class="pill-inline">{{ connectSummary.studioToken }}</span>
+          <span class="pill-inline">{{ connectSummary.studioMode }}</span>
+        </div>
+        <div class="studio-link-row">
+          <button title="Open preconfigured Workflow Studio demo link" :disabled="!connectSummary.studioLink" @click="openStudioLink">
+            <ExternalLink :size="15" /> Open Studio
+          </button>
+          <code v-if="connectSummary.studioLink">{{ connectSummary.studioLink }}</code>
+          <span v-else>No Workflow Studio link loaded</span>
         </div>
         <div class="artifact-strip">
           <code v-for="capabilityId in connectSummary.generatedCapabilities" :key="capabilityId">{{ capabilityId }}</code>
@@ -471,7 +492,7 @@ onMounted(async () => {
             <span>{{ endpoint.path }}</span>
           </div>
         </div>
-        <pre>{{ pretty({ protocols: connectPackage?.protocols, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
+        <pre>{{ pretty({ workflow_studio: connectPackage?.workflow_studio, protocols: connectPackage?.protocols, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
       </section>
       <section>
         <div class="section-title"><Rocket :size="15" /> Killer Demo</div>

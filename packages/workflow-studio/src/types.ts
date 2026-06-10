@@ -230,6 +230,18 @@ export interface NetworkConnectPackage {
     a2a?: { skill_count?: number; wire_facade?: string };
     acp?: { workflow_count?: number; wire_facade?: string };
   };
+  workflow_studio?: {
+    kind?: "WorkflowStudioDemoLink";
+    ok?: boolean;
+    studio_url?: string;
+    daemon_url?: string | null;
+    workflow_path?: string;
+    dry_run?: boolean;
+    confirmed?: boolean;
+    session_token_included?: boolean;
+    url?: string;
+    query?: Record<string, string>;
+  };
   agent_node_bundle?: {
     card_count?: number;
     task_count?: number;
@@ -248,6 +260,9 @@ export interface ConnectSummary {
   protocolExports: number;
   agentCards: number;
   nextAction: string;
+  studioLink: string;
+  studioToken: string;
+  studioMode: string;
 }
 
 export interface AgentWorkflowRequestPlan {
