@@ -191,3 +191,61 @@ export interface AdapterAgentNodeBundle {
     tool_call_plan_summary?: Record<string, unknown>;
   };
 }
+
+export interface ConnectEndpoint {
+  method: string;
+  path: string;
+  url?: string;
+  purpose?: string;
+}
+
+export interface NetworkConnectPackage {
+  ok?: boolean;
+  kind?: "NetworkConnectPackage";
+  summary?: {
+    workflow_id?: string;
+    task_count?: number;
+    bridge_route_count?: number;
+    protocol_export_count?: number;
+    agent_card_count?: number;
+    external_contract_ready?: boolean;
+    recommended_next_action?: string;
+  };
+  contracts?: {
+    external?: {
+      protocol?: string;
+      accepted_kinds?: string[];
+      generated_capability_ids?: string[];
+      receipt_mapping?: {
+        message_kind?: string;
+        message_channel?: string;
+        artifact_count?: number;
+      };
+    };
+  };
+  daemon_endpoints?: ConnectEndpoint[];
+  protocols?: {
+    targets?: string[];
+    mcp?: { workflow_tool_count?: number; wire_facade?: string };
+    a2a?: { skill_count?: number; wire_facade?: string };
+    acp?: { workflow_count?: number; wire_facade?: string };
+  };
+  agent_node_bundle?: {
+    card_count?: number;
+    task_count?: number;
+    bridge_message_channel?: string;
+  };
+  next_commands?: string[];
+}
+
+export interface ConnectSummary {
+  status: string;
+  externalProtocol: string;
+  acceptedKinds: string;
+  generatedCapabilities: string[];
+  bridgeRoutes: number;
+  endpointCount: number;
+  protocolExports: number;
+  agentCards: number;
+  nextAction: string;
+}

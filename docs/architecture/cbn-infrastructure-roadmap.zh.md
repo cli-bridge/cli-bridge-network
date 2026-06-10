@@ -226,6 +226,10 @@ Killer Demo slice 已新增可运行证据束：
   catalog、workflow 摘要、MCP/A2A/ACP protocol export 摘要和 Agent node 摘要。
   daemon 已暴露 `GET /network/connect-package`，供外部程序一次性读取“如何接入
   CBN 网络”的最小包，不执行 workflow、不写入状态。
+- Workflow Studio 已消费 `GET /network/connect-package`：左侧新增 `Connect`
+  按钮，右侧新增 Connect Package 面板，展示 external contract、generated
+  capability、daemon endpoint catalog、Bridge route、protocol export 和 agent
+  card 摘要，作为“其他程序一次性接入网络”的产品化展示入口。
 
 ## 验证策略
 

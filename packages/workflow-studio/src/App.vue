@@ -19,9 +19,11 @@ import { StudioApi } from "./api";
 import { mountWorkflowGraph, type StudioGraph } from "./graph";
 import type {
   AdapterAgentNodeBundle,
+  ConnectSummary,
   DockState,
   EvidenceSummary,
   KillerDemoReport,
+  NetworkConnectPackage,
   ProtocolSummary,
   StudioConfig,
   WorkflowInspect,
@@ -45,6 +47,7 @@ const contract = ref<unknown>(null);
 const runResult = ref<unknown>(null);
 const demoReport = ref<KillerDemoReport | null>(null);
 const agentBundle = ref<AdapterAgentNodeBundle | null>(null);
+const connectPackage = ref<NetworkConnectPackage | null>(null);
 const health = ref<unknown>(null);
 const selectedTaskId = ref("");
 const loading = ref("");
@@ -60,6 +63,8 @@ const agentTasks = computed(() => (Array.isArray(agentBundle.value?.tasks) ? age
 const agentHandoffs = computed(() => agentBundle.value?.source_coordination_plan?.handoffs ?? []);
 const evidenceSummary = computed<EvidenceSummary>(() => summarizeEvidence(demoReport.value, dock));
 const protocolSummary = computed<ProtocolSummary>(() => summarizeProtocols(demoReport.value));
+const connectSummary = computed<ConnectSummary>(() => summarizeConnectPackage(connectPackage.value));
+const connectEndpoints = computed(() => (Array.isArray(connectPackage.value?.daemon_endpoints) ? connectPackage.value.daemon_endpoints : []));
 
 async function call(label: string, fn: () => Promise<unknown>): Promise<unknown | null> {
   loading.value = label;
@@ -100,6 +105,10 @@ async function inspectAgentBundle() {
   graphRef.value?.render(workflow.value, agentBundle.value);
 }
 
+async function inspectConnectPackage() {
+  connectPackage.value = (await call("connect", () => api.value.networkConnectPackage())) as NetworkConnectPackage;
+}
+
 async function runWorkflow() {
   runResult.value = await call("run", () => api.value.runWorkflow());
   await refreshEvidence();
@@ -128,6 +137,7 @@ async function loadAll() {
   await inspectWorkflow();
   await inspectContract();
   await inspectAgentBundle();
+  await inspectConnectPackage();
   await refreshEvidence();
 }
 
@@ -181,6 +191,22 @@ function summarizeProtocols(report: KillerDemoReport | null): ProtocolSummary {
   };
 }
 
+function summarizeConnectPackage(payload: NetworkConnectPackage | null): ConnectSummary {
+  const external = payload?.contracts?.external ?? {};
+  const summary = payload?.summary ?? {};
+  return {
+    status: payload?.ok ? "ready" : payload ? "needs attention" : "not loaded",
+    externalProtocol: external.protocol ?? "unknown",
+    acceptedKinds: Array.isArray(external.accepted_kinds) ? external.accepted_kinds.join(" + ") : "unknown",
+    generatedCapabilities: Array.isArray(external.generated_capability_ids) ? external.generated_capability_ids.slice(0, 4) : [],
+    bridgeRoutes: numberValue(summary.bridge_route_count) ?? 0,
+    endpointCount: Array.isArray(payload?.daemon_endpoints) ? payload.daemon_endpoints.length : 0,
+    protocolExports: numberValue(summary.protocol_export_count) ?? 0,
+    agentCards: numberValue(summary.agent_card_count) ?? 0,
+    nextAction: stringValue(summary.recommended_next_action) ?? "load_connect_package",
+  };
+}
+
 function numberValue(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
@@ -213,6 +239,7 @@ watch(
     void inspectWorkflow();
     void inspectContract();
     void inspectAgentBundle();
+    void inspectConnectPackage();
   },
 );
 
@@ -273,6 +300,9 @@ onMounted(async () => {
         <button title="Load Adapter Agent node bundle" @click="inspectAgentBundle">
           <Bot :size="16" /> Agent
         </button>
+        <button title="Load one-shot network connection package" @click="inspectConnectPackage">
+          <Network :size="16" /> Connect
+        </button>
         <button title="Open maintainer console" onclick="window.open('../dashboard/src/index.html', '_blank')">
           <Wrench :size="16" /> Console
         </button>
@@ -327,6 +357,50 @@ onMounted(async () => {
           </div>
         </div>
         <pre>{{ pretty({ handoffs: agentHandoffs, bridge_message: agentBundle?.bridge_message }) }}</pre>
+      </section>
+      <section>
+        <div class="section-title"><Network :size="15" /> Connect Package</div>
+        <div class="connect-summary">
+          <div>
+            <span>Status</span>
+            <strong>{{ connectSummary.status }}</strong>
+          </div>
+          <div>
+            <span>External</span>
+            <strong>{{ connectSummary.externalProtocol }}</strong>
+          </div>
+          <div>
+            <span>Endpoints</span>
+            <strong>{{ connectSummary.endpointCount }}</strong>
+          </div>
+          <div>
+            <span>Routes</span>
+            <strong>{{ connectSummary.bridgeRoutes }}</strong>
+          </div>
+          <div>
+            <span>Protocols</span>
+            <strong>{{ connectSummary.protocolExports }}</strong>
+          </div>
+          <div>
+            <span>Agents</span>
+            <strong>{{ connectSummary.agentCards }}</strong>
+          </div>
+        </div>
+        <div class="evidence-row">
+          <span :class="['pill-inline', connectPackage?.ok ? 'ok' : 'blocked']">{{ connectSummary.acceptedKinds }}</span>
+          <span class="pill-inline">{{ connectSummary.nextAction }}</span>
+        </div>
+        <div class="artifact-strip">
+          <code v-for="capabilityId in connectSummary.generatedCapabilities" :key="capabilityId">{{ capabilityId }}</code>
+          <span v-if="!connectSummary.generatedCapabilities.length">No external capabilities loaded</span>
+        </div>
+        <div class="endpoint-list">
+          <div v-for="endpoint in connectEndpoints.slice(0, 6)" :key="`${endpoint.method}:${endpoint.path}`">
+            <code>{{ endpoint.method }}</code>
+            <span>{{ endpoint.path }}</span>
+          </div>
+        </div>
+        <pre>{{ pretty({ protocols: connectPackage?.protocols, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
       </section>
       <section>
         <div class="section-title"><Rocket :size="15" /> Killer Demo</div>
