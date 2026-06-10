@@ -288,6 +288,30 @@ def build_parser() -> argparse.ArgumentParser:
         default="Connect an external program to this CBN workflow.",
         help="Agent prompt used to shape the Adapter Agent node bundle.",
     )
+    network_quickstart = network_subcommands.add_parser(
+        "quickstart",
+        help="Print only the machine-readable first-call quickstart for external CBN consumers.",
+    )
+    network_quickstart.add_argument(
+        "--workflow-path",
+        default="workflows/cli-anything-macrocli-mermaid-routing.example.json",
+        help="Workflow JSON path to expose in the quickstart.",
+    )
+    network_quickstart.add_argument("--base-url", help="Daemon base URL to embed in endpoint URLs.")
+    network_quickstart.add_argument(
+        "--studio-url",
+        default="http://127.0.0.1:5177",
+        help="Workflow Studio base URL to embed as a preconfigured demo link.",
+    )
+    network_quickstart.add_argument(
+        "--session-token",
+        help="Optional daemon session token to include in required headers and the Studio demo link.",
+    )
+    network_quickstart.add_argument(
+        "--message",
+        default="Connect an external program to this CBN workflow.",
+        help="Agent prompt used to shape the reusable workflow request.",
+    )
     network_studio_link = network_subcommands.add_parser(
         "studio-link",
         help="Print a preconfigured Workflow Studio URL for a CBN workflow.",

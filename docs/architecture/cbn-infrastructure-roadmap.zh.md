@@ -259,6 +259,9 @@ Killer Demo slice 已新增可运行证据束：
   inspect Bridge contract、plan agent request、run workflow、events/audit/artifacts
   入口和建议调用顺序。Workflow Studio Connect 面板同步展示 quickstart status、
   鉴权 header 状态和 plan/run endpoint。
+- CLI 已新增 `python -m cbn network quickstart`，复用同一份
+  `NetworkConnectPackage` 生成逻辑，但只输出 `consumer_quickstart`，让外部程序或
+  demo 脚本能低噪声读取 first-call HTTP payload、headers 和推荐调用顺序。
 - CLI 已新增 `python -m cbn network connect-package` 只读入口，输出同一份
   `NetworkConnectPackage`。外部程序无需先接 daemon/WebUI，也能一次性读取
   AgentCliCard/RunReceipt contract、daemon endpoint catalog、protocol facade 和

@@ -104,6 +104,41 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(payload["workflow_studio"]["daemon_url"], "http://127.0.0.1:8787")
         self.assertEqual(payload["consumer_quickstart"]["entrypoints"]["run_workflow"]["url"], "http://127.0.0.1:8787/workflows/run")
 
+    def test_network_quickstart_cli_outputs_first_call_package(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "network",
+                "quickstart",
+                "--workflow-path",
+                "workflows/cli-anything-macrocli-mermaid-routing.example.json",
+                "--base-url",
+                "http://127.0.0.1:8787",
+                "--studio-url",
+                "http://127.0.0.1:5177",
+                "--session-token",
+                "test-token",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["kind"], "NetworkConnectQuickstart")
+        self.assertEqual(payload["required_headers"]["X-CBN-Session"], "test-token")
+        self.assertIn("sessionToken=test-token", payload["entrypoints"]["open_studio"])
+        self.assertEqual(payload["entrypoints"]["plan_agent_request"]["method"], "POST")
+        self.assertEqual(payload["entrypoints"]["run_workflow"]["url"], "http://127.0.0.1:8787/workflows/run")
+        self.assertEqual(
+            payload["entrypoints"]["run_workflow"]["json"]["path"],
+            "workflows/cli-anything-macrocli-mermaid-routing.example.json",
+        )
+        self.assertNotIn("contracts", payload)
+
     def test_network_studio_link_cli_outputs_json(self):
         proc = subprocess.run(
             [
