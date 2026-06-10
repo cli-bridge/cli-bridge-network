@@ -12,6 +12,8 @@ from cbn_adapter_agent.compiler import (
     build_adapter_draft_batch,
     write_adapter_draft,
 )
+from cbn_adapter_agent.llm_validation import validate_with_glm
+from cbn_adapter_agent.workflow_init import build_workflow_initialization_plan
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -19,13 +21,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--profile", action="append", default=[], help="Built-in adapter profile to draft.")
     parser.add_argument("--all", action="store_true", help="Draft every built-in adapter profile.")
     parser.add_argument("--root", help="Project root. Defaults to the current CBN checkout.")
+    parser.add_argument("--workflow-init", help="Build initial workflow setup guidance for auth-gated nodes.")
+    parser.add_argument("--glm-validate", action="store_true", help="Validate the draft/plan with GLM using ZAI_API_KEY.")
     parser.add_argument("--write-draft", action="store_true", help="Write draft JSON files under runtime.")
     parser.add_argument("--out", help="Draft output directory when --write-draft is used.")
     parser.add_argument("--indent", type=int, default=2)
     args = parser.parse_args(argv)
 
     root = Path(args.root) if args.root else None
-    if args.all:
+    if args.workflow_init:
+        payload = build_workflow_initialization_plan(Path(args.workflow_init), root=root)
+    elif args.all:
         payload = build_adapter_draft_batch(root=root)
     else:
         profiles = tuple(args.profile) or ("feishu",)
@@ -41,7 +47,12 @@ def main(argv: list[str] | None = None) -> int:
         written = [write_adapter_draft(draft, output_dir=output_dir, root=root) for draft in drafts]
         payload = {**payload, "written": written}
 
+    if args.glm_validate:
+        payload = {**payload, "llm_validation": validate_with_glm(payload)}
+
     print(json.dumps(payload, ensure_ascii=False, indent=args.indent))
+    if payload.get("kind") == "WorkflowInitializationPlan":
+        return 0
     return 0 if payload.get("ok", True) else 6
 
 

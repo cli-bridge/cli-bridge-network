@@ -4,12 +4,15 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from cbn_adapter_agent.compiler import (
     build_adapter_draft,
     build_adapter_draft_batch,
     write_adapter_draft,
 )
+from cbn_adapter_agent.llm_validation import validate_with_glm
+from cbn_adapter_agent.workflow_init import build_workflow_initialization_plan
 
 
 class AdapterAgentHarnessTests(unittest.TestCase):
@@ -63,6 +66,82 @@ class AdapterAgentHarnessTests(unittest.TestCase):
             payload = json.loads(Path(result["path"]).read_text(encoding="utf-8"))
 
         self.assertEqual(payload["profile"]["profile_id"], "obsidian-cli")
+
+    def test_workflow_initialization_guides_auth_gated_nodes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workflow_path = Path(tmp) / "auth-workflow.json"
+            workflow_path.write_text(
+                json.dumps(
+                    {
+                        "apiVersion": "bridge.dev/v1alpha1",
+                        "kind": "Workflow",
+                        "metadata": {"id": "auth.workflow", "title": "Auth Workflow"},
+                        "spec": {
+                            "tasks": [
+                                {"id": "draft-image", "uses": "jimeng.text2image.submit"},
+                                {
+                                    "id": "read-note",
+                                    "uses": "obsidian-cli.local-rest.note.read",
+                                    "needs": ["draft-image"],
+                                },
+                            ]
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            plan = build_workflow_initialization_plan(workflow_path)
+
+        self.assertEqual(plan["kind"], "WorkflowInitializationPlan")
+        self.assertEqual(plan["status"], "requires_user_setup_and_inputs")
+        self.assertEqual(plan["summary"]["blocking_task_count"], 2)
+        self.assertEqual(plan["summary"]["input_blocking_task_count"], 2)
+        setup_ids = {guide["setup_id"] for guide in plan["setup_guides"]}
+        self.assertIn("jimeng-oauth-login", setup_ids)
+        self.assertIn("obsidian-local-rest-api-key", setup_ids)
+
+        obsidian = next(guide for guide in plan["setup_guides"] if guide["setup_id"] == "obsidian-local-rest-api-key")
+        self.assertEqual(obsidian["secret_inputs"][0]["name"], "OBSIDIAN_API_KEY")
+        self.assertFalse(obsidian["secret_inputs"][0]["persist_in_repo"])
+        note_task = next(task for task in plan["tasks"] if task["uses"] == "obsidian-cli.local-rest.note.read")
+        missing_names = {item["name"] for item in note_task["missing_runtime_inputs"]}
+        self.assertIn("note_path", missing_names)
+        self.assertIn("OBSIDIAN_API_KEY", missing_names)
+        self.assertIn("--yes", plan["continuation"]["command"])
+
+    def test_adapter_agent_workflow_init_cli_outputs_guidance(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workflow_path = Path(tmp) / "auth-workflow.json"
+            workflow_path.write_text(
+                json.dumps(
+                    {
+                        "apiVersion": "bridge.dev/v1alpha1",
+                        "kind": "Workflow",
+                        "metadata": {"id": "auth.workflow"},
+                        "spec": {"tasks": [{"id": "credit", "uses": "jimeng.user_credit"}]},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            proc = subprocess.run(
+                [sys.executable, "-m", "cbn_adapter_agent", "--workflow-init", str(workflow_path)],
+                text=True,
+                encoding="utf-8",
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+            )
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["status"], "requires_user_setup")
+        self.assertEqual(payload["setup_guides"][0]["setup_id"], "jimeng-oauth-login")
+
+    def test_glm_validation_skips_without_key(self):
+        with patch.dict("os.environ", {}, clear=True):
+            result = validate_with_glm({"kind": "sample"})
+        self.assertTrue(result["skipped"])
+        self.assertFalse(result["ok"])
 
 
 if __name__ == "__main__":
