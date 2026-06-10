@@ -13,6 +13,7 @@ from cbn.version import __version__
 from cbn_demo.killer import killer_demo_report
 from cbn_core.command_importer import command_import_report, parse_key_values
 from cbn_core.manifest import validate_manifest_path
+from cbn_core.mcp_importer import load_mcp_tool_descriptor, mcp_import_report
 from cbn_execution.graph import WorkflowGraph
 from cbn_parsers.fixtures import run_parser_fixtures
 from cbn_parsers.fixture_recorder import record_parser_fixture
@@ -376,6 +377,26 @@ def main(argv: list[str] | None = None) -> int:
                     "facade_for": "CliAnythingHub.onboard_harness",
                 },
             }
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0 if payload["ok"] else 11
+        if args.import_command == "mcp":
+            payload = mcp_import_report(
+                load_mcp_tool_descriptor(Path(args.tool_file), tool_name=args.tool_name),
+                server_id=args.server_id,
+                adapter_command=args.adapter_command,
+                adapter_args=tuple(args.adapter_arg),
+                capability_id=args.capability_id,
+                title=args.title,
+                parser_ref=args.parser_ref,
+                verified=args.verified,
+                risk=args.risk,
+                requires_confirmation=args.requires_confirmation,
+                network=args.network,
+                timeout_seconds=args.timeout_seconds,
+                write=args.write,
+                output_path=Path(args.output) if args.output else None,
+                known_parser_refs=_known_parser_refs(),
+            )
             print(json.dumps(payload, ensure_ascii=False, indent=2))
             return 0 if payload["ok"] else 11
 

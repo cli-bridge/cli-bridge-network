@@ -345,6 +345,38 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help="Extra arg passed to protocol smoke capability calls; repeatable.",
     )
+    import_mcp = import_subcommands.add_parser(
+        "mcp",
+        help="Generate a ToolManifest draft from an external MCP tool descriptor.",
+    )
+    import_mcp.add_argument("--tool-file", required=True, help="UTF-8 JSON MCP tool descriptor or tools/list payload.")
+    import_mcp.add_argument("--tool-name", help="Tool name to select when --tool-file contains a tools array.")
+    import_mcp.add_argument("--server-id", required=True, help="Stable MCP server id.")
+    import_mcp.add_argument("--adapter-command", required=True, help="Local adapter executable that calls the MCP tool.")
+    import_mcp.add_argument(
+        "--adapter-arg",
+        action="append",
+        default=[],
+        help="Static adapter argument. Supports {server_id}, {tool_name}, {capability_id}; repeatable.",
+    )
+    import_mcp.add_argument("--capability-id", help="Override generated capability id.")
+    import_mcp.add_argument("--title", help="Override manifest title.")
+    import_mcp.add_argument("--parser-ref", default="raw.text")
+    import_mcp.add_argument("--verified", action="store_true")
+    import_mcp.add_argument(
+        "--risk",
+        choices=["read", "write-workspace", "privileged", "external-network"],
+        default="read",
+    )
+    import_mcp.add_argument("--requires-confirmation", action="store_true")
+    import_mcp.add_argument(
+        "--network",
+        choices=["deny", "localhost", "requires-confirmation", "allow"],
+        default="localhost",
+    )
+    import_mcp.add_argument("--timeout-seconds", type=int, default=60)
+    import_mcp.add_argument("--output", help="Output manifest path. Defaults to runtime/manifests/<id>.json.")
+    import_mcp.add_argument("--write", action="store_true", help="Write the manifest after validation.")
 
     mcp_parser = subcommands.add_parser("mcp", help="Run or test the MCP stdio facade.")
     mcp_subcommands = mcp_parser.add_subparsers(dest="mcp_command")

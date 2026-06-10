@@ -166,7 +166,11 @@ Killer Demo slice 已新增可运行证据束：
 - `cbn record-parser-fixture` 已有最小入口：把一次 stdout/stderr 记录为
   `ParserFixture`，先用当前 `ParserRegistry` 自校验，显式 `--write` 才写入
   `parser_fixtures/<parser>.<case>.json` 或指定 `--output`。
-- 继续把 `cbn import skill`、`cbn import mcp` 做成低门槛接入入口。
+- `cbn import mcp` 已有最小入口：读取 MCP tool descriptor 或 `tools/list`
+  payload，生成现有 runtime 可执行的 `ToolManifest` 草案；当前通过用户提供的
+  stdio adapter command 调用外部 MCP tool，并在 annotations 中保留 MCP schema
+  与 provenance。
+- 继续把 `cbn import skill` 做成低门槛接入入口。
 - 将 `cbn_plugins/cli_anything.py` 先 facade 后拆为 market、probe、
   manifest_factory、repair、verification、onboarding。
 - 把 `cbn_adapter_agent` 抽象为可参与 workflow 的 Agent node，承载自然语言
@@ -184,6 +188,7 @@ Killer Demo slice 已新增可运行证据束：
 - `python -m unittest tests-unit.test_command_importer`
 - `python -m unittest tests-unit.test_cli_imports`
 - `python -m unittest tests-unit.test_parser_fixture_recorder`
+- `python -m unittest tests-unit.test_mcp_importer`
 - `python -m unittest tests-unit.test_daemon_api.DaemonApiTests.test_killer_demo_route_returns_demo_report`
 - `python -m unittest tests-unit.test_parser_protocol tests-unit.test_workflow_runner`
 - `python -m unittest tests-unit.test_protocol_exports`
