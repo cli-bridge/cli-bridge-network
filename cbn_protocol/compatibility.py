@@ -21,9 +21,9 @@ PROTOCOL_SOURCES: dict[str, dict[str, str]] = {
         "notes": "MCP is JSON-RPC based and exposes initialize plus tools/list and tools/call.",
     },
     "a2a": {
-        "name": "Agent2Agent Core Protocol Specification",
-        "url": "https://a2a-protocol.org/v0.3.0/specification/",
-        "notes": "A2A starts with AgentCard discovery and maps operations to JSON-RPC over HTTP, gRPC, or REST bindings.",
+        "name": "Agent2Agent Protocol Specification 1.0",
+        "url": "https://a2a-protocol.org/latest/specification/",
+        "notes": "A2A starts with AgentCard discovery and maps SendMessage/GetTask/ListTasks/CancelTask operations to HTTP+JSON, gRPC, or REST bindings.",
     },
     "acp": {
         "name": "Agent Client Protocol v1 Overview and Transports",
@@ -273,16 +273,16 @@ def _check_a2a(descriptor: dict[str, Any]) -> list[dict[str, str]]:
             "skill declares JSON-oriented input and output modes",
         ),
         _partial(
-            "A2A AgentCard and message/send smoke",
-            "python -m cbn a2a smoke exercises /.well-known/agent-card.json and message/send over local HTTP JSON-RPC",
+            "A2A AgentCard and SendMessage smoke",
+            "python -m cbn a2a smoke exercises /.well-known/agent-card.json and SendMessage over local HTTP+JSON JSON-RPC",
         ),
         _partial(
-            "A2A workflow message/send smoke",
+            "A2A workflow SendMessage smoke",
             "python -m cbn a2a smoke-workflow --path workflows/example.json --dry-run exercises workflow skills and metadata.cbn.workflow_path execution",
         ),
         _gap(
             "A2A full task lifecycle and conformance",
-            "A2A HTTP is an MVP facade; task polling, streaming, cancellation, version negotiation, authentication, and SDK/conformance coverage are not implemented yet",
+            "A2A HTTP+JSON has local SendMessage/GetTask/ListTasks/CancelTask coverage; streaming, push notifications, authentication, and SDK/conformance certification are not implemented yet",
         ),
     ]
 
@@ -396,12 +396,12 @@ def _check_a2a_workflow(registry: ManifestRegistry, descriptor: dict[str, Any]) 
         _workflow_descriptor_check(cbn, workflow),
         _workflow_routing_check(workflow),
         _partial(
-            "A2A workflow message/send smoke",
+            "A2A workflow SendMessage smoke",
             _workflow_smoke_command("a2a", workflow),
         ),
         _gap(
             "A2A workflow full task lifecycle and conformance",
-            "Workflow message/send is an MVP facade; task polling, streaming, cancellation, authentication, and SDK/conformance coverage are not implemented yet",
+            "Workflow SendMessage has local task polling/error coverage; streaming, push notifications, authentication, and SDK/conformance certification are not implemented yet",
         ),
     ]
 
@@ -500,7 +500,7 @@ def _workflow_handle_check(protocol: str, cbn: Any, input_descriptor: Any) -> di
             and isinstance(input_descriptor, dict)
             and "metadata.cbn.workflow_id" in input_descriptor
         )
-        evidence = "AgentCard skill metadata documents metadata.cbn.workflow_id for message/send"
+        evidence = "AgentCard skill metadata documents metadata.cbn.workflow_id for SendMessage"
     else:
         passed = (
             isinstance(workflow_id, str)

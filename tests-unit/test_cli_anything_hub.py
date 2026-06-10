@@ -2183,6 +2183,124 @@ class CliAnythingHubTests(unittest.TestCase):
             self.assertEqual(json.loads(annotations["cbn.repair.smoke.args"]), ["--help"])
             self.assertEqual(annotations["cbn.repair.smoke.exit_code"], "0")
 
+    def test_repair_entrypoint_marks_parser_verified_when_fixture_covers_capability(self):
+        class FakeHub(CliAnythingHub):
+            def entrypoint_repair_plan(self, harness_name, from_market=True):
+                return {
+                    "ok": True,
+                    "plugin_id": "cli-anything",
+                    "kind": "CliAnythingEntrypointRepairPlan",
+                    "harness_name": harness_name,
+                    "from_market": from_market,
+                    "capability_id": "cli-anything.piptool.launch",
+                    "modules": [{"package": "pip", "importable": True, "module_main": True}],
+                    "diagnosis": {"repair_required": True},
+                    "evaluation": {
+                        "adaptation": {
+                            "manifest_path": str(self.paths.manifests / "cli-anything.piptool.launch.json"),
+                            "manifest": {
+                                "apiVersion": "bridge.dev/v1alpha1",
+                                "kind": "ToolManifest",
+                                "metadata": {
+                                    "id": "cli-anything.piptool.launch",
+                                    "title": "Pip Tool",
+                                    "labels": {"plugin": "cli-anything", "harness": "piptool"},
+                                    "annotations": {},
+                                },
+                                "spec": {
+                                    "transport": {
+                                        "kind": "pty",
+                                        "command": "cli-hub",
+                                        "argsTemplate": ["launch", "piptool", "--"],
+                                    },
+                                    "policy": {
+                                        "risk": "read",
+                                        "requiresConfirmation": False,
+                                        "network": "deny",
+                                    },
+                                    "output": {"parserRef": "cli-anything.raw", "verified": False},
+                                },
+                            },
+                        }
+                    },
+                }
+
+            def adapter_target_smoke(
+                self,
+                harness_name,
+                module,
+                from_market=True,
+                smoke_args=("--help",),
+                timeout_seconds=10,
+                run=False,
+                confirmed=False,
+            ):
+                return {
+                    "ok": True,
+                    "plugin_id": "cli-anything",
+                    "kind": "CliAnythingAdapterTargetSmoke",
+                    "harness_name": harness_name,
+                    "module": module,
+                    "smoke_args": list(smoke_args),
+                    "execution": {"status": "completed", "exit_code": 0, "reason": "completed"},
+                    "summary": {"smoke_ok": True},
+                }
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            root = Path(tempdir)
+            fixture_dir = root / "parser_fixtures"
+            fixture_dir.mkdir()
+            (fixture_dir / "cli-anything.raw.piptool.json").write_text(
+                json.dumps(
+                    {
+                        "apiVersion": "bridge.dev/v1alpha1",
+                        "kind": "ParserFixture",
+                        "metadata": {
+                            "id": "cli-anything.raw.piptool",
+                            "parserRef": "cli-anything.raw",
+                            "verifiedCapabilities": ["cli-anything.piptool.launch"],
+                        },
+                        "cases": [
+                            {
+                                "id": "piptool-help",
+                                "stdout": "pip help\n",
+                                "stderr": "",
+                                "expect": {
+                                    "ok": True,
+                                    "data": {
+                                        "stdout": {"contains": ["pip help"]},
+                                        "stderr": {"equals": ""},
+                                    },
+                                },
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = FakeHub(root=root).repair_entrypoint(
+                "piptool",
+                module="pip",
+                write=True,
+                confirmed=True,
+                require_smoke=True,
+                smoke_args=("--help",),
+            )
+
+            self.assertTrue(result["parser_fixtures"]["marked_verified"])
+            manifest_path = root / "runtime" / "manifests" / "cli-anything.piptool.launch.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertTrue(manifest["spec"]["output"]["verified"])
+            self.assertEqual(
+                manifest["metadata"]["annotations"]["cbn.parser_fixture"],
+                "parser_fixtures/cli-anything.raw.piptool.json",
+            )
+            self.assertEqual(
+                manifest["metadata"]["annotations"]["cbn.parser_fixture_verified_capability"],
+                "cli-anything.piptool.launch",
+            )
+
     def test_adapter_target_package_report_finds_cli_like_modules(self):
         with tempfile.TemporaryDirectory() as tempdir:
             root = Path(tempdir)
@@ -2906,11 +3024,23 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(plan.action, "harness-install-gimp")
         self.assertEqual(plan.commands[0].argv, ("cli-hub", "install", "gimp"))
         self.assertIn("evaluate-harness", plan.as_dict()["notes"][0])
+        self.assertIn(
+            "python -m cbn plugin harness cli-anything status gimp --from-market",
+            plan.as_dict()["verification_commands"],
+        )
+        self.assertIn(
+            "python -m cbn plugin verify-harness cli-anything gimp --no-workflows",
+            plan.as_dict()["verification_commands"],
+        )
 
         uninstall = CliAnythingHub().harness_plan("uninstall", "gimp")
         self.assertEqual(uninstall.action, "harness-uninstall-gimp")
         self.assertEqual(uninstall.commands[0].argv, ("cli-hub", "uninstall", "gimp"))
         self.assertEqual(uninstall.as_dict()["notes"], [])
+        self.assertEqual(
+            uninstall.as_dict()["verification_commands"],
+            ["python -m cbn plugin harness cli-anything status gimp --from-market"],
+        )
 
     def test_cli_harness_plan_does_not_execute_without_yes(self):
         proc = subprocess.run(
@@ -3323,6 +3453,28 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertIn("strategy", payload)
         self.assertIn("execution", payload)
 
+    def test_cli_repair_entrypoint_write_requires_yes(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "plugin",
+                "repair-entrypoint",
+                "cli-anything",
+                "py4csr",
+                "--write",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertEqual(proc.returncode, 6)
+        payload = json.loads(proc.stdout)
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["error_type"], "confirmation_required")
+
     def test_promotion_gate_blocks_unverified_runtime_overlay(self):
         class FakeHub(CliAnythingHub):
             def info(self, harness_name: str) -> CliHubCommandResult:
@@ -3357,7 +3509,7 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(result["source"]["kind"], "runtime_local_overlay")
         self.assertTrue(result["source"]["entrypoint_repair_active"])
         self.assertIn("parser output contract is not verified in the manifest", result["promotion_blockers"])
-        self.assertIn("parser fixtures do not list this capability as verified", result["promotion_blockers"])
+        self.assertNotIn("parser fixtures do not list this capability as verified", result["promotion_blockers"])
         self.assertIn("protocol smoke suite was not run for promotion", result["promotion_blockers"])
         self.assertEqual(
             result["requirements"][0],
@@ -3443,6 +3595,30 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(payload["execution"]["status"], "not_run")
         self.assertIn("summary", payload)
 
+    def test_cli_adapter_smoke_run_requires_yes(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "plugin",
+                "adapter-smoke",
+                "cli-anything",
+                "py4csr",
+                "--module",
+                "py4csr.plotting.sas_compatible_rtf_generator",
+                "--run",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertEqual(proc.returncode, 6)
+        payload = json.loads(proc.stdout)
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["error_type"], "confirmation_required")
+
     def test_cli_adaptation_gate_outputs_acceptance_summary(self):
         proc = subprocess.run(
             [
@@ -3494,6 +3670,29 @@ class CliAnythingHubTests(unittest.TestCase):
         self.assertEqual(payload["harnesses"], ["py4csr"])
         self.assertIn("summary", payload)
         self.assertIn("gates", payload)
+
+    def test_cli_adaptation_queue_smoke_requires_explicit_confirmation(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "plugin",
+                "adaptation-queue",
+                "cli-anything",
+                "--harness",
+                "py4csr",
+                "--run-smoke",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertEqual(proc.returncode, 6)
+        payload = json.loads(proc.stdout)
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["error_type"], "confirmation_required")
 
     def test_cli_sync_market_handles_missing_cli_hub_without_crashing(self):
         proc = subprocess.run(

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import json
 import subprocess
+import tempfile
 import time
 import uuid
 from pathlib import Path
@@ -15,6 +16,25 @@ from cbn_artifacts.store import ArtifactStore
 from cbn_events.bus import EventBus
 from cbn_plugins.manager import PluginCommand, PluginPlan
 from protocol import EventType
+
+
+PLUGIN_COMMAND_OUTPUT_LIMIT_BYTES = 1024 * 1024
+PLUGIN_COMMAND_RESULT_TAIL_CHARS = 4000
+
+_ENV_ALLOWLIST = (
+    "PATH",
+    "PATHEXT",
+    "SYSTEMROOT",
+    "WINDIR",
+    "COMSPEC",
+    "TEMP",
+    "TMP",
+    "HOME",
+    "USERPROFILE",
+    "APPDATA",
+    "LOCALAPPDATA",
+)
+_SECRET_ENV_MARKERS = ("TOKEN", "SECRET", "PASSWORD", "PASSWD", "CREDENTIAL", "AUTH", "COOKIE")
 
 
 def now_iso() -> str:
@@ -223,6 +243,7 @@ class PluginOperationRunner:
             self._publish(EventType.PLUGIN_COMMAND_COMPLETED, plan.plugin_id, result, operation_id)
             return result
 
+        env, env_policy = _operation_env(command.env)
         self._audit(
             "plugin.command.started",
             operation_id,
@@ -235,6 +256,8 @@ class PluginOperationRunner:
                 "optional": command.optional,
                 "timeout_seconds": command.timeout_seconds,
                 "env_overrides": sorted((command.env or {}).keys()),
+                "env_policy": env_policy,
+                "output_limit_bytes": PLUGIN_COMMAND_OUTPUT_LIMIT_BYTES,
             },
         )
         self._publish(
@@ -248,21 +271,16 @@ class PluginOperationRunner:
             },
             operation_id,
         )
-        try:
-            proc = subprocess.run(
-                list(command.argv),
-                cwd=command.cwd,
-                env=_operation_env(command.env),
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                timeout=command.timeout_seconds,
-            )
-        except subprocess.TimeoutExpired as exc:
-            stdout = _timeout_text(exc.stdout)
-            stderr = _timeout_text(exc.stderr)
+        captured = _run_command_with_bounded_output(
+            argv=command.argv,
+            cwd=command.cwd,
+            env=env,
+            timeout_seconds=command.timeout_seconds,
+            output_limit_bytes=PLUGIN_COMMAND_OUTPUT_LIMIT_BYTES,
+        )
+        if captured.get("timed_out"):
+            stdout = str(captured.get("stdout") or "")
+            stderr = str(captured.get("stderr") or "")
             if stderr:
                 stderr = f"{stderr}\n"
             stderr = f"{stderr}command timed out after {command.timeout_seconds} seconds"
@@ -275,8 +293,14 @@ class PluginOperationRunner:
                 "timeout_seconds": command.timeout_seconds,
                 "timed_out": True,
                 "exit_code": 124,
-                "stdout": stdout[-4000:],
-                "stderr": stderr[-4000:],
+                "stdout": stdout[-PLUGIN_COMMAND_RESULT_TAIL_CHARS:],
+                "stderr": stderr[-PLUGIN_COMMAND_RESULT_TAIL_CHARS:],
+                "stdout_bytes": captured.get("stdout_bytes", 0),
+                "stderr_bytes": captured.get("stderr_bytes", 0),
+                "stdout_truncated": captured.get("stdout_truncated", False),
+                "stderr_truncated": captured.get("stderr_truncated", False),
+                "output_limit_bytes": PLUGIN_COMMAND_OUTPUT_LIMIT_BYTES,
+                "env_policy": env_policy,
                 "artifact_ids": self._record_artifact_texts(
                     plan.plugin_id,
                     operation_id,
@@ -288,7 +312,7 @@ class PluginOperationRunner:
             self._audit("plugin.command.completed", operation_id, plan, result)
             self._publish(EventType.PLUGIN_COMMAND_COMPLETED, plan.plugin_id, result, operation_id)
             return result
-        except OSError as exc:
+        if captured.get("spawn_error"):
             result = {
                 "command_id": command_id,
                 "label": command.label,
@@ -299,13 +323,21 @@ class PluginOperationRunner:
                 "timed_out": False,
                 "exit_code": 127,
                 "stdout": "",
-                "stderr": f"{command.argv[0]} failed to start: {exc}",
+                "stderr": f"{command.argv[0]} failed to start: {captured['spawn_error']}",
+                "stdout_bytes": 0,
+                "stderr_bytes": 0,
+                "stdout_truncated": False,
+                "stderr_truncated": False,
+                "output_limit_bytes": PLUGIN_COMMAND_OUTPUT_LIMIT_BYTES,
+                "env_policy": env_policy,
                 "artifact_ids": [],
             }
             self._audit("plugin.command.completed", operation_id, plan, result)
             self._publish(EventType.PLUGIN_COMMAND_COMPLETED, plan.plugin_id, result, operation_id)
             return result
-        artifact_ids = self._record_artifacts(plan.plugin_id, operation_id, command_id, proc)
+        stdout = str(captured.get("stdout") or "")
+        stderr = str(captured.get("stderr") or "")
+        artifact_ids = self._record_artifact_texts(plan.plugin_id, operation_id, command_id, stdout, stderr)
         result = {
             "command_id": command_id,
             "label": command.label,
@@ -314,9 +346,15 @@ class PluginOperationRunner:
             "optional": command.optional,
             "timeout_seconds": command.timeout_seconds,
             "timed_out": False,
-            "exit_code": proc.returncode,
-            "stdout": proc.stdout[-4000:],
-            "stderr": proc.stderr[-4000:],
+            "exit_code": captured.get("exit_code"),
+            "stdout": stdout[-PLUGIN_COMMAND_RESULT_TAIL_CHARS:],
+            "stderr": stderr[-PLUGIN_COMMAND_RESULT_TAIL_CHARS:],
+            "stdout_bytes": captured.get("stdout_bytes", 0),
+            "stderr_bytes": captured.get("stderr_bytes", 0),
+            "stdout_truncated": captured.get("stdout_truncated", False),
+            "stderr_truncated": captured.get("stderr_truncated", False),
+            "output_limit_bytes": PLUGIN_COMMAND_OUTPUT_LIMIT_BYTES,
+            "env_policy": env_policy,
             "artifact_ids": artifact_ids,
         }
         self._audit("plugin.command.completed", operation_id, plan, result)
@@ -409,21 +447,108 @@ class PluginOperationRunner:
         self.event_bus.publish(str(event_type), subject, payload, correlation_id=operation_id)
 
 
-def _timeout_text(value: str | bytes | None) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, bytes):
-        return value.decode("utf-8", errors="replace")
-    return value
+def _run_command_with_bounded_output(
+    argv: tuple[str, ...],
+    cwd: str | None,
+    env: dict[str, str],
+    timeout_seconds: int,
+    output_limit_bytes: int,
+) -> dict[str, Any]:
+    with tempfile.TemporaryDirectory(prefix="cbn-plugin-output-") as tmp:
+        stdout_path = Path(tmp) / "stdout.bin"
+        stderr_path = Path(tmp) / "stderr.bin"
+        with stdout_path.open("wb") as stdout_file, stderr_path.open("wb") as stderr_file:
+            try:
+                proc = subprocess.Popen(
+                    list(argv),
+                    cwd=cwd,
+                    env=env,
+                    stdout=stdout_file,
+                    stderr=stderr_file,
+                )
+            except OSError as exc:
+                return {"spawn_error": str(exc)}
+            timed_out = False
+            try:
+                exit_code = proc.wait(timeout=timeout_seconds)
+            except subprocess.TimeoutExpired:
+                timed_out = True
+                proc.kill()
+                exit_code = 124
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass
+        stdout = _read_output_tail(stdout_path, output_limit_bytes)
+        stderr = _read_output_tail(stderr_path, output_limit_bytes)
+        return {
+            "exit_code": exit_code,
+            "timed_out": timed_out,
+            "stdout": stdout["text"],
+            "stderr": stderr["text"],
+            "stdout_bytes": stdout["total_bytes"],
+            "stderr_bytes": stderr["total_bytes"],
+            "stdout_truncated": stdout["truncated"],
+            "stderr_truncated": stderr["truncated"],
+        }
 
 
-def _operation_env(overrides: dict[str, str] | None = None) -> dict[str, str]:
-    env = os.environ.copy()
-    env.setdefault("PYTHONIOENCODING", "utf-8")
-    env.setdefault("PYTHONUTF8", "1")
+def _read_output_tail(path: Path, limit_bytes: int) -> dict[str, Any]:
+    total_bytes = path.stat().st_size if path.exists() else 0
+    truncated = total_bytes > limit_bytes
+    with path.open("rb") as handle:
+        if truncated:
+            handle.seek(max(0, total_bytes - limit_bytes))
+        data = handle.read(limit_bytes + 1)
+    if len(data) > limit_bytes:
+        data = data[-limit_bytes:]
+        truncated = True
+    text = data.decode("utf-8", errors="replace")
+    if truncated:
+        text = f"[output truncated to last {limit_bytes} of {total_bytes} bytes]\n{text}"
+    return {"text": text, "total_bytes": total_bytes, "truncated": truncated}
+
+
+def _operation_env(overrides: dict[str, str] | None = None) -> tuple[dict[str, str], dict[str, Any]]:
+    source_by_upper = {name.upper(): (name, value) for name, value in os.environ.items()}
+    env: dict[str, str] = {}
+    inherited: list[str] = []
+    denied: list[str] = []
+    for allow_name in _ENV_ALLOWLIST:
+        source = source_by_upper.get(allow_name)
+        if source is None:
+            continue
+        name, value = source
+        if _is_secret_env_name(name):
+            denied.append(name)
+            continue
+        env[name] = value
+        inherited.append(name)
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
+    inherited.extend(["PYTHONIOENCODING", "PYTHONUTF8"])
+    override_keys: list[str] = []
     if overrides:
-        env.update({str(key): str(value) for key, value in overrides.items()})
-    return env
+        for key, value in overrides.items():
+            env_name = str(key)
+            if _is_secret_env_name(env_name):
+                denied.append(env_name)
+                continue
+            env[env_name] = str(value)
+            override_keys.append(env_name)
+    return env, {
+        "mode": "allowlist",
+        "inherited": sorted(set(inherited)),
+        "overrides": sorted(set(override_keys)),
+        "denied": sorted(set(denied)),
+    }
+
+
+def _is_secret_env_name(name: str) -> bool:
+    upper = name.upper()
+    if upper in {"PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "COMSPEC"}:
+        return False
+    return any(marker in upper for marker in _SECRET_ENV_MARKERS)
 
 
 def _read_lock_holder(holder_path: Path) -> dict[str, Any] | None:

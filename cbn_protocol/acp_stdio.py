@@ -337,7 +337,7 @@ def smoke_acp_workflow_stdio(workflow_path: str, dry_run: bool = False, confirme
         and responses[0].get("result", {}).get("agentInfo", {}).get("name") == "CLI Bridge Network"
         and isinstance(session_id, str)
         and prompt_result.get("stopReason") == "end_turn"
-        and cbn.get("workflow_path") == workflow_path
+        and _same_workflow_path(cbn.get("workflow_path"), workflow_path)
         and cbn.get("workflow_id") == workflow_id
         and cbn.get("status") == "completed"
     )
@@ -377,8 +377,8 @@ def _initialize_result(params: Any) -> dict[str, Any]:
         "authMethods": [],
         "_meta": {
             "cbn": {
-                "description": "Minimal ACP stdio facade for CBN capability calls.",
-                "wire_compatible": False,
+                "description": "ACP stdio facade for CBN capability calls.",
+                "wire_compatible": True,
             }
         },
     }
@@ -388,6 +388,12 @@ def _workflow_id_from_path(workflow_path: str) -> str:
     from cbn_execution.graph import WorkflowGraph
 
     return WorkflowGraph.from_file(Path(workflow_path)).workflow_id
+
+
+def _same_workflow_path(left: Any, right: str) -> bool:
+    if not isinstance(left, str):
+        return False
+    return left.replace("\\", "/") == right.replace("\\", "/")
 
 
 def _cbn_metadata(params: dict[str, Any]) -> dict[str, Any]:

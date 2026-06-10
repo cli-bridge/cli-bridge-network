@@ -2,7 +2,9 @@ import sys
 import tempfile
 import unittest
 import json
+import os
 from pathlib import Path
+from unittest.mock import patch
 
 from cbn_audit.log import AuditLog
 from cbn_artifacts.store import ArtifactStore
@@ -226,6 +228,89 @@ class PluginOperationTests(unittest.TestCase):
                 if event["type"] == "plugin.command.started"
             ][0]
             self.assertEqual(started["payload"]["env_overrides"], ["CBN_ADAPTER_SMOKE"])
+
+    def test_plugin_operation_strips_secret_environment(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            audit = AuditLog(root / "audit.jsonl")
+            runner = PluginOperationRunner(
+                audit_log=audit,
+                event_bus=EventBus(root / "events.jsonl"),
+                artifact_store=ArtifactStore(root / "artifacts"),
+            )
+            plan = PluginPlan(
+                plugin_id="test-plugin",
+                action="adapter-smoke",
+                plugin_dir=str(root / "external_plugins" / "test-plugin"),
+                commands=(
+                    PluginCommand(
+                        label="Print secret env",
+                        argv=(
+                            sys.executable,
+                            "-c",
+                            (
+                                "import json, os; "
+                                "print(json.dumps({"
+                                "'inherited': os.environ.get('CBN_TEST_SECRET'), "
+                                "'override': os.environ.get('CBN_OVERRIDE_TOKEN'), "
+                                "'smoke': os.environ.get('CBN_ADAPTER_SMOKE')"
+                                "}))"
+                            ),
+                        ),
+                        env={"CBN_ADAPTER_SMOKE": "1", "CBN_OVERRIDE_TOKEN": "blocked"},
+                    ),
+                ),
+            )
+
+            with patch.dict(os.environ, {"CBN_TEST_SECRET": "leaked"}, clear=False):
+                result = runner.execute(plan)
+
+            self.assertEqual(result["status"], "completed")
+            env = json.loads(result["results"][0]["stdout"])
+            self.assertIsNone(env["inherited"])
+            self.assertIsNone(env["override"])
+            self.assertEqual(env["smoke"], "1")
+            started = [
+                event
+                for event in audit.tail(limit=10)
+                if event["type"] == "plugin.command.started"
+            ][0]
+            self.assertEqual(started["payload"]["env_policy"]["mode"], "allowlist")
+            self.assertIn("CBN_OVERRIDE_TOKEN", started["payload"]["env_policy"]["denied"])
+
+    def test_plugin_operation_caps_output_artifacts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            artifacts = ArtifactStore(root / "artifacts")
+            runner = PluginOperationRunner(
+                audit_log=AuditLog(root / "audit.jsonl"),
+                event_bus=EventBus(root / "events.jsonl"),
+                artifact_store=artifacts,
+            )
+            plan = PluginPlan(
+                plugin_id="test-plugin",
+                action="adapter-smoke",
+                plugin_dir=str(root / "external_plugins" / "test-plugin"),
+                commands=(
+                    PluginCommand(
+                        label="Large output",
+                        argv=(sys.executable, "-c", "print('x' * 100)"),
+                    ),
+                ),
+            )
+
+            with patch("cbn_plugins.operations.PLUGIN_COMMAND_OUTPUT_LIMIT_BYTES", 20):
+                result = runner.execute(plan)
+
+            first = result["results"][0]
+            self.assertEqual(result["status"], "completed")
+            self.assertTrue(first["stdout_truncated"])
+            self.assertEqual(first["output_limit_bytes"], 20)
+            self.assertGreater(first["stdout_bytes"], 20)
+            self.assertTrue(first["artifact_ids"])
+            artifact = artifacts.inspect(first["artifact_ids"][0])
+            self.assertIn("output truncated", artifact["content"])
+            self.assertLessEqual(len(artifact["content"].encode("utf-8")), 128)
 
     def test_plugin_plan_serializes_command_timeout(self):
         plan = PluginPlan(

@@ -245,6 +245,15 @@ class CliAnythingHub:
             )
             if action in {"install", "update"}
             else (),
+            verification_commands=(
+                f"python -m cbn plugin harness cli-anything status {harness_name} --from-market",
+                f"python -m cbn plugin verify-harness cli-anything {harness_name} --no-workflows",
+                f"python -m cbn call cli-anything.{safe_name}.launch --dry-run",
+            )
+            if action in {"install", "update"}
+            else (
+                f"python -m cbn plugin harness cli-anything status {harness_name} --from-market",
+            ),
         )
 
     def harness_operation_gate(
@@ -1551,6 +1560,13 @@ class CliAnythingHub:
             annotations["cbn.repair.smoke.module"] = str(smoke_report["module"])
             annotations["cbn.repair.smoke.args"] = json.dumps(smoke_report["smoke_args"], ensure_ascii=False)
             annotations["cbn.repair.smoke.exit_code"] = str(smoke_report["execution"].get("exit_code"))
+        parser_fixture_gate = _mark_repaired_manifest_verified_from_fixtures(
+            manifest=manifest,
+            capability_id=str(plan["capability_id"]),
+            fixture_dir=self.paths.root / "parser_fixtures",
+            root=self.paths.root,
+            smoke_ok=bool(smoke_report and smoke_report.get("summary", {}).get("smoke_ok")),
+        )
         validation = validate_manifest_dict(
             manifest,
             source_path=repair_manifest_path,
@@ -1622,6 +1638,7 @@ class CliAnythingHub:
             "manifest_path": str(repair_manifest_path),
             "manifest": manifest,
             "repair_provenance": _entrypoint_repair_manifest_provenance(manifest),
+            "parser_fixtures": parser_fixture_gate,
             "validation": validation,
             "execution": execution,
             "next_commands": [
@@ -3019,6 +3036,74 @@ def _parser_fixture_gate(report: dict[str, Any], capability_id: str) -> dict[str
         ),
         "report": report,
     }
+
+
+def _mark_repaired_manifest_verified_from_fixtures(
+    *,
+    manifest: dict[str, Any],
+    capability_id: str,
+    fixture_dir: Path,
+    root: Path,
+    smoke_ok: bool,
+) -> dict[str, Any]:
+    output = manifest.setdefault("spec", {}).setdefault("output", {})
+    if not isinstance(output, dict):
+        return {
+            "ok": False,
+            "parser_ref": None,
+            "capability_verified": False,
+            "marked_verified": False,
+            "error": "manifest spec.output is not an object",
+        }
+    parser_ref = str(output.get("parserRef") or "raw.text")
+    try:
+        fixture_report = run_parser_fixtures(
+            path=fixture_dir,
+            parser_ref=parser_ref,
+            registry=ParserRegistry.builtins(),
+        )
+    except Exception as exc:
+        return {
+            "ok": False,
+            "parser_ref": parser_ref,
+            "capability_verified": False,
+            "marked_verified": False,
+            "error": str(exc),
+        }
+    gate = _parser_fixture_gate(fixture_report, capability_id)
+    gate["marked_verified"] = False
+    if smoke_ok and gate.get("ok") and gate.get("capability_verified"):
+        output["verified"] = True
+        annotations = manifest.setdefault("metadata", {}).setdefault("annotations", {})
+        matching_paths = _matching_parser_fixture_paths(fixture_report, capability_id, root)
+        if matching_paths:
+            annotations["cbn.parser_fixture"] = matching_paths[0]
+        annotations["cbn.parser_fixture_verified_capability"] = capability_id
+        gate["marked_verified"] = True
+    return gate
+
+
+def _matching_parser_fixture_paths(
+    fixture_report: dict[str, Any],
+    capability_id: str,
+    root: Path,
+) -> list[str]:
+    paths = []
+    for item in fixture_report.get("reports") or []:
+        if not isinstance(item, dict):
+            continue
+        if capability_id not in (item.get("verified_capabilities") or []):
+            continue
+        source_path = item.get("source_path")
+        if not isinstance(source_path, str) or not source_path:
+            continue
+        path = Path(source_path)
+        try:
+            path = path.relative_to(root)
+        except ValueError:
+            pass
+        paths.append(path.as_posix())
+    return paths
 
 
 def _promotion_blockers(

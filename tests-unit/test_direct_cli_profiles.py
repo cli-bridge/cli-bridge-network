@@ -67,6 +67,8 @@ class DirectCliProfileTests(unittest.TestCase):
         runtime = build_runtime()
         loaded = {manifest.capability_id for manifest in runtime.registry.list()}
         self.assertTrue(DIRECT_CLI_CAPABILITIES.issubset(loaded))
+        self.assertEqual(runtime.registry.require("feishu.doctor").output.parser_ref, "direct-cli.typed")
+        self.assertTrue(runtime.registry.require("jimeng.user_credit").output.verified)
 
     def test_direct_cli_manifest_policies_keep_live_calls_gated(self):
         runtime = build_runtime()
@@ -87,6 +89,16 @@ class DirectCliProfileTests(unittest.TestCase):
         report = validate_manifest_path(build_runtime().registry.require("feishu.version").source_path.parent)
         self.assertTrue(report["valid"])
         self.assertEqual(report["error_count"], 0)
+
+    def test_direct_cli_typed_parser_classifies_setup_errors(self):
+        parsed = build_runtime().parser_registry.parse(
+            "direct-cli.typed",
+            "",
+            "未检测到有效登录态，请先执行 dreamina login\n",
+        )
+        self.assertEqual(parsed["data"]["profile"], "jimeng")
+        self.assertTrue(parsed["data"]["setup_required"])
+        self.assertEqual(parsed["data"]["error_type"], "auth_required")
 
 
 if __name__ == "__main__":

@@ -132,17 +132,17 @@ def _a2a_gates(checks: list[dict[str, str]]) -> list[dict[str, Any]]:
         ),
         _gate(
             "message_send_smoke",
-            "A2A message/send smoke",
-            _requirement_status(checks, "A2A AgentCard and message/send smoke", "A2A workflow message/send smoke"),
-            "Current smoke covers synchronous local JSON-RPC message/send only.",
+            "A2A SendMessage smoke",
+            _requirement_status(checks, "A2A AgentCard and SendMessage smoke", "A2A workflow SendMessage smoke"),
+            "Current smoke covers synchronous local JSON-RPC SendMessage plus task polling/error mappings.",
             "python -m cbn a2a smoke --capability-id git.version",
         ),
         _gate(
             "task_lifecycle",
             "A2A task lifecycle",
             "missing",
-            "Add task ids, polling, streaming, cancellation, artifacts, history, and version negotiation.",
-            "Build A2A task lifecycle fixtures before marking wire_compatible.",
+            "Add streaming, push notifications, authentication, and broader task lifecycle fixtures.",
+            "Run wire-conformance plus SDK/client conformance before release certification.",
         ),
         _gate(
             "auth_and_transport",

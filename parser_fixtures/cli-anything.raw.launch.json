@@ -8,7 +8,8 @@
     "verifiedCapabilities": [
       "cli-anything.mermaid.launch",
       "cli-anything.macrocli.launch",
-      "cli-anything.3mf.launch"
+      "cli-anything.3mf.launch",
+      "cli-anything.py4csr.launch"
     ]
   },
   "cases": [
@@ -66,6 +67,28 @@
           },
           "stderr": {
             "equals": ""
+          }
+        }
+      }
+    },
+    {
+      "id": "py4csr-rtf-formatter-smoke",
+      "stdout": "RTF table created successfully!\nRTF content length: 3262 characters\n",
+      "stderr": "<frozen runpy>:128: RuntimeWarning: 'py4csr.tables.rtf_formatter' found in sys.modules after import of package 'py4csr.tables', but prior to execution of 'py4csr.tables.rtf_formatter'; this may result in unpredictable behaviour\n",
+      "expect": {
+        "ok": true,
+        "data": {
+          "stdout": {
+            "contains": [
+              "RTF table created successfully!",
+              "RTF content length:"
+            ]
+          },
+          "stderr": {
+            "contains": [
+              "RuntimeWarning",
+              "py4csr.tables.rtf_formatter"
+            ]
           }
         }
       }

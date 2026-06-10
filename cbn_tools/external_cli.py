@@ -43,6 +43,7 @@ class ExternalCliAction:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _configure_utf8_stdio()
     parser = argparse.ArgumentParser(prog="python -m cbn_tools.external_cli")
     parser.add_argument("profile", nargs="?", help="Profile id such as feishu, jimeng, caw, obsidian-cli.")
     parser.add_argument("action", nargs="?", help="Action id within the profile.")
@@ -207,6 +208,13 @@ def _wsl_path(path: Path) -> str:
         return resolved.as_posix()
     parts = [part for part in resolved.parts[1:]]
     return "/mnt/" + drive + "/" + "/".join(parts)
+
+
+def _configure_utf8_stdio() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
 
 
 if __name__ == "__main__":

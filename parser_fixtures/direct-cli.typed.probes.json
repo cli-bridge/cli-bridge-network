@@ -1,0 +1,216 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "ParserFixture",
+  "metadata": {
+    "id": "direct-cli.typed.probes",
+    "title": "Direct external CLI typed probe outputs",
+    "parserRef": "direct-cli.typed",
+    "verifiedCapabilities": [
+      "feishu.version",
+      "feishu.help",
+      "feishu.doctor",
+      "feishu.schema.help",
+      "obsidian-cli.official.help",
+      "obsidian-cli.local-rest.help",
+      "obsidian-cli.local-rest.note.read",
+      "obsidian-cli.local-rest.server.status",
+      "jimeng.version",
+      "jimeng.help",
+      "jimeng.user_credit",
+      "jimeng.list_task",
+      "jimeng.text2image.submit",
+      "caw.version",
+      "caw.help",
+      "caw.schema.help",
+      "caw.status"
+    ]
+  },
+  "cases": [
+    {
+      "id": "feishu-version",
+      "stdout": "lark-cli version 1.0.50\n",
+      "stderr": "",
+      "expect": {
+        "ok": true,
+        "data": {
+          "profile": "feishu",
+          "action": "version",
+          "version": "lark-cli version 1.0.50"
+        }
+      }
+    },
+    {
+      "id": "feishu-doctor-config-missing",
+      "stdout": "{\"cli_version\":{\"status\":\"pass\"},\"cli_update\":{\"status\":\"pass\"},\"config_file\":{\"status\":\"fail\",\"message\":\"not configured\"}}\n",
+      "stderr": "",
+      "expect": {
+        "ok": true,
+        "data": {
+          "output_kind": "json",
+          "ready": false,
+          "setup_required": true,
+          "error_type": "config_missing"
+        }
+      }
+    },
+    {
+      "id": "feishu-schema-help",
+      "stdout": "Usage: lark-cli schema [OPTIONS]\nCommands:\n  export\n  validate\n",
+      "stderr": "",
+      "expect": {
+        "ok": true,
+        "data": {
+          "profile": "feishu",
+          "action": "schema-help"
+        }
+      }
+    },
+    {
+      "id": "obsidian-official-help",
+      "stdout": "Usage: Obsidian [options]\nOptions:\n  --help\n  --version\n",
+      "stderr": "",
+      "expect": {
+        "ok": true,
+        "data": {
+          "profile": "obsidian-cli",
+          "action": "official-help"
+        }
+      }
+    },
+    {
+      "id": "obsidian-local-rest-unavailable",
+      "stdout": "{\"ok\":false,\"error\":\"connection refused\"}\n",
+      "stderr": "",
+      "expect": {
+        "ok": true,
+        "data": {
+          "output_kind": "json",
+          "profile": "obsidian-cli",
+          "ready": false,
+          "setup_required": true,
+          "error_type": "local_rest_unavailable"
+        }
+      }
+    },
+    {
+      "id": "obsidian-note-read-unavailable",
+      "stdout": "",
+      "stderr": "Obsidian Local REST connection failed: API key missing\n",
+      "expect": {
+        "ok": true,
+        "data": {
+          "profile": "obsidian-cli",
+          "ready": false,
+          "setup_required": true,
+          "error_type": "local_rest_unavailable"
+        }
+      }
+    },
+    {
+      "id": "jimeng-version-json",
+      "stdout": "{\n  \"version\": \"46b5b0e-dirty\",\n  \"commit\": \"46b5b0e\",\n  \"build_time\": \"2026-06-03T19:39:25Z\"\n}\n",
+      "stderr": "",
+      "expect": {
+        "ok": true,
+        "data": {
+          "output_kind": "json",
+          "profile": "jimeng",
+          "version": "46b5b0e-dirty",
+          "commit": "46b5b0e"
+        }
+      }
+    },
+    {
+      "id": "jimeng-auth-required",
+      "stdout": "",
+      "stderr": "未检测到有效登录态，请先执行 dreamina login\n",
+      "expect": {
+        "ok": true,
+        "data": {
+          "profile": "jimeng",
+          "ready": false,
+          "setup_required": true,
+          "error_type": "auth_required"
+        }
+      }
+    },
+    {
+      "id": "jimeng-list-task-auth-required",
+      "stdout": "",
+      "stderr": "未检测到有效登录态，请先执行 dreamina login\n",
+      "expect": {
+        "ok": true,
+        "data": {
+          "profile": "jimeng",
+          "ready": false,
+          "setup_required": true,
+          "error_type": "auth_required"
+        }
+      }
+    },
+    {
+      "id": "jimeng-text2image-auth-required",
+      "stdout": "",
+      "stderr": "未检测到有效登录态，请先执行 dreamina login\n",
+      "expect": {
+        "ok": true,
+        "data": {
+          "profile": "jimeng",
+          "ready": false,
+          "setup_required": true,
+          "error_type": "auth_required"
+        }
+      }
+    },
+    {
+      "id": "caw-status-unhealthy",
+      "stdout": "{\"healthy\":false,\"healthy_error\":\"Get \\\"/health\\\": unsupported protocol scheme \\\"\\\"\"}\n",
+      "stderr": "",
+      "expect": {
+        "ok": true,
+        "data": {
+          "output_kind": "json",
+          "profile": "caw",
+          "action": "status",
+          "healthy": false,
+          "ready": false,
+          "setup_required": true,
+          "error_type": "service_unhealthy"
+        }
+      }
+    },
+    {
+      "id": "caw-help",
+      "stdout": "caw is the command-line interface for Cobo Agentic Wallet.\nAvailable Commands:\n  wallet\n  pact\n  tx\n  payment\n  fetch\n  schema\n  status\n",
+      "stderr": "",
+      "expect": {
+        "ok": true,
+        "data": {
+          "profile": "caw",
+          "action": "help"
+        }
+      }
+    },
+    {
+      "id": "caw-schema-help",
+      "stdout": "caw schema commands for Cobo Agentic Wallet.\nCommands:\n  export\n  inspect\n",
+      "stderr": "",
+      "expect": {
+        "ok": true,
+        "data": {
+          "profile": "caw",
+          "action": "schema-help"
+        }
+      }
+    },
+    {
+      "id": "launcher-failure",
+      "stdout": "",
+      "stderr": "wsl failed to start: The system cannot find the file specified\n",
+      "expect": {
+        "ok": false,
+        "errorContains": "direct CLI launcher failed"
+      }
+    }
+  ]
+}

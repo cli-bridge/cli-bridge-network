@@ -40,8 +40,10 @@ from cbn_protocol.readiness import protocol_readiness_report
 from cbn_protocol.mcp_stdio import serve_stdio, smoke_mcp_stdio
 from cbn_protocol.mcp_stdio import smoke_mcp_workflow_stdio
 from cbn_protocol.smoke_suite import protocol_smoke_suite
+from cbn_protocol.wire_conformance import protocol_wire_conformance_suite
 from cbn_runtime.context import build_runtime
 from cbn_workflow.catalog import inspect_workflow, list_workflows
+from cbn_workflow.package import compile_workflow_package, inspect_workflow_package, run_workflow_package
 from api_server.server import ROUTE_SUMMARY, serve
 from nodes import CAPABILITY_NODE_MAPPINGS, init_builtin_nodes
 
@@ -216,6 +218,13 @@ def main(argv: list[str] | None = None) -> int:
             payload = protocol_lifecycle_suite(
                 capability_id=args.capability_id,
                 workflow_path=args.workflow_path,
+            )
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0 if payload["ok"] else 9
+        if args.protocol_command == "wire-conformance":
+            payload = protocol_wire_conformance_suite(
+                target=args.target,
+                capability_id=args.capability_id,
             )
             print(json.dumps(payload, ensure_ascii=False, indent=2))
             return 0 if payload["ok"] else 9
@@ -408,6 +417,40 @@ def main(argv: list[str] | None = None) -> int:
             result = inspect_workflow(Path(args.path), registry=runtime.registry)
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0 if result["valid"] else 7
+        if args.workflow_command == "compile":
+            result = compile_workflow_package(
+                Path(args.path),
+                Path(args.out) if args.out else None,
+                runtime.registry,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["lock_status"]["ok"] else 7
+        if args.workflow_command == "run-package":
+            result = run_workflow_package(
+                Path(args.package_dir),
+                runtime.registry,
+                runtime.workflow_runner,
+                dry_run=args.dry_run,
+                confirmed=args.yes,
+                write_golden=args.write_golden,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["ok"] else 4
+        if args.workflow_command == "inspect-package":
+            result = inspect_workflow_package(Path(args.package_dir), registry=runtime.registry)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["ok"] else 7
+        if args.workflow_command == "golden":
+            result = run_workflow_package(
+                Path(args.package_dir),
+                runtime.registry,
+                runtime.workflow_runner,
+                dry_run=args.dry_run,
+                confirmed=args.yes,
+                write_golden=True,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["ok"] else 4
         graph = WorkflowGraph.from_file(Path(args.path))
         if args.workflow_command == "validate":
             graph.validate()
@@ -478,6 +521,16 @@ def main(argv: list[str] | None = None) -> int:
                 args.operation_id,
                 inputs=_parse_operation_inputs(args.input),
                 confirmed=args.yes,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["ok"] else 13
+        if args.plugin_command == "verify-plan":
+            result = manager.verify_plan(
+                args.plugin_id,
+                action=args.action,
+                include_codex_skill=args.with_codex_skill,
+                run=args.run,
+                timeout_seconds=args.timeout_seconds,
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0 if result["ok"] else 13
@@ -708,6 +761,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.plugin_command == "repair-entrypoint":
             if args.plugin_id != "cli-anything":
                 raise KeyError(f"repair-entrypoint is not implemented for plugin: {args.plugin_id}")
+            if args.write and not args.yes:
+                return _print_cli_error(
+                    "confirmation_required",
+                    "entrypoint repair writes require --yes",
+                )
             result = CliAnythingHub().repair_entrypoint(
                 args.harness_name,
                 from_market=args.from_market,
@@ -747,6 +805,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.plugin_command == "adapter-smoke":
             if args.plugin_id != "cli-anything":
                 raise KeyError(f"adapter-smoke is not implemented for plugin: {args.plugin_id}")
+            if args.run and not args.yes:
+                return _print_cli_error(
+                    "confirmation_required",
+                    "adapter smoke execution requires --yes",
+                )
             result = CliAnythingHub().adapter_target_smoke(
                 args.harness_name,
                 module=args.module,
@@ -761,6 +824,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.plugin_command == "adaptation-gate":
             if args.plugin_id != "cli-anything":
                 raise KeyError(f"adaptation-gate is not implemented for plugin: {args.plugin_id}")
+            if args.run_smoke and not args.yes:
+                return _print_cli_error(
+                    "confirmation_required",
+                    "adaptation gate smoke execution requires --yes",
+                )
             result = CliAnythingHub().adaptation_gate(
                 args.harness_name,
                 from_market=args.from_market,
@@ -776,6 +844,16 @@ def main(argv: list[str] | None = None) -> int:
         if args.plugin_command == "adaptation-queue":
             if args.plugin_id != "cli-anything":
                 raise KeyError(f"adaptation-queue is not implemented for plugin: {args.plugin_id}")
+            if args.run_smoke and not args.yes:
+                return _print_cli_error(
+                    "confirmation_required",
+                    "adaptation queue smoke execution requires --yes",
+                )
+            if args.run_smoke and not args.harness and args.include_blocked:
+                return _print_cli_error(
+                    "blocked",
+                    "adaptation queue smoke execution requires explicit --harness entries or --no-blocked",
+                )
             result = CliAnythingHub().adaptation_queue(
                 harnesses=tuple(args.harness),
                 query=args.query,
@@ -922,3 +1000,18 @@ def _operation_exit_code(result: dict) -> int:
     if status == "blocked":
         return 14
     return 15
+
+
+def _print_cli_error(error_type: str, message: str) -> int:
+    print(
+        json.dumps(
+            {
+                "ok": False,
+                "error_type": error_type,
+                "error": message,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return 6

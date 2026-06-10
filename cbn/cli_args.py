@@ -116,6 +116,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     protocol_lifecycle.add_argument("--capability-id", default="git.version")
     protocol_lifecycle.add_argument("--workflow-path", default="workflows/example.json")
+    protocol_wire = protocol_subcommands.add_parser(
+        "wire-conformance",
+        help="Run local official-shape MCP/A2A/ACP wire conformance checks.",
+    )
+    protocol_wire.add_argument("target", choices=["mcp", "a2a", "acp", "all"], nargs="?", default="all")
+    protocol_wire.add_argument("--capability-id", default="git.version")
     protocol_smoke_suite = protocol_subcommands.add_parser(
         "smoke-suite",
         help="Run the MVP MCP/A2A/ACP smoke suite for selected capabilities and workflows.",
@@ -280,7 +286,7 @@ def build_parser() -> argparse.ArgumentParser:
     approvals_deny.add_argument("approval_id")
     approvals_deny.add_argument("--reason", default="")
 
-    workflow_parser = subcommands.add_parser("workflow", help="Validate, plan, or run workflows.")
+    workflow_parser = subcommands.add_parser("workflow", help="Validate, plan, package, or run workflows.")
     workflow_subcommands = workflow_parser.add_subparsers(dest="workflow_command")
     workflow_subcommands.add_parser("list", help="List workflow descriptors.")
     workflow_inspect = workflow_subcommands.add_parser("inspect", help="Inspect one workflow descriptor.")
@@ -293,6 +299,39 @@ def build_parser() -> argparse.ArgumentParser:
     workflow_run.add_argument("path")
     workflow_run.add_argument("--dry-run", action="store_true")
     workflow_run.add_argument("--yes", action="store_true", help="Confirm high-risk workflow tasks.")
+    workflow_compile = workflow_subcommands.add_parser(
+        "compile",
+        help="Compile a workflow into an executable workflow package.",
+    )
+    workflow_compile.add_argument("path", help="Workflow JSON path.")
+    workflow_compile.add_argument(
+        "--out",
+        help="Output package directory. Defaults to runtime/workflow-packages/<workflow_id>.",
+    )
+    workflow_run_package = workflow_subcommands.add_parser(
+        "run-package",
+        help="Run a compiled workflow package.",
+    )
+    workflow_run_package.add_argument("package_dir", help="Compiled workflow package directory.")
+    workflow_run_package.add_argument("--dry-run", action="store_true")
+    workflow_run_package.add_argument("--yes", action="store_true", help="Confirm high-risk workflow tasks.")
+    workflow_run_package.add_argument(
+        "--write-golden",
+        action="store_true",
+        help="Write normalized golden_run.jsonl after the run.",
+    )
+    workflow_inspect_package = workflow_subcommands.add_parser(
+        "inspect-package",
+        help="Inspect a compiled workflow package and its run state.",
+    )
+    workflow_inspect_package.add_argument("package_dir", help="Compiled workflow package directory.")
+    workflow_golden = workflow_subcommands.add_parser(
+        "golden",
+        help="Run a workflow package and regenerate golden_run.jsonl.",
+    )
+    workflow_golden.add_argument("package_dir", help="Compiled workflow package directory.")
+    workflow_golden.add_argument("--dry-run", action="store_true")
+    workflow_golden.add_argument("--yes", action="store_true", help="Confirm high-risk workflow tasks.")
 
     runtime_parser = subcommands.add_parser("runtime", help="Inspect or prepare local runtime dependencies.")
     runtime_subcommands = runtime_parser.add_subparsers(dest="runtime_command")
@@ -345,6 +384,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="Input value used to resolve descriptor placeholders; repeatable.",
     )
     plugin_operation_plan.add_argument("--yes", action="store_true", help="Confirm side-effecting operation dispatch.")
+
+    plugin_verify_plan = plugin_subcommands.add_parser(
+        "verify-plan",
+        help="Preview or run a plugin plan's post-operation verification commands.",
+    )
+    plugin_verify_plan.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
+    plugin_verify_plan.add_argument(
+        "--action",
+        choices=["install", "update"],
+        default="install",
+        help="Plugin plan action whose verification commands should be checked.",
+    )
+    plugin_verify_plan.add_argument(
+        "--with-codex-skill",
+        action="store_true",
+        help="Include optional Codex skill install steps when deriving the plugin plan.",
+    )
+    plugin_verify_plan.add_argument("--run", action="store_true", help="Run safe read-only verification commands.")
+    plugin_verify_plan.add_argument("--timeout-seconds", type=int, default=60)
 
     plugin_preflight = plugin_subcommands.add_parser("preflight", help="Run install readiness checks.")
     plugin_preflight.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
