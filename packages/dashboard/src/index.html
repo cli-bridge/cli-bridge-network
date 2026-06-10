@@ -710,6 +710,13 @@
             data-api-path="/workflows/run"
             data-api-body='{"path":"workflows/cli-anything-macrocli-mermaid-routing.example.json"}'
           >MacroCLI To Mermaid</button>
+          <button id="openAdapterAgentDialog" type="button">Adapter Agent</button>
+          <button
+            data-command="python -m cbn_adapter_agent --orchestrate --workflow-path workflows/auth-gated-first-run.example.json --glm-validate"
+            data-api-method="POST"
+            data-api-path="/adapter-agent/orchestrate"
+            data-api-body='{"workflow_path":"workflows/auth-gated-first-run.example.json","message":"Initialize this workflow, route CLI outputs, and guide login or API-key fallback before running.","use_glm":true}'
+          >Auth Init Plan</button>
           <button data-command="python -m cbn workflow run workflows/example.json --yes">Run</button>
           <button data-command="cbn workflow stop &lt;run-id&gt;">Stop</button>
         </section>
@@ -852,6 +859,55 @@
         </section>
       </aside>
     </main>
+
+    <dialog id="adapterAgentDialog" class="agent-dialog" aria-labelledby="adapterAgentTitle">
+      <div class="dialog-head">
+        <div>
+          <h2 id="adapterAgentTitle">Adapter Agent</h2>
+          <p>GLM-guided workflow orchestration with CLI routing and setup fallback.</p>
+        </div>
+        <button id="closeAdapterAgentDialog" type="button" aria-label="Close Adapter Agent dialog">Close</button>
+      </div>
+      <div class="agent-dialog-grid">
+        <section class="operation-card">
+          <h3>Turn</h3>
+          <label>
+            Workflow
+            <input id="adapterWorkflowPath" type="text" value="workflows/auth-gated-first-run.example.json" />
+          </label>
+          <label>
+            Message
+            <textarea id="adapterAgentMessage" rows="5">Initialize this workflow, route CLI outputs, and guide login or API-key fallback before running.</textarea>
+          </label>
+          <label class="operation-checkbox">
+            <input id="adapterUseGlm" type="checkbox" checked />
+            GLM
+          </label>
+          <div class="dialog-actions">
+            <button id="sendAdapterAgentTurn" type="button">Send</button>
+            <button id="stageAdapterAgentResume" type="button" disabled>Stage Resume</button>
+          </div>
+        </section>
+        <section class="operation-card">
+          <h3>Response</h3>
+          <pre id="adapterAgentMessages">No Adapter Agent turn yet.</pre>
+        </section>
+      </div>
+      <div class="agent-dialog-grid">
+        <section class="operation-card">
+          <h3>Setup Fallback</h3>
+          <div id="adapterAgentSetup" class="operation-detail" aria-live="polite">
+            Auth and API-key setup guidance will appear here.
+          </div>
+        </section>
+        <section class="operation-card">
+          <h3>CLI Routes</h3>
+          <div id="adapterAgentRoutes" class="operation-detail" aria-live="polite">
+            CLI-to-CLI routing will appear here.
+          </div>
+        </section>
+      </div>
+    </dialog>
 
     <script src="./app.js"></script>
   </body>

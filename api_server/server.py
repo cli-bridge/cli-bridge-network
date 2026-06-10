@@ -574,6 +574,22 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             )
             self._send(200 if result["status"] == "completed" else 409, result)
             return
+        if self.path == "/adapter-agent/orchestrate":
+            workflow_path = payload.get("workflow_path") or payload.get("path") or DEFAULT_WORKFLOW_PATH
+            message = payload.get("message", "")
+            if not isinstance(workflow_path, str) or not workflow_path:
+                self._send_error(400, "bad_request", "workflow_path must be a non-empty string")
+                return
+            if not isinstance(message, str):
+                self._send_error(400, "bad_request", "message must be a string")
+                return
+            result = build_orchestration_turn(
+                message=message,
+                workflow_path=workflow_path,
+                use_glm=bool(payload.get("use_glm", True)),
+            )
+            self._send(200, result)
+            return
         if self.path == "/runtime/transports/gate":
             manager = PluginManager()
             result = manager.runtime_transport_gate(payload.get("kind", "pty"))

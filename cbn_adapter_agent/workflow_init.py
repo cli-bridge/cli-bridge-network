@@ -22,7 +22,8 @@ def build_workflow_initialization_plan(
     root: Path | None = None,
 ) -> dict[str, Any]:
     paths = resolve_project_paths(root)
-    graph = WorkflowGraph.from_file(workflow_path)
+    source_path = workflow_path if workflow_path.is_absolute() else paths.root / workflow_path
+    graph = WorkflowGraph.from_file(source_path)
     graph.validate()
     registry = ManifestRegistry()
     registry.load_dir(paths.manifests)

@@ -12,6 +12,7 @@ from cbn_adapter_agent.compiler import (
     write_adapter_draft,
 )
 from cbn_adapter_agent.llm_validation import _bounded_payload, validate_with_glm
+from cbn_adapter_agent.orchestrator import build_orchestration_turn
 from cbn_adapter_agent.workflow_init import build_workflow_initialization_plan
 
 
@@ -32,12 +33,13 @@ class AdapterAgentHarnessTests(unittest.TestCase):
         setup_ids = {guide["setup_id"] for guide in draft["setup_guides"]}
         self.assertIn("jimeng-oauth-login", setup_ids)
 
-    def test_adapter_agent_draft_keeps_unverified_outputs_partial(self):
+    def test_adapter_agent_draft_keeps_acceptance_pending_after_parser_verification(self):
         draft = build_adapter_draft("caw")
         stages = {stage["id"]: stage for stage in draft["stages"]}
 
-        self.assertEqual(stages["parser_contracts"]["status"], "partial")
-        self.assertIn("caw.status", stages["parser_contracts"]["evidence"]["unverified_capabilities"])
+        self.assertEqual(stages["parser_contracts"]["status"], "passed")
+        self.assertEqual(stages["parser_contracts"]["evidence"]["unverified_capabilities"], [])
+        self.assertEqual(stages["acceptance"]["status"], "pending")
         self.assertIn("present structured diff", " ".join(draft["next_actions"]))
 
     def test_adapter_agent_batch_summarizes_all_profiles(self):
@@ -136,6 +138,34 @@ class AdapterAgentHarnessTests(unittest.TestCase):
         self.assertIn("submit_id", missing_names)
         self.assertEqual(query_task["status"], "requires_setup_and_inputs")
 
+    def test_workflow_initialization_resolves_relative_path_from_root(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manifest_dir = root / "manifests"
+            manifest_dir.mkdir()
+            (manifest_dir / "jimeng.user-credit.json").write_text(
+                Path("manifests/jimeng.user-credit.json").read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            workflow_dir = root / "workflows"
+            workflow_dir.mkdir()
+            workflow_path = workflow_dir / "auth-workflow.json"
+            workflow_path.write_text(
+                json.dumps(
+                    {
+                        "apiVersion": "bridge.dev/v1alpha1",
+                        "kind": "Workflow",
+                        "metadata": {"id": "auth.workflow"},
+                        "spec": {"tasks": [{"id": "credit", "uses": "jimeng.user_credit"}]},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            plan = build_workflow_initialization_plan(Path("workflows/auth-workflow.json"), root=root)
+
+        self.assertEqual(plan["workflow"]["path"], str(Path("workflows/auth-workflow.json")))
+        self.assertEqual(plan["tasks"][0]["uses"], "jimeng.user_credit")
+
     def test_adapter_agent_workflow_init_cli_outputs_guidance(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow_path = Path(tmp) / "auth-workflow.json"
@@ -162,6 +192,51 @@ class AdapterAgentHarnessTests(unittest.TestCase):
         self.assertEqual(payload["status"], "requires_user_setup")
         self.assertEqual(payload["setup_guides"][0]["setup_id"], "jimeng-oauth-login")
 
+    def test_adapter_agent_orchestration_turn_guides_auth_fallback(self):
+        turn = build_orchestration_turn(
+            message="Initialize. api-key:dummy-redaction-token.abcdefghijklmnopqrstuvwxyz",
+            workflow_path="workflows/auth-gated-first-run.example.json",
+            use_glm=False,
+        )
+
+        self.assertEqual(turn["kind"], "AdapterAgentOrchestrationTurn")
+        self.assertEqual(turn["status"], "requires_user_setup_and_inputs")
+        self.assertTrue(turn["message_redacted"])
+        self.assertNotIn("dummy-redaction-token", json.dumps(turn, ensure_ascii=False))
+        setup_ids = {
+            fallback["setup"]["setup_id"]
+            for fallback in turn["auth_fallbacks"]
+            if fallback.get("setup")
+        }
+        self.assertIn("jimeng-oauth-login", setup_ids)
+        self.assertIn("obsidian-local-rest-api-key", setup_ids)
+        route_by_task = {route["task_id"]: route for route in turn["cli_routes"]}
+        self.assertEqual(route_by_task["query-image-result"]["args_from"][0]["task"], "draft-image")
+        self.assertIn("--yes", turn["continuation"]["command"])
+
+    def test_adapter_agent_orchestrate_cli_outputs_guidance_without_failure_exit(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn_adapter_agent",
+                "--orchestrate",
+                "--workflow-path",
+                "workflows/auth-gated-first-run.example.json",
+                "--message",
+                "initialize",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["kind"], "AdapterAgentOrchestrationTurn")
+        self.assertEqual(payload["recommended_next_action"], "guide_user_setup_and_collect_inputs")
+        self.assertEqual(proc.stderr, "")
+
     def test_glm_validation_skips_without_key(self):
         with patch.dict("os.environ", {}, clear=True):
             result = validate_with_glm({"kind": "sample"})
@@ -178,6 +253,25 @@ class AdapterAgentHarnessTests(unittest.TestCase):
         first = bounded["drafts"][0]
         self.assertIn("capability_candidates", first)
         self.assertTrue(first["capability_candidates"])
+
+    def test_glm_validation_bounds_orchestration_turn_without_dropping_setup(self):
+        turn = build_orchestration_turn(
+            message="Initialize",
+            workflow_path="workflows/auth-gated-first-run.example.json",
+            use_glm=False,
+        )
+        turn["padding"] = "x" * 20000
+        bounded = _bounded_payload(turn)
+
+        self.assertEqual(bounded["truncation_strategy"], "adapter-orchestration-turn")
+        self.assertEqual(bounded["workflow_initialization"]["status"], "requires_user_setup_and_inputs")
+        setup_ids = {
+            guide["setup_id"]
+            for guide in bounded["workflow_initialization"]["setup_guides"]
+        }
+        self.assertIn("jimeng-oauth-login", setup_ids)
+        self.assertIn("obsidian-local-rest-api-key", setup_ids)
+        self.assertTrue(bounded["auth_fallbacks"])
 
 
 if __name__ == "__main__":

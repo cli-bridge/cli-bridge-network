@@ -17,11 +17,23 @@ const operationDetail = document.getElementById("operationDetail");
 const clearOperationDetail = document.getElementById("clearOperationDetail");
 const providerOperations = document.getElementById("providerOperations");
 const clearProviderOperations = document.getElementById("clearProviderOperations");
+const openAdapterAgentDialog = document.getElementById("openAdapterAgentDialog");
+const adapterAgentDialog = document.getElementById("adapterAgentDialog");
+const closeAdapterAgentDialog = document.getElementById("closeAdapterAgentDialog");
+const adapterWorkflowPath = document.getElementById("adapterWorkflowPath");
+const adapterAgentMessage = document.getElementById("adapterAgentMessage");
+const adapterUseGlm = document.getElementById("adapterUseGlm");
+const sendAdapterAgentTurn = document.getElementById("sendAdapterAgentTurn");
+const stageAdapterAgentResume = document.getElementById("stageAdapterAgentResume");
+const adapterAgentMessages = document.getElementById("adapterAgentMessages");
+const adapterAgentSetup = document.getElementById("adapterAgentSetup");
+const adapterAgentRoutes = document.getElementById("adapterAgentRoutes");
 
 const CBN_DAEMON_TOKEN_KEY = "cbn.daemonSessionToken";
 
 let activeCommand = "";
 let logLines = ["Dashboard loaded. Daemon API calls are available when cbn daemon is running."];
+let adapterAgentLastTurn = null;
 
 function renderLog() {
   operationLog.textContent = logLines.slice(-30).join("\n");
@@ -456,6 +468,150 @@ function renderOperationDetail(path, payload) {
   operationDetail.appendChild(card);
 }
 
+function openAdapterAgent() {
+  const command = "python -m cbn_adapter_agent --orchestrate --workflow-path workflows/auth-gated-first-run.example.json --glm-validate";
+  stageCommand(command, "Open Adapter Agent");
+  if (typeof adapterAgentDialog.showModal === "function") {
+    adapterAgentDialog.showModal();
+    return;
+  }
+  adapterAgentDialog.setAttribute("open", "");
+}
+
+function closeAdapterAgent() {
+  if (typeof adapterAgentDialog.close === "function") {
+    adapterAgentDialog.close();
+    return;
+  }
+  adapterAgentDialog.removeAttribute("open");
+}
+
+async function sendAdapterAgent() {
+  const workflowPath = adapterWorkflowPath.value.trim() || "workflows/auth-gated-first-run.example.json";
+  const body = {
+    workflow_path: workflowPath,
+    message: adapterAgentMessage.value,
+    use_glm: adapterUseGlm.checked,
+  };
+  const command = [
+    "python -m cbn_adapter_agent --orchestrate",
+    `--workflow-path ${workflowPath}`,
+    adapterUseGlm.checked ? "--glm-validate" : null,
+  ].filter(Boolean).join(" ");
+  stageCommand(command, "Adapter Agent orchestration turn");
+  adapterAgentMessages.textContent = "Running Adapter Agent orchestration...";
+  appendLog("Calling Adapter Agent orchestration.");
+  try {
+    const response = await fetch(apiUrl("/adapter-agent/orchestrate"), {
+      method: "POST",
+      headers: daemonHeaders(true),
+      body: renderJson(body),
+    });
+    const payload = await response.json();
+    apiResult.textContent = renderJson(payload);
+    renderAdapterAgentTurn(payload);
+    setApiStatus(response.ok ? "Connected" : `HTTP ${response.status}`);
+    appendLog(`Adapter Agent: HTTP ${response.status}`);
+  } catch (error) {
+    setApiStatus("Unavailable");
+    const fallback = {
+      error: String(error),
+      fallback_command: command,
+    };
+    apiResult.textContent = renderJson(fallback);
+    adapterAgentMessages.textContent = renderJson(fallback);
+    appendLog("Adapter Agent API unavailable; command remains staged.");
+  }
+}
+
+function renderAdapterAgentTurn(payload) {
+  if (payload?.kind !== "AdapterAgentOrchestrationTurn") {
+    return;
+  }
+  adapterAgentLastTurn = payload;
+  adapterAgentMessages.textContent = payload.assistant_message || renderJson(payload);
+  renderAdapterAgentSetup(payload.auth_fallbacks || []);
+  renderAdapterAgentRoutes(payload.cli_routes || []);
+  const command = Array.isArray(payload.continuation?.command)
+    ? payload.continuation.command.join(" ")
+    : "";
+  stageAdapterAgentResume.disabled = !command;
+  stageAdapterAgentResume.dataset.command = command;
+  stageAdapterAgentResume.dataset.label = `Resume ${payload.workflow_path}`;
+}
+
+function renderAdapterAgentSetup(fallbacks) {
+  adapterAgentSetup.replaceChildren();
+  if (!Array.isArray(fallbacks) || fallbacks.length === 0) {
+    adapterAgentSetup.textContent = "No setup fallback required.";
+    return;
+  }
+  fallbacks.forEach((fallback) => {
+    const card = document.createElement("article");
+    card.className = "operation-card operation-blocked";
+    const title = document.createElement("h3");
+    title.textContent = `${fallback.task_id}: ${fallback.uses}`;
+    card.appendChild(title);
+
+    const setup = fallback.setup || {};
+    const summary = document.createElement("p");
+    summary.textContent = [setup.title, fallback.status].filter(Boolean).join(" | ");
+    card.appendChild(summary);
+
+    if (Array.isArray(setup.user_steps) && setup.user_steps.length > 0) {
+      card.appendChild(listSection("User Steps", setup.user_steps, "operation-list"));
+    }
+    if (Array.isArray(setup.verification_commands) && setup.verification_commands.length > 0) {
+      card.appendChild(
+        listSection(
+          "Verification Commands",
+          setup.verification_commands.map((command) => command.argv.join(" ")),
+          "operation-list mono-list",
+        ),
+      );
+    }
+    if (Array.isArray(fallback.missing_runtime_inputs) && fallback.missing_runtime_inputs.length > 0) {
+      card.appendChild(
+        listSection(
+          "Missing Inputs",
+          fallback.missing_runtime_inputs.map((input) => `${input.name}: ${input.kind}`),
+          "candidate-blockers",
+        ),
+      );
+    }
+    adapterAgentSetup.appendChild(card);
+  });
+}
+
+function renderAdapterAgentRoutes(routes) {
+  adapterAgentRoutes.replaceChildren();
+  if (!Array.isArray(routes) || routes.length === 0) {
+    adapterAgentRoutes.textContent = "No CLI routes returned.";
+    return;
+  }
+  routes.forEach((route) => {
+    const card = document.createElement("article");
+    card.className = "operation-card operation-ok";
+    const title = document.createElement("h3");
+    title.textContent = `${route.task_id}: ${route.uses}`;
+    card.appendChild(title);
+    const summary = document.createElement("p");
+    summary.textContent = route.communication || "direct CLI invocation";
+    card.appendChild(summary);
+    const details = [];
+    if (Array.isArray(route.needs) && route.needs.length > 0) {
+      details.push(`needs ${route.needs.join(", ")}`);
+    }
+    if (Array.isArray(route.args_from) && route.args_from.length > 0) {
+      details.push(...route.args_from.map((item) => `${item.task} -> ${item.selector}`));
+    }
+    if (details.length > 0) {
+      card.appendChild(listSection("Route", details, "operation-list mono-list"));
+    }
+    adapterAgentRoutes.appendChild(card);
+  });
+}
+
 function operationTitle(path, payload) {
   const harness = payload?.harness_name ? `: ${payload.harness_name}` : "";
   if (path.endsWith("/evaluate-harness")) {
@@ -604,6 +760,9 @@ async function callApi(button) {
     if (path.startsWith("/plugins/operations") && payload?.kind === "PluginProviderOperationCatalog") {
       renderProviderOperations(payload);
     }
+    if (path === "/adapter-agent/orchestrate") {
+      renderAdapterAgentTurn(payload);
+    }
     renderOperationDetail(path, payload);
     setApiStatus(response.ok ? "Connected" : `HTTP ${response.status}`);
     appendLog(`${label}: HTTP ${response.status}`);
@@ -676,6 +835,18 @@ document.getElementById("checkApi").addEventListener("click", () => {
       command: "python -m cbn daemon serve --host 127.0.0.1 --port 8787",
     },
   });
+});
+
+openAdapterAgentDialog.addEventListener("click", openAdapterAgent);
+closeAdapterAgentDialog.addEventListener("click", closeAdapterAgent);
+sendAdapterAgentTurn.addEventListener("click", sendAdapterAgent);
+stageAdapterAgentResume.addEventListener("click", () => {
+  const command = stageAdapterAgentResume.dataset.command;
+  if (!command) {
+    appendLog("No Adapter Agent resume command available.");
+    return;
+  }
+  stageCommand(command, stageAdapterAgentResume.dataset.label || "Adapter Agent resume");
 });
 
 daemonToken.value = storedDaemonToken();

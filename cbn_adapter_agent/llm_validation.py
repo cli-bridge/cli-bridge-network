@@ -31,33 +31,16 @@ def validate_with_glm(
         }
     endpoint = _chat_endpoint(base_url or os.environ.get("ZAI_BASE_URL") or DEFAULT_BASE_URL)
     model_name = model or os.environ.get("ZAI_MODEL") or DEFAULT_MODEL
-    request_payload = {
-        "model": model_name,
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "You validate CBN Adapter Agent drafts. Return compact JSON with keys "
-                    "ok, risks, missing_setup_guides, parser_contract_gaps, recommendation. "
-                    "Do not include secrets."
-                ),
-            },
-            {
-                "role": "user",
-                "content": json.dumps(_bounded_payload(payload), ensure_ascii=False),
-            },
-        ],
-        "temperature": 0,
-    }
-    request = urllib.request.Request(
-        endpoint,
-        data=json.dumps(request_payload, ensure_ascii=False).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {key}",
-            "Content-Type": "application/json; charset=utf-8",
-        },
-        method="POST",
+    request_payload = _chat_payload(
+        model_name,
+        (
+            "You validate CBN Adapter Agent drafts. Return compact JSON with keys "
+            "ok, risks, missing_setup_guides, parser_contract_gaps, recommendation. "
+            "Do not include secrets."
+        ),
+        json.dumps(_bounded_payload(payload), ensure_ascii=False),
     )
+    request = _chat_request(endpoint, key, request_payload)
     try:
         with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
             raw = response.read().decode("utf-8", errors="replace")
@@ -94,6 +77,93 @@ def validate_with_glm(
         "content": content,
         "raw_response": parsed,
     }
+
+
+def complete_with_glm(
+    payload: dict[str, Any],
+    *,
+    system_prompt: str,
+    base_url: str | None = None,
+    model: str | None = None,
+    api_key: str | None = None,
+    timeout_seconds: int = 60,
+) -> dict[str, Any]:
+    key = api_key or os.environ.get("ZAI_API_KEY")
+    endpoint = _chat_endpoint(base_url or os.environ.get("ZAI_BASE_URL") or DEFAULT_BASE_URL)
+    model_name = model or os.environ.get("ZAI_MODEL") or DEFAULT_MODEL
+    if not key:
+        return {
+            "kind": "AdapterAgentGLMTurn",
+            "ok": False,
+            "skipped": True,
+            "endpoint": endpoint,
+            "model": model_name,
+            "reason": "ZAI_API_KEY is not set",
+        }
+    request_payload = _chat_payload(
+        model_name,
+        system_prompt,
+        json.dumps(_bounded_payload(payload), ensure_ascii=False),
+    )
+    request = _chat_request(endpoint, key, request_payload)
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+            raw = response.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        return {
+            "kind": "AdapterAgentGLMTurn",
+            "ok": False,
+            "skipped": False,
+            "endpoint": endpoint,
+            "model": model_name,
+            "error_type": "http_error",
+            "status": exc.code,
+            "body_summary": body[:1000],
+        }
+    except OSError as exc:
+        return {
+            "kind": "AdapterAgentGLMTurn",
+            "ok": False,
+            "skipped": False,
+            "endpoint": endpoint,
+            "model": model_name,
+            "error_type": "request_error",
+            "error": str(exc),
+        }
+    parsed = json.loads(raw)
+    return {
+        "kind": "AdapterAgentGLMTurn",
+        "ok": True,
+        "skipped": False,
+        "endpoint": endpoint,
+        "model": model_name,
+        "content": _message_content(parsed),
+        "raw_response": parsed,
+    }
+
+
+def _chat_payload(model_name: str, system_prompt: str, user_content: str) -> dict[str, Any]:
+    return {
+        "model": model_name,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ],
+        "temperature": 0,
+    }
+
+
+def _chat_request(endpoint: str, key: str, request_payload: dict[str, Any]) -> urllib.request.Request:
+    return urllib.request.Request(
+        endpoint,
+        data=json.dumps(request_payload, ensure_ascii=False).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json; charset=utf-8",
+        },
+        method="POST",
+    )
 
 
 def _chat_endpoint(base_url: str) -> str:
@@ -137,6 +207,37 @@ def _bounded_payload(payload: dict[str, Any]) -> dict[str, Any]:
             **_compact_adapter_draft(payload),
             "truncated": True,
             "truncation_strategy": "adapter-draft-summary",
+        }
+    if payload.get("kind") == "AdapterAgentOrchestrationContext":
+        return {
+            "kind": payload.get("kind"),
+            "apiVersion": payload.get("apiVersion"),
+            "user_message": payload.get("user_message"),
+            "workflow_initialization": _compact_workflow_initialization(
+                payload.get("workflow_initialization") or {}
+            ),
+            "cli_routes": payload.get("cli_routes", [])[:20],
+            "auth_fallbacks": _compact_auth_fallbacks(payload.get("auth_fallbacks", [])),
+            "recommended_next_action": payload.get("recommended_next_action"),
+            "truncated": True,
+            "truncation_strategy": "adapter-orchestration-context",
+        }
+    if payload.get("kind") == "AdapterAgentOrchestrationTurn":
+        return {
+            "kind": payload.get("kind"),
+            "apiVersion": payload.get("apiVersion"),
+            "ok": payload.get("ok"),
+            "status": payload.get("status"),
+            "workflow_path": payload.get("workflow_path"),
+            "recommended_next_action": payload.get("recommended_next_action"),
+            "workflow_initialization": _compact_workflow_initialization(
+                payload.get("workflow_initialization") or {}
+            ),
+            "cli_routes": payload.get("cli_routes", [])[:20],
+            "auth_fallbacks": _compact_auth_fallbacks(payload.get("auth_fallbacks", [])),
+            "continuation": payload.get("continuation"),
+            "truncated": True,
+            "truncation_strategy": "adapter-orchestration-turn",
         }
     return {
         "kind": payload.get("kind"),
@@ -187,3 +288,76 @@ def _compact_adapter_draft(draft: dict[str, Any]) -> dict[str, Any]:
         },
         "next_actions": draft.get("next_actions"),
     }
+
+
+def _compact_workflow_initialization(plan: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "kind": plan.get("kind"),
+        "apiVersion": plan.get("apiVersion"),
+        "ok": plan.get("ok"),
+        "status": plan.get("status"),
+        "workflow": plan.get("workflow"),
+        "summary": plan.get("summary"),
+        "tasks": [
+            {
+                "task_id": task.get("task_id"),
+                "uses": task.get("uses"),
+                "title": task.get("title"),
+                "risk": task.get("risk"),
+                "network": task.get("network"),
+                "requires_confirmation": task.get("requires_confirmation"),
+                "auth_setup_required": task.get("auth_setup_required"),
+                "auth_setup_id": task.get("auth_setup_id"),
+                "auth_gate": task.get("auth_gate"),
+                "missing_runtime_inputs": task.get("missing_runtime_inputs"),
+                "status": task.get("status"),
+            }
+            for task in plan.get("tasks", [])[:20]
+        ],
+        "setup_guides": [
+            {
+                "setup_id": guide.get("setup_id"),
+                "profile": guide.get("profile"),
+                "title": guide.get("title"),
+                "status": guide.get("status"),
+                "reason": guide.get("reason"),
+                "secret_inputs": guide.get("secret_inputs"),
+                "user_steps": guide.get("user_steps"),
+                "verification_commands": guide.get("verification_commands"),
+                "resume_hint": guide.get("resume_hint"),
+            }
+            for guide in plan.get("setup_guides", [])[:10]
+        ],
+        "continuation": plan.get("continuation"),
+    }
+
+
+def _compact_auth_fallbacks(fallbacks: list[Any]) -> list[dict[str, Any]]:
+    compact = []
+    for fallback in fallbacks[:20]:
+        setup = fallback.get("setup") if isinstance(fallback, dict) else None
+        compact.append(
+            {
+                "task_id": fallback.get("task_id") if isinstance(fallback, dict) else None,
+                "uses": fallback.get("uses") if isinstance(fallback, dict) else None,
+                "status": fallback.get("status") if isinstance(fallback, dict) else None,
+                "setup": {
+                    "setup_id": setup.get("setup_id"),
+                    "profile": setup.get("profile"),
+                    "title": setup.get("title"),
+                    "status": setup.get("status"),
+                    "reason": setup.get("reason"),
+                    "secret_inputs": setup.get("secret_inputs"),
+                    "user_steps": setup.get("user_steps"),
+                    "verification_commands": setup.get("verification_commands"),
+                    "resume_hint": setup.get("resume_hint"),
+                }
+                if isinstance(setup, dict)
+                else None,
+                "missing_runtime_inputs": fallback.get("missing_runtime_inputs")
+                if isinstance(fallback, dict)
+                else None,
+                "resume_command": fallback.get("resume_command") if isinstance(fallback, dict) else None,
+            }
+        )
+    return compact

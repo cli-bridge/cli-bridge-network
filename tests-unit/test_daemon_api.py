@@ -48,6 +48,7 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("GET", "/runtime/transports"), routes)
         self.assertIn(("GET", "/messages/contract"), routes)
         self.assertIn(("GET", "/parsers/fixtures"), routes)
+        self.assertIn(("POST", "/adapter-agent/orchestrate"), routes)
         self.assertIn(("POST", "/runtime/transports/gate"), routes)
         self.assertIn(("POST", "/runtime/transports/plan"), routes)
         self.assertIn(("POST", "/runtime/transports/install"), routes)
@@ -79,6 +80,35 @@ class DaemonApiTests(unittest.TestCase):
             self.assertTrue(payload["ok"])
             self.assertEqual(payload["kind"], "PluginProviderOperationCatalogValidation")
             self.assertEqual(payload["summary"]["error_count"], 0)
+
+    def test_adapter_agent_orchestrate_route_returns_auth_fallback(self):
+        with daemon_url() as base_url:
+            request = urllib.request.Request(
+                f"{base_url}/adapter-agent/orchestrate",
+                data=json.dumps(
+                    {
+                        "workflow_path": "workflows/auth-gated-first-run.example.json",
+                        "message": "Initialize and guide login fallback.",
+                        "use_glm": False,
+                    }
+                ).encode("utf-8"),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(request, timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+
+            self.assertEqual(response.status, 200)
+            self.assertEqual(payload["kind"], "AdapterAgentOrchestrationTurn")
+            self.assertEqual(payload["status"], "requires_user_setup_and_inputs")
+            setup_ids = {
+                fallback["setup"]["setup_id"]
+                for fallback in payload["auth_fallbacks"]
+                if fallback.get("setup")
+            }
+            self.assertIn("jimeng-oauth-login", setup_ids)
+            self.assertIn("obsidian-local-rest-api-key", setup_ids)
+            self.assertTrue(any(route["task_id"] == "query-image-result" for route in payload["cli_routes"]))
 
     def test_plugin_operation_plan_route_resolves_descriptor(self):
         with daemon_url() as base_url:
