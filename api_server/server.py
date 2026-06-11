@@ -17,7 +17,7 @@ from urllib.parse import parse_qs, urlparse
 
 from api_server.routes.health import health_payload
 from cbn_demo.killer import DEFAULT_KILLER_WORKFLOW_PATH, killer_demo_report
-from cbn_demo.network_connect import network_acceptance_report, network_connect_package
+from cbn_demo.network_connect import DEFAULT_AGENT_CONNECT_MESSAGE, network_acceptance_report, network_connect_package
 from cbn_core.manifest import validate_manifest_path
 from cbn_execution.graph import WorkflowGraph
 from cbn_parsers.fixtures import run_parser_fixtures
@@ -757,7 +757,7 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 studio_url=payload.get("studio_url") or "http://127.0.0.1:5177",
                 dashboard_url=payload.get("dashboard_url") or payload.get("dashboardUrl") or "http://127.0.0.1:5173",
                 session_token=str(session_token) if session_token else None,
-                agent_message=payload.get("message") or "Connect an external program to this CBN workflow.",
+                agent_message=payload.get("message") or DEFAULT_AGENT_CONNECT_MESSAGE,
                 timeout_seconds=float(payload.get("timeout_seconds", 8.0)),
             )
             self._send(200 if result["ok"] else 422, result)
@@ -1395,7 +1395,7 @@ def _network_connect_package_from_query(
         studio_url=query.get("studio_url", query.get("studioUrl", ["http://127.0.0.1:5177"]))[0],
         dashboard_url=query.get("dashboard_url", query.get("dashboardUrl", ["http://127.0.0.1:5173"]))[0],
         session_token=session_token,
-        agent_message=query.get("message", ["Connect an external program to this CBN workflow."])[0],
+        agent_message=query.get("message", [DEFAULT_AGENT_CONNECT_MESSAGE])[0],
     )
 
 

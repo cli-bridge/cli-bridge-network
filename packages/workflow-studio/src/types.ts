@@ -500,6 +500,7 @@ export interface NetworkConnectPackage {
     bridge_message?: CompactAgentBridgeMessage;
     workflow_nodes?: AgentWorkflowNode[];
   };
+  agent_workflow_request?: AgentWorkflowRequestPlan;
   setup_guidance?: AdapterAgentSetupGuidance;
   acceptance?: NetworkConnectionAcceptance;
   consumer_quickstart?: {
@@ -553,6 +554,11 @@ export interface ConnectSummary {
   setupSecrets: number;
   setupCommands: number;
   setupSafety: string;
+  harnessKind: string;
+  harnessBinding: string;
+  harnessRouteCount: number;
+  harnessRunEndpoint: string;
+  harnessBridgeChannel: string;
   demoEndpoint: string;
   nextAction: string;
   studioLink: string;
@@ -584,6 +590,12 @@ export interface AgentWorkflowRequestPlan {
   kind?: "AdapterAgentWorkflowRequestPlan";
   status?: string;
   workflow_path?: string;
+  workflow_id?: string;
+  workflow_title?: string;
+  task_count?: number;
+  bridge_route_count?: number;
+  agent_card_count?: number;
+  recommended_next_action?: string;
   request?: {
     message?: string;
     intent?: {
@@ -619,6 +631,7 @@ export interface AgentWorkflowRequestPlan {
   };
   bridge_routes?: Array<Record<string, unknown>>;
   bridge_message?: unknown;
+  bridge_message_channel?: string;
   next_commands?: string[];
 }
 

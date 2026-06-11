@@ -26,6 +26,7 @@ CONTRACT_CARD_FIXTURE = CONTRACT_ROOT / "fixtures/agent-cli-card.valid.json"
 CONTRACT_RECEIPT_FIXTURE = CONTRACT_ROOT / "fixtures/run-receipt.valid.json"
 CONNECT_API_VERSION = "bridge.dev/v1alpha1"
 DEFAULT_DASHBOARD_URL = "http://127.0.0.1:5173"
+DEFAULT_AGENT_CONNECT_MESSAGE = "Run this workflow as a reusable CLI-CLI harness agent and connect an external program to CBN."
 
 
 def network_connect_package(
@@ -36,7 +37,7 @@ def network_connect_package(
     studio_url: str = "http://127.0.0.1:5177",
     dashboard_url: str = DEFAULT_DASHBOARD_URL,
     session_token: str | None = None,
-    agent_message: str = "Connect an external program to this CBN workflow.",
+    agent_message: str = DEFAULT_AGENT_CONNECT_MESSAGE,
 ) -> dict[str, Any]:
     """Return the minimum stable payload another program needs to enter CBN."""
 
@@ -314,7 +315,7 @@ def network_acceptance_report(
     studio_url: str = "http://127.0.0.1:5177",
     dashboard_url: str = DEFAULT_DASHBOARD_URL,
     session_token: str | None = None,
-    agent_message: str = "Connect an external program to this CBN workflow.",
+    agent_message: str = DEFAULT_AGENT_CONNECT_MESSAGE,
     timeout_seconds: float = 8.0,
 ) -> dict[str, Any]:
     """Run the one-shot network acceptance checklist against a live daemon."""
@@ -578,14 +579,24 @@ def _compact_workflow_request_plan(plan: dict[str, Any]) -> dict[str, Any]:
     summary = plan.get("summary") if isinstance(plan.get("summary"), dict) else {}
     run = plan.get("run") if isinstance(plan.get("run"), dict) else {}
     reusable = plan.get("reusable_harness") if isinstance(plan.get("reusable_harness"), dict) else {}
+    request = plan.get("request") if isinstance(plan.get("request"), dict) else {}
     message = plan.get("bridge_message") if isinstance(plan.get("bridge_message"), dict) else {}
     return {
         "kind": plan.get("kind"),
         "ok": plan.get("ok"),
         "status": plan.get("status"),
+        "workflow_path": plan.get("workflow_path"),
         "workflow_id": summary.get("workflow_id"),
+        "workflow_title": summary.get("workflow_title"),
+        "task_count": summary.get("task_count", 0),
         "bridge_route_count": summary.get("bridge_route_count", 0),
+        "agent_card_count": summary.get("agent_card_count", 0),
         "recommended_next_action": summary.get("recommended_next_action"),
+        "request": {
+            "message": request.get("message"),
+            "binding": request.get("binding"),
+            "intent": request.get("intent", {}),
+        },
         "reusable_harness": {
             "kind": reusable.get("kind"),
             "accepts": reusable.get("accepts", []),
@@ -597,7 +608,42 @@ def _compact_workflow_request_plan(plan: dict[str, Any]) -> dict[str, Any]:
             "cli": run.get("cli"),
             "http": run.get("http", {}),
         },
+        "bridge_routes": [
+            {
+                "task_id": route.get("task_id"),
+                "uses": route.get("uses"),
+                "needs": route.get("needs", []),
+                "selectors": route.get("selectors", []),
+                "communication": route.get("communication"),
+            }
+            for route in _list_of_dicts(plan.get("bridge_routes"))
+        ],
         "bridge_message_channel": (message.get("metadata") or {}).get("channel"),
+        "bridge_message": _compact_bridge_message(message),
+        "next_commands": plan.get("next_commands", []),
+    }
+
+
+def _compact_bridge_message(message: dict[str, Any]) -> dict[str, Any]:
+    metadata = message.get("metadata") if isinstance(message.get("metadata"), dict) else {}
+    payload = message.get("payload") if isinstance(message.get("payload"), dict) else {}
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    return {
+        "kind": message.get("kind"),
+        "producer": metadata.get("producer"),
+        "channel": metadata.get("channel"),
+        "correlation_id": metadata.get("correlationId"),
+        "parser_ref": payload.get("parser_ref"),
+        "ok": payload.get("ok"),
+        "data": {
+            "agent_id": data.get("agent_id"),
+            "task_id": data.get("task_id"),
+            "workflow_id": data.get("workflow_id"),
+            "workflow_path": data.get("workflow_path"),
+            "task_count": data.get("task_count"),
+            "route_count": data.get("route_count"),
+            "run_payload": data.get("run_payload", {}),
+        },
     }
 
 
@@ -703,7 +749,7 @@ def _consumer_quickstart(
             "workflow_path": workflow_path,
             "message": (request_plan.get("request") or {}).get(
                 "message",
-                "Connect an external program to this CBN workflow.",
+                DEFAULT_AGENT_CONNECT_MESSAGE,
             ),
         }
     )
@@ -712,7 +758,7 @@ def _consumer_quickstart(
         "workflow_path": workflow_path,
         "message": (request_plan.get("request") or {}).get(
             "message",
-            "Connect an external program to this CBN workflow.",
+            DEFAULT_AGENT_CONNECT_MESSAGE,
         ),
         "dry_run": True,
         "confirmed": False,

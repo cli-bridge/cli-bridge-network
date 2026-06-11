@@ -109,6 +109,11 @@ const connectSetupGuidance = computed(() => connectPackage.value?.setup_guidance
 const connectSetupCalls = computed(() =>
   Array.isArray(connectPackage.value?.setup_guidance?.tool_calls) ? connectPackage.value.setup_guidance.tool_calls : [],
 );
+const connectHarnessRoutes = computed<Array<Record<string, unknown>>>(() =>
+  Array.isArray(connectPackage.value?.agent_workflow_request?.bridge_routes)
+    ? connectPackage.value.agent_workflow_request.bridge_routes
+    : [],
+);
 const connectNextCommands = computed<string[]>(() => {
   const commands = [
     ...(Array.isArray(connectPackage.value?.next_commands) ? connectPackage.value.next_commands : []),
@@ -422,6 +427,11 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
   const quickstart = payload?.consumer_quickstart ?? {};
   const acceptance = payload?.acceptance ?? quickstart.acceptance ?? {};
   const setup = payload?.setup_guidance ?? {};
+  const harness = payload?.agent_workflow_request ?? {};
+  const harnessBridge =
+    harness.bridge_message && typeof harness.bridge_message === "object"
+      ? (harness.bridge_message as { metadata?: { channel?: unknown }; channel?: unknown })
+      : {};
   const headers = quickstart.required_headers ?? {};
   return {
     status: payload?.ok ? "ready" : payload ? "needs attention" : "not loaded",
@@ -440,6 +450,11 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
     setupSecrets: numberValue(setup.secret_count) ?? numberValue(summary.setup_secret_count) ?? 0,
     setupCommands: numberValue(setup.setup_command_count) ?? 0,
     setupSafety: setup.safety?.secret_values_included === false ? "no secret values" : "unknown safety",
+    harnessKind: stringValue(harness.reusable_harness?.kind) ?? "not loaded",
+    harnessBinding: stringValue(harness.request?.binding) ?? "not loaded",
+    harnessRouteCount: numberValue(harness.bridge_route_count) ?? (Array.isArray(harness.bridge_routes) ? harness.bridge_routes.length : 0),
+    harnessRunEndpoint: stringValue(harness.run?.http?.url) ?? "",
+    harnessBridgeChannel: stringValue(harnessBridge.metadata?.channel) ?? stringValue(harnessBridge.channel) ?? stringValue(harness.bridge_message_channel) ?? "",
     demoEndpoint: stringValue(demo.demo_endpoint?.url) ?? stringValue(demo.demo_endpoint?.path) ?? "",
     nextAction: stringValue(summary.recommended_next_action) ?? "load_connect_package",
     studioLink: stringValue(studio.url) ?? "",
@@ -889,6 +904,10 @@ onMounted(async () => {
             <span>Setup</span>
             <strong>{{ connectSummary.setupStatus }}</strong>
           </div>
+          <div>
+            <span>Harness</span>
+            <strong>{{ connectSummary.harnessRouteCount }}</strong>
+          </div>
         </div>
         <div class="evidence-row">
           <span :class="['pill-inline', connectPackage?.ok ? 'ok' : 'blocked']">{{ connectSummary.acceptedKinds }}</span>
@@ -905,6 +924,8 @@ onMounted(async () => {
           <span class="pill-inline">{{ connectSummary.setupUserGates }} user gates</span>
           <span class="pill-inline">{{ connectSummary.setupSecrets }} secrets</span>
           <span class="pill-inline">{{ connectSummary.setupSafety }}</span>
+          <span class="pill-inline">{{ connectSummary.harnessKind }}</span>
+          <span class="pill-inline">{{ connectSummary.harnessBinding }}</span>
           <span :class="['pill-inline', acceptanceRunSummary.status === 'passed' ? 'ok' : acceptanceRunSummary.status === 'failed' ? 'blocked' : '']">
             {{ acceptanceRunSummary.status }}
           </span>
@@ -1004,6 +1025,21 @@ onMounted(async () => {
             <span>Agent bridge</span>
             <code>{{ connectAgentBundle.bridge_message?.channel || connectAgentBundle.bridge_message_channel || "not loaded" }}</code>
           </div>
+          <div>
+            <span>Harness run</span>
+            <code>{{ connectSummary.harnessRunEndpoint || "not loaded" }}</code>
+          </div>
+          <div>
+            <span>Harness bridge</span>
+            <code>{{ connectSummary.harnessBridgeChannel || "not loaded" }}</code>
+          </div>
+        </div>
+        <div class="endpoint-list">
+          <div v-for="route in connectHarnessRoutes.slice(0, 4)" :key="String(route.task_id || route.uses || route.communication)">
+            <code>{{ route.task_id || "route" }}</code>
+            <span>{{ route.uses || "workflow task" }} · {{ route.communication || "BridgeMessage" }}</span>
+          </div>
+          <span v-if="!connectHarnessRoutes.length">No harness routes loaded</span>
         </div>
         <div class="agent-card-list">
           <div v-for="card in connectAgentCards.slice(0, 4)" :key="card.id || card.title" class="agent-card">

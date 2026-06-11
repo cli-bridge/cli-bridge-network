@@ -380,6 +380,14 @@ Killer Demo slice 已新增可运行证据束：
   connect package，就能同时获得 AgentCliCard/RunReceipt 外部协议、CBN 内部
   BridgeMessage/selector contract、MCP/A2A/ACP facade、Agent node bundle、自然语言
   workflow request plan 和可直接调用的 `/workflows/run` payload。
+- `NetworkConnectPackage.agent_workflow_request` 已从“仅摘要”扩展为可复用 harness
+  invocation contract：保留 natural-language request binding、intent、run CLI/HTTP
+  payload、BridgeMessage argsFrom routes、compact `agent.workflow.request.plan`
+  BridgeMessage 和 next commands。第三方程序无需额外调用 adapter-agent plan endpoint，
+  读取一次 one-shot package 即可知道 harness agent 如何把自然语言请求绑定到
+  CLI-CLI workflow、如何 POST `/workflows/run`、以及 CLI-CLI 间的 selector 路由如何
+  通过 BridgeMessage 传递。Workflow Studio Connect 面板同步展示 harness kind、
+  binding、run endpoint、BridgeMessage channel 和前几条 selector route。
 - `NetworkConnectPackage.demo_readiness` 已新增只读 Killer Demo 摘要：不执行
   workflow、不写状态，只暴露 CLI-Anything -> macrocli -> parser -> Mermaid ->
   artifact/event/audit -> MCP/A2A/ACP smoke 的 stage 列表、required capabilities、

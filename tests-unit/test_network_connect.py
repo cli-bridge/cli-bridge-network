@@ -64,6 +64,24 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(payload["agent_workflow_request"]["kind"], "AdapterAgentWorkflowRequestPlan")
         self.assertEqual(payload["agent_workflow_request"]["reusable_harness"]["kind"], "NaturalLanguageWorkflowHarness")
         self.assertEqual(payload["agent_workflow_request"]["bridge_message_channel"], "agent.workflow.request.plan")
+        self.assertEqual(payload["agent_workflow_request"]["request"]["binding"], "selected_workflow_path")
+        self.assertTrue(payload["agent_workflow_request"]["request"]["intent"]["mentions_run"])
+        self.assertEqual(payload["agent_workflow_request"]["run"]["http"]["method"], "POST")
+        self.assertEqual(payload["agent_workflow_request"]["run"]["http"]["url"], "http://127.0.0.1:8787/workflows/run")
+        self.assertEqual(
+            payload["agent_workflow_request"]["run"]["http"]["json"]["path"].replace("\\", "/"),
+            "workflows/cli-anything-macrocli-mermaid-routing.example.json",
+        )
+        self.assertEqual(payload["agent_workflow_request"]["bridge_route_count"], 2)
+        self.assertEqual(len(payload["agent_workflow_request"]["bridge_routes"]), 2)
+        self.assertEqual(payload["agent_workflow_request"]["bridge_routes"][0]["communication"], "BridgeMessage argsFrom")
+        self.assertEqual(payload["agent_workflow_request"]["bridge_message"]["kind"], "BridgeMessage")
+        self.assertEqual(payload["agent_workflow_request"]["bridge_message"]["parser_ref"], "cbn.agent.bridge_message")
+        self.assertEqual(
+            payload["agent_workflow_request"]["bridge_message"]["data"]["run_payload"]["path"].replace("\\", "/"),
+            "workflows/cli-anything-macrocli-mermaid-routing.example.json",
+        )
+        self.assertIn("python -m cbn workflow run", payload["agent_workflow_request"]["next_commands"][2])
         setup = payload["setup_guidance"]
         self.assertEqual(setup["kind"], "AdapterAgentSetupGuidance")
         self.assertEqual(setup["status"], "ready_to_run")
@@ -240,6 +258,9 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(payload["contracts"]["external"]["generated_capability_ids"], ["example.macrocli.backends"])
         self.assertEqual(payload["contracts"]["internal"]["contracts"]["artifact"]["kind"], "ArtifactRecord")
         self.assertEqual(payload["agent_workflow_request"]["run"]["http"]["url"], "http://127.0.0.1:8787/workflows/run")
+        self.assertEqual(payload["agent_workflow_request"]["request"]["binding"], "selected_workflow_path")
+        self.assertEqual(payload["agent_workflow_request"]["bridge_message"]["channel"], "agent.workflow.request.plan")
+        self.assertEqual(len(payload["agent_workflow_request"]["bridge_routes"]), 2)
         self.assertEqual(payload["workflow_studio"]["daemon_url"], "http://127.0.0.1:8787")
         self.assertEqual(payload["workflow_studio"]["dashboard_url"], "http://127.0.0.1:5173")
         self.assertIn("dashboardUrl=http%3A%2F%2F127.0.0.1%3A5173", payload["workflow_studio"]["url"])
