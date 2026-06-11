@@ -374,7 +374,8 @@ Killer Demo slice 已新增可运行证据束：
   artifact/event/audit -> MCP/A2A/ACP smoke 的 stage 列表、required capabilities、
   evidence contracts、`/demo/killer` endpoint、Workflow Studio link 和下一步命令。
   Workflow Studio Connect 面板同步展示 demo readiness、stage count 和 killer demo
-  endpoint，让其他程序第一次读取 one-shot package 时就能理解最终 demo 呈现链路。
+  endpoint，并把 7 个 demo readiness stages 渲染成可扫读链路，让其他程序第一次
+  读取 one-shot package 时就能理解最终 demo 呈现链路。
 
 ## 验证策略
 

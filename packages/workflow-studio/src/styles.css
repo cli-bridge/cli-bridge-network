@@ -370,6 +370,7 @@ canvas {
 }
 
 .request-sequence,
+.demo-stage-list,
 .acceptance-list {
   display: grid;
   gap: 6px;
@@ -377,6 +378,7 @@ canvas {
 }
 
 .request-sequence div,
+.demo-stage-list div,
 .acceptance-list div {
   display: grid;
   min-height: 48px;
@@ -387,6 +389,10 @@ canvas {
   border-radius: 6px;
   background: #ffffff;
   padding: 4px 7px;
+}
+
+.demo-stage-list div {
+  grid-template-columns: minmax(120px, 0.8fr) 120px minmax(0, 1.2fr);
 }
 
 .acceptance-list div {
@@ -412,6 +418,10 @@ canvas {
 .request-sequence span,
 .request-sequence small,
 .request-sequence em,
+.demo-stage-list code,
+.demo-stage-list strong,
+.demo-stage-list span,
+.demo-stage-list small,
 .acceptance-list code,
 .acceptance-list span,
 .acceptance-list small,
@@ -425,6 +435,7 @@ canvas {
 }
 
 .request-sequence code,
+.demo-stage-list code,
 .acceptance-list code {
   color: #4c5949;
   font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
@@ -432,6 +443,7 @@ canvas {
 }
 
 .request-sequence span,
+.demo-stage-list strong,
 .acceptance-list span {
   color: #243026;
   font-size: 11px;
@@ -439,9 +451,16 @@ canvas {
 }
 
 .request-sequence small,
+.demo-stage-list span,
+.demo-stage-list small,
 .acceptance-list small {
   color: #647160;
   font-size: 11px;
+}
+
+.demo-stage-list code {
+  grid-column: 1 / -1;
+  font-size: 10px;
 }
 
 .request-sequence em,
@@ -468,6 +487,7 @@ canvas {
 }
 
 .request-sequence > span,
+.demo-stage-list > span,
 .acceptance-list > span {
   border: 1px solid #d1dacd;
   border-radius: 6px;

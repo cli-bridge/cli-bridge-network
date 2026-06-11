@@ -28,6 +28,7 @@ import type {
   BridgeContractReport,
   BridgeContractSection,
   BridgeContractSummary,
+  ConnectDemoStage,
   ConnectionAcceptanceCheck,
   ConnectSummary,
   DockState,
@@ -94,6 +95,9 @@ const connectAgentCards = computed(() => (Array.isArray(connectAgentBundle.value
 const connectAgentHarnesses = computed(() => (Array.isArray(connectAgentBundle.value.harnesses) ? connectAgentBundle.value.harnesses : []));
 const connectAgentTasks = computed(() => (Array.isArray(connectAgentBundle.value.tasks) ? connectAgentBundle.value.tasks : []));
 const connectEndpoints = computed(() => (Array.isArray(connectPackage.value?.daemon_endpoints) ? connectPackage.value.daemon_endpoints : []));
+const connectDemoStages = computed<ConnectDemoStage[]>(() =>
+  Array.isArray(connectPackage.value?.demo_readiness?.stages) ? connectPackage.value.demo_readiness.stages : [],
+);
 const quickstartRequests = computed<QuickstartRequest[]>(() =>
   Array.isArray(connectPackage.value?.consumer_quickstart?.requests)
     ? connectPackage.value.consumer_quickstart.requests
@@ -453,6 +457,25 @@ function summarizeAcceptanceResults(results: AcceptanceExecutionResult[], expect
   const total = expectedTotal || results.length;
   const status = results.length === 0 ? "not run" : failed > 0 ? "failed" : skipped > 0 ? "partial" : results.length === total ? "passed" : "running";
   return { status, passed, failed, skipped, total };
+}
+
+function demoStageDetail(stage: ConnectDemoStage): string {
+  if (Array.isArray(stage.capability_ids) && stage.capability_ids.length) {
+    return stage.capability_ids.slice(0, 3).join(", ");
+  }
+  if (stage.endpoint?.path || stage.endpoint?.url) {
+    return `${stage.endpoint.method || "GET"} ${stage.endpoint.path || stage.endpoint.url}`;
+  }
+  if (Array.isArray(stage.endpoints) && stage.endpoints.length) {
+    return stage.endpoints
+      .slice(0, 3)
+      .map((endpoint) => endpoint.path || endpoint.url || endpoint.method || "endpoint")
+      .join(", ");
+  }
+  if (typeof stage.bridge_route_count === "number") {
+    return `${stage.bridge_route_count} bridge routes`;
+  }
+  return stage.id || "stage";
 }
 
 function acceptanceResult(check: ConnectionAcceptanceCheck): AcceptanceExecutionResult | undefined {
@@ -909,6 +932,15 @@ onMounted(async () => {
         <div class="artifact-strip">
           <code v-for="capabilityId in connectSummary.generatedCapabilities" :key="capabilityId">{{ capabilityId }}</code>
           <span v-if="!connectSummary.generatedCapabilities.length">No external capabilities loaded</span>
+        </div>
+        <div class="demo-stage-list">
+          <div v-for="stage in connectDemoStages" :key="stage.id || stage.title">
+            <strong>{{ stage.title || stage.id || "Demo stage" }}</strong>
+            <span>{{ stage.id || "stage" }}</span>
+            <small>{{ stage.proves || "demo evidence not loaded" }}</small>
+            <code>{{ demoStageDetail(stage) }}</code>
+          </div>
+          <span v-if="!connectDemoStages.length">No demo readiness stages loaded</span>
         </div>
         <div class="quickstart-grid">
           <div>

@@ -350,6 +350,16 @@ export interface NetworkConnectionAcceptanceReport {
   next_commands?: string[];
 }
 
+export interface ConnectDemoStage {
+  id?: string;
+  title?: string;
+  proves?: string;
+  capability_ids?: string[];
+  endpoint?: ConnectEndpoint;
+  endpoints?: ConnectEndpoint[];
+  bridge_route_count?: number;
+}
+
 export interface NetworkConnectPackage {
   ok?: boolean;
   kind?: "NetworkConnectPackage";
@@ -418,15 +428,7 @@ export interface NetworkConnectPackage {
     workflow_path?: string;
     workflow_id?: string;
     stage_count?: number;
-    stages?: Array<{
-      id?: string;
-      title?: string;
-      proves?: string;
-      capability_ids?: string[];
-      endpoint?: ConnectEndpoint;
-      endpoints?: ConnectEndpoint[];
-      bridge_route_count?: number;
-    }>;
+    stages?: ConnectDemoStage[];
     required_capability_ids?: string[];
     evidence_contracts?: string[];
     protocol_targets?: string[];
