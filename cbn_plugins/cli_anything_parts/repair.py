@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import importlib.metadata as importlib_metadata
+import importlib.util as importlib_util
+import json
 import os
 import re
+import shutil
 import sys
 import sysconfig
 from pathlib import Path
@@ -95,6 +99,65 @@ def script_path_candidates(entry_point: str | None) -> list[dict[str, Any]]:
     return reports
 
 
+def distribution_report(package: str) -> dict[str, Any]:
+    try:
+        dist = importlib_metadata.distribution(package)
+    except importlib_metadata.PackageNotFoundError:
+        return {
+            "package": package,
+            "installed": False,
+            "version": None,
+            "location": None,
+            "console_scripts": [],
+        }
+    console_scripts = [
+        {"name": ep.name, "value": ep.value}
+        for ep in dist.entry_points
+        if ep.group == "console_scripts"
+    ]
+    return {
+        "package": package,
+        "installed": True,
+        "version": dist.version,
+        "location": str(Path(dist.locate_file(""))),
+        "console_scripts": console_scripts,
+    }
+
+
+def module_report(package: str) -> dict[str, Any]:
+    try:
+        spec = importlib_util.find_spec(package)
+    except Exception as exc:
+        return {
+            "package": package,
+            "importable": False,
+            "origin": None,
+            "module_main": False,
+            "error": str(exc),
+        }
+    if spec is None:
+        return {
+            "package": package,
+            "importable": False,
+            "origin": None,
+            "module_main": False,
+            "error": None,
+        }
+    module_main = False
+    if spec.submodule_search_locations:
+        for location in spec.submodule_search_locations:
+            if (Path(location) / "__main__.py").exists():
+                module_main = True
+                break
+    return {
+        "package": package,
+        "importable": True,
+        "origin": spec.origin,
+        "module_main": module_main,
+        "error": None,
+    }
+
+
 def entrypoint_diagnosis(
     entry_point: str | None,
     entrypoint_path: str | None,
@@ -155,6 +218,54 @@ def entrypoint_diagnosis(
     }
 
 
+def entrypoint_repair_strategy(plan: dict[str, Any], module: str | None) -> dict[str, Any]:
+    diagnosis = plan.get("diagnosis") if isinstance(plan.get("diagnosis"), dict) else {}
+    if diagnosis.get("repair_required") is False:
+        return {
+            "ready": False,
+            "state": "repair_not_required",
+            "module": None,
+            "blockers": ["entrypoint is already available"],
+            "recommended_next_action": "verify_harness_runtime",
+        }
+    if not module:
+        runnable_modules = [
+            item
+            for item in plan.get("modules", [])
+            if item.get("importable") and item.get("module_main")
+        ]
+        if runnable_modules:
+            module = str(runnable_modules[0]["package"])
+        else:
+            return {
+                "ready": False,
+                "state": "adapter_target_required",
+                "module": None,
+                "blockers": [
+                    "no importable module with __main__.py was found; pass --module after inspecting the package API"
+                ],
+                "recommended_next_action": "choose_explicit_python_module_or_custom_adapter",
+            }
+    module_check = module_report(module)
+    if not module_check["importable"]:
+        return {
+            "ready": False,
+            "state": "module_not_importable",
+            "module": module,
+            "module_report": module_check,
+            "blockers": [f"module is not importable: {module}"],
+            "recommended_next_action": "choose_importable_python_module",
+        }
+    return {
+        "ready": True,
+        "state": "python_module_wrapper",
+        "module": module,
+        "module_report": module_check,
+        "blockers": [],
+        "recommended_next_action": "write_wrapper_and_repaired_manifest",
+    }
+
+
 def entrypoint_wrapper_path(external_plugins: Path, harness_name: str, safe_name: str) -> Path:
     return external_plugins / PLUGIN_ID / "entrypoints" / f"{safe_name}.py"
 
@@ -180,6 +291,85 @@ def python_module_wrapper_content(module: str) -> str:
             "",
         ]
     )
+
+
+def write_repair_entrypoint_files(
+    *,
+    operation_id: str,
+    root: Path,
+    wrapper_path: Path,
+    module: str,
+    manifest_path: Path,
+    manifest: dict[str, Any],
+) -> dict[str, Any]:
+    backup_dir = root / "runtime" / "backups" / "cli-anything-repair" / operation_id
+    writes = [
+        {
+            "kind": "wrapper",
+            "path": wrapper_path,
+            "text": python_module_wrapper_content(module),
+        },
+        {
+            "kind": "manifest",
+            "path": manifest_path,
+            "text": json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+        },
+    ]
+    written: list[str] = []
+    backups: list[dict[str, Any]] = []
+    for item in writes:
+        result = atomic_write_text_with_backup(
+            path=item["path"],
+            text=item["text"],
+            backup_dir=backup_dir,
+            operation_id=operation_id,
+        )
+        result["kind"] = item["kind"]
+        written.append(result["path"])
+        if result["backup_path"]:
+            backups.append(
+                {
+                    "kind": item["kind"],
+                    "path": result["path"],
+                    "backup_path": result["backup_path"],
+                    "backup_size_bytes": result["backup_size_bytes"],
+                }
+            )
+    return {
+        "status": "completed",
+        "operation_id": operation_id,
+        "written": written,
+        "backups": backups,
+        "atomic": True,
+        "backup_dir": str(backup_dir),
+    }
+
+
+def atomic_write_text_with_backup(
+    *,
+    path: Path,
+    text: str,
+    backup_dir: Path,
+    operation_id: str,
+) -> dict[str, Any]:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    backup_path = None
+    backup_size_bytes = 0
+    if path.exists():
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        backup_path = backup_dir / f"{path.name}.bak"
+        shutil.copy2(path, backup_path)
+        backup_size_bytes = backup_path.stat().st_size
+    temp_path = path.with_name(f".{path.name}.{operation_id}.tmp")
+    temp_path.write_text(text, encoding="utf-8")
+    os.replace(temp_path, path)
+    return {
+        "path": str(path),
+        "size_bytes": len(text.encode("utf-8")),
+        "backup_path": str(backup_path) if backup_path else None,
+        "backup_size_bytes": backup_size_bytes,
+        "temp_path": str(temp_path),
+    }
 
 
 def repair_policy_network(original_network: str, inferred_network: str) -> str:

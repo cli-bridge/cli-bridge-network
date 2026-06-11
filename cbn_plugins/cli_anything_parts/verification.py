@@ -7,6 +7,7 @@ from typing import Any
 
 from cbn_parsers.fixtures import run_parser_fixtures
 from cbn_parsers.registry import ParserRegistry
+from cbn_protocol.smoke_suite import protocol_smoke_suite
 
 
 def parser_contract_report(
@@ -257,6 +258,56 @@ def mark_repaired_manifest_verified_from_fixtures(
         annotations["cbn.parser_fixture_verified_capability"] = capability_id
         gate["marked_verified"] = True
     return gate
+
+
+def harness_protocol_smoke_suite(
+    registry: Any,
+    capability_id: str,
+    include_workflows: bool,
+    extra_args: tuple[str, ...],
+    run: bool,
+) -> dict[str, Any]:
+    workflow_paths: tuple[str, ...] = ("workflows/example.json",) if include_workflows else ()
+    command = protocol_smoke_suite_command(capability_id, extra_args, workflow_paths)
+    payload: dict[str, Any] = {
+        "run": run,
+        "ok": None,
+        "command": command,
+        "capability_id": capability_id,
+        "workflow_paths": list(workflow_paths),
+        "extra_args": list(extra_args),
+        "wire_compatible": False,
+        "summary": None,
+        "report": None,
+        "error": None,
+    }
+    if not run:
+        payload["status"] = "not_run"
+        return payload
+    try:
+        report = protocol_smoke_suite(
+            registry,
+            capability_ids=(capability_id,),
+            workflow_paths=workflow_paths,
+            extra_args=extra_args,
+            workflow_dry_run=True,
+        )
+    except Exception as exc:
+        payload.update({"status": "failed", "ok": False, "error": str(exc)})
+        return payload
+    payload.update(
+        {
+            "status": "completed" if report.get("ok") else "failed",
+            "ok": bool(report.get("ok")),
+            "wire_compatible": bool(report.get("wire_compatible")),
+            "summary": report.get("summary"),
+            "readiness": report.get("readiness"),
+            "bridge_contract": report.get("bridge_contract"),
+            "failures": report.get("failures", []),
+            "report": report,
+        }
+    )
+    return payload
 
 
 def matching_parser_fixture_paths(

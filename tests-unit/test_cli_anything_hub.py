@@ -706,7 +706,7 @@ class CliAnythingHubTests(unittest.TestCase):
                     "install_hint": None,
                 },
             ), patch(
-                "cbn_plugins.cli_anything.protocol_smoke_suite",
+                "cbn_plugins.cli_anything_parts.verification.protocol_smoke_suite",
                 return_value={
                     "ok": True,
                     "wire_compatible": False,
@@ -2392,7 +2392,7 @@ class CliAnythingHubTests(unittest.TestCase):
             self.assertEqual(result["summary"]["recommended_next_action"], "run_adapter_smoke_with_confirmation")
 
     def test_module_report_captures_import_probe_errors(self):
-        with patch("cbn_plugins.cli_anything.importlib_util.find_spec", side_effect=ModuleNotFoundError("missing-extra")):
+        with patch("cbn_plugins.cli_anything_parts.repair.importlib_util.find_spec", side_effect=ModuleNotFoundError("missing-extra")):
             report = _module_report("package.with.optional.extra")
         self.assertFalse(report["importable"])
         self.assertFalse(report["module_main"])

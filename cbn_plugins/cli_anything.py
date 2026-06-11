@@ -9,8 +9,6 @@ from __future__ import annotations
 
 import json
 import importlib.metadata as importlib_metadata
-import importlib.util as importlib_util
-import os
 import re
 import shutil
 import subprocess
@@ -116,26 +114,28 @@ from cbn_plugins.cli_anything_parts.promotion import (
     promotion_requirements as _promotion_requirements,
 )
 from cbn_plugins.cli_anything_parts.repair import (
+    distribution_report as _distribution_report,
     entrypoint_diagnosis as _repair_parts_entrypoint_diagnosis,
     entrypoint_package_candidates as _repair_parts_entrypoint_package_candidates,
+    entrypoint_repair_strategy as _entrypoint_repair_strategy,
     entrypoint_wrapper_path as _repair_parts_entrypoint_wrapper_path,
     manifest_policy_from_recheck as _repair_parts_manifest_policy_from_recheck,
+    module_report as _module_report,
     normalize_package_candidate as _repair_parts_normalize_package_candidate,
     packages_from_install_command as _repair_parts_packages_from_install_command,
-    python_module_wrapper_content as _repair_parts_python_module_wrapper_content,
     repair_policy_network as _repair_parts_repair_policy_network,
     script_path_candidates as _repair_parts_script_path_candidates,
+    write_repair_entrypoint_files as _write_repair_entrypoint_files,
 )
 from cbn_plugins.cli_anything_parts.verification import (
+    harness_protocol_smoke_suite as _harness_protocol_smoke_suite,
     manifest_has_entrypoint_repair as _verification_parts_manifest_has_entrypoint_repair,
     mark_repaired_manifest_verified_from_fixtures as _mark_repaired_manifest_verified_from_fixtures,
     parser_contract_report as _verification_parts_parser_contract_report,
     parser_fixture_gate as _verification_parts_parser_fixture_gate,
     policy_requires_confirmation as _verification_parts_policy_requires_confirmation,
-    protocol_smoke_suite_command as _verification_parts_protocol_smoke_suite_command,
     protocol_verification_summary as _verification_parts_protocol_verification_summary,
     registry_source_for_manifest as _verification_parts_registry_source_for_manifest,
-    smoke_suite_stage_status as _verification_parts_smoke_suite_stage_status,
     verification_blockers as _verification_parts_verification_blockers,
     verification_stages as _verification_parts_verification_stages,
 )
@@ -143,7 +143,6 @@ from cbn_protocol.acceptance_queue import cli_to_cli_acceptance_queue
 from cbn_protocol.compatibility import check_all_protocols
 from cbn_protocol.lifecycle_suite import protocol_lifecycle_suite
 from cbn_protocol.readiness import protocol_readiness_report
-from cbn_protocol.smoke_suite import protocol_smoke_suite
 from cbn_workflow.catalog import list_workflows
 
 
@@ -2726,68 +2725,6 @@ def _parser_fixture_gate(report: dict[str, Any], capability_id: str) -> dict[str
     return _verification_parts_parser_fixture_gate(report, capability_id)
 
 
-def _harness_protocol_smoke_suite(
-    registry: ManifestRegistry,
-    capability_id: str,
-    include_workflows: bool,
-    extra_args: tuple[str, ...],
-    run: bool,
-) -> dict[str, Any]:
-    workflow_paths: tuple[str, ...] = ("workflows/example.json",) if include_workflows else ()
-    command = _protocol_smoke_suite_command(capability_id, extra_args, workflow_paths)
-    payload: dict[str, Any] = {
-        "run": run,
-        "ok": None,
-        "command": command,
-        "capability_id": capability_id,
-        "workflow_paths": list(workflow_paths),
-        "extra_args": list(extra_args),
-        "wire_compatible": False,
-        "summary": None,
-        "report": None,
-        "error": None,
-    }
-    if not run:
-        payload["status"] = "not_run"
-        return payload
-    try:
-        report = protocol_smoke_suite(
-            registry,
-            capability_ids=(capability_id,),
-            workflow_paths=workflow_paths,
-            extra_args=extra_args,
-            workflow_dry_run=True,
-        )
-    except Exception as exc:
-        payload.update({"status": "failed", "ok": False, "error": str(exc)})
-        return payload
-    payload.update(
-        {
-            "status": "completed" if report.get("ok") else "failed",
-            "ok": bool(report.get("ok")),
-            "wire_compatible": bool(report.get("wire_compatible")),
-            "summary": report.get("summary"),
-            "readiness": report.get("readiness"),
-            "bridge_contract": report.get("bridge_contract"),
-            "failures": report.get("failures", []),
-            "report": report,
-        }
-    )
-    return payload
-
-
-def _protocol_smoke_suite_command(
-    capability_id: str,
-    extra_args: tuple[str, ...],
-    workflow_paths: tuple[str, ...],
-) -> str:
-    return _verification_parts_protocol_smoke_suite_command(capability_id, extra_args, workflow_paths)
-
-
-def _smoke_suite_stage_status(smoke_suite: dict[str, Any], gates: dict[str, Any]) -> str:
-    return _verification_parts_smoke_suite_stage_status(smoke_suite, gates)
-
-
 def _policy_requires_confirmation(policy: dict[str, Any]) -> bool:
     return _verification_parts_policy_requires_confirmation(policy)
 
@@ -2812,65 +2749,6 @@ def _script_path_candidates(entry_point: str | None) -> list[dict[str, Any]]:
     return _repair_parts_script_path_candidates(entry_point)
 
 
-def _distribution_report(package: str) -> dict[str, Any]:
-    try:
-        dist = importlib_metadata.distribution(package)
-    except importlib_metadata.PackageNotFoundError:
-        return {
-            "package": package,
-            "installed": False,
-            "version": None,
-            "location": None,
-            "console_scripts": [],
-        }
-    console_scripts = [
-        {"name": ep.name, "value": ep.value}
-        for ep in dist.entry_points
-        if ep.group == "console_scripts"
-    ]
-    return {
-        "package": package,
-        "installed": True,
-        "version": dist.version,
-        "location": str(Path(dist.locate_file(""))),
-        "console_scripts": console_scripts,
-    }
-
-
-def _module_report(package: str) -> dict[str, Any]:
-    try:
-        spec = importlib_util.find_spec(package)
-    except Exception as exc:
-        return {
-            "package": package,
-            "importable": False,
-            "origin": None,
-            "module_main": False,
-            "error": str(exc),
-        }
-    if spec is None:
-        return {
-            "package": package,
-            "importable": False,
-            "origin": None,
-            "module_main": False,
-            "error": None,
-        }
-    module_main = False
-    if spec.submodule_search_locations:
-        for location in spec.submodule_search_locations:
-            if (Path(location) / "__main__.py").exists():
-                module_main = True
-                break
-    return {
-        "package": package,
-        "importable": True,
-        "origin": spec.origin,
-        "module_main": module_main,
-        "error": None,
-    }
-
-
 def _entrypoint_diagnosis(
     entry_point: str | None,
     entrypoint_path: str | None,
@@ -2889,143 +2767,12 @@ def _entrypoint_diagnosis(
     )
 
 
-def _entrypoint_repair_strategy(plan: dict[str, Any], module: str | None) -> dict[str, Any]:
-    diagnosis = plan.get("diagnosis") if isinstance(plan.get("diagnosis"), dict) else {}
-    if diagnosis.get("repair_required") is False:
-        return {
-            "ready": False,
-            "state": "repair_not_required",
-            "module": None,
-            "blockers": ["entrypoint is already available"],
-            "recommended_next_action": "verify_harness_runtime",
-        }
-    if not module:
-        runnable_modules = [
-            item
-            for item in plan.get("modules", [])
-            if item.get("importable") and item.get("module_main")
-        ]
-        if runnable_modules:
-            module = str(runnable_modules[0]["package"])
-        else:
-            return {
-                "ready": False,
-                "state": "adapter_target_required",
-                "module": None,
-                "blockers": [
-                    "no importable module with __main__.py was found; pass --module after inspecting the package API"
-                ],
-                "recommended_next_action": "choose_explicit_python_module_or_custom_adapter",
-            }
-    module_report = _module_report(module)
-    if not module_report["importable"]:
-        return {
-            "ready": False,
-            "state": "module_not_importable",
-            "module": module,
-            "module_report": module_report,
-            "blockers": [f"module is not importable: {module}"],
-            "recommended_next_action": "choose_importable_python_module",
-        }
-    return {
-        "ready": True,
-        "state": "python_module_wrapper",
-        "module": module,
-        "module_report": module_report,
-        "blockers": [],
-        "recommended_next_action": "write_wrapper_and_repaired_manifest",
-    }
-
-
 def _entrypoint_wrapper_path(external_plugins: Path, harness_name: str) -> Path:
     return _repair_parts_entrypoint_wrapper_path(
         external_plugins,
         harness_name,
         safe_name=sanitize_harness_name(harness_name),
     )
-
-
-def _python_module_wrapper_content(module: str) -> str:
-    return _repair_parts_python_module_wrapper_content(module)
-
-
-def _write_repair_entrypoint_files(
-    *,
-    operation_id: str,
-    root: Path,
-    wrapper_path: Path,
-    module: str,
-    manifest_path: Path,
-    manifest: dict[str, Any],
-) -> dict[str, Any]:
-    backup_dir = root / "runtime" / "backups" / "cli-anything-repair" / operation_id
-    writes = [
-        {
-            "kind": "wrapper",
-            "path": wrapper_path,
-            "text": _python_module_wrapper_content(module),
-        },
-        {
-            "kind": "manifest",
-            "path": manifest_path,
-            "text": json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
-        },
-    ]
-    written: list[str] = []
-    backups: list[dict[str, Any]] = []
-    for item in writes:
-        result = _atomic_write_text_with_backup(
-            path=item["path"],
-            text=item["text"],
-            backup_dir=backup_dir,
-            operation_id=operation_id,
-        )
-        result["kind"] = item["kind"]
-        written.append(result["path"])
-        if result["backup_path"]:
-            backups.append(
-                {
-                    "kind": item["kind"],
-                    "path": result["path"],
-                    "backup_path": result["backup_path"],
-                    "backup_size_bytes": result["backup_size_bytes"],
-                }
-            )
-    return {
-        "status": "completed",
-        "operation_id": operation_id,
-        "written": written,
-        "backups": backups,
-        "atomic": True,
-        "backup_dir": str(backup_dir),
-    }
-
-
-def _atomic_write_text_with_backup(
-    *,
-    path: Path,
-    text: str,
-    backup_dir: Path,
-    operation_id: str,
-) -> dict[str, Any]:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    backup_path = None
-    backup_size_bytes = 0
-    if path.exists():
-        backup_dir.mkdir(parents=True, exist_ok=True)
-        backup_path = backup_dir / f"{path.name}.bak"
-        shutil.copy2(path, backup_path)
-        backup_size_bytes = backup_path.stat().st_size
-    temp_path = path.with_name(f".{path.name}.{operation_id}.tmp")
-    temp_path.write_text(text, encoding="utf-8")
-    os.replace(temp_path, path)
-    return {
-        "path": str(path),
-        "size_bytes": len(text.encode("utf-8")),
-        "backup_path": str(backup_path) if backup_path else None,
-        "backup_size_bytes": backup_size_bytes,
-        "temp_path": str(temp_path),
-    }
 
 
 def _entrypoint_repair_manifest(
