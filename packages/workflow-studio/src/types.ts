@@ -510,6 +510,7 @@ export interface NetworkConnectPackage {
     next_commands?: string[];
   };
   demo_playbook?: KillerMvpDemoPlaybook;
+  network_entry_profile?: NetworkEntryProfile;
   agent_node_bundle?: {
     kind?: "AdapterAgentNodeBundle";
     ok?: boolean;
@@ -563,6 +564,86 @@ export interface NetworkConnectPackage {
     sequence_steps?: QuickstartSequenceStep[];
   };
   next_commands?: string[];
+}
+
+export interface NetworkEntryProfile {
+  kind?: "NetworkEntryProfile";
+  status?: string;
+  profile_id?: string;
+  display_name?: string;
+  workflow_path?: string;
+  base_url?: string | null;
+  integration_mode?: string;
+  compatibility?: {
+    api_version?: string;
+    additive_fields_only?: boolean;
+    external_protocol?: string;
+    external_kinds?: string[];
+    internal_bus?: string;
+    stable_fields?: string[];
+  };
+  auth?: {
+    required_headers?: Record<string, string>;
+    session_token_required?: boolean;
+    session_token_included?: boolean;
+  };
+  primary_entrypoints?: {
+    open_studio?: string;
+    health?: string;
+    import_catalog?: string;
+    plan_agent_request?: {
+      method?: string;
+      url?: string;
+      json?: Record<string, unknown>;
+    };
+    run_workflow?: {
+      method?: string;
+      url?: string;
+      json?: Record<string, unknown>;
+    };
+    verify_network?: string;
+  };
+  harness_agent?: {
+    kind?: string;
+    request_binding?: string;
+    message?: string;
+    accepts?: string[];
+    emits?: string[];
+    bridge_message_channel?: string;
+    bridge_route_count?: number;
+    plan_endpoint?: string;
+    run_endpoint?: string;
+  };
+  evidence?: {
+    acceptance_status?: string;
+    acceptance_check_count?: number;
+    required_request_ids?: string[];
+    evidence_endpoints?: {
+      events?: string;
+      audit?: string;
+      artifacts?: string;
+    };
+    demo_status?: string;
+    demo_stage_count?: number;
+    playbook_status?: string;
+    playbook_step_count?: number;
+  };
+  registration?: {
+    status?: string;
+    importer_count?: number;
+    importer_ids?: string[];
+    next_commands?: string[];
+  };
+  setup?: {
+    status?: string;
+    setup_required?: boolean;
+    requires_user_count?: number;
+    secret_count?: number;
+  };
+  protocol_facades?: {
+    targets?: string[];
+    export_count?: number;
+  };
 }
 
 export interface CliAnythingPluginHealth {
@@ -653,6 +734,12 @@ export interface AgentCliContractPackageHealth {
 
 export interface ConnectSummary {
   status: string;
+  entryProfileStatus: string;
+  entryProfileMode: string;
+  entryProfileId: string;
+  entryProfileStableFields: string;
+  entryProfileAuth: string;
+  entryProfileEvidence: string;
   externalProtocol: string;
   acceptedKinds: string;
   externalPackageStatus: string;

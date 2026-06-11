@@ -101,6 +101,7 @@ const setupCheckpoints = computed(() =>
   Array.isArray(toolCallPlan.value?.long_running_loop?.checkpoints) ? toolCallPlan.value.long_running_loop.checkpoints : [],
 );
 const connectSummary = computed<ConnectSummary>(() => summarizeConnectPackage(connectPackage.value));
+const connectEntryProfile = computed(() => connectPackage.value?.network_entry_profile ?? {});
 const connectContractSummary = computed<BridgeContractSummary>(() => summarizeConnectContracts(connectPackage.value));
 const connectExternalPackageHealth = computed<AgentCliContractPackageHealth>(() => connectPackage.value?.contracts?.external?.package_health ?? {});
 const connectExternalPackageFiles = computed(() =>
@@ -493,6 +494,7 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
   const demo = payload?.demo_readiness ?? {};
   const playbook = payload?.demo_playbook ?? {};
   const quickstart = payload?.consumer_quickstart ?? {};
+  const entryProfile = payload?.network_entry_profile ?? {};
   const acceptance = payload?.acceptance ?? quickstart.acceptance ?? {};
   const setup = payload?.setup_guidance ?? {};
   const harness = payload?.agent_workflow_request ?? {};
@@ -506,6 +508,18 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
   const headers = quickstart.required_headers ?? {};
   return {
     status: payload?.ok ? "ready" : payload ? "needs attention" : "not loaded",
+    entryProfileStatus: stringValue(entryProfile.status) ?? "not loaded",
+    entryProfileMode: stringValue(entryProfile.integration_mode) ?? "not loaded",
+    entryProfileId: stringValue(entryProfile.profile_id) ?? "not loaded",
+    entryProfileStableFields: Array.isArray(entryProfile.compatibility?.stable_fields)
+      ? entryProfile.compatibility.stable_fields.join(", ")
+      : "not loaded",
+    entryProfileAuth: entryProfile.auth?.session_token_included
+      ? "session token included"
+      : entryProfile.auth?.session_token_required
+        ? "session token required"
+        : "no session header",
+    entryProfileEvidence: `${numberValue(entryProfile.evidence?.acceptance_check_count) ?? 0} checks · ${numberValue(entryProfile.evidence?.demo_stage_count) ?? 0} stages`,
     externalProtocol: external.protocol ?? "unknown",
     acceptedKinds: Array.isArray(external.accepted_kinds) ? external.accepted_kinds.join(" + ") : "unknown",
     externalPackageStatus: packageHealth.ok ? "package clean" : packageHealth.kind ? "package attention" : "package not loaded",
@@ -965,6 +979,10 @@ onMounted(async () => {
             <strong>{{ connectSummary.status }}</strong>
           </div>
           <div>
+            <span>Entry</span>
+            <strong>{{ connectSummary.entryProfileStatus }}</strong>
+          </div>
+          <div>
             <span>External</span>
             <strong>{{ connectSummary.externalProtocol }}</strong>
           </div>
@@ -1038,6 +1056,10 @@ onMounted(async () => {
           <span class="pill-inline">{{ connectSummary.acceptanceCheckCount }} checks</span>
           <span class="pill-inline">{{ connectSummary.demoReadinessStatus }}</span>
           <span class="pill-inline">{{ connectSummary.demoPlaybookStatus }}</span>
+          <span :class="['pill-inline', connectSummary.entryProfileStatus === 'ready' ? 'ok' : 'blocked']">
+            entry {{ connectSummary.entryProfileStatus }}
+          </span>
+          <span class="pill-inline">{{ connectSummary.entryProfileMode }}</span>
           <span :class="['pill-inline', connectSetupGuidance.setup_required ? 'blocked' : 'ok']">{{ connectSummary.setupRequired }}</span>
           <span class="pill-inline">{{ connectSummary.setupUserGates }} user gates</span>
           <span class="pill-inline">{{ connectSummary.setupSecrets }} secrets</span>
@@ -1047,6 +1069,38 @@ onMounted(async () => {
           <span :class="['pill-inline', acceptanceRunSummary.status === 'passed' ? 'ok' : acceptanceRunSummary.status === 'failed' ? 'blocked' : '']">
             {{ acceptanceRunSummary.status }}
           </span>
+        </div>
+        <div class="contract-status-grid">
+          <div>
+            <span>Network entry</span>
+            <strong>{{ connectEntryProfile.display_name || connectSummary.entryProfileId }}</strong>
+          </div>
+          <div>
+            <span>Auth</span>
+            <strong>{{ connectSummary.entryProfileAuth }}</strong>
+          </div>
+          <div>
+            <span>Evidence</span>
+            <strong>{{ connectSummary.entryProfileEvidence }}</strong>
+          </div>
+        </div>
+        <div class="quickstart-grid">
+          <div>
+            <span>Profile ID</span>
+            <code>{{ connectSummary.entryProfileId }}</code>
+          </div>
+          <div>
+            <span>Compatibility</span>
+            <code>{{ connectEntryProfile.compatibility?.external_protocol || connectSummary.externalProtocol }} -> {{ connectEntryProfile.compatibility?.internal_bus || "CBN BridgeMessage" }}</code>
+          </div>
+          <div>
+            <span>Stable fields</span>
+            <code>{{ connectSummary.entryProfileStableFields }}</code>
+          </div>
+          <div>
+            <span>Verify</span>
+            <code>{{ connectEntryProfile.primary_entrypoints?.verify_network || "not loaded" }}</code>
+          </div>
         </div>
         <div class="agent-card-list">
           <div v-for="call in connectSetupCalls.slice(0, 6)" :key="call.call_id || call.tool_use_id" class="agent-card">
@@ -1388,7 +1442,7 @@ onMounted(async () => {
             <span>{{ endpoint.path }}</span>
           </div>
         </div>
-        <pre>{{ pretty({ daemon_verify: networkVerifyReport, import_catalog: importCatalog, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, demo_playbook: connectPackage?.demo_playbook, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, plugins: connectPackage?.plugins, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
+        <pre>{{ pretty({ daemon_verify: networkVerifyReport, import_catalog: importCatalog, network_entry_profile: connectPackage?.network_entry_profile, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, demo_playbook: connectPackage?.demo_playbook, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, plugins: connectPackage?.plugins, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
       </section>
       <section>
         <div class="section-title"><Rocket :size="15" /> Killer Demo</div>

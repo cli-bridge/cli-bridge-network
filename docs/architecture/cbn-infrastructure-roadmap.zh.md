@@ -416,6 +416,13 @@ Killer Demo slice 已新增可运行证据束：
   CLI-CLI workflow、如何 POST `/workflows/run`、以及 CLI-CLI 间的 selector 路由如何
   通过 BridgeMessage 传递。Workflow Studio Connect 面板同步展示 harness kind、
   binding、run endpoint、BridgeMessage channel 和前几条 selector route。
+- `NetworkConnectPackage.network_entry_profile` 已新增为外部程序的一次性接入档案：
+  将 profile id、兼容承诺、鉴权 header、open Studio / import catalog / plan agent /
+  run workflow / verify network 主入口、`NaturalLanguageWorkflowHarness`、acceptance
+  evidence、registration importers、setup gate 和 protocol facade 聚合成单一机器可读
+  对象。它不替代 `consumer_quickstart` 或 `agent_workflow_request`，而是给第三方程序
+  一个低门槛的稳定入口视图；Workflow Studio Connect 面板同步展示 entry status、
+  profile id、兼容层、稳定字段、鉴权与证据摘要。
 - `cbn network connect-package|quickstart|verify`、daemon `/network/*` 和 Python API
   已统一默认 agent prompt，默认语义同时包含 run、reusable CLI-CLI harness agent 和
   external program connect，避免 CLI 与 HTTP 入口生成不同 intent。
