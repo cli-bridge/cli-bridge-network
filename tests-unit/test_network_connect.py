@@ -137,6 +137,7 @@ class NetworkConnectPackageTests(unittest.TestCase):
             {"command", "cli-anything", "agent-cli-card", "mcp", "skill", "parser-fixture"},
         )
         self.assertTrue(all(importer["default_side_effects"] == "none" for importer in registration["importers"]))
+        self.assertEqual(registration["next_commands"][0], "python -m cbn import catalog")
         self.assertIn("python -m cbn import cli-anything --help", registration["next_commands"])
         agent_bundle = payload["agent_node_bundle"]
         self.assertEqual(agent_bundle["kind"], "AdapterAgentNodeBundle")

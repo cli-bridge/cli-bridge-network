@@ -417,6 +417,12 @@ Killer Demo slice 已新增可运行证据束：
   workflow，也能知道如何把更多普通 CLI、CLI-Anything harness、MCP tool、skill 或
   parser fixture 纳入 CBN 网络。Workflow Studio Connect 面板同步展示 importer 数量、
   dry-run import policy 和前几条注册入口。
+- `cbn_core.import_catalog.cli_registration_surface()` 已成为 CLI 注册入口目录的单一
+  事实源；`NetworkConnectPackage.registration_surface` 和新增
+  `python -m cbn import catalog` 均复用它。外部程序现在无需生成完整 connect
+  package，也能只读获取 importer id、entrypoint、help command、accepts/produces、
+  write/confirm gate、dry-run-first policy 和示例命令，降低“把下一个 CLI 接入 CBN”
+  的发现成本。
 - `NetworkConnectPackage.contracts.external.package_boundary` 已新增
   `ExternalProtocolPackageBoundary`：把 `agent-cli-contract` 的 npm/Python 包名、
   schema 路径、TypeScript types、Python validator、fixtures、conformance smoke

@@ -14,6 +14,7 @@ from cbn_demo.killer import killer_demo_report
 from cbn_demo.network_connect import network_acceptance_report, network_connect_package, workflow_studio_demo_link
 from cbn_core.agent_cli_importer import agent_cli_card_import_report
 from cbn_core.command_importer import command_import_report, parse_key_values
+from cbn_core.import_catalog import cli_registration_surface
 from cbn_core.manifest import validate_manifest_path
 from cbn_core.mcp_importer import load_mcp_tool_descriptor, mcp_import_report
 from cbn_core.skill_importer import skill_import_report
@@ -327,6 +328,9 @@ def main(argv: list[str] | None = None) -> int:
             return 0 if payload["ok"] else 10
 
     if args.command == "import":
+        if args.import_command == "catalog":
+            print(json.dumps(cli_registration_surface(), ensure_ascii=False, indent=2))
+            return 0
         if args.import_command == "command":
             payload = command_import_report(
                 capability_id=args.capability_id,

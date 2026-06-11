@@ -400,6 +400,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     import_parser = subcommands.add_parser("import", help="Create CBN manifests from external tools.")
     import_subcommands = import_parser.add_subparsers(dest="import_command")
+    import_subcommands.add_parser(
+        "catalog",
+        help="Print the dry-run-first importer catalog.",
+    )
     import_command = import_subcommands.add_parser(
         "command",
         help="Generate a ToolManifest for a plain CLI command.",
