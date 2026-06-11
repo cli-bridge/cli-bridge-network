@@ -21,6 +21,12 @@ from typing import Any
 from adapters.pty import pty_backend_status
 from cbn.paths import resolve_project_paths
 from cbn_plugins.manifest import PluginManifest
+from cbn_plugins.manager_parts.provenance import (
+    entrypoint_provenance as _entrypoint_provenance,
+    parse_ls_remote_head as _parse_ls_remote_head,
+    pip_package_provenance as _pip_package_provenance,
+    repo_provenance as _repo_provenance,
+)
 from cbn_plugins.manager_parts.verification import (
     run_command as _run_command,
     verification_report_for_plan,
@@ -228,9 +234,9 @@ class PluginManager:
         manifest = self.load_manifest(plugin_id)
         plugin_dir = self.paths.external_plugins / manifest.plugin_id
         repo_dir = manifest.repo_dir(self.paths.external_plugins)
-        repository = self._repo_provenance(repo_dir, expected_remote=manifest.repository)
-        packages = [self._pip_package_provenance(package) for package in manifest.pip_packages]
-        entrypoints = [self._entrypoint_provenance(entrypoint) for entrypoint in manifest.entrypoints]
+        repository = _repo_provenance(repo_dir, expected_remote=manifest.repository)
+        packages = [_pip_package_provenance(package) for package in manifest.pip_packages]
+        entrypoints = [_entrypoint_provenance(entrypoint) for entrypoint in manifest.entrypoints]
         warnings: list[str] = []
         blockers: list[str] = []
 
@@ -809,136 +815,6 @@ class PluginManager:
                 "stderr": proc.stderr.strip(),
             },
         )
-
-    def _repo_provenance(self, repo_dir: Path, expected_remote: str) -> dict[str, Any]:
-        if not repo_dir.exists():
-            return {
-                "exists": False,
-                "is_git": False,
-                "expected_remote": expected_remote,
-                "remote_url": None,
-                "remote_matches_expected": None,
-                "branch": None,
-                "head": None,
-                "dirty": None,
-                "status_short": None,
-                "errors": [],
-            }
-        is_git = (repo_dir / ".git").exists()
-        if not is_git:
-            return {
-                "exists": True,
-                "is_git": False,
-                "expected_remote": expected_remote,
-                "remote_url": None,
-                "remote_matches_expected": None,
-                "branch": None,
-                "head": None,
-                "dirty": None,
-                "status_short": None,
-                "errors": [],
-            }
-
-        errors: list[str] = []
-        remote = self._git_value(repo_dir, ("config", "--get", "remote.origin.url"), errors)
-        branch = self._git_value(repo_dir, ("rev-parse", "--abbrev-ref", "HEAD"), errors)
-        head = self._git_value(repo_dir, ("rev-parse", "HEAD"), errors)
-        status_short = self._git_value(repo_dir, ("status", "--short"), errors, allow_empty=True)
-        return {
-            "exists": True,
-            "is_git": True,
-            "expected_remote": expected_remote,
-            "remote_url": remote,
-            "remote_matches_expected": _same_git_remote(remote, expected_remote) if remote else False,
-            "branch": branch,
-            "head": head,
-            "dirty": bool(status_short),
-            "status_short": status_short,
-            "errors": errors,
-        }
-
-    def _git_value(
-        self,
-        repo_dir: Path,
-        args: tuple[str, ...],
-        errors: list[str],
-        allow_empty: bool = False,
-    ) -> str | None:
-        proc = _run_command(("git", "-C", str(repo_dir), *args), timeout_seconds=10)
-        if proc["exit_code"] != 0:
-            errors.append(f"git {' '.join(args)} failed: {proc['stderr'] or proc['stdout']}")
-            return "" if allow_empty else None
-        value = proc["stdout"].strip()
-        if value or allow_empty:
-            return value
-        return None
-
-    def _pip_package_provenance(self, package: str) -> dict[str, Any]:
-        proc = _run_command((sys.executable, "-m", "pip", "show", package), timeout_seconds=30)
-        fields = _parse_key_value_lines(proc["stdout"]) if proc["exit_code"] == 0 else {}
-        return {
-            "package": package,
-            "installed": proc["exit_code"] == 0,
-            "version": fields.get("version"),
-            "location": fields.get("location"),
-            "summary": fields.get("summary"),
-            "metadata": fields,
-            "exit_code": proc["exit_code"],
-            "stderr": proc["stderr"],
-        }
-
-    def _entrypoint_provenance(self, entrypoint: str) -> dict[str, Any]:
-        path = shutil.which(entrypoint)
-        version = None
-        version_exit_code = None
-        version_stderr = None
-        if path:
-            proc = _run_command((path, "--version"), timeout_seconds=10)
-            version_exit_code = proc["exit_code"]
-            version_stderr = proc["stderr"]
-            version = (proc["stdout"] or proc["stderr"]).strip() or None
-        return {
-            "entrypoint": entrypoint,
-            "available": path is not None,
-            "path": path,
-            "version": version,
-            "version_exit_code": version_exit_code,
-            "version_stderr": version_stderr,
-        }
-
-
-def _parse_key_value_lines(text: str) -> dict[str, str]:
-    fields: dict[str, str] = {}
-    for line in text.splitlines():
-        if ":" not in line:
-            continue
-        key, value = line.split(":", 1)
-        key = key.strip().casefold().replace("-", "_")
-        if key:
-            fields[key] = value.strip()
-    return fields
-
-
-def _parse_ls_remote_head(text: str) -> str | None:
-    for line in text.splitlines():
-        parts = line.split()
-        if len(parts) >= 2 and parts[1] == "HEAD":
-            return parts[0]
-    return None
-
-
-def _same_git_remote(left: str | None, right: str | None) -> bool:
-    if not left or not right:
-        return False
-    return _normalize_git_remote(left) == _normalize_git_remote(right)
-
-
-def _normalize_git_remote(value: str) -> str:
-    normalized = value.strip().casefold().replace("\\", "/")
-    if normalized.endswith(".git"):
-        normalized = normalized[:-4]
-    return normalized.rstrip("/")
-
 
 def _runtime_transport_dependency(kind: str) -> str | None:
     if kind == "pty" and os.name == "nt":
