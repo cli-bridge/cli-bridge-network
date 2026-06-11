@@ -353,6 +353,35 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_AGENT_CONNECT_MESSAGE,
         help="Agent prompt used to shape the reusable workflow request.",
     )
+    network_sdk_bootstrap = network_subcommands.add_parser(
+        "sdk-bootstrap",
+        help="Print only the stable SDK bootstrap contract for external CBN consumers.",
+    )
+    network_sdk_bootstrap.add_argument(
+        "--workflow-path",
+        default="workflows/cli-anything-macrocli-mermaid-routing.example.json",
+        help="Workflow JSON path to expose in the SDK bootstrap contract.",
+    )
+    network_sdk_bootstrap.add_argument("--base-url", help="Daemon base URL to embed in endpoint URLs.")
+    network_sdk_bootstrap.add_argument(
+        "--studio-url",
+        default="http://127.0.0.1:5177",
+        help="Workflow Studio base URL to embed as a preconfigured demo link.",
+    )
+    network_sdk_bootstrap.add_argument(
+        "--dashboard-url",
+        default="http://127.0.0.1:5173",
+        help="Maintainer dashboard URL to embed in the Workflow Studio demo link.",
+    )
+    network_sdk_bootstrap.add_argument(
+        "--session-token",
+        help="Optional daemon session token to include in auth metadata.",
+    )
+    network_sdk_bootstrap.add_argument(
+        "--message",
+        default=DEFAULT_AGENT_CONNECT_MESSAGE,
+        help="Agent prompt used to shape the SDK bootstrap request map.",
+    )
     network_acceptance = network_subcommands.add_parser(
         "acceptance",
         help="Print only the machine-readable acceptance checklist for external CBN consumers.",
@@ -422,12 +451,13 @@ def build_parser() -> argparse.ArgumentParser:
             "launch-contract",
             "entry-profile",
             "harness-agent",
+            "sdk-bootstrap",
         ],
         default="json",
         help=(
             "Output JSON quickstart, a cURL script, a PowerShell script, the acceptance checklist, "
             "MVP readiness, the small consumer launch contract, the stable entry profile, "
-            "or the reusable harness agent contract."
+            "the reusable harness agent contract, or the SDK bootstrap contract."
         ),
     )
     network_verify = network_subcommands.add_parser(

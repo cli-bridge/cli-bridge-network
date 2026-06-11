@@ -106,6 +106,7 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/network/launch-contract"},
     {"method": "GET", "path": "/network/entry-profile"},
     {"method": "GET", "path": "/network/harness-agent"},
+    {"method": "GET", "path": "/network/sdk-bootstrap"},
     {"method": "GET", "path": "/network/readiness"},
     {"method": "POST", "path": "/network/verify"},
     {"method": "POST", "path": "/protocols/accept-workflow"},
@@ -627,6 +628,7 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             "/network/launch-contract",
             "/network/entry-profile",
             "/network/harness-agent",
+            "/network/sdk-bootstrap",
             "/network/readiness",
         }:
             result = _network_connect_package_from_query(self, runtime, query)
@@ -664,6 +666,13 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 self._send(
                     200 if result["ok"] and harness_agent.get("kind") == "NetworkHarnessAgent" else 422,
                     harness_agent,
+                )
+                return
+            if parsed.path == "/network/sdk-bootstrap":
+                sdk_bootstrap = result.get("consumer_sdk_bootstrap", {})
+                self._send(
+                    200 if result["ok"] and sdk_bootstrap.get("kind") == "ConsumerSdkBootstrap" else 422,
+                    sdk_bootstrap,
                 )
                 return
             if parsed.path == "/network/readiness":

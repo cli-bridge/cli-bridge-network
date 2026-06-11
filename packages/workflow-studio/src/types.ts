@@ -498,11 +498,16 @@ export interface NetworkConnectQuickstart {
   required_headers?: Record<string, string>;
   entrypoints?: {
     open_studio?: string;
+    connect_package?: string;
+    quickstart?: string;
+    sdk_bootstrap?: string;
     health?: string;
     acceptance?: string;
     launch_contract?: string;
     entry_profile?: string;
+    harness_agent?: string;
     import_catalog?: string;
+    direct_cli_readiness?: string;
     inspect_workflow?: string;
     inspect_bridge_contract?: string;
     inspect_agent_nodes?: string;
@@ -607,6 +612,8 @@ export interface NetworkConnectPackage {
     demo_stage_count?: number;
     demo_playbook_step_count?: number;
     cli_anything_split_status?: string;
+    consumer_sdk_bootstrap_status?: string;
+    consumer_sdk_bootstrap_request_count?: number;
     external_contract_ready?: boolean;
     mvp_readiness_status?: string;
     mvp_readiness_score?: string;
@@ -688,6 +695,7 @@ export interface NetworkConnectPackage {
   mvp_readiness?: KillerMvpReadiness;
   mvp_presenter_brief?: KillerMvpPresenterBrief;
   consumer_launch_contract?: ConsumerLaunchContract;
+  consumer_sdk_bootstrap?: ConsumerSdkBootstrap;
   agent_node_bundle?: {
     kind?: "AdapterAgentNodeBundle";
     ok?: boolean;
@@ -707,6 +715,66 @@ export interface NetworkConnectPackage {
   registration_surface?: CliRegistrationSurface;
   acceptance?: NetworkConnectionAcceptance;
   consumer_quickstart?: NetworkConnectQuickstart;
+  next_commands?: string[];
+}
+
+export interface ConsumerSdkBootstrap {
+  kind?: "ConsumerSdkBootstrap";
+  status?: string;
+  bootstrap_id?: string;
+  audience?: string;
+  workflow_path?: string;
+  base_url?: string | null;
+  auth?: {
+    headers?: Record<string, string>;
+    session_token_header?: string | null;
+    session_token_required?: boolean;
+    secret_values_echoed?: boolean;
+  };
+  compatibility?: {
+    api_version?: string;
+    additive_fields_only?: boolean;
+    external_protocol?: string;
+    internal_bus?: string;
+    minimum_required_fields?: string[];
+  };
+  entrypoints?: {
+    connect_package?: string;
+    quickstart?: string;
+    launch_contract?: string;
+    entry_profile?: string;
+    harness_agent?: string;
+    run_workflow?: { method?: string; url?: string; json?: Record<string, unknown> };
+    evidence?: {
+      events?: string;
+      audit?: string;
+      artifacts?: string;
+    };
+  };
+  request_count?: number;
+  requests?: Array<{
+    id?: string;
+    method?: string;
+    url?: string;
+    json?: Record<string, unknown> | null;
+    response_kind?: string;
+    required?: boolean;
+  }>;
+  required_sequence?: string[];
+  typed_responses?: Record<string, string>;
+  harness?: {
+    contract_id?: string;
+    kind?: string;
+    bridge_message_channel?: string;
+    bridge_route_count?: number;
+    run_endpoint?: string;
+  };
+  safety?: {
+    dry_run_default?: boolean;
+    confirmed_default?: boolean;
+    secret_values_included?: boolean;
+    writes_require_explicit_confirmation?: boolean;
+  };
   next_commands?: string[];
 }
 
@@ -1088,6 +1156,12 @@ export interface ConnectSummary {
   launchSequenceSteps: number;
   launchRequiredRequests: number;
   launchSecretPolicy: string;
+  sdkBootstrapStatus: string;
+  sdkBootstrapId: string;
+  sdkBootstrapRequests: number;
+  sdkBootstrapRequiredSequence: number;
+  sdkBootstrapSecretPolicy: string;
+  sdkBootstrapRunEndpoint: string;
   externalProtocol: string;
   acceptedKinds: string;
   externalPackageStatus: string;

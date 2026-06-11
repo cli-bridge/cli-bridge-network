@@ -35,6 +35,7 @@ import type {
   ConnectionAcceptanceCheck,
   ConnectSummary,
   ConsumerLaunchContract,
+  ConsumerSdkBootstrap,
   DirectCliReadinessReport,
   DockState,
   EvidenceSummary,
@@ -86,6 +87,7 @@ const directQuickstart = ref<NetworkConnectQuickstart | null>(null);
 const launchContract = ref<ConsumerLaunchContract | null>(null);
 const entryProfile = ref<NetworkEntryProfile | null>(null);
 const networkHarnessAgent = ref<NetworkHarnessAgent | null>(null);
+const sdkBootstrap = ref<ConsumerSdkBootstrap | null>(null);
 const directAcceptance = ref<NetworkConnectionAcceptance | null>(null);
 const directReadiness = ref<KillerMvpReadiness | null>(null);
 const importCatalog = ref<CliRegistrationSurface | null>(null);
@@ -155,6 +157,9 @@ const connectPresenterFlow = computed(() =>
 const connectLaunchContract = computed<ConsumerLaunchContract>(() => connectPackage.value?.consumer_launch_contract ?? {});
 const directLaunchContract = computed<ConsumerLaunchContract>(() => launchContract.value ?? {});
 const launchContractParity = computed(() => summarizeLaunchContractParity(connectLaunchContract.value, directLaunchContract.value));
+const connectSdkBootstrap = computed<ConsumerSdkBootstrap>(() => connectPackage.value?.consumer_sdk_bootstrap ?? {});
+const directSdkBootstrap = computed<ConsumerSdkBootstrap>(() => sdkBootstrap.value ?? {});
+const sdkBootstrapParity = computed(() => summarizeSdkBootstrapParity(connectSdkBootstrap.value, directSdkBootstrap.value));
 const connectAcceptance = computed<NetworkConnectionAcceptance>(
   () => connectPackage.value?.acceptance ?? connectPackage.value?.consumer_quickstart?.acceptance ?? {},
 );
@@ -328,6 +333,10 @@ async function inspectNetworkHarnessAgent() {
   networkHarnessAgent.value = (await call("harness", () => api.value.networkHarnessAgent())) as NetworkHarnessAgent;
 }
 
+async function inspectSdkBootstrap() {
+  sdkBootstrap.value = (await call("sdk bootstrap", () => api.value.networkSdkBootstrap())) as ConsumerSdkBootstrap;
+}
+
 async function inspectAcceptance() {
   directAcceptance.value = (await call("acceptance", () => api.value.networkAcceptance())) as NetworkConnectionAcceptance;
 }
@@ -482,6 +491,7 @@ async function loadAll() {
     inspectLaunchContract(),
     inspectEntryProfile(),
     inspectNetworkHarnessAgent(),
+    inspectSdkBootstrap(),
     inspectAcceptance(),
     inspectReadiness(),
     inspectImportCatalog(),
@@ -760,6 +770,7 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
   const mvp = payload?.mvp_readiness ?? {};
   const presenter = payload?.mvp_presenter_brief ?? {};
   const launchContract = payload?.consumer_launch_contract ?? {};
+  const sdkBootstrap = payload?.consumer_sdk_bootstrap ?? {};
   const acceptance = payload?.acceptance ?? quickstart.acceptance ?? {};
   const setup = payload?.setup_guidance ?? {};
   const harness = payload?.agent_workflow_request ?? {};
@@ -801,6 +812,12 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
     launchSequenceSteps: Array.isArray(launchContract.launch_sequence) ? launchContract.launch_sequence.length : 0,
     launchRequiredRequests: Array.isArray(launchContract.required_request_ids) ? launchContract.required_request_ids.length : 0,
     launchSecretPolicy: launchContract.auth?.secret_values_echoed === false ? "no secret echo" : "check secret policy",
+    sdkBootstrapStatus: stringValue(sdkBootstrap.status) ?? stringValue(summary.consumer_sdk_bootstrap_status) ?? "not loaded",
+    sdkBootstrapId: stringValue(sdkBootstrap.bootstrap_id) ?? "not loaded",
+    sdkBootstrapRequests: numberValue(sdkBootstrap.request_count) ?? numberValue(summary.consumer_sdk_bootstrap_request_count) ?? 0,
+    sdkBootstrapRequiredSequence: Array.isArray(sdkBootstrap.required_sequence) ? sdkBootstrap.required_sequence.length : 0,
+    sdkBootstrapSecretPolicy: sdkBootstrap.auth?.secret_values_echoed === false ? "no secret echo" : "check secret policy",
+    sdkBootstrapRunEndpoint: stringValue(sdkBootstrap.harness?.run_endpoint) ?? "not loaded",
     externalProtocol: external.protocol ?? "unknown",
     acceptedKinds: Array.isArray(external.accepted_kinds) ? external.accepted_kinds.join(" + ") : "unknown",
     externalPackageStatus: packageHealth.ok ? "package clean" : packageHealth.kind ? "package attention" : "package not loaded",
@@ -875,6 +892,28 @@ function summarizeLaunchContractParity(nested: ConsumerLaunchContract, direct: C
     detail: matched
       ? "Direct launch contract matches the one-shot package copy."
       : "Direct launch contract differs from the one-shot package copy.",
+  };
+}
+
+function summarizeSdkBootstrapParity(nested: ConsumerSdkBootstrap, direct: ConsumerSdkBootstrap): { status: string; detail: string } {
+  if (!direct.kind) {
+    return { status: "sdk not loaded", detail: "Direct /network/sdk-bootstrap has not been fetched." };
+  }
+  if (!nested.kind) {
+    return { status: "sdk direct only", detail: "Direct SDK bootstrap is loaded; connect package is not loaded yet." };
+  }
+  const sameBootstrap = nested.bootstrap_id === direct.bootstrap_id;
+  const sameStatus = nested.status === direct.status;
+  const sameRequests = (nested.request_count ?? nested.requests?.length ?? 0) === (direct.request_count ?? direct.requests?.length ?? 0);
+  const sameSequence = (nested.required_sequence ?? []).join("|") === (direct.required_sequence ?? []).join("|");
+  const sameRunEndpoint = nested.harness?.run_endpoint === direct.harness?.run_endpoint;
+  const sameSecretPolicy = nested.auth?.secret_values_echoed === direct.auth?.secret_values_echoed;
+  const matched = sameBootstrap && sameStatus && sameRequests && sameSequence && sameRunEndpoint && sameSecretPolicy;
+  return {
+    status: matched ? "sdk parity" : "sdk drift",
+    detail: matched
+      ? "Direct SDK bootstrap matches the one-shot package copy."
+      : "Direct SDK bootstrap differs from the one-shot package copy.",
   };
 }
 
@@ -1251,6 +1290,9 @@ onMounted(async () => {
         <button title="Load direct reusable network harness agent contract" @click="inspectNetworkHarnessAgent">
           <Bot :size="16" /> Harness
         </button>
+        <button title="Load direct consumer SDK bootstrap contract" @click="inspectSdkBootstrap">
+          <Boxes :size="16" /> SDK
+        </button>
         <button title="Load direct consumer launch contract" @click="inspectLaunchContract">
           <ClipboardList :size="16" /> Launch
         </button>
@@ -1545,6 +1587,9 @@ onMounted(async () => {
           <span :class="['pill-inline', networkHarnessParity.status === 'harness parity' ? 'ok' : networkHarnessParity.status === 'harness drift' ? 'blocked' : '']">
             {{ networkHarnessParity.status }}
           </span>
+          <span :class="['pill-inline', sdkBootstrapParity.status === 'sdk parity' ? 'ok' : sdkBootstrapParity.status === 'sdk drift' ? 'blocked' : '']">
+            {{ sdkBootstrapParity.status }}
+          </span>
           <span :class="['pill-inline', connectSummary.mvpReadinessStatus === 'ready' ? 'ok' : 'blocked']">
             mvp {{ connectSummary.mvpReadinessStatus }}
           </span>
@@ -1644,6 +1689,42 @@ onMounted(async () => {
           <div>
             <span>Harness parity</span>
             <code>{{ networkHarnessParity.detail }}</code>
+          </div>
+        </div>
+        <div class="contract-status-grid">
+          <div>
+            <span>SDK bootstrap</span>
+            <strong>{{ connectSummary.sdkBootstrapStatus }}</strong>
+          </div>
+          <div>
+            <span>Direct SDK</span>
+            <strong>{{ directSdkBootstrap.status || "not loaded" }}</strong>
+          </div>
+          <div>
+            <span>Parity</span>
+            <strong>{{ sdkBootstrapParity.status }}</strong>
+          </div>
+          <div>
+            <span>Secret policy</span>
+            <strong>{{ connectSummary.sdkBootstrapSecretPolicy }}</strong>
+          </div>
+        </div>
+        <div class="quickstart-grid">
+          <div>
+            <span>Bootstrap ID</span>
+            <code>{{ connectSummary.sdkBootstrapId }}</code>
+          </div>
+          <div>
+            <span>SDK requests</span>
+            <code>{{ connectSummary.sdkBootstrapRequests }} requests</code>
+          </div>
+          <div>
+            <span>Required sequence</span>
+            <code>{{ connectSummary.sdkBootstrapRequiredSequence }} calls</code>
+          </div>
+          <div>
+            <span>SDK run</span>
+            <code>{{ directSdkBootstrap.harness?.run_endpoint || connectSummary.sdkBootstrapRunEndpoint }}</code>
           </div>
         </div>
         <div class="contract-status-grid">
@@ -2282,7 +2363,7 @@ onMounted(async () => {
             <span>{{ endpoint.path }}</span>
           </div>
         </div>
-        <pre>{{ pretty({ daemon_verify: networkVerifyReport, import_catalog: importCatalog, direct_cli_readiness: directCliReadiness, one_shot_direct_cli_readiness: connectPackage?.direct_cli_readiness, direct_cli_parity: directCliParity, direct_quickstart: directQuickstart, quickstart_parity: quickstartParity, direct_entry_profile: entryProfile, entry_profile_parity: entryProfileParity, direct_network_harness_agent: directNetworkHarnessAgent, network_harness_parity: networkHarnessParity, direct_launch_contract: launchContract, launch_contract_parity: launchContractParity, direct_acceptance: directAcceptance, acceptance_parity: acceptanceParity, direct_readiness: directReadiness, readiness_parity: readinessParity, network_entry_profile: connectPackage?.network_entry_profile, network_harness_agent: connectNetworkHarnessAgent, consumer_launch_contract: connectPackage?.consumer_launch_contract, mvp_readiness: connectPackage?.mvp_readiness, mvp_presenter_brief: connectPackage?.mvp_presenter_brief, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, demo_playbook: connectPackage?.demo_playbook, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, plugins: connectPackage?.plugins, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
+        <pre>{{ pretty({ daemon_verify: networkVerifyReport, import_catalog: importCatalog, direct_cli_readiness: directCliReadiness, one_shot_direct_cli_readiness: connectPackage?.direct_cli_readiness, direct_cli_parity: directCliParity, direct_quickstart: directQuickstart, quickstart_parity: quickstartParity, direct_entry_profile: entryProfile, entry_profile_parity: entryProfileParity, direct_network_harness_agent: directNetworkHarnessAgent, network_harness_parity: networkHarnessParity, direct_sdk_bootstrap: directSdkBootstrap, sdk_bootstrap_parity: sdkBootstrapParity, direct_launch_contract: launchContract, launch_contract_parity: launchContractParity, direct_acceptance: directAcceptance, acceptance_parity: acceptanceParity, direct_readiness: directReadiness, readiness_parity: readinessParity, network_entry_profile: connectPackage?.network_entry_profile, network_harness_agent: connectNetworkHarnessAgent, consumer_sdk_bootstrap: connectPackage?.consumer_sdk_bootstrap, consumer_launch_contract: connectPackage?.consumer_launch_contract, mvp_readiness: connectPackage?.mvp_readiness, mvp_presenter_brief: connectPackage?.mvp_presenter_brief, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, demo_playbook: connectPackage?.demo_playbook, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, plugins: connectPackage?.plugins, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
       </section>
       <section>
         <div class="section-title"><Rocket :size="15" /> Killer Demo</div>

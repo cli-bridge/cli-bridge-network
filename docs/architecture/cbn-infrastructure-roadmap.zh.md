@@ -245,6 +245,16 @@ Killer Demo slice 已新增可运行证据束：
   BridgeMessage route count 和 secret policy 做 parity 对比；Connect 面板同步展示
   direct harness 状态、route 数、run endpoint 和 parity detail，避免该 focused
   contract 只存在于 one-shot 大包的嵌套副本中。
+- `NetworkConnectPackage.consumer_sdk_bootstrap` 已新增为外部 SDK/程序的稳定初始化
+  合同：把 required headers、typed response map、required sequence、15 个 first-call
+  requests、harness run endpoint、BridgeMessage channel、secret redaction policy 和
+  dry-run/confirmation 默认策略压缩为 `ConsumerSdkBootstrap`。daemon 同步暴露
+  `/network/sdk-bootstrap`，CLI 同步支持 `python -m cbn network sdk-bootstrap` 与
+  `python -m cbn network quickstart --output sdk-bootstrap`；Workflow Studio Connect
+  面板会直接调用该 focused endpoint，并与 one-shot
+  `NetworkConnectPackage.consumer_sdk_bootstrap` 做 bootstrap id、status、request
+  count、required sequence、run endpoint 和 secret policy parity 对比。该 slice
+  让第三方程序可以先读取小合同初始化 SDK，再按需升级读取 quickstart 或完整 package。
 - Killer demo report 已新增 `communication_trace`：从真实 workflow run result 中提取
   `BridgeMessage argsFrom` handoff，展示 producer task、consumer task、selector、
   BridgeMessage valid 状态、selected value preview、resolved arg preview 和 artifact

@@ -51,6 +51,7 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("GET", "/network/launch-contract"), routes)
         self.assertIn(("GET", "/network/entry-profile"), routes)
         self.assertIn(("GET", "/network/harness-agent"), routes)
+        self.assertIn(("GET", "/network/sdk-bootstrap"), routes)
         self.assertIn(("GET", "/network/readiness"), routes)
         self.assertIn(("POST", "/network/verify"), routes)
         self.assertIn(("POST", "/demo/killer"), routes)
@@ -171,6 +172,8 @@ class DaemonApiTests(unittest.TestCase):
             self.assertEqual(payload["summary"]["setup_user_gate_count"], 0)
             self.assertEqual(payload["summary"]["registration_importer_count"], 6)
             self.assertEqual(payload["summary"]["consumer_snippet_count"], 2)
+            self.assertEqual(payload["summary"]["consumer_sdk_bootstrap_status"], "ready")
+            self.assertEqual(payload["summary"]["consumer_sdk_bootstrap_request_count"], 15)
             self.assertIn("mcp", payload["protocols"]["targets"])
             self.assertEqual(payload["protocols"]["a2a"]["skill_count"], 1)
             self.assertEqual(payload["protocols"]["acp"]["workflow_count"], 1)
@@ -258,6 +261,16 @@ class DaemonApiTests(unittest.TestCase):
             self.assertIn("--session-token REDACTED", launch["entrypoints"]["verify_network"])
             self.assertIn("sessionToken=REDACTED", launch["entrypoints"]["open_studio"])
             self.assertNotIn("demo-token", json.dumps(launch, ensure_ascii=False))
+            sdk_bootstrap = payload["consumer_sdk_bootstrap"]
+            self.assertEqual(sdk_bootstrap["kind"], "ConsumerSdkBootstrap")
+            self.assertEqual(sdk_bootstrap["status"], "ready")
+            self.assertEqual(sdk_bootstrap["bootstrap_id"], "cbn.consumer.sdk-bootstrap.cli-cli-harness.v1")
+            self.assertEqual(sdk_bootstrap["typed_responses"]["harness_agent"], "NetworkHarnessAgent")
+            self.assertEqual(sdk_bootstrap["typed_responses"]["run_workflow"], "WorkflowRunReceipt")
+            self.assertEqual(sdk_bootstrap["harness"]["run_endpoint"], f"{base_url}/workflows/run")
+            self.assertEqual(sdk_bootstrap["auth"]["headers"]["X-CBN-Session"], "REDACTED")
+            self.assertFalse(sdk_bootstrap["auth"]["secret_values_echoed"])
+            self.assertNotIn("demo-token", json.dumps(sdk_bootstrap, ensure_ascii=False))
             self.assertEqual(payload["acceptance"]["kind"], "NetworkConnectionAcceptance")
             self.assertEqual(payload["acceptance"]["check_count"], 15)
             self.assertEqual(payload["acceptance"]["checks"][1]["request_id"], "launch_contract")
@@ -289,6 +302,7 @@ class DaemonApiTests(unittest.TestCase):
             self.assertIn("/network/acceptance", endpoint_paths)
             self.assertIn("/network/entry-profile", endpoint_paths)
             self.assertIn("/network/harness-agent", endpoint_paths)
+            self.assertIn("/network/sdk-bootstrap", endpoint_paths)
             self.assertIn("/network/readiness", endpoint_paths)
             self.assertIn("/imports/catalog", endpoint_paths)
             self.assertIn("/direct-cli/readiness", endpoint_paths)
@@ -310,6 +324,7 @@ class DaemonApiTests(unittest.TestCase):
             self.assertEqual(response.status, 200)
             self.assertEqual(payload["kind"], "NetworkConnectQuickstart")
             self.assertEqual(payload["required_headers"]["X-CBN-Session"], "header-token")
+            self.assertIn("/network/sdk-bootstrap?", payload["entrypoints"]["sdk_bootstrap"])
             self.assertIn("/network/acceptance?", payload["entrypoints"]["acceptance"])
             self.assertEqual(payload["entrypoints"]["run_workflow"]["url"], f"{base_url}/workflows/run")
             self.assertEqual(payload["entrypoints"]["plan_agent_request"]["method"], "POST")
@@ -451,6 +466,36 @@ class DaemonApiTests(unittest.TestCase):
             self.assertEqual(payload["run"]["endpoint"], f"{base_url}/workflows/run")
             self.assertFalse(payload["auth"]["secret_values_echoed"])
             self.assertEqual(payload["auth"]["required_headers"]["X-CBN-Session"], "REDACTED")
+            self.assertNotIn("header-token", json.dumps(payload, ensure_ascii=False))
+            self.assertNotIn("contracts", payload)
+
+    def test_network_sdk_bootstrap_route_returns_stable_sdk_contract(self):
+        with daemon_url() as base_url:
+            url = (
+                f"{base_url}/network/sdk-bootstrap"
+                "?workflow_path=workflows/cli-anything-macrocli-mermaid-routing.example.json"
+                "&studio_url=http://127.0.0.1:5177"
+                "&session_token=header-token"
+            )
+            request = urllib.request.Request(url, headers={"X-CBN-Session": "header-token"})
+            with urllib.request.urlopen(request, timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+
+            self.assertEqual(response.status, 200)
+            self.assertEqual(payload["kind"], "ConsumerSdkBootstrap")
+            self.assertEqual(payload["status"], "ready")
+            self.assertEqual(payload["bootstrap_id"], "cbn.consumer.sdk-bootstrap.cli-cli-harness.v1")
+            self.assertEqual(payload["typed_responses"]["launch_contract"], "ConsumerLaunchContract")
+            self.assertEqual(payload["typed_responses"]["entry_profile"], "NetworkEntryProfile")
+            self.assertEqual(payload["typed_responses"]["harness_agent"], "NetworkHarnessAgent")
+            self.assertEqual(payload["typed_responses"]["run_workflow"], "WorkflowRunReceipt")
+            self.assertEqual(payload["harness"]["run_endpoint"], f"{base_url}/workflows/run")
+            self.assertEqual(payload["harness"]["bridge_route_count"], 2)
+            self.assertIn("plan_agent_request", payload["required_sequence"])
+            self.assertIn("run_workflow", payload["required_sequence"])
+            self.assertEqual(payload["request_count"], 15)
+            self.assertEqual(payload["auth"]["headers"]["X-CBN-Session"], "REDACTED")
+            self.assertFalse(payload["auth"]["secret_values_echoed"])
             self.assertNotIn("header-token", json.dumps(payload, ensure_ascii=False))
             self.assertNotIn("contracts", payload)
 

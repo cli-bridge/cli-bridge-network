@@ -70,6 +70,8 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(payload["summary"]["setup_secret_count"], 0)
         self.assertEqual(payload["summary"]["registration_importer_count"], 6)
         self.assertEqual(payload["summary"]["consumer_snippet_count"], 2)
+        self.assertEqual(payload["summary"]["consumer_sdk_bootstrap_status"], "ready")
+        self.assertEqual(payload["summary"]["consumer_sdk_bootstrap_request_count"], 15)
         self.assertTrue(payload["summary"]["demo_ready"])
         self.assertEqual(payload["summary"]["demo_stage_count"], 7)
         self.assertEqual(payload["summary"]["demo_playbook_step_count"], 6)
@@ -110,6 +112,7 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertIn("consumer_quickstart", entry_profile["compatibility"]["stable_fields"])
         self.assertIn("consumer_launch_contract", entry_profile["compatibility"]["stable_fields"])
         self.assertIn("network_harness_agent", entry_profile["compatibility"]["stable_fields"])
+        self.assertIn("consumer_sdk_bootstrap", entry_profile["compatibility"]["stable_fields"])
         self.assertTrue(entry_profile["auth"]["session_token_included"])
         self.assertFalse(entry_profile["auth"]["secret_values_echoed"])
         self.assertEqual(entry_profile["auth"]["required_headers"]["X-CBN-Session"], "REDACTED")
@@ -205,6 +208,23 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertIn("sessionToken=REDACTED", launch["entrypoints"]["open_studio"])
         self.assertNotIn("test-token", json.dumps(launch, ensure_ascii=False))
         self.assertTrue(any("Do not persist" in rule for rule in launch["do_not"]))
+        sdk_bootstrap = payload["consumer_sdk_bootstrap"]
+        self.assertEqual(sdk_bootstrap["kind"], "ConsumerSdkBootstrap")
+        self.assertEqual(sdk_bootstrap["status"], "ready")
+        self.assertEqual(sdk_bootstrap["bootstrap_id"], "cbn.consumer.sdk-bootstrap.cli-cli-harness.v1")
+        self.assertEqual(sdk_bootstrap["audience"], "external_sdk_or_program")
+        self.assertEqual(sdk_bootstrap["request_count"], 15)
+        self.assertEqual(sdk_bootstrap["typed_responses"]["harness_agent"], "NetworkHarnessAgent")
+        self.assertEqual(sdk_bootstrap["typed_responses"]["run_workflow"], "WorkflowRunReceipt")
+        self.assertEqual(sdk_bootstrap["harness"]["contract_id"], harness_agent["contract_id"])
+        self.assertEqual(sdk_bootstrap["harness"]["run_endpoint"], "http://127.0.0.1:8787/workflows/run")
+        self.assertEqual(sdk_bootstrap["harness"]["bridge_route_count"], 2)
+        self.assertIn("plan_agent_request", sdk_bootstrap["required_sequence"])
+        self.assertIn("run_workflow", sdk_bootstrap["required_sequence"])
+        self.assertEqual(sdk_bootstrap["auth"]["headers"]["X-CBN-Session"], "REDACTED")
+        self.assertFalse(sdk_bootstrap["auth"]["secret_values_echoed"])
+        self.assertFalse(sdk_bootstrap["safety"]["secret_values_included"])
+        self.assertNotIn("test-token", json.dumps(sdk_bootstrap, ensure_ascii=False))
         self.assertEqual(payload["agent_workflow_request"]["kind"], "AdapterAgentWorkflowRequestPlan")
         self.assertEqual(payload["agent_workflow_request"]["reusable_harness"]["kind"], "NaturalLanguageWorkflowHarness")
         self.assertEqual(payload["agent_workflow_request"]["bridge_message_channel"], "agent.workflow.request.plan")
@@ -420,6 +440,7 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertIn("/network/acceptance", endpoint_paths)
         self.assertIn("/network/launch-contract", endpoint_paths)
         self.assertIn("/network/harness-agent", endpoint_paths)
+        self.assertIn("/network/sdk-bootstrap", endpoint_paths)
         self.assertIn("/network/readiness", endpoint_paths)
         self.assertIn("/network/verify", endpoint_paths)
         self.assertIn("/adapter-agent/workflow-request-plan", endpoint_paths)
@@ -566,6 +587,9 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(payload["kind"], "NetworkConnectQuickstart")
         self.assertEqual(payload["required_headers"]["X-CBN-Session"], "test-token")
         self.assertIn("sessionToken=test-token", payload["entrypoints"]["open_studio"])
+        self.assertIn("/network/connect-package?", payload["entrypoints"]["connect_package"])
+        self.assertIn("/network/quickstart?", payload["entrypoints"]["quickstart"])
+        self.assertIn("/network/sdk-bootstrap?", payload["entrypoints"]["sdk_bootstrap"])
         self.assertIn("/network/acceptance?", payload["entrypoints"]["acceptance"])
         self.assertEqual(payload["entrypoints"]["plan_agent_request"]["method"], "POST")
         self.assertIn("/adapter-agent/node-bundle?", payload["entrypoints"]["inspect_agent_nodes"])
@@ -726,6 +750,44 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertNotIn("test-token", json.dumps(payload, ensure_ascii=False))
         self.assertNotIn("contracts", payload)
 
+    def test_network_sdk_bootstrap_cli_outputs_stable_sdk_contract(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "network",
+                "sdk-bootstrap",
+                "--workflow-path",
+                "workflows/cli-anything-macrocli-mermaid-routing.example.json",
+                "--base-url",
+                "http://127.0.0.1:8787",
+                "--session-token",
+                "test-token",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+
+        self.assertEqual(payload["kind"], "ConsumerSdkBootstrap")
+        self.assertEqual(payload["status"], "ready")
+        self.assertEqual(payload["bootstrap_id"], "cbn.consumer.sdk-bootstrap.cli-cli-harness.v1")
+        self.assertEqual(payload["auth"]["headers"]["X-CBN-Session"], "REDACTED")
+        self.assertFalse(payload["auth"]["secret_values_echoed"])
+        self.assertEqual(payload["typed_responses"]["launch_contract"], "ConsumerLaunchContract")
+        self.assertEqual(payload["typed_responses"]["entry_profile"], "NetworkEntryProfile")
+        self.assertEqual(payload["typed_responses"]["harness_agent"], "NetworkHarnessAgent")
+        self.assertEqual(payload["harness"]["run_endpoint"], "http://127.0.0.1:8787/workflows/run")
+        self.assertIn("plan_agent_request", payload["required_sequence"])
+        self.assertIn("run_workflow", payload["required_sequence"])
+        self.assertEqual(payload["request_count"], 15)
+        self.assertNotIn("test-token", json.dumps(payload, ensure_ascii=False))
+        self.assertNotIn("contracts", payload)
+
     def test_network_quickstart_cli_outputs_acceptance_checklist(self):
         proc = subprocess.run(
             [
@@ -827,6 +889,38 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertIn("run_workflow", payload["required_request_ids"])
         self.assertIn("--session-token REDACTED", payload["entrypoints"]["verify_network"])
         self.assertIn("sessionToken=REDACTED", payload["entrypoints"]["open_studio"])
+        self.assertNotIn("test-token", json.dumps(payload, ensure_ascii=False))
+        self.assertNotIn("consumer_quickstart", payload)
+
+    def test_network_quickstart_cli_outputs_sdk_bootstrap(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "network",
+                "quickstart",
+                "--workflow-path",
+                "workflows/cli-anything-macrocli-mermaid-routing.example.json",
+                "--base-url",
+                "http://127.0.0.1:8787",
+                "--session-token",
+                "test-token",
+                "--output",
+                "sdk-bootstrap",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["kind"], "ConsumerSdkBootstrap")
+        self.assertEqual(payload["status"], "ready")
+        self.assertEqual(payload["harness"]["run_endpoint"], "http://127.0.0.1:8787/workflows/run")
+        self.assertEqual(payload["typed_responses"]["run_workflow"], "WorkflowRunReceipt")
+        self.assertIn("run_workflow", payload["required_sequence"])
         self.assertNotIn("test-token", json.dumps(payload, ensure_ascii=False))
         self.assertNotIn("consumer_quickstart", payload)
 
