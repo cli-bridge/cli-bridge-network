@@ -15,6 +15,7 @@ EXPECTED_PART_MODULES = (
     "verification",
     "onboarding",
     "lifecycle",
+    "adaptation",
 )
 
 
