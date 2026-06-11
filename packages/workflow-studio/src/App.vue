@@ -24,6 +24,7 @@ import type {
   AcceptanceExecutionResult,
   AcceptanceRunSummary,
   AdapterAgentNodeBundle,
+  AdapterAgentToolCallPlan,
   AgentWorkflowRequestPlan,
   BridgeContractReport,
   BridgeContractSection,
@@ -67,6 +68,7 @@ const runResult = ref<unknown>(null);
 const demoReport = ref<KillerDemoReport | null>(null);
 const agentBundle = ref<AdapterAgentNodeBundle | null>(null);
 const workflowRequestPlan = ref<AgentWorkflowRequestPlan | null>(null);
+const toolCallPlan = ref<AdapterAgentToolCallPlan | null>(null);
 const connectPackage = ref<NetworkConnectPackage | null>(null);
 const networkVerifyReport = ref<NetworkConnectionAcceptanceReport | null>(null);
 const health = ref<unknown>(null);
@@ -88,6 +90,11 @@ const evidenceSummary = computed<EvidenceSummary>(() => summarizeEvidence(demoRe
 const protocolSummary = computed<ProtocolSummary>(() => summarizeProtocols(demoReport.value));
 const bridgeContractSummary = computed<BridgeContractSummary>(() => summarizeBridgeContract(contract.value));
 const workflowRequestSummary = computed<WorkflowRequestSummary>(() => summarizeWorkflowRequestPlan(workflowRequestPlan.value));
+const setupToolCalls = computed(() => (Array.isArray(toolCallPlan.value?.tool_calls) ? toolCallPlan.value.tool_calls : []));
+const setupBatches = computed(() => (Array.isArray(toolCallPlan.value?.execution_batches) ? toolCallPlan.value.execution_batches : []));
+const setupCheckpoints = computed(() =>
+  Array.isArray(toolCallPlan.value?.long_running_loop?.checkpoints) ? toolCallPlan.value.long_running_loop.checkpoints : [],
+);
 const connectSummary = computed<ConnectSummary>(() => summarizeConnectPackage(connectPackage.value));
 const connectContractSummary = computed<BridgeContractSummary>(() => summarizeConnectContracts(connectPackage.value));
 const connectAgentBundle = computed(() => connectPackage.value?.agent_node_bundle ?? {});
@@ -160,6 +167,10 @@ async function inspectAgentBundle() {
 
 async function inspectWorkflowRequestPlan() {
   workflowRequestPlan.value = (await call("plan", () => api.value.workflowRequestPlan())) as AgentWorkflowRequestPlan;
+}
+
+async function inspectSetupPlan() {
+  toolCallPlan.value = (await call("setup plan", () => api.value.toolCallPlan())) as AdapterAgentToolCallPlan;
 }
 
 async function inspectConnectPackage() {
@@ -663,6 +674,9 @@ onMounted(async () => {
         <button title="Plan natural-language agent workflow invocation" @click="inspectWorkflowRequestPlan">
           <ClipboardList :size="16" /> Plan
         </button>
+        <button title="Plan setup, secret, and login tool calls without executing them" @click="inspectSetupPlan">
+          <ShieldCheck :size="16" /> Setup
+        </button>
         <button title="Load one-shot network connection package" @click="inspectConnectPackage">
           <Network :size="16" /> Connect
         </button>
@@ -784,6 +798,50 @@ onMounted(async () => {
           <span v-else>No workflow request plan loaded</span>
         </div>
         <pre>{{ pretty({ request: workflowRequestPlan?.request, run: workflowRequestPlan?.run, bridge_routes: workflowRequestPlan?.bridge_routes, bridge_message: workflowRequestPlan?.bridge_message }) }}</pre>
+      </section>
+      <section>
+        <div class="section-title"><ShieldCheck :size="15" /> Agent Setup Plan</div>
+        <div class="request-summary">
+          <div>
+            <span>Loop</span>
+            <strong>{{ toolCallPlan?.long_running_loop?.status || "not loaded" }}</strong>
+          </div>
+          <div>
+            <span>Calls</span>
+            <strong>{{ toolCallPlan?.summary?.tool_call_count ?? 0 }}</strong>
+          </div>
+          <div>
+            <span>User gates</span>
+            <strong>{{ toolCallPlan?.summary?.requires_user_count ?? 0 }}</strong>
+          </div>
+          <div>
+            <span>Batches</span>
+            <strong>{{ toolCallPlan?.summary?.batch_count ?? 0 }}</strong>
+          </div>
+          <div>
+            <span>Secrets</span>
+            <strong>{{ toolCallPlan?.summary?.by_kind?.["setup-secret"] ?? 0 }}</strong>
+          </div>
+          <div>
+            <span>Commands</span>
+            <strong>{{ toolCallPlan?.summary?.by_kind?.["setup-command"] ?? 0 }}</strong>
+          </div>
+        </div>
+        <div class="agent-card-list">
+          <div v-for="call in setupToolCalls.slice(0, 6)" :key="call.call_id || call.tool_use_id" class="agent-card">
+            <strong>{{ call.action || call.kind || "tool call" }}</strong>
+            <span>{{ call.initial_status || "queued" }}</span>
+            <code>{{ call.agent_role || "agent" }} · {{ call.source?.setup_id || call.source?.secret_name || call.tool || "setup" }}</code>
+          </div>
+          <span v-if="!setupToolCalls.length">No setup tool calls loaded</span>
+        </div>
+        <div class="endpoint-list">
+          <div v-for="batch in setupBatches.slice(0, 4)" :key="batch.batch_id">
+            <code>{{ batch.mode || "batch" }}</code>
+            <span>{{ batch.batch_id || "batch" }} · {{ batch.reason || "execution order" }}</span>
+          </div>
+        </div>
+        <pre>{{ pretty({ checkpoints: setupCheckpoints, by_initial_status: toolCallPlan?.summary?.by_initial_status, batches: setupBatches.slice(0, 4) }) }}</pre>
       </section>
       <section>
         <div class="section-title"><Network :size="15" /> Connect Package</div>

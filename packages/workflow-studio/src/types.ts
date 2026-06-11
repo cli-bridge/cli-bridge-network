@@ -566,6 +566,69 @@ export interface AgentWorkflowRequestPlan {
   next_commands?: string[];
 }
 
+export interface AdapterAgentToolCall {
+  call_id?: string;
+  tool_use_id?: string;
+  kind?: string;
+  agent_role?: string;
+  tool?: string;
+  action?: string;
+  argv?: string[];
+  risk?: string;
+  initial_status?: string;
+  requires_user?: boolean;
+  concurrency_safe?: boolean;
+  permission_flow?: {
+    default_behavior?: string;
+    reason?: string;
+  };
+  source?: {
+    setup_id?: string;
+    profile?: string;
+    command_id?: string;
+    secret_name?: string;
+  };
+}
+
+export interface AdapterAgentExecutionBatch {
+  batch_id?: string;
+  mode?: string;
+  concurrency_safe?: boolean;
+  tool_call_ids?: string[];
+  tool_use_ids?: string[];
+  reason?: string;
+}
+
+export interface AdapterAgentLoopCheckpoint {
+  id?: string;
+  owner?: string;
+  status?: string;
+  evidence?: unknown;
+}
+
+export interface AdapterAgentToolCallPlan {
+  kind?: "AdapterAgentToolCallPlan";
+  ok?: boolean;
+  status?: string | null;
+  workflow_path?: string;
+  summary?: {
+    tool_call_count?: number;
+    batch_count?: number;
+    concurrency_safe_count?: number;
+    serial_count?: number;
+    requires_user_count?: number;
+    by_initial_status?: Record<string, number>;
+    by_kind?: Record<string, number>;
+  };
+  tool_calls?: AdapterAgentToolCall[];
+  execution_batches?: AdapterAgentExecutionBatch[];
+  long_running_loop?: {
+    kind?: "AdapterAgentLoopPlan";
+    status?: string;
+    checkpoints?: AdapterAgentLoopCheckpoint[];
+  };
+}
+
 export interface WorkflowRequestSummary {
   status: string;
   workflowId: string;

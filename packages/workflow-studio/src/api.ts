@@ -41,6 +41,13 @@ export class StudioApi {
     });
   }
 
+  async toolCallPlan(): Promise<unknown> {
+    return this.post("/adapter-agent/tool-call-plan", {
+      workflow_path: this.config.workflowPath,
+      message: this.config.agentMessage,
+    });
+  }
+
   async networkConnectPackage(): Promise<unknown> {
     const query = new URLSearchParams({
       workflow_path: this.config.workflowPath,

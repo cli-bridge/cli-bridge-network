@@ -257,6 +257,10 @@ Killer Demo slice 已新增可运行证据束：
 - Workflow Studio 已消费该只读 API：Agent prompt 会随 workflow path 一起请求
   node bundle，右侧 inspector 展示 AgentCard、handoff 与 BridgeMessage，画布下方
   同步渲染 agent workflow node，形成可展示的 Agent-as-Node MVP 入口。
+- Workflow Studio 已新增只读 `Setup` 操作，调用 `POST /adapter-agent/tool-call-plan`
+  展示 setup-secret、setup-command、workflow-capability、execution batch 和
+  long-running loop checkpoints；它不执行登录、不写 secret，用于演示 API key、
+  OAuth、authenticated session 等首跑场景下 Workflow Setup Agent 如何引导用户。
 - `cbn_demo.network_connect.network_connect_package` 已新增只读
   `NetworkConnectPackage`：汇总 AgentCliCard/RunReceipt 外部 contract、
   ToolManifest/BridgeMessage/Artifact/selector 内部 contract、daemon endpoint
