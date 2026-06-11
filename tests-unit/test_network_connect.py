@@ -164,6 +164,47 @@ class NetworkConnectPackageTests(unittest.TestCase):
         )
         self.assertNotIn("contracts", payload)
 
+    def test_network_quickstart_cli_outputs_shell_scripts(self):
+        base_args = [
+            sys.executable,
+            "-m",
+            "cbn",
+            "network",
+            "quickstart",
+            "--workflow-path",
+            "workflows/cli-anything-macrocli-mermaid-routing.example.json",
+            "--base-url",
+            "http://127.0.0.1:8787",
+            "--session-token",
+            "test-token",
+        ]
+        curl_proc = subprocess.run(
+            [*base_args, "--output", "curl"],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        self.assertTrue(curl_proc.stdout.startswith("set -e\ncurl -X GET"))
+        self.assertIn("curl -X POST 'http://127.0.0.1:8787/workflows/run'", curl_proc.stdout)
+        self.assertIn("'X-CBN-Session: test-token'", curl_proc.stdout)
+        self.assertNotIn('"kind"', curl_proc.stdout)
+
+        powershell_proc = subprocess.run(
+            [*base_args, "--output", "powershell"],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        self.assertTrue(powershell_proc.stdout.startswith("$ErrorActionPreference = 'Stop'"))
+        self.assertIn("$Body_run_workflow", powershell_proc.stdout)
+        self.assertIn("Invoke-RestMethod -Method 'POST'", powershell_proc.stdout)
+        self.assertIn("'X-CBN-Session' = 'test-token'", powershell_proc.stdout)
+        self.assertNotIn('"kind"', powershell_proc.stdout)
+
     def test_network_studio_link_cli_outputs_json(self):
         proc = subprocess.run(
             [

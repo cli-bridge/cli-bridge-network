@@ -312,6 +312,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="Connect an external program to this CBN workflow.",
         help="Agent prompt used to shape the reusable workflow request.",
     )
+    network_quickstart.add_argument(
+        "--output",
+        choices=["json", "curl", "powershell"],
+        default="json",
+        help="Output JSON quickstart, a cURL script, or a PowerShell script.",
+    )
     network_studio_link = network_subcommands.add_parser(
         "studio-link",
         help="Print a preconfigured Workflow Studio URL for a CBN workflow.",

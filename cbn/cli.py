@@ -641,7 +641,12 @@ def main(argv: list[str] | None = None) -> int:
                 agent_message=args.message,
             )
             quickstart = result.get("consumer_quickstart", {})
-            print(json.dumps(quickstart, ensure_ascii=False, indent=2))
+            if args.output == "curl":
+                print(quickstart.get("curl_script", ""))
+            elif args.output == "powershell":
+                print(quickstart.get("powershell_script", ""))
+            else:
+                print(json.dumps(quickstart, ensure_ascii=False, indent=2))
             return 0 if result["ok"] and quickstart.get("kind") == "NetworkConnectQuickstart" else 7
         if args.network_command == "studio-link":
             result = workflow_studio_demo_link(
