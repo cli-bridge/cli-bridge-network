@@ -22,6 +22,18 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(payload["kind"], "NetworkConnectPackage")
         self.assertEqual(payload["contracts"]["external"]["protocol"], "agent-cli-contract")
         self.assertEqual(payload["contracts"]["external"]["accepted_kinds"], ["AgentCliCard", "RunReceipt"])
+        boundary = payload["contracts"]["external"]["package_boundary"]
+        self.assertEqual(boundary["kind"], "ExternalProtocolPackageBoundary")
+        self.assertEqual(boundary["npm_name"], "@agent-cli/contract")
+        self.assertEqual(boundary["python_name"], "agent-cli-contract")
+        self.assertTrue(boundary["dependency_boundary"]["standalone"])
+        self.assertIn("api_server", boundary["dependency_boundary"]["forbidden_cbn_modules"])
+        self.assertTrue(boundary["schemas"]["AgentCliCard"].replace("\\", "/").endswith("schemas/agent-cli-card.schema.json"))
+        self.assertTrue(boundary["schemas"]["RunReceipt"].replace("\\", "/").endswith("schemas/run-receipt.schema.json"))
+        self.assertTrue(boundary["typescript_types"].replace("\\", "/").endswith("ts/index.ts"))
+        self.assertTrue(boundary["python_validator"].replace("\\", "/").endswith("python/agent_cli_contract/validator.py"))
+        self.assertIn("conformance_smoke.py", boundary["conformance_smoke"]["script"])
+        self.assertIn("ToolManifest", boundary["cbn_mapping_responsibility"]["AgentCliCard"])
         self.assertEqual(payload["contracts"]["external"]["receipt_mapping"]["message_channel"], "agent-cli.run.receipt")
         internal = payload["contracts"]["internal"]
         self.assertEqual(internal["protocol"], "CBN BridgeMessage CLI-to-CLI Protocol")
@@ -270,6 +282,11 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["summary"]["recommended_next_action"], "call_daemon_endpoints")
         self.assertEqual(payload["contracts"]["external"]["generated_capability_ids"], ["example.macrocli.backends"])
+        self.assertEqual(payload["contracts"]["external"]["package_boundary"]["package_name"], "agent-cli-contract")
+        self.assertIn(
+            "RunReceipt schema",
+            payload["contracts"]["external"]["package_boundary"]["dependency_boundary"]["allowed_scope"],
+        )
         self.assertEqual(payload["contracts"]["internal"]["contracts"]["artifact"]["kind"], "ArtifactRecord")
         self.assertEqual(payload["agent_workflow_request"]["run"]["http"]["url"], "http://127.0.0.1:8787/workflows/run")
         self.assertEqual(payload["agent_workflow_request"]["request"]["binding"], "selected_workflow_path")

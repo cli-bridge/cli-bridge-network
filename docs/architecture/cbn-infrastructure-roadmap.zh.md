@@ -399,6 +399,13 @@ Killer Demo slice 已新增可运行证据束：
   workflow，也能知道如何把更多普通 CLI、CLI-Anything harness、MCP tool、skill 或
   parser fixture 纳入 CBN 网络。Workflow Studio Connect 面板同步展示 importer 数量、
   dry-run import policy 和前几条注册入口。
+- `NetworkConnectPackage.contracts.external.package_boundary` 已新增
+  `ExternalProtocolPackageBoundary`：把 `agent-cli-contract` 的 npm/Python 包名、
+  schema 路径、TypeScript types、Python validator、fixtures、conformance smoke
+  command、standalone dependency boundary 和 CBN 侧映射责任一起暴露。这样第三方
+  第一次读取 one-shot package 时，可以明确区分外部协议包只负责
+  AgentCliCard/RunReceipt，CBN 主仓负责 ToolManifest、BridgeMessage、artifact、
+  audit/event correlation 和 MCP/A2A/ACP facade。
 - `NetworkConnectPackage.demo_readiness` 已新增只读 Killer Demo 摘要：不执行
   workflow、不写状态，只暴露 CLI-Anything -> macrocli -> parser -> Mermaid ->
   artifact/event/audit -> MCP/A2A/ACP smoke 的 stage 列表、required capabilities、

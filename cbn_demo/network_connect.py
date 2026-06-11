@@ -391,6 +391,7 @@ def _external_agent_cli_contract() -> dict[str, Any]:
         "card_fixture": str(CONTRACT_CARD_FIXTURE),
         "receipt_fixture": str(CONTRACT_RECEIPT_FIXTURE),
         "accepted_kinds": ["AgentCliCard", "RunReceipt"],
+        "package_boundary": _agent_cli_contract_package_boundary(),
         "generated_capability_ids": [manifest["metadata"]["id"] for manifest in manifests],
         "receipt_mapping": {
             "kind": receipt_mapping.get("kind"),
@@ -399,6 +400,54 @@ def _external_agent_cli_contract() -> dict[str, Any]:
             "artifact_count": len(receipt_mapping.get("artifacts", [])),
             "audit_event_type": (receipt_mapping.get("audit_event") or {}).get("type"),
             "event_type": (receipt_mapping.get("event") or {}).get("type"),
+        },
+    }
+
+
+def _agent_cli_contract_package_boundary() -> dict[str, Any]:
+    return {
+        "kind": "ExternalProtocolPackageBoundary",
+        "package_name": "agent-cli-contract",
+        "npm_name": "@agent-cli/contract",
+        "python_name": "agent-cli-contract",
+        "version": "0.1.0",
+        "root": str(CONTRACT_ROOT),
+        "schemas": {
+            "AgentCliCard": str(CONTRACT_ROOT / "schemas/agent-cli-card.schema.json"),
+            "RunReceipt": str(CONTRACT_ROOT / "schemas/run-receipt.schema.json"),
+        },
+        "typescript_types": str(CONTRACT_ROOT / "ts/index.ts"),
+        "python_validator": str(CONTRACT_ROOT / "python/agent_cli_contract/validator.py"),
+        "fixtures": {
+            "AgentCliCard": str(CONTRACT_CARD_FIXTURE),
+            "RunReceipt": str(CONTRACT_RECEIPT_FIXTURE),
+        },
+        "conformance_smoke": {
+            "command": "python external_protocols/agent-cli-contract/scripts/conformance_smoke.py",
+            "script": str(CONTRACT_ROOT / "scripts/conformance_smoke.py"),
+        },
+        "dependency_boundary": {
+            "standalone": True,
+            "forbidden_cbn_modules": [
+                "api_server",
+                "cbn_workflow",
+                "cbn_runtime",
+                "cbn_protocol",
+                "cbn_artifact",
+                "cbn_audit",
+            ],
+            "allowed_scope": [
+                "AgentCliCard schema",
+                "RunReceipt schema",
+                "TypeScript types",
+                "Python validation CLI",
+                "fixtures",
+                "conformance smoke",
+            ],
+        },
+        "cbn_mapping_responsibility": {
+            "AgentCliCard": "CBN maps external command declarations to ToolManifest records.",
+            "RunReceipt": "CBN maps run receipts to BridgeMessage, Artifact records, Audit evidence, and Events.",
         },
     }
 

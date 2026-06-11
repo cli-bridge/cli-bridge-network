@@ -126,6 +126,15 @@ class DaemonApiTests(unittest.TestCase):
             self.assertEqual(payload["kind"], "NetworkConnectPackage")
             self.assertEqual(payload["contracts"]["external"]["protocol"], "agent-cli-contract")
             self.assertEqual(payload["contracts"]["external"]["accepted_kinds"], ["AgentCliCard", "RunReceipt"])
+            self.assertEqual(
+                payload["contracts"]["external"]["package_boundary"]["kind"],
+                "ExternalProtocolPackageBoundary",
+            )
+            self.assertTrue(payload["contracts"]["external"]["package_boundary"]["dependency_boundary"]["standalone"])
+            self.assertIn(
+                "cbn_protocol",
+                payload["contracts"]["external"]["package_boundary"]["dependency_boundary"]["forbidden_cbn_modules"],
+            )
             self.assertEqual(payload["contracts"]["external"]["receipt_mapping"]["message_kind"], "BridgeMessage")
             internal = payload["contracts"]["internal"]
             self.assertEqual(internal["protocol"], "CBN BridgeMessage CLI-to-CLI Protocol")
