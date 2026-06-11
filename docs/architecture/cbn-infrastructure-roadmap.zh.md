@@ -261,6 +261,10 @@ Killer Demo slice 已新增可运行证据束：
   `NetworkConnectPackage`：汇总 AgentCliCard/RunReceipt 外部 contract、
   ToolManifest/BridgeMessage/Artifact/selector 内部 contract、daemon endpoint
   catalog、workflow 摘要、MCP/A2A/ACP protocol export 摘要和 Agent node 摘要。
+  `agent_node_bundle` 不是只有数量统计：它保留轻量结构化的 AgentSession、
+  AgentCard、AgentHarness、AgentTask、AgentBridgeMessage 和 workflow node 摘要，
+  让外部程序拿到 one-shot package 后可以识别可复用 harness agent 的角色、输入输出
+  与 BridgeMessage 总线通道。
   其中 `contracts.internal.contracts` 直接复用
   `workflow_bridge_contract_report(...).contract.contracts` 的结构化段落，外部程序
   可一次性读取 ToolManifest、BridgeMessage、ArtifactRecord 和 WorkflowSelector

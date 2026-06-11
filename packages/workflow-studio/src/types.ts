@@ -243,6 +243,49 @@ export interface AdapterAgentNodeBundle {
   };
 }
 
+export interface CompactAgentSession {
+  kind?: "AgentSession";
+  id?: string;
+  agent_id?: string;
+  workflow_id?: string;
+  state?: string;
+}
+
+export interface CompactAgentCard {
+  kind?: "AgentCard";
+  id?: string;
+  title?: string;
+  role?: string;
+  status?: string;
+  capabilities?: string[];
+  transport?: string;
+  risk?: string;
+}
+
+export interface CompactAgentHarness {
+  kind?: "AgentHarness";
+  id?: string;
+  agent_id?: string;
+  accepts?: string[];
+  emits?: string[];
+}
+
+export interface CompactAgentTask {
+  kind?: "AgentTask";
+  id?: string;
+  agent_id?: string;
+  instruction?: string;
+  uses?: string;
+  selectors?: string[];
+}
+
+export interface CompactAgentBridgeMessage {
+  kind?: "BridgeMessage";
+  producer?: string;
+  channel?: string;
+  correlation_id?: string;
+}
+
 export interface ConnectEndpoint {
   method: string;
   path: string;
@@ -368,9 +411,18 @@ export interface NetworkConnectPackage {
     query?: Record<string, string>;
   };
   agent_node_bundle?: {
+    kind?: "AdapterAgentNodeBundle";
+    ok?: boolean;
+    status?: string;
     card_count?: number;
     task_count?: number;
+    session?: CompactAgentSession;
+    cards?: CompactAgentCard[];
+    harnesses?: CompactAgentHarness[];
+    tasks?: CompactAgentTask[];
     bridge_message_channel?: string;
+    bridge_message?: CompactAgentBridgeMessage;
+    workflow_nodes?: AgentWorkflowNode[];
   };
   acceptance?: NetworkConnectionAcceptance;
   consumer_quickstart?: {

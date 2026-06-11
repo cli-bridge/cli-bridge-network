@@ -46,6 +46,17 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(payload["agent_workflow_request"]["kind"], "AdapterAgentWorkflowRequestPlan")
         self.assertEqual(payload["agent_workflow_request"]["reusable_harness"]["kind"], "NaturalLanguageWorkflowHarness")
         self.assertEqual(payload["agent_workflow_request"]["bridge_message_channel"], "agent.workflow.request.plan")
+        agent_bundle = payload["agent_node_bundle"]
+        self.assertEqual(agent_bundle["kind"], "AdapterAgentNodeBundle")
+        self.assertEqual(agent_bundle["session"]["kind"], "AgentSession")
+        self.assertEqual(agent_bundle["session"]["agent_id"], "orchestration-coordinator-agent")
+        self.assertEqual(agent_bundle["cards"][0]["kind"], "AgentCard")
+        self.assertTrue(any(card["id"] == "orchestration-coordinator-agent" for card in agent_bundle["cards"]))
+        self.assertEqual(agent_bundle["harnesses"][0]["kind"], "AgentHarness")
+        self.assertIn("BridgeMessage", agent_bundle["harnesses"][0]["accepts"])
+        self.assertEqual(agent_bundle["tasks"][0]["kind"], "AgentTask")
+        self.assertEqual(agent_bundle["bridge_message"]["kind"], "BridgeMessage")
+        self.assertEqual(agent_bundle["bridge_message"]["channel"], "agent.adapter.node_bundle")
         self.assertEqual(payload["workflow_studio"]["kind"], "WorkflowStudioDemoLink")
         self.assertTrue(payload["workflow_studio"]["session_token_included"])
         self.assertEqual(payload["workflow_studio"]["dashboard_url"], "http://127.0.0.1:5173")
@@ -154,6 +165,8 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(payload["workflow_studio"]["daemon_url"], "http://127.0.0.1:8787")
         self.assertEqual(payload["workflow_studio"]["dashboard_url"], "http://127.0.0.1:5173")
         self.assertIn("dashboardUrl=http%3A%2F%2F127.0.0.1%3A5173", payload["workflow_studio"]["url"])
+        self.assertEqual(payload["agent_node_bundle"]["cards"][0]["kind"], "AgentCard")
+        self.assertEqual(payload["agent_node_bundle"]["harnesses"][0]["kind"], "AgentHarness")
         self.assertEqual(payload["consumer_quickstart"]["entrypoints"]["run_workflow"]["url"], "http://127.0.0.1:8787/workflows/run")
 
     def test_network_quickstart_cli_outputs_first_call_package(self):

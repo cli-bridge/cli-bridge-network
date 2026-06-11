@@ -345,13 +345,25 @@ def _compact_workflow(workflow: dict[str, Any]) -> dict[str, Any]:
 
 
 def _compact_agent_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
+    bridge_message = bundle.get("bridge_message") if isinstance(bundle.get("bridge_message"), dict) else {}
+    bridge_metadata = bridge_message.get("metadata") if isinstance(bridge_message.get("metadata"), dict) else {}
     return {
         "kind": bundle.get("kind"),
         "ok": bundle.get("ok"),
         "status": bundle.get("status"),
         "card_count": len(bundle.get("cards", [])),
         "task_count": len(bundle.get("tasks", [])),
-        "bridge_message_channel": (bundle.get("bridge_message", {}).get("metadata") or {}).get("channel"),
+        "session": _compact_agent_session(bundle.get("session")),
+        "cards": [_compact_agent_card(card) for card in _list_of_dicts(bundle.get("cards"))],
+        "harnesses": [_compact_agent_harness(harness) for harness in _list_of_dicts(bundle.get("harnesses"))],
+        "tasks": [_compact_agent_task(task) for task in _list_of_dicts(bundle.get("tasks"))],
+        "bridge_message_channel": bridge_metadata.get("channel"),
+        "bridge_message": {
+            "kind": bridge_message.get("kind"),
+            "producer": bridge_metadata.get("producer"),
+            "channel": bridge_metadata.get("channel"),
+            "correlation_id": bridge_metadata.get("correlationId"),
+        },
         "workflow_nodes": [
             {
                 "id": node.get("id"),
@@ -362,6 +374,67 @@ def _compact_agent_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
             if isinstance(node, dict)
         ],
     }
+
+
+def _compact_agent_session(session: Any) -> dict[str, Any]:
+    if not isinstance(session, dict):
+        return {}
+    metadata = session.get("metadata") if isinstance(session.get("metadata"), dict) else {}
+    spec = session.get("spec") if isinstance(session.get("spec"), dict) else {}
+    return {
+        "kind": session.get("kind"),
+        "id": metadata.get("id"),
+        "agent_id": metadata.get("agentId"),
+        "workflow_id": metadata.get("workflowId"),
+        "state": spec.get("state"),
+    }
+
+
+def _compact_agent_card(card: dict[str, Any]) -> dict[str, Any]:
+    metadata = card.get("metadata") if isinstance(card.get("metadata"), dict) else {}
+    spec = card.get("spec") if isinstance(card.get("spec"), dict) else {}
+    policy = spec.get("policy") if isinstance(spec.get("policy"), dict) else {}
+    return {
+        "kind": card.get("kind"),
+        "id": metadata.get("id"),
+        "title": metadata.get("title"),
+        "role": metadata.get("role"),
+        "status": metadata.get("status"),
+        "capabilities": spec.get("capabilities", []),
+        "transport": (spec.get("transport") if isinstance(spec.get("transport"), dict) else {}).get("kind"),
+        "risk": policy.get("risk"),
+    }
+
+
+def _compact_agent_harness(harness: dict[str, Any]) -> dict[str, Any]:
+    metadata = harness.get("metadata") if isinstance(harness.get("metadata"), dict) else {}
+    spec = harness.get("spec") if isinstance(harness.get("spec"), dict) else {}
+    return {
+        "kind": harness.get("kind"),
+        "id": metadata.get("id"),
+        "agent_id": metadata.get("agentId"),
+        "accepts": spec.get("accepts", []),
+        "emits": spec.get("emits", []),
+    }
+
+
+def _compact_agent_task(task: dict[str, Any]) -> dict[str, Any]:
+    metadata = task.get("metadata") if isinstance(task.get("metadata"), dict) else {}
+    spec = task.get("spec") if isinstance(task.get("spec"), dict) else {}
+    return {
+        "kind": task.get("kind"),
+        "id": metadata.get("id"),
+        "agent_id": metadata.get("agentId"),
+        "instruction": spec.get("instruction"),
+        "uses": spec.get("uses"),
+        "selectors": spec.get("selectors", []),
+    }
+
+
+def _list_of_dicts(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
 
 
 def _compact_workflow_request_plan(plan: dict[str, Any]) -> dict[str, Any]:
