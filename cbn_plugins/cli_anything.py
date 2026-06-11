@@ -48,15 +48,13 @@ from cbn_plugins.cli_anything_parts.adapter_targets import (
 from cbn_plugins.cli_anything_parts.manifest_factory import (
     build_harness_manifest,
     infer_market_policy as _manifest_factory_infer_market_policy,
-    market_annotations as _manifest_factory_market_annotations,
-    market_labels as _manifest_factory_market_labels,
-    preserve_existing_parser_contract as _manifest_factory_preserve_existing_parser_contract,
+    preserve_existing_parser_contract as _preserve_existing_parser_contract,
     sanitize_harness_name as _manifest_factory_sanitize_harness_name,
 )
 from cbn_plugins.cli_anything_parts.market import (
-    mark_candidate_collisions as _market_parts_mark_candidate_collisions,
-    mark_capability_collisions as _market_parts_mark_capability_collisions,
-    market_records_from_result as _market_parts_market_records_from_result,
+    mark_candidate_collisions as _mark_candidate_collisions,
+    mark_capability_collisions as _mark_capability_collisions,
+    market_records_from_result as _market_records_from_result,
 )
 from cbn_plugins.cli_anything_parts.lifecycle import (
     declared_requires as _declared_requires,
@@ -113,29 +111,27 @@ from cbn_plugins.cli_anything_parts.promotion import (
 )
 from cbn_plugins.cli_anything_parts.repair import (
     distribution_report as _distribution_report,
-    entrypoint_diagnosis as _repair_parts_entrypoint_diagnosis,
-    entrypoint_package_candidates as _repair_parts_entrypoint_package_candidates,
+    entrypoint_diagnosis as _entrypoint_diagnosis,
+    entrypoint_package_candidates as _entrypoint_package_candidates,
     entrypoint_repair_manifest as _entrypoint_repair_manifest,
     entrypoint_repair_manifest_provenance as _entrypoint_repair_manifest_provenance,
     entrypoint_repair_strategy as _entrypoint_repair_strategy,
     entrypoint_wrapper_path as _repair_parts_entrypoint_wrapper_path,
     module_report as _module_report,
-    normalize_package_candidate as _repair_parts_normalize_package_candidate,
-    packages_from_install_command as _repair_parts_packages_from_install_command,
-    script_path_candidates as _repair_parts_script_path_candidates,
+    script_path_candidates as _script_path_candidates,
     write_repair_entrypoint_files as _write_repair_entrypoint_files,
 )
 from cbn_plugins.cli_anything_parts.verification import (
     harness_protocol_smoke_suite as _harness_protocol_smoke_suite,
-    manifest_has_entrypoint_repair as _verification_parts_manifest_has_entrypoint_repair,
+    manifest_has_entrypoint_repair as _manifest_has_entrypoint_repair,
     mark_repaired_manifest_verified_from_fixtures as _mark_repaired_manifest_verified_from_fixtures,
     parser_contract_report as _verification_parts_parser_contract_report,
-    parser_fixture_gate as _verification_parts_parser_fixture_gate,
-    policy_requires_confirmation as _verification_parts_policy_requires_confirmation,
-    protocol_verification_summary as _verification_parts_protocol_verification_summary,
-    registry_source_for_manifest as _verification_parts_registry_source_for_manifest,
-    verification_blockers as _verification_parts_verification_blockers,
-    verification_stages as _verification_parts_verification_stages,
+    parser_fixture_gate as _parser_fixture_gate,
+    policy_requires_confirmation as _policy_requires_confirmation,
+    protocol_verification_summary as _protocol_verification_summary,
+    registry_source_for_manifest as _registry_source_for_manifest,
+    verification_blockers as _verification_blockers,
+    verification_stages as _verification_stages,
 )
 from cbn_protocol.acceptance_queue import cli_to_cli_acceptance_queue
 from cbn_protocol.compatibility import check_all_protocols
@@ -410,7 +406,7 @@ class CliAnythingHub:
         manifest = self.manifest_for_harness(harness_name, title=title, market_record=market_record)
         path = self.paths.manifests / f"{manifest['metadata']['id']}.json"
         if path.exists():
-            manifest = _manifest_factory_preserve_existing_parser_contract(
+            manifest = _preserve_existing_parser_contract(
                 existing=_manifest_dict_from_path(path, {}),
                 generated=manifest,
             )
@@ -2525,31 +2521,11 @@ def _is_installed_status(status_text: str | None) -> bool:
     return normalized == "installed" or normalized.startswith("installed ")
 
 
-def _market_labels(market_record: dict[str, Any]) -> dict[str, str]:
-    return _manifest_factory_market_labels(market_record)
-
-
-def _market_annotations(market_record: dict[str, Any]) -> dict[str, str]:
-    return _manifest_factory_market_annotations(market_record)
-
-
 def infer_market_policy(
     market_record: dict[str, Any] | None,
     requested_risk: str = "read",
 ) -> dict[str, Any]:
     return _manifest_factory_infer_market_policy(market_record, requested_risk=requested_risk)
-
-
-def _market_records_from_result(parsed_json: Any) -> list[dict[str, Any]] | None:
-    return _market_parts_market_records_from_result(parsed_json)
-
-
-def _mark_capability_collisions(manifests: list[dict[str, Any]]) -> None:
-    _market_parts_mark_capability_collisions(manifests)
-
-
-def _mark_candidate_collisions(candidates: list[dict[str, Any]]) -> None:
-    _market_parts_mark_candidate_collisions(candidates)
 
 
 def _refresh_candidate_lifecycle(item: dict[str, Any]) -> None:
@@ -2633,17 +2609,6 @@ def _manifest_dict_from_path(path: Path, fallback: dict[str, Any]) -> dict[str, 
         return fallback
 
 
-def _preserve_existing_parser_contract(
-    existing: dict[str, Any],
-    generated: dict[str, Any],
-) -> dict[str, Any]:
-    return _manifest_factory_preserve_existing_parser_contract(existing, generated)
-
-
-def _protocol_verification_summary(protocol_checks: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    return _verification_parts_protocol_verification_summary(protocol_checks)
-
-
 def _workflow_matches_for_capability(
     registry: ManifestRegistry,
     capability_id: str,
@@ -2672,97 +2637,6 @@ def _workflow_matches_for_capability(
             }
         )
     return matches
-
-
-def _verification_blockers(
-    evaluation: dict[str, Any],
-    readiness: dict[str, Any],
-    registry_status: dict[str, Any],
-) -> list[str]:
-    return _verification_parts_verification_blockers(evaluation, readiness, registry_status)
-
-
-def _manifest_has_entrypoint_repair(manifest: dict[str, Any]) -> bool:
-    return _verification_parts_manifest_has_entrypoint_repair(manifest)
-
-
-def _registry_source_for_manifest(
-    manifest: CapabilityManifest | None,
-    *,
-    local_manifest_dir: Path,
-) -> str:
-    return _verification_parts_registry_source_for_manifest(
-        manifest,
-        local_manifest_dir=local_manifest_dir,
-    )
-
-
-def _verification_stages(
-    harness_name: str,
-    capability_id: str,
-    evaluation: dict[str, Any],
-    readiness: dict[str, Any],
-    registry_status: dict[str, Any],
-    parser_contract: dict[str, Any],
-    protocol_checks: dict[str, dict[str, Any]],
-    smoke_suite: dict[str, Any],
-) -> list[dict[str, Any]]:
-    return _verification_parts_verification_stages(
-        harness_name,
-        capability_id,
-        evaluation,
-        readiness,
-        registry_status,
-        parser_contract,
-        protocol_checks,
-        smoke_suite,
-    )
-
-
-def _parser_fixture_gate(report: dict[str, Any], capability_id: str) -> dict[str, Any]:
-    return _verification_parts_parser_fixture_gate(report, capability_id)
-
-
-def _policy_requires_confirmation(policy: dict[str, Any]) -> bool:
-    return _verification_parts_policy_requires_confirmation(policy)
-
-
-def _entrypoint_package_candidates(
-    harness_name: str,
-    market_record: dict[str, Any] | None,
-    status: dict[str, Any],
-) -> list[str]:
-    return _repair_parts_entrypoint_package_candidates(harness_name, market_record, status)
-
-
-def _packages_from_install_command(command: str) -> list[str]:
-    return _repair_parts_packages_from_install_command(command)
-
-
-def _normalize_package_candidate(candidate: str) -> str | None:
-    return _repair_parts_normalize_package_candidate(candidate)
-
-
-def _script_path_candidates(entry_point: str | None) -> list[dict[str, Any]]:
-    return _repair_parts_script_path_candidates(entry_point)
-
-
-def _entrypoint_diagnosis(
-    entry_point: str | None,
-    entrypoint_path: str | None,
-    script_candidates: list[dict[str, Any]],
-    distribution_reports: list[dict[str, Any]],
-    module_reports: list[dict[str, Any]],
-    evaluation: dict[str, Any],
-) -> dict[str, Any]:
-    return _repair_parts_entrypoint_diagnosis(
-        entry_point,
-        entrypoint_path,
-        script_candidates,
-        distribution_reports,
-        module_reports,
-        evaluation,
-    )
 
 
 def _entrypoint_wrapper_path(external_plugins: Path, harness_name: str) -> Path:
