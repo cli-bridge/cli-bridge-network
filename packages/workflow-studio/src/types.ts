@@ -414,6 +414,7 @@ export interface NetworkConnectPackage {
     bridge_route_count?: number;
     protocol_export_count?: number;
     agent_card_count?: number;
+    registration_importer_count?: number;
     setup_status?: string;
     setup_required?: boolean;
     setup_user_gate_count?: number;
@@ -502,6 +503,7 @@ export interface NetworkConnectPackage {
   };
   agent_workflow_request?: AgentWorkflowRequestPlan;
   setup_guidance?: AdapterAgentSetupGuidance;
+  registration_surface?: CliRegistrationSurface;
   acceptance?: NetworkConnectionAcceptance;
   consumer_quickstart?: {
     kind?: "NetworkConnectQuickstart";
@@ -546,6 +548,8 @@ export interface ConnectSummary {
   endpointCount: number;
   protocolExports: number;
   agentCards: number;
+  registrationImporters: number;
+  registrationPolicy: string;
   demoReadinessStatus: string;
   demoStageCount: number;
   setupStatus: string;
@@ -575,6 +579,32 @@ export interface ConnectSummary {
   acceptanceCheckCount: number;
   curlScript: string;
   powershellScript: string;
+}
+
+export interface CliRegistrationImporter {
+  id?: string;
+  title?: string;
+  entrypoint?: string;
+  accepts?: string[];
+  produces?: string[];
+  default_side_effects?: string;
+  write_gate?: string | null;
+  confirm_gate?: string | null;
+  example?: string;
+}
+
+export interface CliRegistrationSurface {
+  kind?: "CliRegistrationSurface";
+  status?: string;
+  importer_count?: number;
+  default_policy?: {
+    dry_run_by_default?: boolean;
+    writes_require_explicit_flag?: boolean;
+    side_effects_require_confirmation?: boolean;
+    utf8_required?: boolean;
+  };
+  importers?: CliRegistrationImporter[];
+  next_commands?: string[];
 }
 
 export interface AcceptanceRunSummary {

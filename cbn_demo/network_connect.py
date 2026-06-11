@@ -98,6 +98,7 @@ def network_connect_package(
         base_url=base_url,
         session_token=session_token,
     )
+    registration_surface = _registration_surface()
     return {
         "apiVersion": CONNECT_API_VERSION,
         "kind": "NetworkConnectPackage",
@@ -110,6 +111,7 @@ def network_connect_package(
             "bridge_route_count": (bridge_contract.get("summary") or {}).get("route_count", 0),
             "protocol_export_count": protocol_summary["export_count"],
             "agent_card_count": len(agent_bundle.get("cards", [])),
+            "registration_importer_count": registration_surface["importer_count"],
             "agent_workflow_request_ready": request_plan.get("ok"),
             "setup_status": setup_guidance.get("status"),
             "setup_required": setup_guidance.get("setup_required"),
@@ -146,6 +148,7 @@ def network_connect_package(
         "agent_node_bundle": _compact_agent_bundle(agent_bundle),
         "agent_workflow_request": _compact_workflow_request_plan(request_plan),
         "setup_guidance": setup_guidance,
+        "registration_surface": registration_surface,
         "acceptance": quickstart["acceptance"],
         "consumer_quickstart": quickstart,
         "next_commands": _next_commands(workflow_path, base_url=base_url, session_token=session_token),
@@ -397,6 +400,98 @@ def _external_agent_cli_contract() -> dict[str, Any]:
             "audit_event_type": (receipt_mapping.get("audit_event") or {}).get("type"),
             "event_type": (receipt_mapping.get("event") or {}).get("type"),
         },
+    }
+
+
+def _registration_surface() -> dict[str, Any]:
+    importers = [
+        {
+            "id": "command",
+            "title": "Import ordinary CLI command",
+            "entrypoint": "cbn import command",
+            "accepts": ["executable", "args_template", "parser_ref"],
+            "produces": ["ToolManifest"],
+            "default_side_effects": "none",
+            "write_gate": "--write",
+            "confirm_gate": None,
+            "example": "python -m cbn import command demo.echo echo --arg hello",
+        },
+        {
+            "id": "cli-anything",
+            "title": "Import CLI-Anything harness",
+            "entrypoint": "cbn import cli-anything",
+            "accepts": ["harness_name", "market metadata", "optional install request"],
+            "produces": ["ToolManifest", "onboarding report", "verification plan"],
+            "default_side_effects": "none",
+            "write_gate": "--write",
+            "confirm_gate": "--yes for --write or --install",
+            "example": "python -m cbn import cli-anything mermaid --from-market",
+        },
+        {
+            "id": "agent-cli-card",
+            "title": "Import AgentCliCard",
+            "entrypoint": "cbn import agent-cli-card",
+            "accepts": ["agent-cli-contract AgentCliCard JSON"],
+            "produces": ["ToolManifest"],
+            "default_side_effects": "none",
+            "write_gate": "--write",
+            "confirm_gate": None,
+            "example": "python -m cbn import agent-cli-card external_protocols/agent-cli-contract/fixtures/agent-cli-card.valid.json",
+        },
+        {
+            "id": "mcp",
+            "title": "Import MCP tool descriptor",
+            "entrypoint": "cbn import mcp",
+            "accepts": ["MCP tool descriptor JSON", "adapter command"],
+            "produces": ["ToolManifest"],
+            "default_side_effects": "none",
+            "write_gate": "--write",
+            "confirm_gate": None,
+            "example": "python -m cbn import mcp tool.json --server-id local --adapter-command python",
+        },
+        {
+            "id": "skill",
+            "title": "Import skill descriptor",
+            "entrypoint": "cbn import skill",
+            "accepts": ["UTF-8 JSON or Markdown skill descriptor", "runner command"],
+            "produces": ["ToolManifest"],
+            "default_side_effects": "none",
+            "write_gate": "--write",
+            "confirm_gate": None,
+            "example": "python -m cbn import skill SKILL.md --command python",
+        },
+        {
+            "id": "parser-fixture",
+            "title": "Record parser fixture",
+            "entrypoint": "cbn record-parser-fixture",
+            "accepts": ["parser_ref", "stdout", "stderr", "exit_code"],
+            "produces": ["ParserFixture"],
+            "default_side_effects": "none",
+            "write_gate": "--write",
+            "confirm_gate": None,
+            "example": "python -m cbn record-parser-fixture raw.text demo --stdout output.txt",
+        },
+    ]
+    return {
+        "apiVersion": CONNECT_API_VERSION,
+        "kind": "CliRegistrationSurface",
+        "status": "ready",
+        "importer_count": len(importers),
+        "default_policy": {
+            "dry_run_by_default": True,
+            "writes_require_explicit_flag": True,
+            "side_effects_require_confirmation": True,
+            "utf8_required": True,
+        },
+        "importers": importers,
+        "next_commands": [
+            "python -m cbn import command --help",
+            "python -m cbn import cli-anything --help",
+            "python -m cbn import agent-cli-card --help",
+            "python -m cbn import mcp --help",
+            "python -m cbn import skill --help",
+            "python -m cbn record-parser-fixture --help",
+        ],
     }
 
 

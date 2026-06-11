@@ -44,6 +44,7 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertFalse(payload["summary"]["setup_required"])
         self.assertEqual(payload["summary"]["setup_user_gate_count"], 0)
         self.assertEqual(payload["summary"]["setup_secret_count"], 0)
+        self.assertEqual(payload["summary"]["registration_importer_count"], 6)
         self.assertTrue(payload["summary"]["demo_ready"])
         self.assertEqual(payload["summary"]["demo_stage_count"], 7)
         self.assertEqual(payload["protocols"]["mcp"]["workflow_tool_count"], 1)
@@ -92,6 +93,19 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertFalse(setup["safety"]["secret_values_included"])
         self.assertTrue(any(call["kind"] == "workflow-capability" for call in setup["tool_calls"]))
         self.assertNotIn("argv", setup["tool_calls"][0])
+        registration = payload["registration_surface"]
+        self.assertEqual(registration["kind"], "CliRegistrationSurface")
+        self.assertEqual(registration["status"], "ready")
+        self.assertEqual(registration["importer_count"], 6)
+        self.assertTrue(registration["default_policy"]["dry_run_by_default"])
+        self.assertTrue(registration["default_policy"]["writes_require_explicit_flag"])
+        importer_ids = {importer["id"] for importer in registration["importers"]}
+        self.assertEqual(
+            importer_ids,
+            {"command", "cli-anything", "agent-cli-card", "mcp", "skill", "parser-fixture"},
+        )
+        self.assertTrue(all(importer["default_side_effects"] == "none" for importer in registration["importers"]))
+        self.assertIn("python -m cbn import cli-anything --help", registration["next_commands"])
         agent_bundle = payload["agent_node_bundle"]
         self.assertEqual(agent_bundle["kind"], "AdapterAgentNodeBundle")
         self.assertEqual(agent_bundle["session"]["kind"], "AgentSession")
@@ -263,6 +277,8 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertTrue(payload["agent_workflow_request"]["request"]["intent"]["mentions_reuse"])
         self.assertEqual(payload["agent_workflow_request"]["bridge_message"]["channel"], "agent.workflow.request.plan")
         self.assertEqual(len(payload["agent_workflow_request"]["bridge_routes"]), 2)
+        self.assertEqual(payload["registration_surface"]["importer_count"], 6)
+        self.assertIn("cbn import agent-cli-card", payload["registration_surface"]["importers"][2]["entrypoint"])
         self.assertEqual(payload["workflow_studio"]["daemon_url"], "http://127.0.0.1:8787")
         self.assertEqual(payload["workflow_studio"]["dashboard_url"], "http://127.0.0.1:5173")
         self.assertIn("dashboardUrl=http%3A%2F%2F127.0.0.1%3A5173", payload["workflow_studio"]["url"])

@@ -391,6 +391,14 @@ Killer Demo slice 已新增可运行证据束：
 - `cbn network connect-package|quickstart|verify`、daemon `/network/*` 和 Python API
   已统一默认 agent prompt，默认语义同时包含 run、reusable CLI-CLI harness agent 和
   external program connect，避免 CLI 与 HTTP 入口生成不同 intent。
+- `NetworkConnectPackage.registration_surface` 已新增只读 CLI 注册入口目录：把
+  `cbn import command`、`cbn import cli-anything`、`cbn import agent-cli-card`、
+  `cbn import mcp`、`cbn import skill` 和 `cbn record-parser-fixture` 的 entrypoint、
+  accepts、produces、write/confirm gate、默认无副作用策略和 help commands 放进
+  one-shot package。外部程序拿到 connect package 后，不只知道如何调用当前
+  workflow，也能知道如何把更多普通 CLI、CLI-Anything harness、MCP tool、skill 或
+  parser fixture 纳入 CBN 网络。Workflow Studio Connect 面板同步展示 importer 数量、
+  dry-run import policy 和前几条注册入口。
 - `NetworkConnectPackage.demo_readiness` 已新增只读 Killer Demo 摘要：不执行
   workflow、不写状态，只暴露 CLI-Anything -> macrocli -> parser -> Mermaid ->
   artifact/event/audit -> MCP/A2A/ACP smoke 的 stage 列表、required capabilities、

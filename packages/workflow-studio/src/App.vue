@@ -114,10 +114,14 @@ const connectHarnessRoutes = computed<Array<Record<string, unknown>>>(() =>
     ? connectPackage.value.agent_workflow_request.bridge_routes
     : [],
 );
+const connectRegistrationImporters = computed(() =>
+  Array.isArray(connectPackage.value?.registration_surface?.importers) ? connectPackage.value.registration_surface.importers : [],
+);
 const connectNextCommands = computed<string[]>(() => {
   const commands = [
     ...(Array.isArray(connectPackage.value?.next_commands) ? connectPackage.value.next_commands : []),
     ...(Array.isArray(connectPackage.value?.demo_readiness?.next_commands) ? connectPackage.value.demo_readiness.next_commands : []),
+    ...(Array.isArray(connectPackage.value?.registration_surface?.next_commands) ? connectPackage.value.registration_surface.next_commands : []),
   ].filter((command): command is string => typeof command === "string" && command.trim().length > 0);
   return Array.from(new Set(commands));
 });
@@ -428,6 +432,7 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
   const acceptance = payload?.acceptance ?? quickstart.acceptance ?? {};
   const setup = payload?.setup_guidance ?? {};
   const harness = payload?.agent_workflow_request ?? {};
+  const registration = payload?.registration_surface ?? {};
   const harnessBridge =
     harness.bridge_message && typeof harness.bridge_message === "object"
       ? (harness.bridge_message as { metadata?: { channel?: unknown }; channel?: unknown })
@@ -442,6 +447,8 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
     endpointCount: Array.isArray(payload?.daemon_endpoints) ? payload.daemon_endpoints.length : 0,
     protocolExports: numberValue(summary.protocol_export_count) ?? 0,
     agentCards: numberValue(summary.agent_card_count) ?? 0,
+    registrationImporters: numberValue(registration.importer_count) ?? numberValue(summary.registration_importer_count) ?? 0,
+    registrationPolicy: registration.default_policy?.dry_run_by_default ? "dry-run imports" : "check import policy",
     demoReadinessStatus: stringValue(demo.status) ?? "not loaded",
     demoStageCount: numberValue(demo.stage_count) ?? 0,
     setupStatus: stringValue(setup.status) ?? stringValue(summary.setup_status) ?? "not loaded",
@@ -897,6 +904,10 @@ onMounted(async () => {
             <strong>{{ connectSummary.agentCards }}</strong>
           </div>
           <div>
+            <span>Imports</span>
+            <strong>{{ connectSummary.registrationImporters }}</strong>
+          </div>
+          <div>
             <span>Demo</span>
             <strong>{{ connectSummary.demoStageCount }}</strong>
           </div>
@@ -916,6 +927,7 @@ onMounted(async () => {
           <span class="pill-inline">{{ connectSummary.studioMode }}</span>
           <span class="pill-inline">{{ connectSummary.quickstartStatus }}</span>
           <span class="pill-inline">{{ connectSummary.authHeaderStatus }}</span>
+          <span class="pill-inline">{{ connectSummary.registrationPolicy }}</span>
           <span class="pill-inline">{{ connectSummary.quickstartRequestCount }} requests</span>
           <span class="pill-inline">{{ connectSummary.acceptanceStatus }}</span>
           <span class="pill-inline">{{ connectSummary.acceptanceCheckCount }} checks</span>
@@ -1061,6 +1073,13 @@ onMounted(async () => {
           <code v-for="capabilityId in connectSummary.generatedCapabilities" :key="capabilityId">{{ capabilityId }}</code>
           <span v-if="!connectSummary.generatedCapabilities.length">No external capabilities loaded</span>
         </div>
+        <div class="endpoint-list">
+          <div v-for="importer in connectRegistrationImporters.slice(0, 6)" :key="importer.id || importer.entrypoint">
+            <code>{{ importer.entrypoint || importer.id || "cbn import" }}</code>
+            <span>{{ importer.title || "CLI registration" }} · {{ importer.default_side_effects || "none" }}</span>
+          </div>
+          <span v-if="!connectRegistrationImporters.length">No registration importers loaded</span>
+        </div>
         <div class="demo-stage-list">
           <div v-for="stage in connectDemoStages" :key="stage.id || stage.title">
             <strong>{{ stage.title || stage.id || "Demo stage" }}</strong>
@@ -1146,7 +1165,7 @@ onMounted(async () => {
             <span>{{ endpoint.path }}</span>
           </div>
         </div>
-        <pre>{{ pretty({ daemon_verify: networkVerifyReport, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, setup_guidance: connectPackage?.setup_guidance, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
+        <pre>{{ pretty({ daemon_verify: networkVerifyReport, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
       </section>
       <section>
         <div class="section-title"><Rocket :size="15" /> Killer Demo</div>
