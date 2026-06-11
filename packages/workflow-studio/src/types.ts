@@ -397,6 +397,44 @@ export interface NetworkConnectionAcceptanceReport {
   next_commands?: string[];
 }
 
+export interface NetworkConnectQuickstart {
+  kind?: "NetworkConnectQuickstart";
+  status?: string;
+  required_headers?: Record<string, string>;
+  entrypoints?: {
+    open_studio?: string;
+    health?: string;
+    acceptance?: string;
+    launch_contract?: string;
+    entry_profile?: string;
+    import_catalog?: string;
+    inspect_workflow?: string;
+    inspect_bridge_contract?: string;
+    inspect_agent_nodes?: string;
+    export_protocols?: string;
+    plan_agent_request?: {
+      method?: string;
+      url?: string;
+      json?: Record<string, unknown>;
+    };
+    run_workflow?: {
+      method?: string;
+      url?: string;
+      json?: Record<string, unknown>;
+    };
+    events?: string;
+    audit?: string;
+    artifacts?: string;
+  };
+  requests?: QuickstartRequest[];
+  acceptance?: NetworkConnectionAcceptance;
+  sdk_snippets?: QuickstartSdkSnippet[];
+  curl_script?: string;
+  powershell_script?: string;
+  sequence?: string[];
+  sequence_steps?: QuickstartSequenceStep[];
+}
+
 export interface AdapterAgentSetupGuidance {
   kind?: "AdapterAgentSetupGuidance";
   ok?: boolean;
@@ -568,43 +606,7 @@ export interface NetworkConnectPackage {
   setup_guidance?: AdapterAgentSetupGuidance;
   registration_surface?: CliRegistrationSurface;
   acceptance?: NetworkConnectionAcceptance;
-  consumer_quickstart?: {
-    kind?: "NetworkConnectQuickstart";
-    status?: string;
-    required_headers?: Record<string, string>;
-    entrypoints?: {
-      open_studio?: string;
-      health?: string;
-      acceptance?: string;
-      launch_contract?: string;
-      entry_profile?: string;
-      import_catalog?: string;
-      inspect_workflow?: string;
-      inspect_bridge_contract?: string;
-      inspect_agent_nodes?: string;
-      export_protocols?: string;
-      plan_agent_request?: {
-        method?: string;
-        url?: string;
-        json?: Record<string, unknown>;
-      };
-      run_workflow?: {
-        method?: string;
-        url?: string;
-        json?: Record<string, unknown>;
-      };
-      events?: string;
-      audit?: string;
-      artifacts?: string;
-    };
-    requests?: QuickstartRequest[];
-    acceptance?: NetworkConnectionAcceptance;
-    sdk_snippets?: QuickstartSdkSnippet[];
-    curl_script?: string;
-    powershell_script?: string;
-    sequence?: string[];
-    sequence_steps?: QuickstartSequenceStep[];
-  };
+  consumer_quickstart?: NetworkConnectQuickstart;
   next_commands?: string[];
 }
 

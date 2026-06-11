@@ -340,6 +340,11 @@ Killer Demo slice 已新增可运行证据束：
   该路由复用 connect package 生成逻辑，并支持从 `X-CBN-Session` header 推导
   required headers 与预配置 Studio link，便于外部程序按标准鉴权 header 直接读取
   first-call payload。
+- Workflow Studio 已新增 direct `Quick` 操作，会调用 `/network/quickstart`，
+  并把 direct first-call package 与 `NetworkConnectPackage.consumer_quickstart`
+  按 status、request id 顺序、sequence step 顺序、SDK snippet 数量以及 run/plan/
+  acceptance 入口做 parity 对比；Connect 面板同步展示 direct quickstart 状态、
+  request count、SDK count 和关键 entrypoints，避免外部接入演示只依赖嵌套副本。
 - `consumer_quickstart` 已新增 `sequence_steps[]` 与 `requests[]`：前者是面向
   demo/外部程序作者的 first-call story，按 open Studio、import catalog、inspect
   workflow、Bridge Contract、agent nodes、protocol exports、plan agent request、run

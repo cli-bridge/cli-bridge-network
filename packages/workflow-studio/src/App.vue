@@ -43,6 +43,7 @@ import type {
   NetworkEntryProfile,
   NetworkConnectionAcceptanceReport,
   NetworkConnectPackage,
+  NetworkConnectQuickstart,
   ProtocolSummary,
   QuickstartSdkSnippet,
   QuickstartRequest,
@@ -78,6 +79,7 @@ const agentBundle = ref<AdapterAgentNodeBundle | null>(null);
 const workflowRequestPlan = ref<AgentWorkflowRequestPlan | null>(null);
 const toolCallPlan = ref<AdapterAgentToolCallPlan | null>(null);
 const connectPackage = ref<NetworkConnectPackage | null>(null);
+const directQuickstart = ref<NetworkConnectQuickstart | null>(null);
 const launchContract = ref<ConsumerLaunchContract | null>(null);
 const entryProfile = ref<NetworkEntryProfile | null>(null);
 const directAcceptance = ref<NetworkConnectionAcceptance | null>(null);
@@ -113,6 +115,12 @@ const setupCheckpoints = computed(() =>
   Array.isArray(toolCallPlan.value?.long_running_loop?.checkpoints) ? toolCallPlan.value.long_running_loop.checkpoints : [],
 );
 const connectSummary = computed<ConnectSummary>(() => summarizeConnectPackage(connectPackage.value));
+const connectQuickstart = computed<NetworkConnectQuickstart>(() => connectPackage.value?.consumer_quickstart ?? {});
+const directQuickstartContract = computed<NetworkConnectQuickstart>(() => directQuickstart.value ?? {});
+const directQuickstartRequests = computed<QuickstartRequest[]>(() =>
+  Array.isArray(directQuickstartContract.value.requests) ? directQuickstartContract.value.requests : [],
+);
+const quickstartParity = computed(() => summarizeQuickstartParity(connectQuickstart.value, directQuickstartContract.value));
 const connectEntryProfile = computed<NetworkEntryProfile>(() => connectPackage.value?.network_entry_profile ?? {});
 const directEntryProfile = computed<NetworkEntryProfile>(() => entryProfile.value ?? {});
 const entryProfileParity = computed(() => summarizeEntryProfileParity(connectEntryProfile.value, directEntryProfile.value));
@@ -210,17 +218,13 @@ const connectNextCommands = computed<string[]>(() => {
   return Array.from(new Set(commands));
 });
 const quickstartRequests = computed<QuickstartRequest[]>(() =>
-  Array.isArray(connectPackage.value?.consumer_quickstart?.requests)
-    ? connectPackage.value.consumer_quickstart.requests
-    : [],
+  Array.isArray(connectQuickstart.value.requests) ? connectQuickstart.value.requests : [],
 );
 const quickstartSdkSnippets = computed<QuickstartSdkSnippet[]>(() =>
-  Array.isArray(connectPackage.value?.consumer_quickstart?.sdk_snippets)
-    ? connectPackage.value.consumer_quickstart.sdk_snippets
-    : [],
+  Array.isArray(connectQuickstart.value.sdk_snippets) ? connectQuickstart.value.sdk_snippets : [],
 );
 const quickstartSequenceSteps = computed<QuickstartSequenceStep[]>(() => {
-  const steps = connectPackage.value?.consumer_quickstart?.sequence_steps;
+  const steps = connectQuickstart.value.sequence_steps;
   if (Array.isArray(steps) && steps.length) return steps;
   return quickstartRequests.value.map((request, index) => ({
     order: index + 1,
@@ -291,6 +295,10 @@ async function inspectSetupPlan() {
 
 async function inspectConnectPackage() {
   connectPackage.value = (await call("connect", () => api.value.networkConnectPackage())) as NetworkConnectPackage;
+}
+
+async function inspectQuickstart() {
+  directQuickstart.value = (await call("quickstart", () => api.value.networkQuickstart())) as NetworkConnectQuickstart;
 }
 
 async function inspectLaunchContract() {
@@ -443,6 +451,7 @@ async function loadAll() {
     inspectAgentBundle(),
     inspectWorkflowRequestPlan(),
     inspectConnectPackage(),
+    inspectQuickstart(),
     inspectLaunchContract(),
     inspectEntryProfile(),
     inspectAcceptance(),
@@ -740,6 +749,35 @@ function summarizeLaunchContractParity(nested: ConsumerLaunchContract, direct: C
     detail: matched
       ? "Direct launch contract matches the one-shot package copy."
       : "Direct launch contract differs from the one-shot package copy.",
+  };
+}
+
+function summarizeQuickstartParity(nested: NetworkConnectQuickstart, direct: NetworkConnectQuickstart): { status: string; detail: string } {
+  if (!direct.kind) {
+    return { status: "quickstart not loaded", detail: "Direct /network/quickstart has not been fetched." };
+  }
+  if (!nested.kind) {
+    return { status: "quickstart direct only", detail: "Direct quickstart is loaded; connect package quickstart is not loaded yet." };
+  }
+  const sameStatus = nested.status === direct.status;
+  const nestedRequests = Array.isArray(nested.requests) ? nested.requests.map((request) => request.id || "").join("|") : "";
+  const directRequests = Array.isArray(direct.requests) ? direct.requests.map((request) => request.id || "").join("|") : "";
+  const sameRequests = nestedRequests === directRequests;
+  const nestedSequence = Array.isArray(nested.sequence_steps) ? nested.sequence_steps.map((step) => step.request_id || step.id || "").join("|") : "";
+  const directSequence = Array.isArray(direct.sequence_steps) ? direct.sequence_steps.map((step) => step.request_id || step.id || "").join("|") : "";
+  const sameSequence = nestedSequence === directSequence;
+  const sameSdkCount = (nested.sdk_snippets?.length ?? 0) === (direct.sdk_snippets?.length ?? 0);
+  const nestedEntrypoints = nested.entrypoints ?? {};
+  const directEntrypoints = direct.entrypoints ?? {};
+  const sameRunEndpoint = nestedEntrypoints.run_workflow?.url === directEntrypoints.run_workflow?.url;
+  const samePlanEndpoint = nestedEntrypoints.plan_agent_request?.url === directEntrypoints.plan_agent_request?.url;
+  const sameAcceptanceEndpoint = nestedEntrypoints.acceptance === directEntrypoints.acceptance;
+  const matched = sameStatus && sameRequests && sameSequence && sameSdkCount && sameRunEndpoint && samePlanEndpoint && sameAcceptanceEndpoint;
+  return {
+    status: matched ? "quickstart parity" : "quickstart drift",
+    detail: matched
+      ? "Direct first-call quickstart matches the one-shot package copy."
+      : "Direct first-call quickstart differs from the one-shot package copy.",
   };
 }
 
@@ -1057,6 +1095,9 @@ onMounted(async () => {
         <button title="Load one-shot network connection package" @click="inspectConnectPackage">
           <Network :size="16" /> Connect
         </button>
+        <button title="Load direct first-call quickstart package" @click="inspectQuickstart">
+          <Play :size="16" /> Quick
+        </button>
         <button title="Load direct network entry profile" @click="inspectEntryProfile">
           <Braces :size="16" /> Profile
         </button>
@@ -1316,6 +1357,9 @@ onMounted(async () => {
           <span class="pill-inline">{{ connectSummary.studioToken }}</span>
           <span class="pill-inline">{{ connectSummary.studioMode }}</span>
           <span class="pill-inline">{{ connectSummary.quickstartStatus }}</span>
+          <span :class="['pill-inline', quickstartParity.status === 'quickstart parity' ? 'ok' : quickstartParity.status === 'quickstart drift' ? 'blocked' : '']">
+            {{ quickstartParity.status }}
+          </span>
           <span class="pill-inline">{{ connectSummary.authHeaderStatus }}</span>
           <span class="pill-inline">{{ connectSummary.registrationPolicy }}</span>
           <span :class="['pill-inline', connectSummary.cliAnythingSplitStatus === 'ready' ? 'ok' : connectSummary.cliAnythingSplitStatus === 'incomplete' ? 'blocked' : '']">
@@ -1595,6 +1639,42 @@ onMounted(async () => {
           </button>
           <code v-if="connectSummary.studioLink">{{ connectSummary.studioLink }}</code>
           <span v-else>No Workflow Studio link loaded</span>
+        </div>
+        <div class="contract-status-grid">
+          <div>
+            <span>Direct quickstart</span>
+            <strong>{{ directQuickstartContract.status || "not loaded" }}</strong>
+          </div>
+          <div>
+            <span>Direct requests</span>
+            <strong>{{ directQuickstartRequests.length }}</strong>
+          </div>
+          <div>
+            <span>SDK snippets</span>
+            <strong>{{ directQuickstartContract.sdk_snippets?.length ?? 0 }}</strong>
+          </div>
+          <div>
+            <span>Parity</span>
+            <strong>{{ quickstartParity.status }}</strong>
+          </div>
+        </div>
+        <div class="quickstart-grid">
+          <div>
+            <span>Direct run</span>
+            <code>{{ directQuickstartContract.entrypoints?.run_workflow?.url || "not loaded" }}</code>
+          </div>
+          <div>
+            <span>Direct plan</span>
+            <code>{{ directQuickstartContract.entrypoints?.plan_agent_request?.url || "not loaded" }}</code>
+          </div>
+          <div>
+            <span>Direct acceptance</span>
+            <code>{{ directQuickstartContract.entrypoints?.acceptance || "not loaded" }}</code>
+          </div>
+          <div>
+            <span>Parity detail</span>
+            <code>{{ quickstartParity.detail }}</code>
+          </div>
         </div>
         <div class="contract-status-grid">
           <div>
@@ -1949,7 +2029,7 @@ onMounted(async () => {
             <span>{{ endpoint.path }}</span>
           </div>
         </div>
-        <pre>{{ pretty({ daemon_verify: networkVerifyReport, import_catalog: importCatalog, direct_entry_profile: entryProfile, entry_profile_parity: entryProfileParity, direct_launch_contract: launchContract, launch_contract_parity: launchContractParity, direct_acceptance: directAcceptance, acceptance_parity: acceptanceParity, direct_readiness: directReadiness, readiness_parity: readinessParity, network_entry_profile: connectPackage?.network_entry_profile, consumer_launch_contract: connectPackage?.consumer_launch_contract, mvp_readiness: connectPackage?.mvp_readiness, mvp_presenter_brief: connectPackage?.mvp_presenter_brief, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, demo_playbook: connectPackage?.demo_playbook, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, plugins: connectPackage?.plugins, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
+        <pre>{{ pretty({ daemon_verify: networkVerifyReport, import_catalog: importCatalog, direct_quickstart: directQuickstart, quickstart_parity: quickstartParity, direct_entry_profile: entryProfile, entry_profile_parity: entryProfileParity, direct_launch_contract: launchContract, launch_contract_parity: launchContractParity, direct_acceptance: directAcceptance, acceptance_parity: acceptanceParity, direct_readiness: directReadiness, readiness_parity: readinessParity, network_entry_profile: connectPackage?.network_entry_profile, consumer_launch_contract: connectPackage?.consumer_launch_contract, mvp_readiness: connectPackage?.mvp_readiness, mvp_presenter_brief: connectPackage?.mvp_presenter_brief, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, demo_playbook: connectPackage?.demo_playbook, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, plugins: connectPackage?.plugins, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
       </section>
       <section>
         <div class="section-title"><Rocket :size="15" /> Killer Demo</div>
