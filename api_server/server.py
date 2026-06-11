@@ -18,6 +18,7 @@ from urllib.parse import parse_qs, urlparse
 from api_server.routes.health import health_payload
 from cbn_demo.killer import DEFAULT_KILLER_WORKFLOW_PATH, killer_demo_report
 from cbn_demo.network_connect import DEFAULT_AGENT_CONNECT_MESSAGE, network_acceptance_report, network_connect_package
+from cbn_core.import_catalog import cli_registration_surface
 from cbn_core.manifest import validate_manifest_path
 from cbn_execution.graph import WorkflowGraph
 from cbn_parsers.fixtures import run_parser_fixtures
@@ -78,6 +79,7 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/plugins/cli-anything/preflight"},
     {"method": "GET", "path": "/plugins/cli-anything/provenance"},
     {"method": "GET", "path": "/plugins/cli-anything/update-check"},
+    {"method": "GET", "path": "/imports/catalog"},
     {"method": "GET", "path": "/audit"},
     {"method": "GET", "path": "/events"},
     {"method": "GET", "path": "/artifacts"},
@@ -408,6 +410,9 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             remote = query.get("remote", ["false"])[0].lower() in {"1", "true", "yes"}
             result = PluginManager().update_check("cli-anything", remote=remote)
             self._send(200 if result["ready_for_update"] else 409, result)
+            return
+        if parsed.path == "/imports/catalog":
+            self._send(200, cli_registration_surface())
             return
         if parsed.path == "/runtime/transports":
             kind = query.get("kind", ["pty"])[0]

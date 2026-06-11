@@ -26,6 +26,7 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("POST", "/plugins/cli-anything/bootstrap-plan"), routes)
         self.assertIn(("GET", "/plugins/cli-anything/provenance"), routes)
         self.assertIn(("GET", "/plugins/cli-anything/update-check"), routes)
+        self.assertIn(("GET", "/imports/catalog"), routes)
         self.assertIn(("GET", "/plugins/operations"), routes)
         self.assertIn(("GET", "/plugins/operations/validate"), routes)
         self.assertIn(("POST", "/plugins/gate"), routes)
@@ -64,6 +65,22 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("POST", "/runtime/transports/gate"), routes)
         self.assertIn(("POST", "/runtime/transports/plan"), routes)
         self.assertIn(("POST", "/runtime/transports/install"), routes)
+
+    def test_imports_catalog_route_returns_registration_surface(self):
+        with daemon_url() as base_url:
+            with urllib.request.urlopen(f"{base_url}/imports/catalog", timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+
+            self.assertEqual(response.status, 200)
+            self.assertEqual(payload["kind"], "CliRegistrationSurface")
+            self.assertEqual(payload["importer_count"], 6)
+            self.assertTrue(payload["default_policy"]["dry_run_by_default"])
+            self.assertEqual(payload["next_commands"][0], "python -m cbn import catalog")
+            importer_ids = {importer["id"] for importer in payload["importers"]}
+            self.assertEqual(
+                importer_ids,
+                {"command", "cli-anything", "agent-cli-card", "mcp", "skill", "parser-fixture"},
+            )
 
     def test_plugin_operations_route_returns_provider_catalog(self):
         with daemon_url() as base_url:
@@ -207,6 +224,7 @@ class DaemonApiTests(unittest.TestCase):
             self.assertEqual(payload["consumer_quickstart"]["sdk_snippets"][0]["language"], "python")
             self.assertIn("urllib.request", payload["consumer_quickstart"]["sdk_snippets"][0]["code"])
             endpoint_paths = {endpoint["path"].split("?", 1)[0] for endpoint in payload["daemon_endpoints"]}
+            self.assertIn("/imports/catalog", endpoint_paths)
             self.assertIn("/workflows/run", endpoint_paths)
             self.assertIn("/adapter-agent/workflow-request-plan", endpoint_paths)
             self.assertIn("/demo/killer", endpoint_paths)

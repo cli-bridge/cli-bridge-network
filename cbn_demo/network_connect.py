@@ -523,6 +523,7 @@ def _endpoint_catalog(*, base_url: str | None, workflow_path: str) -> list[dict[
         ("GET", "/network/connect-package", "read the full one-shot network connection package"),
         ("GET", "/network/quickstart", "read only the first-call quickstart payload"),
         ("POST", "/network/verify", "run the live network acceptance checklist"),
+        ("GET", "/imports/catalog", "read the dry-run-first CLI importer catalog"),
         ("GET", "/health", "confirm daemon reachability"),
         ("GET", "/workflows", "discover registered workflow descriptors"),
         ("GET", f"/workflows?path={workflow_path}", "inspect one workflow DAG"),

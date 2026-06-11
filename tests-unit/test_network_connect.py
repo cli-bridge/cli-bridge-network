@@ -230,6 +230,7 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertIn("const requests", snippets["typescript-fetch-consumer"]["code"])
         self.assertIn("await call('run_workflow')", snippets["typescript-fetch-consumer"]["code"])
         endpoint_paths = {endpoint["path"] for endpoint in payload["daemon_endpoints"]}
+        self.assertIn("/imports/catalog", endpoint_paths)
         self.assertIn("/network/quickstart", endpoint_paths)
         self.assertIn("/network/verify", endpoint_paths)
         self.assertIn("/adapter-agent/workflow-request-plan", endpoint_paths)
