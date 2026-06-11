@@ -47,6 +47,7 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("GET", "/demo/killer"), routes)
         self.assertIn(("GET", "/network/connect-package"), routes)
         self.assertIn(("GET", "/network/quickstart"), routes)
+        self.assertIn(("GET", "/network/readiness"), routes)
         self.assertIn(("POST", "/network/verify"), routes)
         self.assertIn(("POST", "/demo/killer"), routes)
         self.assertIn(("GET", "/protocols/workflows"), routes)
@@ -246,6 +247,7 @@ class DaemonApiTests(unittest.TestCase):
             self.assertEqual(payload["consumer_quickstart"]["sdk_snippets"][0]["language"], "python")
             self.assertIn("urllib.request", payload["consumer_quickstart"]["sdk_snippets"][0]["code"])
             endpoint_paths = {endpoint["path"].split("?", 1)[0] for endpoint in payload["daemon_endpoints"]}
+            self.assertIn("/network/readiness", endpoint_paths)
             self.assertIn("/imports/catalog", endpoint_paths)
             self.assertIn("/workflows/run", endpoint_paths)
             self.assertIn("/adapter-agent/workflow-request-plan", endpoint_paths)
@@ -292,6 +294,29 @@ class DaemonApiTests(unittest.TestCase):
             self.assertEqual(payload["sdk_snippets"][1]["language"], "typescript")
             self.assertIn("await call('run_workflow')", payload["sdk_snippets"][1]["code"])
             self.assertIn("sessionToken=header-token", payload["entrypoints"]["open_studio"])
+            self.assertNotIn("contracts", payload)
+
+    def test_network_readiness_route_returns_mvp_matrix(self):
+        with daemon_url() as base_url:
+            url = (
+                f"{base_url}/network/readiness"
+                "?workflow_path=workflows/cli-anything-macrocli-mermaid-routing.example.json"
+                "&studio_url=http://127.0.0.1:5177"
+            )
+            request = urllib.request.Request(url, headers={"X-CBN-Session": "header-token"})
+            with urllib.request.urlopen(request, timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+
+            self.assertEqual(response.status, 200)
+            self.assertEqual(payload["kind"], "KillerMvpReadiness")
+            self.assertEqual(payload["status"], "ready")
+            self.assertEqual(payload["score"], "12/12")
+            self.assertTrue(payload["product_goals"]["one_shot_external_network_entry"])
+            self.assertEqual(payload["recommended_next_action"], "open_workflow_studio_demo")
+            self.assertEqual(payload["checks"][0]["id"], "external_agent_cli_contract")
+            self.assertEqual(payload["checks"][5]["id"], "network_entry_profile")
+            self.assertEqual(payload["checks"][5]["title"], "One-shot network entry")
+            self.assertTrue(payload["checks"][5]["ready"])
             self.assertNotIn("contracts", payload)
 
     def test_network_verify_cli_runs_acceptance_against_daemon(self):

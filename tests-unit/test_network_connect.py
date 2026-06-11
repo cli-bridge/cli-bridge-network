@@ -296,6 +296,7 @@ class NetworkConnectPackageTests(unittest.TestCase):
         endpoint_paths = {endpoint["path"] for endpoint in payload["daemon_endpoints"]}
         self.assertIn("/imports/catalog", endpoint_paths)
         self.assertIn("/network/quickstart", endpoint_paths)
+        self.assertIn("/network/readiness", endpoint_paths)
         self.assertIn("/network/verify", endpoint_paths)
         self.assertIn("/adapter-agent/workflow-request-plan", endpoint_paths)
         self.assertTrue(any(endpoint["url"].startswith("http://127.0.0.1:8787/") for endpoint in payload["daemon_endpoints"]))
@@ -502,6 +503,33 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(payload["checks"][5]["expect"]["json.exports.acp.protocol"], "acp")
         self.assertEqual(payload["checks"][6]["expect"]["json.kind"], "AdapterAgentWorkflowRequestPlan")
         self.assertNotIn("curl_script", payload)
+
+    def test_network_quickstart_cli_outputs_mvp_readiness(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "network",
+                "quickstart",
+                "--workflow-path",
+                "workflows/cli-anything-macrocli-mermaid-routing.example.json",
+                "--base-url",
+                "http://127.0.0.1:8787",
+                "--output",
+                "readiness",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["kind"], "KillerMvpReadiness")
+        self.assertEqual(payload["status"], "ready")
+        self.assertEqual(payload["score"], "12/12")
+        self.assertEqual(payload["recommended_next_action"], "open_workflow_studio_demo")
 
     def test_network_quickstart_cli_outputs_shell_scripts(self):
         base_args = [

@@ -100,6 +100,7 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/demo/killer"},
     {"method": "GET", "path": "/network/connect-package"},
     {"method": "GET", "path": "/network/quickstart"},
+    {"method": "GET", "path": "/network/readiness"},
     {"method": "POST", "path": "/network/verify"},
     {"method": "POST", "path": "/protocols/accept-workflow"},
     {"method": "POST", "path": "/protocols/acceptance-queue"},
@@ -595,13 +596,20 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             )
             self._send(200 if result["ok"] else 422, result)
             return
-        if parsed.path in {"/network/connect-package", "/network/quickstart"}:
+        if parsed.path in {"/network/connect-package", "/network/quickstart", "/network/readiness"}:
             result = _network_connect_package_from_query(self, runtime, query)
             if parsed.path == "/network/quickstart":
                 quickstart = result.get("consumer_quickstart", {})
                 self._send(
                     200 if result["ok"] and quickstart.get("kind") == "NetworkConnectQuickstart" else 422,
                     quickstart,
+                )
+                return
+            if parsed.path == "/network/readiness":
+                readiness = result.get("mvp_readiness", {})
+                self._send(
+                    200 if result["ok"] and readiness.get("kind") == "KillerMvpReadiness" else 422,
+                    readiness,
                 )
                 return
             self._send(200 if result["ok"] else 422, result)

@@ -436,6 +436,9 @@ Killer Demo slice 已新增可运行证据束：
   product goals（展示 CLI-CLI 协议、复用 harness agent、集成下一个 CLI、
   一次性外部接入、Studio demo、首跑安全设置）和 recommended next action；
   Workflow Studio Connect 面板同步显示 readiness score、goal count 和 checklist。
+  daemon 已提供 `/network/readiness`，CLI 已提供
+  `cbn network quickstart --output readiness`，方便外部程序或演示脚本不用拉完整
+  connect package 就能做 MVP 准入判断。
 - `cbn network connect-package|quickstart|verify`、daemon `/network/*` 和 Python API
   已统一默认 agent prompt，默认语义同时包含 run、reusable CLI-CLI harness agent 和
   external program connect，避免 CLI 与 HTTP 入口生成不同 intent。
