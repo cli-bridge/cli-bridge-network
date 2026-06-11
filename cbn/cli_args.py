@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 
+from cbn_demo.network_connect import DEFAULT_AGENT_CONNECT_MESSAGE
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="cbn", description="CLI Bridge Network")
@@ -290,7 +292,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     network_connect.add_argument(
         "--message",
-        default="Connect an external program to this CBN workflow.",
+        default=DEFAULT_AGENT_CONNECT_MESSAGE,
         help="Agent prompt used to shape the Adapter Agent node bundle.",
     )
     network_quickstart = network_subcommands.add_parser(
@@ -319,7 +321,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     network_quickstart.add_argument(
         "--message",
-        default="Connect an external program to this CBN workflow.",
+        default=DEFAULT_AGENT_CONNECT_MESSAGE,
         help="Agent prompt used to shape the reusable workflow request.",
     )
     network_quickstart.add_argument(
@@ -358,7 +360,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     network_verify.add_argument(
         "--message",
-        default="Connect an external program to this CBN workflow.",
+        default=DEFAULT_AGENT_CONNECT_MESSAGE,
         help="Agent prompt used to shape the reusable workflow request.",
     )
     network_verify.add_argument("--timeout-seconds", type=float, default=8.0)

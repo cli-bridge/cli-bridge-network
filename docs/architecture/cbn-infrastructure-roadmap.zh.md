@@ -388,6 +388,9 @@ Killer Demo slice 已新增可运行证据束：
   CLI-CLI workflow、如何 POST `/workflows/run`、以及 CLI-CLI 间的 selector 路由如何
   通过 BridgeMessage 传递。Workflow Studio Connect 面板同步展示 harness kind、
   binding、run endpoint、BridgeMessage channel 和前几条 selector route。
+- `cbn network connect-package|quickstart|verify`、daemon `/network/*` 和 Python API
+  已统一默认 agent prompt，默认语义同时包含 run、reusable CLI-CLI harness agent 和
+  external program connect，避免 CLI 与 HTTP 入口生成不同 intent。
 - `NetworkConnectPackage.demo_readiness` 已新增只读 Killer Demo 摘要：不执行
   workflow、不写状态，只暴露 CLI-Anything -> macrocli -> parser -> Mermaid ->
   artifact/event/audit -> MCP/A2A/ACP smoke 的 stage 列表、required capabilities、

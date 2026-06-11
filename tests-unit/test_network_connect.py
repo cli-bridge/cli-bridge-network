@@ -259,6 +259,8 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(payload["contracts"]["internal"]["contracts"]["artifact"]["kind"], "ArtifactRecord")
         self.assertEqual(payload["agent_workflow_request"]["run"]["http"]["url"], "http://127.0.0.1:8787/workflows/run")
         self.assertEqual(payload["agent_workflow_request"]["request"]["binding"], "selected_workflow_path")
+        self.assertTrue(payload["agent_workflow_request"]["request"]["intent"]["mentions_run"])
+        self.assertTrue(payload["agent_workflow_request"]["request"]["intent"]["mentions_reuse"])
         self.assertEqual(payload["agent_workflow_request"]["bridge_message"]["channel"], "agent.workflow.request.plan")
         self.assertEqual(len(payload["agent_workflow_request"]["bridge_routes"]), 2)
         self.assertEqual(payload["workflow_studio"]["daemon_url"], "http://127.0.0.1:8787")
@@ -317,6 +319,7 @@ class NetworkConnectPackageTests(unittest.TestCase):
             payload["entrypoints"]["run_workflow"]["json"]["path"],
             "workflows/cli-anything-macrocli-mermaid-routing.example.json",
         )
+        self.assertIn("reusable CLI-CLI harness agent", payload["entrypoints"]["plan_agent_request"]["json"]["message"])
         self.assertNotIn("contracts", payload)
 
     def test_network_quickstart_cli_outputs_acceptance_checklist(self):
