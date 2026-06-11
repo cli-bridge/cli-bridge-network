@@ -274,6 +274,10 @@ Killer Demo slice 已新增可运行证据束：
   MCP/A2A/ACP descriptor export 与 smoke 命令，并提供 Copy Protocols 入口。
   demo 现场可以从同一份 workflow 一键导出协议 facade，再用 workflow dry-run smoke
   证明 MCP/A2A/ACP 路径覆盖。
+- `KillerMvpPresenterBrief.integration_handoff` 已补充 `demo_run_command`、
+  `demo_smoke_command`、`events_url`、`audit_url` 和 `artifacts_url`，Workflow Studio
+  同步展示 killer demo run/smoke 命令与 evidence endpoints，并提供 Copy Demo 入口。
+  现场演示可以按“运行 demo -> 查看 artifact/event/audit 证据”完成闭环。
 - Killer demo report 已新增 `communication_trace`：从真实 workflow run result 中提取
   `BridgeMessage argsFrom` handoff，展示 producer task、consumer task、selector、
   BridgeMessage valid 状态、selected value preview、resolved arg preview 和 artifact

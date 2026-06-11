@@ -879,6 +879,11 @@ export interface KillerMvpPresenterBrief {
     protocol_export_url?: string;
     protocol_export_command?: string;
     protocol_smoke_command?: string;
+    demo_run_command?: string;
+    demo_smoke_command?: string;
+    events_url?: string;
+    audit_url?: string;
+    artifacts_url?: string;
     sdk_bootstrap_url?: string;
     readiness_url?: string;
     studio_url?: string;
@@ -1167,6 +1172,11 @@ export interface ConnectSummary {
   presenterProtocolExportUrl: string;
   presenterProtocolExportCommand: string;
   presenterProtocolSmokeCommand: string;
+  presenterDemoRunCommand: string;
+  presenterDemoSmokeCommand: string;
+  presenterEventsUrl: string;
+  presenterAuditUrl: string;
+  presenterArtifactsUrl: string;
   presenterSdkBootstrapUrl: string;
   presenterSdkBootstrapCommand: string;
   launchContractStatus: string;

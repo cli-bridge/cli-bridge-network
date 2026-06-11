@@ -1329,6 +1329,8 @@ def _mvp_presenter_brief(
     agent_plan_command = _adapter_agent_workflow_request_command(workflow_path, message=agent_message)
     protocol_export_command = _protocol_export_workflows_command(workflow_path)
     protocol_smoke_command = _protocol_smoke_suite_command(workflow_path)
+    demo_run_command = _demo_killer_command(workflow_path, smoke_suite=False)
+    demo_smoke_command = _demo_killer_command(workflow_path, smoke_suite=True)
     verify_command = _network_verify_command(workflow_path, base_url=base_url, session_token=session_token)
     brief_ready = bool(
         mvp_readiness.get("status") == "ready"
@@ -1426,6 +1428,11 @@ def _mvp_presenter_brief(
             "protocol_export_url": entrypoints.get("export_protocols"),
             "protocol_export_command": protocol_export_command,
             "protocol_smoke_command": protocol_smoke_command,
+            "demo_run_command": demo_run_command,
+            "demo_smoke_command": demo_smoke_command,
+            "events_url": entrypoints.get("events"),
+            "audit_url": entrypoints.get("audit"),
+            "artifacts_url": entrypoints.get("artifacts"),
             "sdk_bootstrap_url": entrypoints.get("sdk_bootstrap"),
             "readiness_url": readiness_url,
             "studio_url": studio_link.get("url"),
@@ -1450,6 +1457,8 @@ def _mvp_presenter_brief(
             agent_plan_command,
             protocol_export_command,
             protocol_smoke_command,
+            demo_run_command,
+            demo_smoke_command,
             verify_command,
             readiness_command,
             sdk_bootstrap_command,
@@ -2922,6 +2931,13 @@ def _protocol_smoke_suite_command(workflow_path: str) -> str:
             "--workflow-dry-run",
         ]
     )
+
+
+def _demo_killer_command(workflow_path: str, *, smoke_suite: bool) -> str:
+    args = ["python", "-m", "cbn", "demo", "killer", "--workflow-path", workflow_path, "--run", "--dry-run"]
+    if smoke_suite:
+        args.append("--smoke-suite")
+    return _command(args)
 
 
 def _network_quickstart_command(

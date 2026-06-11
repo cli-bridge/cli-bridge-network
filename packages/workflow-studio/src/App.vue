@@ -815,6 +815,11 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
     presenterProtocolExportUrl: stringValue(presenterHandoff.protocol_export_url) ?? "not loaded",
     presenterProtocolExportCommand: stringValue(presenterHandoff.protocol_export_command) ?? "not loaded",
     presenterProtocolSmokeCommand: stringValue(presenterHandoff.protocol_smoke_command) ?? "not loaded",
+    presenterDemoRunCommand: stringValue(presenterHandoff.demo_run_command) ?? "not loaded",
+    presenterDemoSmokeCommand: stringValue(presenterHandoff.demo_smoke_command) ?? "not loaded",
+    presenterEventsUrl: stringValue(presenterHandoff.events_url) ?? "not loaded",
+    presenterAuditUrl: stringValue(presenterHandoff.audit_url) ?? "not loaded",
+    presenterArtifactsUrl: stringValue(presenterHandoff.artifacts_url) ?? "not loaded",
     presenterSdkBootstrapUrl: stringValue(presenterHandoff.sdk_bootstrap_url) ?? "not loaded",
     presenterSdkBootstrapCommand: stringValue(presenterHandoff.sdk_bootstrap_command) ?? "not loaded",
     launchContractStatus: stringValue(launchContract.status) ?? "not loaded",
@@ -1916,6 +1921,18 @@ onMounted(async () => {
             <code>{{ connectSummary.presenterProtocolSmokeCommand }}</code>
           </div>
           <div>
+            <span>Demo command</span>
+            <code>{{ connectSummary.presenterDemoRunCommand }}</code>
+          </div>
+          <div>
+            <span>Demo smoke</span>
+            <code>{{ connectSummary.presenterDemoSmokeCommand }}</code>
+          </div>
+          <div>
+            <span>Evidence</span>
+            <code>{{ connectSummary.presenterArtifactsUrl }} · {{ connectSummary.presenterEventsUrl }} · {{ connectSummary.presenterAuditUrl }}</code>
+          </div>
+          <div>
             <span>SDK bootstrap</span>
             <code>{{ connectSummary.presenterSdkBootstrapUrl }}</code>
           </div>
@@ -1970,6 +1987,9 @@ onMounted(async () => {
           </button>
           <button title="Copy MCP/A2A/ACP protocol export command" :disabled="!connectSummary.presenterProtocolExportCommand || connectSummary.presenterProtocolExportCommand === 'not loaded'" @click="copyText('protocol-export-command', connectSummary.presenterProtocolExportCommand)">
             <Copy :size="14" /> {{ copiedScript === "protocol-export-command" ? "Copied" : "Copy Protocols" }}
+          </button>
+          <button title="Copy killer demo run command" :disabled="!connectSummary.presenterDemoRunCommand || connectSummary.presenterDemoRunCommand === 'not loaded'" @click="copyText('demo-run-command', connectSummary.presenterDemoRunCommand)">
+            <Copy :size="14" /> {{ copiedScript === "demo-run-command" ? "Copied" : "Copy Demo" }}
           </button>
           <button title="Copy SDK bootstrap command" :disabled="!connectSummary.presenterSdkBootstrapCommand || connectSummary.presenterSdkBootstrapCommand === 'not loaded'" @click="copyText('sdk-bootstrap-command', connectSummary.presenterSdkBootstrapCommand)">
             <Copy :size="14" /> {{ copiedScript === "sdk-bootstrap-command" ? "Copied" : "Copy SDK" }}
