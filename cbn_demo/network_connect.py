@@ -823,6 +823,7 @@ def network_acceptance_report(
     )
     quickstart = package.get("consumer_quickstart") if isinstance(package.get("consumer_quickstart"), dict) else {}
     acceptance = quickstart.get("acceptance") if isinstance(quickstart.get("acceptance"), dict) else {}
+    mvp_readiness = package.get("mvp_readiness") if isinstance(package.get("mvp_readiness"), dict) else {}
     requests = quickstart.get("requests") if isinstance(quickstart.get("requests"), list) else []
     requests_by_id = {
         str(request.get("id")): request
@@ -838,7 +839,8 @@ def network_acceptance_report(
     failed = sum(1 for result in results if result["status"] == "failed")
     skipped = sum(1 for result in results if result["status"] == "skipped")
     total = len(results)
-    ok = bool(package.get("ok") and total > 0 and failed == 0 and skipped == 0)
+    mvp_ready = bool(mvp_readiness.get("status") == "ready")
+    ok = bool(package.get("ok") and mvp_ready and total > 0 and failed == 0 and skipped == 0)
     return {
         "apiVersion": CONNECT_API_VERSION,
         "kind": "NetworkConnectionAcceptanceReport",
@@ -853,11 +855,20 @@ def network_acceptance_report(
             "passed": passed,
             "failed": failed,
             "skipped": skipped,
+            "mvp_readiness_status": mvp_readiness.get("status"),
+            "mvp_readiness_score": mvp_readiness.get("score"),
         },
         "acceptance": acceptance,
+        "mvp_readiness": mvp_readiness,
         "results": results,
         "next_commands": [
             _network_quickstart_command(workflow_path, base_url=base_url, session_token=session_token),
+            _network_quickstart_command(
+                workflow_path,
+                base_url=base_url,
+                session_token=session_token,
+                output="readiness",
+            ),
             _network_quickstart_command(
                 workflow_path,
                 base_url=base_url,

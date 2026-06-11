@@ -347,22 +347,22 @@ class DaemonApiTests(unittest.TestCase):
         self.assertEqual(payload["kind"], "NetworkConnectionAcceptanceReport")
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["status"], "passed")
-        self.assertEqual(payload["summary"]["passed"], 10)
+        self.assertEqual(payload["summary"]["passed"], payload["summary"]["check_count"])
         self.assertEqual(payload["summary"]["failed"], 0)
         self.assertEqual(payload["summary"]["skipped"], 0)
-        self.assertEqual(payload["results"][3]["request_id"], "inspect_agent_nodes")
-        self.assertEqual(payload["results"][3]["evidence"]["json.kind"]["actual"], "AdapterAgentNodeBundle")
-        self.assertEqual(payload["results"][4]["request_id"], "export_protocols")
-        self.assertEqual(payload["results"][4]["evidence"]["json.exports.mcp.protocol"]["actual"], "mcp")
-        self.assertEqual(payload["results"][6]["request_id"], "run_workflow")
-        self.assertEqual(payload["results"][6]["evidence"]["json.workflow_id_type"]["actual"], "string")
-        self.assertEqual(payload["results"][7]["request_id"], "events")
-        self.assertGreaterEqual(payload["results"][7]["evidence"]["json.count_min"]["actual"], 1)
-        self.assertEqual(payload["results"][8]["request_id"], "audit")
-        self.assertGreaterEqual(payload["results"][8]["evidence"]["json.count_min"]["actual"], 1)
-        self.assertEqual(payload["results"][9]["request_id"], "artifacts")
-        self.assertGreaterEqual(payload["results"][9]["evidence"]["json.count_min"]["actual"], 1)
+        self.assertEqual(payload["summary"]["mvp_readiness_status"], "ready")
+        self.assertEqual(payload["summary"]["mvp_readiness_score"], "12/12")
+        self.assertEqual(payload["mvp_readiness"]["kind"], "KillerMvpReadiness")
+        self.assertEqual(payload["mvp_readiness"]["score"], "12/12")
+        results_by_id = {result["request_id"]: result for result in payload["results"]}
+        self.assertEqual(results_by_id["inspect_agent_nodes"]["evidence"]["json.kind"]["actual"], "AdapterAgentNodeBundle")
+        self.assertEqual(results_by_id["export_protocols"]["evidence"]["json.exports.mcp.protocol"]["actual"], "mcp")
+        self.assertEqual(results_by_id["run_workflow"]["evidence"]["json.workflow_id_type"]["actual"], "string")
+        self.assertGreaterEqual(results_by_id["events"]["evidence"]["json.count_min"]["actual"], 1)
+        self.assertGreaterEqual(results_by_id["audit"]["evidence"]["json.count_min"]["actual"], 1)
+        self.assertGreaterEqual(results_by_id["artifacts"]["evidence"]["json.count_min"]["actual"], 1)
         self.assertIn("--session-token verify-token", payload["next_commands"][0])
+        self.assertIn("--output readiness", payload["next_commands"][1])
 
     def test_network_verify_route_runs_acceptance_against_daemon(self):
         with daemon_url(session_token="verify-token") as base_url:
@@ -383,15 +383,20 @@ class DaemonApiTests(unittest.TestCase):
         self.assertEqual(response.status, 200)
         self.assertEqual(payload["kind"], "NetworkConnectionAcceptanceReport")
         self.assertTrue(payload["ok"])
-        self.assertEqual(payload["summary"]["passed"], 10)
+        self.assertEqual(payload["summary"]["passed"], payload["summary"]["check_count"])
         self.assertEqual(payload["summary"]["failed"], 0)
-        self.assertEqual(payload["results"][4]["request_id"], "export_protocols")
-        self.assertEqual(payload["results"][4]["evidence"]["json.exports.acp.protocol"]["actual"], "acp")
-        self.assertEqual(payload["results"][5]["request_id"], "plan_agent_request")
-        self.assertEqual(payload["results"][5]["evidence"]["json.reusable_harness.kind"]["actual"], "NaturalLanguageWorkflowHarness")
-        self.assertEqual(payload["results"][9]["request_id"], "artifacts")
-        self.assertGreaterEqual(payload["results"][9]["evidence"]["json.count_min"]["actual"], 1)
+        self.assertEqual(payload["summary"]["mvp_readiness_status"], "ready")
+        self.assertEqual(payload["summary"]["mvp_readiness_score"], "12/12")
+        self.assertEqual(payload["mvp_readiness"]["status"], "ready")
+        results_by_id = {result["request_id"]: result for result in payload["results"]}
+        self.assertEqual(results_by_id["export_protocols"]["evidence"]["json.exports.acp.protocol"]["actual"], "acp")
+        self.assertEqual(
+            results_by_id["plan_agent_request"]["evidence"]["json.reusable_harness.kind"]["actual"],
+            "NaturalLanguageWorkflowHarness",
+        )
+        self.assertGreaterEqual(results_by_id["artifacts"]["evidence"]["json.count_min"]["actual"], 1)
         self.assertIn("--session-token verify-token", payload["next_commands"][0])
+        self.assertIn("--output readiness", payload["next_commands"][1])
 
     def test_adapter_agent_orchestrate_route_returns_auth_fallback(self):
         with daemon_url() as base_url:
