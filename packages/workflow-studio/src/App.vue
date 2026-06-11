@@ -98,6 +98,13 @@ const connectEndpoints = computed(() => (Array.isArray(connectPackage.value?.dae
 const connectDemoStages = computed<ConnectDemoStage[]>(() =>
   Array.isArray(connectPackage.value?.demo_readiness?.stages) ? connectPackage.value.demo_readiness.stages : [],
 );
+const connectNextCommands = computed<string[]>(() => {
+  const commands = [
+    ...(Array.isArray(connectPackage.value?.next_commands) ? connectPackage.value.next_commands : []),
+    ...(Array.isArray(connectPackage.value?.demo_readiness?.next_commands) ? connectPackage.value.demo_readiness.next_commands : []),
+  ].filter((command): command is string => typeof command === "string" && command.trim().length > 0);
+  return Array.from(new Set(commands));
+});
 const quickstartRequests = computed<QuickstartRequest[]>(() =>
   Array.isArray(connectPackage.value?.consumer_quickstart?.requests)
     ? connectPackage.value.consumer_quickstart.requests
@@ -1001,6 +1008,16 @@ onMounted(async () => {
             </button>
           </div>
           <code>{{ connectSummary.powershellScript || "not loaded" }}</code>
+        </div>
+        <div class="next-command-list">
+          <div v-for="(command, index) in connectNextCommands.slice(0, 8)" :key="command">
+            <span>{{ index === 0 ? "Recommended" : `Next ${index + 1}` }}</span>
+            <code>{{ command }}</code>
+            <button title="Copy next command" @click="copyText(`next-${index}`, command)">
+              <Copy :size="14" /> {{ copiedScript === `next-${index}` ? "Copied" : "Copy" }}
+            </button>
+          </div>
+          <span v-if="!connectNextCommands.length">No next commands loaded</span>
         </div>
         <div class="endpoint-list">
           <div v-for="endpoint in connectEndpoints.slice(0, 6)" :key="`${endpoint.method}:${endpoint.path}`">

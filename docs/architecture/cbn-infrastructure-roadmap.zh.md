@@ -350,6 +350,9 @@ Killer Demo slice 已新增可运行证据束：
   `NetworkConnectionAcceptanceReport.next_commands` 已继承当前 `base_url` 与可选
   `session_token`，第三方程序拿到 one-shot package 后可以直接复用建议命令，不必
   再手工补 daemon URL 或鉴权 token。
+- Workflow Studio Connect 面板已把 top-level `next_commands` 与
+  `demo_readiness.next_commands` 合并去重后渲染为可复制命令列表，让 demo 或
+  第三方接入现场不必展开 raw JSON 才能继续执行下一步。
 - Workflow Studio Connect 面板已新增 `Daemon Verify` 操作，直接调用
   `POST /network/verify` 并展示 `NetworkConnectionAcceptanceReport` 摘要，同时复用
   report results 刷新 check 列表；现有 `Verify` 保留为 browser-side quickstart
