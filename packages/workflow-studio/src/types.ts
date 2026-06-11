@@ -358,6 +358,7 @@ export interface NetworkConnectPackage {
     kind?: "WorkflowStudioDemoLink";
     ok?: boolean;
     studio_url?: string;
+    dashboard_url?: string | null;
     daemon_url?: string | null;
     workflow_path?: string;
     dry_run?: boolean;

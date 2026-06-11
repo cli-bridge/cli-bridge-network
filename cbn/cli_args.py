@@ -280,6 +280,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Workflow Studio base URL to embed as a preconfigured demo link.",
     )
     network_connect.add_argument(
+        "--dashboard-url",
+        default="http://127.0.0.1:5173",
+        help="Maintainer dashboard URL to embed in the Workflow Studio demo link.",
+    )
+    network_connect.add_argument(
         "--session-token",
         help="Optional daemon session token to include in the Workflow Studio demo link.",
     )
@@ -302,6 +307,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--studio-url",
         default="http://127.0.0.1:5177",
         help="Workflow Studio base URL to embed as a preconfigured demo link.",
+    )
+    network_quickstart.add_argument(
+        "--dashboard-url",
+        default="http://127.0.0.1:5173",
+        help="Maintainer dashboard URL to embed in the Workflow Studio demo link.",
     )
     network_quickstart.add_argument(
         "--session-token",
@@ -338,6 +348,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Workflow Studio base URL to embed in the generated connect package.",
     )
     network_verify.add_argument(
+        "--dashboard-url",
+        default="http://127.0.0.1:5173",
+        help="Maintainer dashboard URL to embed in generated Workflow Studio links.",
+    )
+    network_verify.add_argument(
         "--session-token",
         help="Optional daemon session token to include in verification requests.",
     )
@@ -365,6 +380,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--studio-url",
         default="http://127.0.0.1:5177",
         help="Workflow Studio base URL.",
+    )
+    network_studio_link.add_argument(
+        "--dashboard-url",
+        default="http://127.0.0.1:5173",
+        help="Maintainer dashboard URL to prefill in Workflow Studio.",
     )
     network_studio_link.add_argument("--session-token", help="Optional daemon session token to include.")
     network_studio_link.add_argument("--dry-run", action="store_true", default=True)

@@ -23,6 +23,7 @@ CONTRACT_ROOT = Path("external_protocols/agent-cli-contract")
 CONTRACT_CARD_FIXTURE = CONTRACT_ROOT / "fixtures/agent-cli-card.valid.json"
 CONTRACT_RECEIPT_FIXTURE = CONTRACT_ROOT / "fixtures/run-receipt.valid.json"
 CONNECT_API_VERSION = "bridge.dev/v1alpha1"
+DEFAULT_DASHBOARD_URL = "http://127.0.0.1:5173"
 
 
 def network_connect_package(
@@ -31,6 +32,7 @@ def network_connect_package(
     workflow_path: str = DEFAULT_KILLER_WORKFLOW_PATH,
     base_url: str | None = None,
     studio_url: str = "http://127.0.0.1:5177",
+    dashboard_url: str = DEFAULT_DASHBOARD_URL,
     session_token: str | None = None,
     agent_message: str = "Connect an external program to this CBN workflow.",
 ) -> dict[str, Any]:
@@ -58,6 +60,7 @@ def network_connect_package(
         workflow_path=workflow_path,
         daemon_url=base_url,
         studio_url=studio_url,
+        dashboard_url=dashboard_url,
         session_token=session_token,
         agent_message=agent_message,
         dry_run=True,
@@ -134,6 +137,7 @@ def workflow_studio_demo_link(
     workflow_path: str = DEFAULT_KILLER_WORKFLOW_PATH,
     daemon_url: str | None = None,
     studio_url: str = "http://127.0.0.1:5177",
+    dashboard_url: str = DEFAULT_DASHBOARD_URL,
     session_token: str | None = None,
     agent_message: str = "Run this workflow as a reusable CLI-CLI harness agent and surface setup gates.",
     dry_run: bool = True,
@@ -149,6 +153,8 @@ def workflow_studio_demo_link(
     }
     if daemon_url:
         query["daemonUrl"] = daemon_url.rstrip("/")
+    if dashboard_url:
+        query["dashboardUrl"] = dashboard_url.rstrip("/")
     if session_token:
         query["sessionToken"] = session_token
     clean_studio_url = studio_url.rstrip("/")
@@ -157,6 +163,7 @@ def workflow_studio_demo_link(
         "kind": "WorkflowStudioDemoLink",
         "ok": True,
         "studio_url": clean_studio_url,
+        "dashboard_url": dashboard_url.rstrip("/") if dashboard_url else None,
         "daemon_url": daemon_url.rstrip("/") if daemon_url else None,
         "workflow_path": workflow_path,
         "dry_run": dry_run,
@@ -173,6 +180,7 @@ def network_acceptance_report(
     workflow_path: str = DEFAULT_KILLER_WORKFLOW_PATH,
     base_url: str = "http://127.0.0.1:8787",
     studio_url: str = "http://127.0.0.1:5177",
+    dashboard_url: str = DEFAULT_DASHBOARD_URL,
     session_token: str | None = None,
     agent_message: str = "Connect an external program to this CBN workflow.",
     timeout_seconds: float = 8.0,
@@ -184,6 +192,7 @@ def network_acceptance_report(
         workflow_path=workflow_path,
         base_url=base_url,
         studio_url=studio_url,
+        dashboard_url=dashboard_url,
         session_token=session_token,
         agent_message=agent_message,
     )

@@ -755,6 +755,7 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 workflow_path=payload.get("workflow_path") or payload.get("path") or DEFAULT_KILLER_WORKFLOW_PATH,
                 base_url=payload.get("base_url") or payload.get("daemon_url") or _base_url(self),
                 studio_url=payload.get("studio_url") or "http://127.0.0.1:5177",
+                dashboard_url=payload.get("dashboard_url") or payload.get("dashboardUrl") or "http://127.0.0.1:5173",
                 session_token=str(session_token) if session_token else None,
                 agent_message=payload.get("message") or "Connect an external program to this CBN workflow.",
                 timeout_seconds=float(payload.get("timeout_seconds", 8.0)),
@@ -1392,6 +1393,7 @@ def _network_connect_package_from_query(
         workflow_path=query.get("workflow_path", query.get("path", [DEFAULT_KILLER_WORKFLOW_PATH]))[0],
         base_url=_base_url(handler),
         studio_url=query.get("studio_url", query.get("studioUrl", ["http://127.0.0.1:5177"]))[0],
+        dashboard_url=query.get("dashboard_url", query.get("dashboardUrl", ["http://127.0.0.1:5173"]))[0],
         session_token=session_token,
         agent_message=query.get("message", ["Connect an external program to this CBN workflow."])[0],
     )

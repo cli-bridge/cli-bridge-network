@@ -170,7 +170,8 @@ Workflow Studio slice 已新增 `packages/workflow-studio`：
 - CLI 已新增 `python -m cbn network studio-link`，用于生成预配置 Workflow Studio
   URL；`NetworkConnectPackage.workflow_studio` 同步包含同一份
   `WorkflowStudioDemoLink`，外部程序拿到 one-shot connect package 后可直接打开
-  带 daemon URL、workflow path、agent prompt 和可选 session token 的 Studio 页面。
+  带 daemon URL、workflow path、agent prompt、maintainer dashboard URL 和可选
+  session token 的 Studio 页面。
 - 旧 `packages/dashboard` 保持 maintainer console，Studio 只保留一个小入口。该入口
   默认打开 dashboard 独立服务 `http://127.0.0.1:5173`，也可通过 Studio URL 的
   `dashboardUrl` query 参数覆盖，避免把 maintainer console 的按钮面板并入用户侧

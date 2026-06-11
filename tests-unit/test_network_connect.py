@@ -48,7 +48,9 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(payload["agent_workflow_request"]["bridge_message_channel"], "agent.workflow.request.plan")
         self.assertEqual(payload["workflow_studio"]["kind"], "WorkflowStudioDemoLink")
         self.assertTrue(payload["workflow_studio"]["session_token_included"])
+        self.assertEqual(payload["workflow_studio"]["dashboard_url"], "http://127.0.0.1:5173")
         self.assertIn("daemonUrl=http%3A%2F%2F127.0.0.1%3A8787", payload["workflow_studio"]["url"])
+        self.assertIn("dashboardUrl=http%3A%2F%2F127.0.0.1%3A5173", payload["workflow_studio"]["url"])
         self.assertIn("sessionToken=test-token", payload["workflow_studio"]["url"])
         self.assertEqual(payload["acceptance"]["kind"], "NetworkConnectionAcceptance")
         self.assertEqual(payload["acceptance"]["check_count"], 8)
@@ -107,16 +109,19 @@ class NetworkConnectPackageTests(unittest.TestCase):
             workflow_path="workflows/demo.json",
             daemon_url="http://127.0.0.1:8788/",
             studio_url="http://127.0.0.1:5177/",
+            dashboard_url="http://127.0.0.1:5173/",
             session_token="secret-token",
             agent_message="Run CLI-CLI flow",
         )
 
         self.assertEqual(payload["kind"], "WorkflowStudioDemoLink")
         self.assertEqual(payload["studio_url"], "http://127.0.0.1:5177")
+        self.assertEqual(payload["dashboard_url"], "http://127.0.0.1:5173")
         self.assertEqual(payload["daemon_url"], "http://127.0.0.1:8788")
         self.assertTrue(payload["session_token_included"])
         self.assertIn("workflowPath=workflows%2Fdemo.json", payload["url"])
         self.assertIn("daemonUrl=http%3A%2F%2F127.0.0.1%3A8788", payload["url"])
+        self.assertIn("dashboardUrl=http%3A%2F%2F127.0.0.1%3A5173", payload["url"])
         self.assertIn("dryRun=true", payload["url"])
         self.assertIn("confirmed=false", payload["url"])
 
@@ -147,6 +152,8 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(payload["contracts"]["internal"]["contracts"]["artifact"]["kind"], "ArtifactRecord")
         self.assertEqual(payload["agent_workflow_request"]["run"]["http"]["url"], "http://127.0.0.1:8787/workflows/run")
         self.assertEqual(payload["workflow_studio"]["daemon_url"], "http://127.0.0.1:8787")
+        self.assertEqual(payload["workflow_studio"]["dashboard_url"], "http://127.0.0.1:5173")
+        self.assertIn("dashboardUrl=http%3A%2F%2F127.0.0.1%3A5173", payload["workflow_studio"]["url"])
         self.assertEqual(payload["consumer_quickstart"]["entrypoints"]["run_workflow"]["url"], "http://127.0.0.1:8787/workflows/run")
 
     def test_network_quickstart_cli_outputs_first_call_package(self):
@@ -163,6 +170,8 @@ class NetworkConnectPackageTests(unittest.TestCase):
                 "http://127.0.0.1:8787",
                 "--studio-url",
                 "http://127.0.0.1:5177",
+                "--dashboard-url",
+                "http://127.0.0.1:5199",
                 "--session-token",
                 "test-token",
             ],
@@ -276,6 +285,8 @@ class NetworkConnectPackageTests(unittest.TestCase):
                 "http://127.0.0.1:8788",
                 "--studio-url",
                 "http://127.0.0.1:5177",
+                "--dashboard-url",
+                "http://127.0.0.1:5199",
                 "--session-token",
                 "test-token",
             ],
@@ -287,6 +298,8 @@ class NetworkConnectPackageTests(unittest.TestCase):
         )
         payload = json.loads(proc.stdout)
         self.assertEqual(payload["kind"], "WorkflowStudioDemoLink")
+        self.assertEqual(payload["dashboard_url"], "http://127.0.0.1:5199")
+        self.assertIn("dashboardUrl=http%3A%2F%2F127.0.0.1%3A5199", payload["url"])
         self.assertIn("sessionToken=test-token", payload["url"])
 
 
