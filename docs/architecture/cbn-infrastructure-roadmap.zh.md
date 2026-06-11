@@ -479,6 +479,11 @@ Killer Demo slice 已新增可运行证据束：
   `cbn network quickstart --output readiness`，方便外部程序或演示脚本不用拉完整
   connect package 就能做 MVP 准入判断；`network verify` 报告也会带出同一份
   readiness status/score，方便把接口 replay 与产品准入验收放在同一证据里。
+- Workflow Studio 已新增 direct `Ready` 操作，会调用 `/network/readiness`，
+  并把 direct readiness matrix 与 `NetworkConnectPackage.mvp_readiness` 按
+  status、score、check_count、check id/ready 状态和 product goals 做 parity
+  对比；Connect 面板同步展示 direct score、direct check count、readiness URL
+  和 parity detail，让产品验收矩阵不只依赖 one-shot 大包里的嵌套副本。
 - `NetworkConnectPackage.mvp_presenter_brief` 已新增为 killer MVP 展示交接卡：
   面向 product demo、integration partner 和 developer platform 三类读者，汇总
   headline/subheadline、5 步叙事、proof points、live demo flow、connect/readiness

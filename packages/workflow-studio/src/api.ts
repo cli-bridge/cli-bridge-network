@@ -96,6 +96,18 @@ export class StudioApi {
     return this.get(`/network/acceptance?${query.toString()}`);
   }
 
+  async networkReadiness(): Promise<unknown> {
+    const query = new URLSearchParams({
+      workflow_path: this.config.workflowPath,
+      message: this.config.agentMessage,
+      studio_url: this.studioOrigin,
+    });
+    if (this.config.sessionToken.trim()) {
+      query.set("session_token", this.config.sessionToken.trim());
+    }
+    return this.get(`/network/readiness?${query.toString()}`);
+  }
+
   async importCatalog(): Promise<unknown> {
     return this.get("/imports/catalog");
   }

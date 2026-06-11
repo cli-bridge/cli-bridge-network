@@ -38,6 +38,7 @@ import type {
   DockState,
   EvidenceSummary,
   KillerDemoReport,
+  KillerMvpReadiness,
   NetworkConnectionAcceptance,
   NetworkEntryProfile,
   NetworkConnectionAcceptanceReport,
@@ -80,6 +81,7 @@ const connectPackage = ref<NetworkConnectPackage | null>(null);
 const launchContract = ref<ConsumerLaunchContract | null>(null);
 const entryProfile = ref<NetworkEntryProfile | null>(null);
 const directAcceptance = ref<NetworkConnectionAcceptance | null>(null);
+const directReadiness = ref<KillerMvpReadiness | null>(null);
 const importCatalog = ref<CliRegistrationSurface | null>(null);
 const networkVerifyReport = ref<NetworkConnectionAcceptanceReport | null>(null);
 const health = ref<unknown>(null);
@@ -114,9 +116,14 @@ const connectSummary = computed<ConnectSummary>(() => summarizeConnectPackage(co
 const connectEntryProfile = computed<NetworkEntryProfile>(() => connectPackage.value?.network_entry_profile ?? {});
 const directEntryProfile = computed<NetworkEntryProfile>(() => entryProfile.value ?? {});
 const entryProfileParity = computed(() => summarizeEntryProfileParity(connectEntryProfile.value, directEntryProfile.value));
-const connectMvpReadiness = computed(() => connectPackage.value?.mvp_readiness ?? {});
+const connectMvpReadiness = computed<KillerMvpReadiness>(() => connectPackage.value?.mvp_readiness ?? {});
+const directMvpReadiness = computed<KillerMvpReadiness>(() => directReadiness.value ?? {});
+const readinessParity = computed(() => summarizeReadinessParity(connectMvpReadiness.value, directMvpReadiness.value));
 const connectMvpChecks = computed(() =>
   Array.isArray(connectMvpReadiness.value.checks) ? connectMvpReadiness.value.checks : [],
+);
+const directMvpChecks = computed(() =>
+  Array.isArray(directMvpReadiness.value.checks) ? directMvpReadiness.value.checks : [],
 );
 const connectPresenterBrief = computed(() => connectPackage.value?.mvp_presenter_brief ?? {});
 const connectPresenterProofPoints = computed(() =>
@@ -298,6 +305,10 @@ async function inspectAcceptance() {
   directAcceptance.value = (await call("acceptance", () => api.value.networkAcceptance())) as NetworkConnectionAcceptance;
 }
 
+async function inspectReadiness() {
+  directReadiness.value = (await call("readiness", () => api.value.networkReadiness())) as KillerMvpReadiness;
+}
+
 async function inspectImportCatalog() {
   importCatalog.value = (await call("imports", () => api.value.importCatalog())) as CliRegistrationSurface;
 }
@@ -435,6 +446,7 @@ async function loadAll() {
     inspectLaunchContract(),
     inspectEntryProfile(),
     inspectAcceptance(),
+    inspectReadiness(),
     inspectImportCatalog(),
     refreshEvidence(),
   ]);
@@ -759,6 +771,35 @@ function summarizeAcceptanceParity(nested: NetworkConnectionAcceptance, direct: 
   };
 }
 
+function summarizeReadinessParity(nested: KillerMvpReadiness, direct: KillerMvpReadiness): { status: string; detail: string } {
+  if (!direct.kind) {
+    return { status: "readiness not loaded", detail: "Direct /network/readiness has not been fetched." };
+  }
+  if (!nested.kind) {
+    return { status: "readiness direct only", detail: "Direct readiness matrix is loaded; connect package readiness is not loaded yet." };
+  }
+  const sameStatus = nested.status === direct.status;
+  const sameScore = nested.score === direct.score;
+  const sameCheckCount = nested.check_count === direct.check_count;
+  const nestedChecks = Array.isArray(nested.checks)
+    ? nested.checks.map((check) => `${check.id || ""}:${check.ready ? "ready" : "todo"}`).join("|")
+    : "";
+  const directChecks = Array.isArray(direct.checks)
+    ? direct.checks.map((check) => `${check.id || ""}:${check.ready ? "ready" : "todo"}`).join("|")
+    : "";
+  const sameChecks = nestedChecks === directChecks;
+  const nestedGoals = nested.product_goals ? Object.entries(nested.product_goals).sort().map(([key, ready]) => `${key}:${ready}`).join("|") : "";
+  const directGoals = direct.product_goals ? Object.entries(direct.product_goals).sort().map(([key, ready]) => `${key}:${ready}`).join("|") : "";
+  const sameGoals = nestedGoals === directGoals;
+  const matched = sameStatus && sameScore && sameCheckCount && sameChecks && sameGoals;
+  return {
+    status: matched ? "readiness parity" : "readiness drift",
+    detail: matched
+      ? "Direct MVP readiness matrix matches the one-shot package copy."
+      : "Direct MVP readiness matrix differs from the one-shot package copy.",
+  };
+}
+
 function summarizeEntryProfileParity(nested: NetworkEntryProfile, direct: NetworkEntryProfile): { status: string; detail: string } {
   if (!direct.kind) {
     return { status: "profile not loaded", detail: "Direct /network/entry-profile has not been fetched." };
@@ -1025,6 +1066,9 @@ onMounted(async () => {
         <button title="Load direct network acceptance checklist" @click="inspectAcceptance">
           <ShieldCheck :size="16" /> Accept
         </button>
+        <button title="Load direct MVP readiness matrix" @click="inspectReadiness">
+          <Gauge :size="16" /> Ready
+        </button>
         <button title="Load direct CLI import catalog from daemon" @click="inspectImportCatalog">
           <FileJson :size="16" /> Imports
         </button>
@@ -1287,6 +1331,9 @@ onMounted(async () => {
           <span :class="['pill-inline', acceptanceParity.status === 'acceptance parity' ? 'ok' : acceptanceParity.status === 'acceptance drift' ? 'blocked' : '']">
             {{ acceptanceParity.status }}
           </span>
+          <span :class="['pill-inline', readinessParity.status === 'readiness parity' ? 'ok' : readinessParity.status === 'readiness drift' ? 'blocked' : '']">
+            {{ readinessParity.status }}
+          </span>
           <span class="pill-inline">{{ connectSummary.demoReadinessStatus }}</span>
           <span class="pill-inline">{{ connectSummary.demoPlaybookStatus }}</span>
           <span :class="['pill-inline', connectSummary.entryProfileStatus === 'ready' ? 'ok' : 'blocked']">
@@ -1439,6 +1486,36 @@ onMounted(async () => {
           <div>
             <span>Next</span>
             <strong>{{ connectMvpReadiness.recommended_next_action || "not loaded" }}</strong>
+          </div>
+          <div>
+            <span>Direct MVP</span>
+            <strong>{{ directMvpReadiness.score || directMvpReadiness.status || "not loaded" }}</strong>
+          </div>
+          <div>
+            <span>Direct checks</span>
+            <strong>{{ directMvpReadiness.check_count ?? directMvpChecks.length }}</strong>
+          </div>
+          <div>
+            <span>Parity</span>
+            <strong>{{ readinessParity.status }}</strong>
+          </div>
+        </div>
+        <div class="quickstart-grid">
+          <div>
+            <span>Readiness URL</span>
+            <code>{{ connectPresenterBrief.integration_handoff?.readiness_url || "not loaded" }}</code>
+          </div>
+          <div>
+            <span>Direct action</span>
+            <code>{{ directMvpReadiness.recommended_next_action || "not loaded" }}</code>
+          </div>
+          <div>
+            <span>Product goals</span>
+            <code>{{ Object.entries(directMvpReadiness.product_goals || connectMvpReadiness.product_goals || {}).filter(([, ready]) => ready).length }}/{{ Object.keys(directMvpReadiness.product_goals || connectMvpReadiness.product_goals || {}).length }}</code>
+          </div>
+          <div>
+            <span>Parity detail</span>
+            <code>{{ readinessParity.detail }}</code>
           </div>
         </div>
         <div class="request-sequence">
@@ -1872,7 +1949,7 @@ onMounted(async () => {
             <span>{{ endpoint.path }}</span>
           </div>
         </div>
-        <pre>{{ pretty({ daemon_verify: networkVerifyReport, import_catalog: importCatalog, direct_entry_profile: entryProfile, entry_profile_parity: entryProfileParity, direct_launch_contract: launchContract, launch_contract_parity: launchContractParity, direct_acceptance: directAcceptance, acceptance_parity: acceptanceParity, network_entry_profile: connectPackage?.network_entry_profile, consumer_launch_contract: connectPackage?.consumer_launch_contract, mvp_readiness: connectPackage?.mvp_readiness, mvp_presenter_brief: connectPackage?.mvp_presenter_brief, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, demo_playbook: connectPackage?.demo_playbook, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, plugins: connectPackage?.plugins, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
+        <pre>{{ pretty({ daemon_verify: networkVerifyReport, import_catalog: importCatalog, direct_entry_profile: entryProfile, entry_profile_parity: entryProfileParity, direct_launch_contract: launchContract, launch_contract_parity: launchContractParity, direct_acceptance: directAcceptance, acceptance_parity: acceptanceParity, direct_readiness: directReadiness, readiness_parity: readinessParity, network_entry_profile: connectPackage?.network_entry_profile, consumer_launch_contract: connectPackage?.consumer_launch_contract, mvp_readiness: connectPackage?.mvp_readiness, mvp_presenter_brief: connectPackage?.mvp_presenter_brief, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, demo_playbook: connectPackage?.demo_playbook, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, plugins: connectPackage?.plugins, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
       </section>
       <section>
         <div class="section-title"><Rocket :size="15" /> Killer Demo</div>
