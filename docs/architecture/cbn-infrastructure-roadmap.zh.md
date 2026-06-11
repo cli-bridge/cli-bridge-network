@@ -181,6 +181,11 @@ Workflow Studio slice 已新增 `packages/workflow-studio`：
   Workflow Plan 面板显示 `session token required`、`paste_daemon_session_token`
   和 daemon 返回的错误详情；带 `sessionToken=...` 的 Studio URL 仍会正常展示
   `NaturalLanguageWorkflowHarness` 与 `run_workflow_dry_run`。
+- daemon `/health` 已新增非敏感 auth 元数据：只暴露
+  `session_token_required`、`session_token_supplied` 和可用 header 名，不泄露 token
+  或匹配结果；Workflow Studio Health 卡同步显示 `open daemon`、`token required`
+  或 `token ready`，并在 `/health` 尚未返回时显示 `checking token`，让用户在执行
+  POST 前就知道是否需要粘贴 session token。
 - CLI 已新增 `python -m cbn network studio-link`，用于生成预配置 Workflow Studio
   URL；`NetworkConnectPackage.workflow_studio` 同步包含同一份
   `WorkflowStudioDemoLink`，外部程序拿到 one-shot connect package 后可直接打开

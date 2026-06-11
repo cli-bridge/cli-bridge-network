@@ -638,10 +638,35 @@ class DaemonApiTests(unittest.TestCase):
                 payload = json.loads(response.read().decode("utf-8"))
                 self.assertEqual(response.status, 200)
                 self.assertEqual(payload["status"], "ok")
+                self.assertFalse(payload["auth"]["session_token_required"])
+                self.assertFalse(payload["auth"]["session_token_supplied"])
                 self.assertEqual(
                     response.headers["Access-Control-Allow-Origin"],
                     "http://localhost:3000",
                 )
+
+    def test_health_reports_session_token_gate_without_secret_value(self):
+        with daemon_url(session_token="test-token") as base_url:
+            with urllib.request.urlopen(f"{base_url}/health", timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(response.status, 200)
+                self.assertTrue(payload["auth"]["session_token_required"])
+                self.assertFalse(payload["auth"]["session_token_supplied"])
+                self.assertIn("X-CBN-Session", payload["auth"]["accepted_headers"])
+                serialized = json.dumps(payload, ensure_ascii=False)
+                self.assertNotIn("test-token", serialized)
+
+            request = urllib.request.Request(
+                f"{base_url}/health",
+                headers={"X-CBN-Session": "test-token"},
+            )
+            with urllib.request.urlopen(request, timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(response.status, 200)
+                self.assertTrue(payload["auth"]["session_token_required"])
+                self.assertTrue(payload["auth"]["session_token_supplied"])
+                serialized = json.dumps(payload, ensure_ascii=False)
+                self.assertNotIn("test-token", serialized)
 
     def test_post_requires_session_token_when_configured(self):
         with daemon_url(session_token="test-token") as base_url:

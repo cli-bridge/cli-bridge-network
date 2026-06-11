@@ -368,20 +368,30 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
         expected = getattr(self.server, "session_token", None)
         if expected is None:
             return True
-        token = self.headers.get("X-CBN-Session", "")
-        authorization = self.headers.get("Authorization", "")
-        if authorization.startswith("Bearer "):
-            token = authorization.removeprefix("Bearer ").strip()
+        token = self._session_token_from_headers()
         if secrets.compare_digest(token, expected):
             return True
         self._send_error(403, "session_denied", "valid daemon session token required")
         return False
 
+    def _session_token_from_headers(self) -> str:
+        token = self.headers.get("X-CBN-Session", "")
+        authorization = self.headers.get("Authorization", "")
+        if authorization.startswith("Bearer "):
+            token = authorization.removeprefix("Bearer ").strip()
+        return token
+
     def _handle_GET(self) -> None:
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
         if parsed.path == "/health":
-            self._send(200, health_payload())
+            self._send(
+                200,
+                health_payload(
+                    session_token_required=getattr(self.server, "session_token", None) is not None,
+                    session_token_supplied=bool(self._session_token_from_headers()),
+                ),
+            )
             return
         if parsed.path == "/.well-known/agent-card.json":
             self._send(200, agent_card(_base_url(self)))

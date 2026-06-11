@@ -85,6 +85,7 @@ const acceptanceResults = ref<AcceptanceExecutionResult[]>([]);
 const dock = reactive<DockState>({ events: [], audit: [], artifacts: [] });
 
 const api = computed(() => new StudioApi(config));
+const healthAuth = computed(() => healthAuthSummary(health.value, config.sessionToken));
 const tasks = computed<WorkflowTask[]>(() => (Array.isArray(workflow.value?.tasks) ? workflow.value.tasks : []));
 const selectedTask = computed(() => tasks.value.find((task) => task.id === selectedTaskId.value) ?? tasks.value[0]);
 const selectedRoutes = computed(() => selectedTask.value?.argsFrom ?? []);
@@ -402,6 +403,36 @@ async function loadAll() {
 
 function pretty(payload: unknown): string {
   return JSON.stringify(payload ?? null, null, 2);
+}
+
+function healthAuthSummary(payload: unknown, configuredToken: string): { status: string; required: boolean; supplied: boolean; detail: string } {
+  const hasConfiguredToken = configuredToken.trim().length > 0;
+  if (!(payload && typeof payload === "object" && "auth" in payload)) {
+    return {
+      status: "checking token",
+      required: !hasConfiguredToken,
+      supplied: hasConfiguredToken,
+      detail: "Waiting for daemon /health auth metadata.",
+    };
+  }
+  const auth =
+    typeof (payload as { auth?: unknown }).auth === "object"
+      ? ((payload as { auth?: Record<string, unknown> }).auth ?? {})
+      : {};
+  const required = auth.session_token_required === true;
+  const supplied = auth.session_token_supplied === true || hasConfiguredToken;
+  if (!required) {
+    return { status: "open daemon", required, supplied, detail: "POST calls do not require a daemon session token." };
+  }
+  if (supplied) {
+    return { status: "token ready", required, supplied, detail: "X-CBN-Session will be sent with POST calls." };
+  }
+  return {
+    status: "token required",
+    required,
+    supplied,
+    detail: "Paste the daemon session token printed by `python -m cbn daemon serve`.",
+  };
 }
 
 function summarizeEvidence(report: KillerDemoReport | null, evidenceDock: DockState): EvidenceSummary {
@@ -873,6 +904,10 @@ onMounted(async () => {
 
       <section class="status-panel">
         <div class="section-title"><Gauge :size="15" /> Health</div>
+        <div class="evidence-row">
+          <span :class="['pill-inline', healthAuth.required && !healthAuth.supplied ? 'blocked' : 'ok']">{{ healthAuth.status }}</span>
+          <span class="pill-inline">{{ healthAuth.detail }}</span>
+        </div>
         <pre>{{ pretty(health) }}</pre>
       </section>
     </aside>
