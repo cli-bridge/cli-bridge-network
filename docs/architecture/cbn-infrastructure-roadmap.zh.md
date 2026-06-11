@@ -440,6 +440,14 @@ Killer Demo slice 已新增可运行证据束：
   `cbn network quickstart --output readiness`，方便外部程序或演示脚本不用拉完整
   connect package 就能做 MVP 准入判断；`network verify` 报告也会带出同一份
   readiness status/score，方便把接口 replay 与产品准入验收放在同一证据里。
+- `NetworkConnectPackage.mvp_presenter_brief` 已新增为 killer MVP 展示交接卡：
+  面向 product demo、integration partner 和 developer platform 三类读者，汇总
+  headline/subheadline、5 步叙事、proof points、live demo flow、connect/readiness
+  URL、verify/readiness/next CLI 命令和 decision gates。它复用 readiness、demo
+  playbook、network entry profile 和 setup guidance，不新增执行副作用；Workflow
+  Studio Connect 面板同步展示 presenter 状态、headline、proof points、flow 与
+  handoff 命令，让现场演示能直接说明“外部协议小、内部总线清楚、harness agent
+  可复用、其他程序可一次性接入网络”。
 - `cbn network connect-package|quickstart|verify`、daemon `/network/*` 和 Python API
   已统一默认 agent prompt，默认语义同时包含 run、reusable CLI-CLI harness agent 和
   external program connect，避免 CLI 与 HTTP 入口生成不同 intent。

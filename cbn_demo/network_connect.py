@@ -143,6 +143,22 @@ def network_connect_package(
         studio_link=studio_link,
         network_entry_profile=network_entry_profile,
     )
+    mvp_presenter_brief = _mvp_presenter_brief(
+        workflow=workflow,
+        protocol_summary=protocol_summary,
+        quickstart=quickstart,
+        request_plan=request_plan,
+        registration_surface=registration_surface,
+        demo_readiness=demo_readiness,
+        demo_playbook=demo_playbook,
+        setup_guidance=setup_guidance,
+        network_entry_profile=network_entry_profile,
+        mvp_readiness=mvp_readiness,
+        studio_link=studio_link,
+        base_url=base_url,
+        workflow_path=workflow_path,
+        session_token=session_token,
+    )
     return {
         "apiVersion": CONNECT_API_VERSION,
         "kind": "NetworkConnectPackage",
@@ -171,6 +187,7 @@ def network_connect_package(
             "external_contract_ready": external_contract.get("ok"),
             "mvp_readiness_status": mvp_readiness["status"],
             "mvp_readiness_score": mvp_readiness["score"],
+            "mvp_presenter_brief_status": mvp_presenter_brief["status"],
             "recommended_next_action": "call_daemon_endpoints" if ok else "fix_connect_package_inputs",
         },
         "contracts": {
@@ -200,6 +217,7 @@ def network_connect_package(
         "demo_playbook": demo_playbook,
         "network_entry_profile": network_entry_profile,
         "mvp_readiness": mvp_readiness,
+        "mvp_presenter_brief": mvp_presenter_brief,
         "agent_node_bundle": _compact_agent_bundle(agent_bundle),
         "agent_workflow_request": _compact_workflow_request_plan(request_plan),
         "setup_guidance": setup_guidance,
@@ -747,6 +765,146 @@ def _demo_playbook(
             f"python -m cbn demo killer --workflow-path {workflow_path} --run --dry-run --smoke-suite",
             "python -m cbn import command --help",
         ],
+    }
+
+
+def _mvp_presenter_brief(
+    *,
+    workflow: dict[str, Any],
+    protocol_summary: dict[str, Any],
+    quickstart: dict[str, Any],
+    request_plan: dict[str, Any],
+    registration_surface: dict[str, Any],
+    demo_readiness: dict[str, Any],
+    demo_playbook: dict[str, Any],
+    setup_guidance: dict[str, Any],
+    network_entry_profile: dict[str, Any],
+    mvp_readiness: dict[str, Any],
+    studio_link: dict[str, Any],
+    base_url: str | None,
+    workflow_path: str,
+    session_token: str | None,
+) -> dict[str, Any]:
+    """Audience-facing brief for presenting the killer MVP without reading raw JSON first."""
+
+    entrypoints = quickstart.get("entrypoints") if isinstance(quickstart.get("entrypoints"), dict) else {}
+    request_plan_run = request_plan.get("run") if isinstance(request_plan.get("run"), dict) else {}
+    request_plan_http = request_plan_run.get("http") if isinstance(request_plan_run.get("http"), dict) else {}
+    harness = request_plan.get("reusable_harness") if isinstance(request_plan.get("reusable_harness"), dict) else {}
+    product_goals = mvp_readiness.get("product_goals") if isinstance(mvp_readiness.get("product_goals"), dict) else {}
+    goal_count = len(product_goals)
+    ready_goal_count = sum(1 for ready in product_goals.values() if ready)
+    base = base_url.rstrip("/") if base_url else None
+    connect_package_url = _absolute_url(
+        base,
+        f"/network/connect-package?{urlencode({'workflow_path': workflow_path})}",
+    )
+    readiness_url = _absolute_url(base, f"/network/readiness?{urlencode({'workflow_path': workflow_path})}")
+    readiness_command = _network_quickstart_command(
+        workflow_path,
+        base_url=base_url,
+        session_token=session_token,
+        output="readiness",
+    )
+    verify_command = _network_verify_command(workflow_path, base_url=base_url, session_token=session_token)
+    brief_ready = bool(
+        mvp_readiness.get("status") == "ready"
+        and demo_playbook.get("status") == "ready"
+        and demo_readiness.get("status") == "ready"
+    )
+    playbook_steps = demo_playbook.get("steps") if isinstance(demo_playbook.get("steps"), list) else []
+    live_demo_flow = [
+        {
+            "id": step.get("id"),
+            "title": step.get("title"),
+            "target": step.get("target"),
+            "success_signal": step.get("success_signal"),
+        }
+        for step in playbook_steps
+        if isinstance(step, dict)
+    ]
+    proof_points = [
+        {
+            "id": "protocol_boundary",
+            "title": "External protocol stays small",
+            "evidence_source": "contracts.external",
+            "metric": "accepted_kinds",
+            "value": "AgentCliCard + RunReceipt",
+        },
+        {
+            "id": "bridge_message_bus",
+            "title": "CLI-CLI communication is inspectable",
+            "evidence_source": "contracts.internal.bridge_contract",
+            "metric": "bridge_routes",
+            "value": f"{network_entry_profile.get('harness_agent', {}).get('bridge_route_count', 0)} BridgeMessage routes",
+        },
+        {
+            "id": "reusable_harness_agent",
+            "title": "Natural language can call the reusable harness",
+            "evidence_source": "agent_workflow_request.reusable_harness",
+            "metric": "harness_kind",
+            "value": harness.get("kind", "NaturalLanguageWorkflowHarness"),
+        },
+        {
+            "id": "one_shot_network_entry",
+            "title": "Other programs can connect in one read",
+            "evidence_source": "network_entry_profile",
+            "metric": "profile_id",
+            "value": network_entry_profile.get("profile_id"),
+        },
+        {
+            "id": "first_call_acceptance",
+            "title": "External first-call sequence is replayable",
+            "evidence_source": "consumer_quickstart.acceptance",
+            "metric": "checks",
+            "value": f"{quickstart.get('acceptance', {}).get('check_count', 0)} checks",
+        },
+        {
+            "id": "protocol_facades",
+            "title": "MCP/A2A/ACP exports share the same workflow",
+            "evidence_source": "protocols",
+            "metric": "targets",
+            "value": ", ".join(protocol_summary.get("targets", [])),
+        },
+    ]
+    return {
+        "apiVersion": CONNECT_API_VERSION,
+        "kind": "KillerMvpPresenterBrief",
+        "status": "ready" if brief_ready else "needs_attention",
+        "headline": "CBN turns CLI tools into a reusable agent-callable network with visible BridgeMessage handoffs.",
+        "subheadline": "The demo shows one external contract, one internal bus, one natural-language harness agent, and one Workflow Studio evidence surface.",
+        "workflow_path": workflow_path,
+        "workflow_id": workflow.get("workflow_id"),
+        "audience": ["product_demo", "integration_partner", "developer_platform"],
+        "narrative": [
+            "Start from the small AgentCliCard/RunReceipt boundary instead of exposing CBN internals.",
+            "Convert external tool contracts into ToolManifest records and BridgeMessage selector routes.",
+            "Let a reusable harness agent bind natural language to the selected CLI-CLI workflow.",
+            "Run macrocli -> transform -> mermaid and inspect artifact, event, audit, and protocol export evidence.",
+            "Finish by showing how the next CLI enters through dry-run-first registration.",
+        ],
+        "proof_points": proof_points,
+        "live_demo_flow": live_demo_flow,
+        "integration_handoff": {
+            "connect_package_url": connect_package_url,
+            "readiness_url": readiness_url,
+            "studio_url": studio_link.get("url"),
+            "run_workflow_url": request_plan_http.get("url") or entrypoints.get("run_workflow", {}).get("url"),
+            "verify_command": verify_command,
+            "readiness_command": readiness_command,
+            "next_cli_command": (registration_surface.get("next_commands") or ["python -m cbn import command --help"])[0],
+        },
+        "decision_gates": {
+            "ready_goal_count": ready_goal_count,
+            "goal_count": goal_count,
+            "mvp_readiness_score": mvp_readiness.get("score"),
+            "setup_status": setup_guidance.get("status"),
+            "setup_required": setup_guidance.get("setup_required"),
+            "demo_stage_count": demo_readiness.get("stage_count", 0),
+            "playbook_step_count": demo_playbook.get("step_count", 0),
+        },
+        "recommended_next_action": mvp_readiness.get("recommended_next_action", "open_workflow_studio_demo"),
+        "next_commands": [verify_command, readiness_command, (registration_surface.get("next_commands") or ["python -m cbn import command --help"])[0]],
     }
 
 

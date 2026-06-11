@@ -109,6 +109,13 @@ const connectMvpReadiness = computed(() => connectPackage.value?.mvp_readiness ?
 const connectMvpChecks = computed(() =>
   Array.isArray(connectMvpReadiness.value.checks) ? connectMvpReadiness.value.checks : [],
 );
+const connectPresenterBrief = computed(() => connectPackage.value?.mvp_presenter_brief ?? {});
+const connectPresenterProofPoints = computed(() =>
+  Array.isArray(connectPresenterBrief.value.proof_points) ? connectPresenterBrief.value.proof_points : [],
+);
+const connectPresenterFlow = computed(() =>
+  Array.isArray(connectPresenterBrief.value.live_demo_flow) ? connectPresenterBrief.value.live_demo_flow : [],
+);
 const connectContractSummary = computed<BridgeContractSummary>(() => summarizeConnectContracts(connectPackage.value));
 const connectExternalPackageHealth = computed<AgentCliContractPackageHealth>(() => connectPackage.value?.contracts?.external?.package_health ?? {});
 const connectExternalPackageFiles = computed(() =>
@@ -164,6 +171,7 @@ const connectNextCommands = computed<string[]>(() => {
     ...(Array.isArray(connectPackage.value?.next_commands) ? connectPackage.value.next_commands : []),
     ...(Array.isArray(connectPackage.value?.demo_readiness?.next_commands) ? connectPackage.value.demo_readiness.next_commands : []),
     ...(Array.isArray(connectPackage.value?.demo_playbook?.next_commands) ? connectPackage.value.demo_playbook.next_commands : []),
+    ...(Array.isArray(connectPackage.value?.mvp_presenter_brief?.next_commands) ? connectPackage.value.mvp_presenter_brief.next_commands : []),
     ...(Array.isArray(connectPackage.value?.registration_surface?.next_commands) ? connectPackage.value.registration_surface.next_commands : []),
   ].filter((command): command is string => typeof command === "string" && command.trim().length > 0);
   return Array.from(new Set(commands));
@@ -507,6 +515,7 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
   const quickstart = payload?.consumer_quickstart ?? {};
   const entryProfile = payload?.network_entry_profile ?? {};
   const mvp = payload?.mvp_readiness ?? {};
+  const presenter = payload?.mvp_presenter_brief ?? {};
   const acceptance = payload?.acceptance ?? quickstart.acceptance ?? {};
   const setup = payload?.setup_guidance ?? {};
   const harness = payload?.agent_workflow_request ?? {};
@@ -535,6 +544,10 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
     mvpReadinessStatus: stringValue(mvp.status) ?? stringValue(summary.mvp_readiness_status) ?? "not loaded",
     mvpReadinessScore: stringValue(mvp.score) ?? stringValue(summary.mvp_readiness_score) ?? "0/0",
     mvpReadinessGoals: Object.entries(mvp.product_goals ?? {}).filter(([, ready]) => ready).length + "/" + Object.keys(mvp.product_goals ?? {}).length,
+    presenterStatus: stringValue(presenter.status) ?? stringValue(summary.mvp_presenter_brief_status) ?? "not loaded",
+    presenterHeadline: stringValue(presenter.headline) ?? "Presenter brief not loaded",
+    presenterProofPoints: Array.isArray(presenter.proof_points) ? presenter.proof_points.length : 0,
+    presenterFlowSteps: Array.isArray(presenter.live_demo_flow) ? presenter.live_demo_flow.length : 0,
     externalProtocol: external.protocol ?? "unknown",
     acceptedKinds: Array.isArray(external.accepted_kinds) ? external.accepted_kinds.join(" + ") : "unknown",
     externalPackageStatus: packageHealth.ok ? "package clean" : packageHealth.kind ? "package attention" : "package not loaded",
@@ -1148,6 +1161,54 @@ onMounted(async () => {
           </div>
           <span v-if="!connectMvpChecks.length">No MVP readiness checks loaded</span>
         </div>
+        <div class="contract-status-grid">
+          <div>
+            <span>Presenter</span>
+            <strong>{{ connectSummary.presenterStatus }}</strong>
+          </div>
+          <div>
+            <span>Proof</span>
+            <strong>{{ connectSummary.presenterProofPoints }}</strong>
+          </div>
+          <div>
+            <span>Flow</span>
+            <strong>{{ connectSummary.presenterFlowSteps }}</strong>
+          </div>
+        </div>
+        <div class="quickstart-grid">
+          <div>
+            <span>Headline</span>
+            <code>{{ connectSummary.presenterHeadline }}</code>
+          </div>
+          <div>
+            <span>Studio</span>
+            <code>{{ connectPresenterBrief.integration_handoff?.studio_url || connectSummary.studioLink || "not loaded" }}</code>
+          </div>
+          <div>
+            <span>Readiness</span>
+            <code>{{ connectPresenterBrief.integration_handoff?.readiness_url || "not loaded" }}</code>
+          </div>
+          <div>
+            <span>Verify command</span>
+            <code>{{ connectPresenterBrief.integration_handoff?.verify_command || "not loaded" }}</code>
+          </div>
+        </div>
+        <div class="request-sequence">
+          <div v-for="point in connectPresenterProofPoints" :key="point.id || point.title" class="passed">
+            <code>{{ point.metric || "proof" }}</code>
+            <span>{{ point.title || point.id || "Proof point" }}</span>
+            <small>{{ point.evidence_source || "presenter brief" }}</small>
+            <em>{{ point.value ?? "not loaded" }}</em>
+          </div>
+          <span v-if="!connectPresenterProofPoints.length">No presenter proof points loaded</span>
+        </div>
+        <div class="endpoint-list">
+          <div v-for="step in connectPresenterFlow" :key="step.id || step.title">
+            <code>{{ step.id || "flow" }}</code>
+            <span>{{ step.title || "Presenter flow" }} · {{ step.success_signal || "success signal" }}</span>
+          </div>
+          <span v-if="!connectPresenterFlow.length">No presenter flow loaded</span>
+        </div>
         <div class="agent-card-list">
           <div v-for="call in connectSetupCalls.slice(0, 6)" :key="call.call_id || call.tool_use_id" class="agent-card">
             <strong>{{ call.action || call.kind || "setup" }}</strong>
@@ -1488,7 +1549,7 @@ onMounted(async () => {
             <span>{{ endpoint.path }}</span>
           </div>
         </div>
-        <pre>{{ pretty({ daemon_verify: networkVerifyReport, import_catalog: importCatalog, network_entry_profile: connectPackage?.network_entry_profile, mvp_readiness: connectPackage?.mvp_readiness, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, demo_playbook: connectPackage?.demo_playbook, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, plugins: connectPackage?.plugins, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
+        <pre>{{ pretty({ daemon_verify: networkVerifyReport, import_catalog: importCatalog, network_entry_profile: connectPackage?.network_entry_profile, mvp_readiness: connectPackage?.mvp_readiness, mvp_presenter_brief: connectPackage?.mvp_presenter_brief, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, demo_playbook: connectPackage?.demo_playbook, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, plugins: connectPackage?.plugins, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
       </section>
       <section>
         <div class="section-title"><Rocket :size="15" /> Killer Demo</div>

@@ -474,6 +474,7 @@ export interface NetworkConnectPackage {
     external_contract_ready?: boolean;
     mvp_readiness_status?: string;
     mvp_readiness_score?: string;
+    mvp_presenter_brief_status?: string;
     recommended_next_action?: string;
   };
   contracts?: {
@@ -547,6 +548,7 @@ export interface NetworkConnectPackage {
   demo_playbook?: KillerMvpDemoPlaybook;
   network_entry_profile?: NetworkEntryProfile;
   mvp_readiness?: KillerMvpReadiness;
+  mvp_presenter_brief?: KillerMvpPresenterBrief;
   agent_node_bundle?: {
     kind?: "AdapterAgentNodeBundle";
     ok?: boolean;
@@ -621,6 +623,46 @@ export interface KillerMvpReadinessCheck {
   proves?: string;
   evidence?: Record<string, unknown>;
   next_action?: string | null;
+}
+
+export interface KillerMvpPresenterBrief {
+  kind?: "KillerMvpPresenterBrief";
+  status?: string;
+  headline?: string;
+  subheadline?: string;
+  workflow_path?: string;
+  workflow_id?: string;
+  audience?: string[];
+  narrative?: string[];
+  proof_points?: PresenterProofPoint[];
+  live_demo_flow?: PresenterFlowStep[];
+  integration_handoff?: {
+    connect_package_url?: string;
+    readiness_url?: string;
+    studio_url?: string;
+    run_workflow_url?: string;
+    verify_command?: string;
+    readiness_command?: string;
+    next_cli_command?: string;
+  };
+  decision_gates?: Record<string, unknown>;
+  recommended_next_action?: string;
+  next_commands?: string[];
+}
+
+export interface PresenterProofPoint {
+  id?: string;
+  title?: string;
+  evidence_source?: string;
+  metric?: string;
+  value?: string | number | boolean | null;
+}
+
+export interface PresenterFlowStep {
+  id?: string;
+  title?: string;
+  target?: unknown;
+  success_signal?: string;
 }
 
 export interface NetworkEntryProfile {
@@ -800,6 +842,10 @@ export interface ConnectSummary {
   mvpReadinessStatus: string;
   mvpReadinessScore: string;
   mvpReadinessGoals: string;
+  presenterStatus: string;
+  presenterHeadline: string;
+  presenterProofPoints: number;
+  presenterFlowSteps: number;
   externalProtocol: string;
   acceptedKinds: string;
   externalPackageStatus: string;
