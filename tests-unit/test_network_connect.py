@@ -4,6 +4,7 @@ import sys
 import unittest
 
 from cbn_demo.network_connect import network_connect_package, workflow_studio_demo_link
+from cbn_plugins.cli_anything_parts import EXPECTED_PART_MODULES
 from cbn_runtime.context import build_runtime
 
 
@@ -45,7 +46,7 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(cli_anything["plugin_id"], "cli-anything")
         self.assertEqual(cli_anything["module_split"]["kind"], "CliAnythingModuleSplitReport")
         self.assertEqual(cli_anything["module_split"]["status"], "ready")
-        self.assertEqual(cli_anything["module_split"]["present_part_count"], 6)
+        self.assertEqual(cli_anything["module_split"]["present_part_count"], len(EXPECTED_PART_MODULES))
         self.assertEqual(payload["contracts"]["external"]["receipt_mapping"]["message_channel"], "agent-cli.run.receipt")
         internal = payload["contracts"]["internal"]
         self.assertEqual(internal["protocol"], "CBN BridgeMessage CLI-to-CLI Protocol")

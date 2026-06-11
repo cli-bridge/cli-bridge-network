@@ -21,7 +21,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from adapters.pty import pty_backend_status
 from cbn.paths import resolve_project_paths
 from cbn_audit.log import AuditLog
 from cbn_artifacts.store import ArtifactStore
@@ -39,43 +38,45 @@ from cbn_plugins.operations import PluginOperationRunner
 from cbn_plugins.cli_anything_parts import module_split_report as _parts_module_split_report
 from cbn_plugins.cli_anything_parts.manifest_factory import (
     build_harness_manifest,
-    has_external_network_signal as _manifest_factory_has_external_network_signal,
-    has_local_network_signal as _manifest_factory_has_local_network_signal,
-    has_write_workspace_signal as _manifest_factory_has_write_workspace_signal,
     infer_market_policy as _manifest_factory_infer_market_policy,
     market_annotations as _manifest_factory_market_annotations,
     market_labels as _manifest_factory_market_labels,
-    market_runtime_text as _manifest_factory_market_runtime_text,
-    max_risk as _manifest_factory_max_risk,
     preserve_existing_parser_contract as _manifest_factory_preserve_existing_parser_contract,
     sanitize_harness_name as _manifest_factory_sanitize_harness_name,
 )
 from cbn_plugins.cli_anything_parts.market import (
     mark_candidate_collisions as _market_parts_mark_candidate_collisions,
     mark_capability_collisions as _market_parts_mark_capability_collisions,
-    market_record_identity as _market_parts_market_record_identity,
     market_records_from_result as _market_parts_market_records_from_result,
+)
+from cbn_plugins.cli_anything_parts.lifecycle import (
+    declared_requires as _declared_requires,
+    dependency_probes as _dependency_probes,
+    external_app_requirement_signals as _external_app_requirement_signals,
+    has_external_network_signal as _has_external_network_signal,
+    has_local_network_signal as _has_local_network_signal,
+    has_write_workspace_signal as _has_write_workspace_signal,
+    lifecycle_report as _lifecycle_report,
+    localhost_port_available as _localhost_port_available,
+    managed_requirement_signals as _managed_requirement_signals,
+    market_record_identity as _market_record_identity,
+    market_runtime_text as _market_runtime_text,
+    max_risk as _max_risk,
+    platform_assessment as _platform_assessment,
+    readiness_blocker_probes as _readiness_blocker_probes,
+    readiness_summary as _readiness_summary,
+    requirement_assessment as _requirement_assessment,
+    requirement_commands as _requirement_commands,
+    requirement_env_vars as _requirement_env_vars,
+    requirement_localhost_ports as _requirement_localhost_ports,
+    requires_manual_account_or_key as _requires_manual_account_or_key,
+    transport_assessment as _transport_assessment,
 )
 from cbn_plugins.cli_anything_parts.onboarding import (
     onboarding_next_commands as _onboarding_parts_next_commands,
     onboarding_stage_results as _onboarding_parts_stage_results,
     onboarding_summary as _onboarding_parts_summary,
     probe_blocked_onboarding_report as _onboarding_parts_probe_blocked_report,
-)
-from cbn_plugins.cli_anything_parts.probe import (
-    declared_requires as _probe_parts_declared_requires,
-    dependency_probes as _probe_parts_dependency_probes,
-    external_app_requirement_signals as _probe_parts_external_app_requirement_signals,
-    localhost_port_available as _probe_parts_localhost_port_available,
-    managed_requirement_signals as _probe_parts_managed_requirement_signals,
-    platform_assessment as _probe_parts_platform_assessment,
-    readiness_blocker_probes as _probe_parts_readiness_blocker_probes,
-    readiness_summary as _probe_parts_readiness_summary,
-    requirement_assessment as _probe_parts_requirement_assessment,
-    requirement_commands as _probe_parts_requirement_commands,
-    requirement_env_vars as _probe_parts_requirement_env_vars,
-    requirement_localhost_ports as _probe_parts_requirement_localhost_ports,
-    requires_manual_account_or_key as _probe_parts_requires_manual_account_or_key,
 )
 from cbn_plugins.cli_anything_parts.repair import (
     entrypoint_diagnosis as _repair_parts_entrypoint_diagnosis,
@@ -2578,14 +2579,6 @@ def _readiness_from_evaluation(evaluation: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-def _readiness_summary(probes: list[dict[str, Any]], install_candidate: bool) -> dict[str, Any]:
-    return _probe_parts_readiness_summary(probes, install_candidate)
-
-
-def _readiness_blocker_probes(readiness: dict[str, Any]) -> list[dict[str, Any]]:
-    return _probe_parts_readiness_blocker_probes(readiness)
-
-
 def _parser_contract_report(manifest: dict[str, Any]) -> dict[str, Any]:
     return _verification_parts_parser_contract_report(manifest, _known_parser_refs())
 
@@ -4540,201 +4533,6 @@ def _live_verification_summary(
             and (workflow_readiness.get("readiness") or {}).get("external_protocol_wire_compatible")
         ),
     }
-
-
-def _market_record_identity(item: dict[str, Any]) -> dict[str, str | None]:
-    return _market_parts_market_record_identity(item)
-
-
-def _declared_requires(market_record: dict[str, Any] | None, status: dict[str, Any]) -> str | None:
-    return _probe_parts_declared_requires(market_record, status)
-
-
-def _requirement_assessment(requires: str | None) -> dict[str, Any]:
-    return _probe_parts_requirement_assessment(requires)
-
-
-def _managed_requirement_signals(requires: str) -> list[str]:
-    return _probe_parts_managed_requirement_signals(requires)
-
-
-def _external_app_requirement_signals(requires: str) -> list[str]:
-    return _probe_parts_external_app_requirement_signals(requires)
-
-
-def _platform_assessment(market_record: dict[str, Any] | None, requires: str | None) -> dict[str, Any]:
-    return _probe_parts_platform_assessment(market_record, requires)
-
-
-def _transport_assessment(manifest: dict[str, Any]) -> dict[str, Any]:
-    transport = manifest.get("spec", {}).get("transport", {})
-    if not isinstance(transport, dict):
-        return {
-            "kind": None,
-            "ready": False,
-            "reason": "manifest transport is not an object",
-            "backend": None,
-            "install_hint": None,
-        }
-    kind = transport.get("kind")
-    if kind == "stdio":
-        return {
-            "kind": "stdio",
-            "ready": True,
-            "reason": "stdio transport is available",
-            "backend": "subprocess",
-            "install_hint": None,
-        }
-    if kind == "pty":
-        status = pty_backend_status()
-        ready = bool(status["available"])
-        return {
-            "kind": "pty",
-            "ready": ready,
-            "reason": "pty transport is available" if ready else "pty transport backend is missing",
-            "backend": status.get("backend"),
-            "platform": status.get("platform"),
-            "install_hint": status.get("install_hint"),
-        }
-    return {
-        "kind": kind,
-        "ready": False,
-        "reason": f"unsupported transport kind: {kind}",
-        "backend": None,
-        "install_hint": None,
-    }
-
-
-def _market_runtime_text(market_record: dict[str, Any]) -> str:
-    return _manifest_factory_market_runtime_text(market_record)
-
-
-def _has_local_network_signal(text: str) -> bool:
-    return _manifest_factory_has_local_network_signal(text)
-
-
-def _has_external_network_signal(text: str) -> bool:
-    return _manifest_factory_has_external_network_signal(text)
-
-
-def _has_write_workspace_signal(text: str) -> bool:
-    return _manifest_factory_has_write_workspace_signal(text)
-
-
-def _max_risk(left: str, right: str) -> str:
-    return _manifest_factory_max_risk(left, right)
-
-
-def _lifecycle_report(
-    harness_name: str,
-    capability_id: str | None,
-    recommended_next_action: str,
-    gates: dict[str, Any],
-    blockers: list[str],
-    install_candidate: bool,
-) -> dict[str, Any]:
-    blocked = bool(blockers)
-    manifest_imported = bool(gates.get("manifest_imported", False))
-    installed = bool(gates.get("installed", False))
-    launch_ready = bool(gates.get("launch_ready", False))
-    runtime_transport_ready = bool(gates.get("runtime_transport_ready", True))
-    ready_for_install = bool(install_candidate and not installed and not blocked)
-    requires_override = blocked or not bool(gates.get("external_dependency_free", True))
-    if launch_ready:
-        state = "launch_ready"
-    elif installed and manifest_imported and not runtime_transport_ready:
-        state = "runtime_transport_missing"
-    elif blocked:
-        state = "blocked"
-    elif installed and not manifest_imported:
-        state = "installed_needs_manifest"
-    elif installed:
-        state = "installed"
-    elif manifest_imported and ready_for_install:
-        state = "manifest_ready"
-    elif install_candidate:
-        state = "market_candidate"
-    else:
-        state = "needs_review"
-
-    stages = [
-        {
-            "id": "evaluate",
-            "status": "completed",
-            "command": f"python -m cbn plugin evaluate-harness cli-anything {harness_name}",
-        },
-        {
-            "id": "write_manifest",
-            "status": _stage_status(
-                done=manifest_imported,
-                ready=recommended_next_action == "write_manifest" and not blocked,
-                blocked=blocked,
-            ),
-            "command": f"python -m cbn plugin adapt-harness cli-anything {harness_name} --from-market --write",
-        },
-        {
-            "id": "install_harness",
-            "status": _stage_status(
-                done=installed,
-                ready=recommended_next_action == "install_harness" and not blocked,
-                blocked=blocked,
-            ),
-            "command": f"python -m cbn plugin harness cli-anything install {harness_name} --yes",
-        },
-        {
-            "id": "dry_run_call",
-            "status": _stage_status(
-                done=False,
-                ready=manifest_imported,
-                blocked=blocked or not capability_id,
-            ),
-            "command": f"python -m cbn call {capability_id} --dry-run" if capability_id else None,
-        },
-    ]
-    return {
-        "state": state,
-        "recommended_next_action": recommended_next_action,
-        "blocked": blocked,
-        "requires_override": requires_override,
-        "ready_for_install": ready_for_install,
-        "ready_for_call": launch_ready,
-        "blockers": blockers,
-        "stages": stages,
-    }
-
-
-def _stage_status(done: bool, ready: bool, blocked: bool) -> str:
-    if done:
-        return "completed"
-    if blocked:
-        return "blocked"
-    if ready:
-        return "ready"
-    return "pending"
-
-
-def _dependency_probes(requires: str | None, entry_point: Any) -> list[dict[str, Any]]:
-    return _probe_parts_dependency_probes(requires, entry_point)
-
-
-def _requirement_commands(requirement: str) -> list[str]:
-    return _probe_parts_requirement_commands(requirement)
-
-
-def _requirement_env_vars(requirement: str) -> list[str]:
-    return _probe_parts_requirement_env_vars(requirement)
-
-
-def _requirement_localhost_ports(requirement: str) -> list[tuple[str, int]]:
-    return _probe_parts_requirement_localhost_ports(requirement)
-
-
-def _localhost_port_available(host: str, port: int) -> bool:
-    return _probe_parts_localhost_port_available(host, port)
-
-
-def _requires_manual_account_or_key(requirement: str) -> bool:
-    return _probe_parts_requires_manual_account_or_key(requirement)
 
 
 def _known_parser_refs() -> set[str]:

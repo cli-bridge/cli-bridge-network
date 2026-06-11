@@ -10,6 +10,7 @@ from http.server import ThreadingHTTPServer
 from unittest.mock import patch
 
 from api_server.server import CbnRequestHandler, ROUTE_SUMMARY, _resolve_session_token
+from cbn_plugins.cli_anything_parts import EXPECTED_PART_MODULES
 
 
 class DaemonApiTests(unittest.TestCase):
@@ -253,7 +254,10 @@ class DaemonApiTests(unittest.TestCase):
             self.assertIn("agent-cli-card", importer_ids)
             self.assertEqual(payload["summary"]["cli_anything_split_status"], "ready")
             self.assertEqual(payload["plugins"]["cli_anything"]["module_split"]["status"], "ready")
-            self.assertEqual(payload["plugins"]["cli_anything"]["module_split"]["present_part_count"], 6)
+            self.assertEqual(
+                payload["plugins"]["cli_anything"]["module_split"]["present_part_count"],
+                len(EXPECTED_PART_MODULES),
+            )
             entry_profile = payload["network_entry_profile"]
             self.assertEqual(entry_profile["kind"], "NetworkEntryProfile")
             self.assertEqual(entry_profile["status"], "ready")
@@ -1329,7 +1333,7 @@ class DaemonApiTests(unittest.TestCase):
             self.assertEqual(response.status, 200)
             self.assertEqual(payload["module_split"]["kind"], "CliAnythingModuleSplitReport")
             self.assertEqual(payload["module_split"]["status"], "ready")
-            self.assertEqual(payload["module_split"]["present_part_count"], 6)
+            self.assertEqual(payload["module_split"]["present_part_count"], len(EXPECTED_PART_MODULES))
 
     def test_cli_anything_candidates_route_accepts_compact_payload(self):
         class FakeHub:

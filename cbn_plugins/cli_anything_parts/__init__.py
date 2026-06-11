@@ -14,6 +14,7 @@ EXPECTED_PART_MODULES = (
     "repair",
     "verification",
     "onboarding",
+    "lifecycle",
 )
 
 
