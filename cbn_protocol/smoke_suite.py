@@ -12,7 +12,7 @@ from typing import Any
 from cbn_core.manifest import ManifestRegistry
 from cbn_protocol.a2a_http import smoke_a2a_http, smoke_a2a_workflow_http
 from cbn_protocol.acp_stdio import smoke_acp_stdio, smoke_acp_workflow_stdio
-from cbn_protocol.bridge_contract import workflow_bridge_contract_report
+from cbn_core.bridge_contract import workflow_bridge_contract_report
 from cbn_protocol.compatibility import PROTOCOLS
 from cbn_protocol.mcp_stdio import smoke_mcp_stdio, smoke_mcp_workflow_stdio
 from cbn_protocol.readiness import protocol_readiness_report

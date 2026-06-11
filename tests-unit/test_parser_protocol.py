@@ -9,7 +9,7 @@ from cbn_parsers.registry import ParserRegistry
 from cbn_core.manifest import CapabilityManifest, ManifestRegistry
 from cbn_runtime.context import build_runtime
 from cbn_protocol.acceptance import cli_to_cli_acceptance_report
-from cbn_protocol.bridge_contract import workflow_bridge_contract_report
+from cbn_core.bridge_contract import workflow_bridge_contract_report
 from cbn_core.message import (
     BridgeMessage,
     bridge_args_from_selectors,
@@ -21,6 +21,11 @@ from cbn_core.selector import (
 
 
 class ParserProtocolTests(unittest.TestCase):
+    def test_protocol_bridge_contract_reexports_core_owner(self):
+        from cbn_protocol.bridge_contract import workflow_bridge_contract_report as compat_report
+
+        self.assertIs(compat_report, workflow_bridge_contract_report)
+
     def test_git_status_parser_returns_entries(self):
         parsed = ParserRegistry.builtins().parse(
             "git.status.short",

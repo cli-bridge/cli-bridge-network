@@ -51,7 +51,9 @@ CBN 内部总线 contract 由以下对象组成：
 - `Workflow selector`：从上游 BridgeMessage/Artifact 提取值并映射为下游 argv。
 
 BridgeMessage 和 selector 已归位到 `cbn_core.message` 与 `cbn_core.selector`。
-`cbn_protocol.envelope` 只保留兼容 re-export，避免打断现有调用。
+Bridge Contract 报告已归位到 `cbn_core.bridge_contract`，负责内部 ToolManifest、
+BridgeMessage、Artifact 和 Workflow selector route readiness。`cbn_protocol.envelope`
+与 `cbn_protocol.bridge_contract` 只保留兼容 re-export，避免打断现有调用。
 
 ### 3. 外部协议 Facade
 
@@ -124,6 +126,8 @@ Workflow Studio 是用户侧主界面，旧 `packages/dashboard` 保留为 maint
 - 新增 `cbn_core.selector`。
 - runtime、CLI、API、workflow runner 使用 core import。
 - `cbn_protocol.envelope` 保留 re-export 兼容。
+- `cbn_protocol.bridge_contract` 保留 re-export 兼容；内部调用方改为
+  `cbn_core.bridge_contract`，让 `cbn_protocol` 继续收敛为 MCP/A2A/ACP facade。
 - 不在同一提交中混入 Workflow Studio、协议外置仓库或 CLI-Anything 大拆分。
 
 下一 slice 已建立 Agent CLI Contract 和 CBN 侧纯映射：

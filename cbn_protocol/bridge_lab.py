@@ -6,7 +6,7 @@ from typing import Any
 
 from cbn_core.manifest import ManifestRegistry
 from cbn_protocol.acceptance_queue import cli_to_cli_acceptance_queue
-from cbn_protocol.bridge_contract import bridge_message_contract, workflow_bridge_contract_report
+from cbn_core.bridge_contract import bridge_message_contract, workflow_bridge_contract_report
 from cbn_protocol.conformance import protocol_conformance_plan
 from cbn_protocol.lifecycle_suite import protocol_lifecycle_suite
 from cbn_protocol.readiness import protocol_readiness_report

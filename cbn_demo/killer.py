@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from cbn_core.manifest import ManifestRegistry
-from cbn_protocol.bridge_contract import workflow_bridge_contract_report
+from cbn_core.bridge_contract import workflow_bridge_contract_report
 from cbn_protocol.bridge_lab import bridge_lab_report
 from cbn_protocol.exports import export_all_workflow_protocols
 from cbn_protocol.smoke_suite import protocol_smoke_suite

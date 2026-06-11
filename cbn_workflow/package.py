@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from cbn_core.manifest import CapabilityManifest, ManifestRegistry
-from cbn_protocol.bridge_contract import workflow_bridge_contract_report
+from cbn_core.bridge_contract import workflow_bridge_contract_report
 from cbn_workflow.runner import WorkflowRunner
 from cbn_execution.graph import WorkflowGraph
 

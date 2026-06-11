@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from cbn_core.manifest import ManifestRegistry
-from cbn_protocol.bridge_contract import workflow_bridge_contract_report
+from cbn_core.bridge_contract import workflow_bridge_contract_report
 from cbn_protocol.compatibility import PROTOCOLS, check_all_protocols, protocol_matrix
 from cbn_protocol.wire_conformance import protocol_wire_conformance_suite
 

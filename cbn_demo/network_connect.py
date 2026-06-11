@@ -14,7 +14,7 @@ from cbn_adapter_agent.workflow_request import build_agent_workflow_request_plan
 from cbn_core.agent_cli_contract import agent_cli_card_to_tool_manifests, run_receipt_to_cbn_records
 from cbn_core.manifest import ManifestRegistry
 from cbn_demo.killer import DEFAULT_KILLER_WORKFLOW_PATH
-from cbn_protocol.bridge_contract import workflow_bridge_contract_report
+from cbn_core.bridge_contract import workflow_bridge_contract_report
 from cbn_protocol.exports import export_all_workflow_protocols
 from cbn_workflow.catalog import inspect_workflow
 

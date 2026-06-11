@@ -25,7 +25,7 @@ from cbn_plugins.cli_anything import CliAnythingHub
 from cbn_plugins.manager import PluginManager
 from cbn_protocol.acceptance import cli_to_cli_acceptance_report
 from cbn_protocol.acceptance_queue import cli_to_cli_acceptance_queue
-from cbn_protocol.bridge_contract import workflow_bridge_contract_report
+from cbn_core.bridge_contract import workflow_bridge_contract_report
 from cbn_protocol.bridge_lab import bridge_lab_report
 from cbn_protocol.a2a_http import agent_card, smoke_a2a_http
 from cbn_protocol.a2a_http import smoke_a2a_workflow_http

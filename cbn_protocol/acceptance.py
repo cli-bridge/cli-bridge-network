@@ -7,7 +7,7 @@ from typing import Any
 
 from cbn_core.manifest import ManifestRegistry
 from cbn_execution.graph import WorkflowGraph
-from cbn_protocol.bridge_contract import workflow_bridge_contract_report
+from cbn_core.bridge_contract import workflow_bridge_contract_report
 from cbn_core.selector import bridge_value_to_arg, select_bridge_value
 from cbn_protocol.readiness import protocol_readiness_report
 from cbn_workflow.runner import WorkflowRunner
