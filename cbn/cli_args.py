@@ -314,9 +314,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     network_quickstart.add_argument(
         "--output",
-        choices=["json", "curl", "powershell"],
+        choices=["json", "curl", "powershell", "acceptance"],
         default="json",
-        help="Output JSON quickstart, a cURL script, or a PowerShell script.",
+        help="Output JSON quickstart, a cURL script, a PowerShell script, or the acceptance checklist.",
     )
     network_studio_link = network_subcommands.add_parser(
         "studio-link",

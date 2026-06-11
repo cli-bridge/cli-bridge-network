@@ -66,6 +66,13 @@ def network_connect_package(
         and external_contract.get("ok")
         and protocol_summary["export_count"] >= 3
     )
+    quickstart = _consumer_quickstart(
+        base_url=base_url,
+        workflow_path=workflow_path,
+        session_token=session_token,
+        studio_link=studio_link,
+        request_plan=request_plan,
+    )
     return {
         "apiVersion": CONNECT_API_VERSION,
         "kind": "NetworkConnectPackage",
@@ -101,13 +108,8 @@ def network_connect_package(
         "workflow_studio": studio_link,
         "agent_node_bundle": _compact_agent_bundle(agent_bundle),
         "agent_workflow_request": _compact_workflow_request_plan(request_plan),
-        "consumer_quickstart": _consumer_quickstart(
-            base_url=base_url,
-            workflow_path=workflow_path,
-            session_token=session_token,
-            studio_link=studio_link,
-            request_plan=request_plan,
-        ),
+        "acceptance": quickstart["acceptance"],
+        "consumer_quickstart": quickstart,
         "next_commands": _next_commands(workflow_path),
     }
 
@@ -387,6 +389,7 @@ def _consumer_quickstart(
         "required_headers": headers,
         "entrypoints": entrypoints,
         "requests": requests,
+        "acceptance": _network_connection_acceptance(workflow_path=workflow_path, requests=requests),
         "curl_script": _quickstart_curl_script(requests),
         "powershell_script": _quickstart_powershell_script(requests, headers=headers),
         "sequence": [
@@ -397,6 +400,100 @@ def _consumer_quickstart(
             "run_workflow",
             "read_events_audit_artifacts",
         ],
+    }
+
+
+def _network_connection_acceptance(*, workflow_path: str, requests: list[dict[str, Any]]) -> dict[str, Any]:
+    request_ids = [str(request.get("id", "")) for request in requests if request.get("id")]
+    checks = [
+        _acceptance_check(
+            "daemon_reachable",
+            "health",
+            "CBN daemon answers authenticated first-call requests.",
+            {"http_status": 200, "json.status": "ok"},
+        ),
+        _acceptance_check(
+            "workflow_dag_loads",
+            "inspect_workflow",
+            "The selected CLI-CLI workflow DAG can be inspected before execution.",
+            {"http_status": 200, "json.valid": True, "json.task_count_min": 1},
+        ),
+        _acceptance_check(
+            "bridge_contract_routes",
+            "inspect_bridge_contract",
+            "BridgeMessage selector routes are available for CLI-CLI handoff inspection.",
+            {"http_status": 200, "json.ok": True, "json.summary.route_count_min": 1},
+        ),
+        _acceptance_check(
+            "natural_language_harness_plan",
+            "plan_agent_request",
+            "A reusable harness agent can bind natural language to the workflow run contract.",
+            {
+                "http_status": 200,
+                "json.kind": "AdapterAgentWorkflowRequestPlan",
+                "json.ok": True,
+                "json.reusable_harness.kind": "NaturalLanguageWorkflowHarness",
+            },
+        ),
+        _acceptance_check(
+            "workflow_run_receipt",
+            "run_workflow",
+            "The daemon can produce a workflow run receipt for the CLI-CLI chain.",
+            {"http_status": 200, "json.status": "completed", "json.workflow_id_type": "string"},
+        ),
+        _acceptance_check(
+            "runtime_events_readable",
+            "events",
+            "Runtime events are readable after the workflow call.",
+            {"http_status": 200, "json.type": "array"},
+        ),
+        _acceptance_check(
+            "audit_evidence_readable",
+            "audit",
+            "Audit evidence is readable for demo and integration review.",
+            {"http_status": 200, "json.type": "array"},
+        ),
+        _acceptance_check(
+            "artifacts_readable",
+            "artifacts",
+            "Produced artifacts can be listed by the consumer after workflow execution.",
+            {"http_status": 200, "json.type": "array"},
+        ),
+    ]
+    return {
+        "kind": "NetworkConnectionAcceptance",
+        "status": "ready",
+        "workflow_path": workflow_path,
+        "required_request_ids": request_ids,
+        "check_count": len(checks),
+        "checks": checks,
+        "success_signals": [
+            "health.status == ok",
+            "workflow.valid == true",
+            "bridge_contract.summary.route_count >= 1",
+            "agent_workflow_request.reusable_harness.kind == NaturalLanguageWorkflowHarness",
+            "workflow_run.status == completed",
+            "events/audit/artifacts endpoints return JSON arrays",
+        ],
+        "failure_recovery": [
+            "If health fails, verify daemon URL and X-CBN-Session.",
+            "If workflow inspection fails, verify workflow_path and required manifests.",
+            "If run_workflow fails, rerun plan_agent_request and inspect bridge routes before retrying.",
+        ],
+    }
+
+
+def _acceptance_check(
+    check_id: str,
+    request_id: str,
+    proves: str,
+    expect: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "id": check_id,
+        "request_id": request_id,
+        "proves": proves,
+        "expect": expect,
     }
 
 

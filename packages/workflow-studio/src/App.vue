@@ -23,6 +23,7 @@ import { mountWorkflowGraph, type StudioGraph } from "./graph";
 import type {
   AdapterAgentNodeBundle,
   AgentWorkflowRequestPlan,
+  ConnectionAcceptanceCheck,
   ConnectSummary,
   DockState,
   EvidenceSummary,
@@ -83,6 +84,10 @@ const quickstartRequests = computed<QuickstartRequest[]>(() =>
     ? connectPackage.value.consumer_quickstart.requests
     : [],
 );
+const acceptanceChecks = computed<ConnectionAcceptanceCheck[]>(() => {
+  const acceptance = connectPackage.value?.acceptance ?? connectPackage.value?.consumer_quickstart?.acceptance;
+  return Array.isArray(acceptance?.checks) ? acceptance.checks : [];
+});
 
 async function call(label: string, fn: () => Promise<unknown>): Promise<unknown | null> {
   loading.value = label;
@@ -255,6 +260,7 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
   const summary = payload?.summary ?? {};
   const studio = payload?.workflow_studio ?? {};
   const quickstart = payload?.consumer_quickstart ?? {};
+  const acceptance = payload?.acceptance ?? quickstart.acceptance ?? {};
   const headers = quickstart.required_headers ?? {};
   return {
     status: payload?.ok ? "ready" : payload ? "needs attention" : "not loaded",
@@ -274,6 +280,8 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
     runEndpoint: stringValue(quickstart.entrypoints?.run_workflow?.url) ?? "",
     planEndpoint: stringValue(quickstart.entrypoints?.plan_agent_request?.url) ?? "",
     quickstartRequestCount: Array.isArray(quickstart.requests) ? quickstart.requests.length : 0,
+    acceptanceStatus: stringValue(acceptance.status) ?? "not loaded",
+    acceptanceCheckCount: numberValue(acceptance.check_count) ?? (Array.isArray(acceptance.checks) ? acceptance.checks.length : 0),
     curlScript: stringValue(quickstart.curl_script) ?? "",
     powershellScript: stringValue(quickstart.powershell_script) ?? "",
   };
@@ -507,6 +515,8 @@ onMounted(async () => {
           <span class="pill-inline">{{ connectSummary.quickstartStatus }}</span>
           <span class="pill-inline">{{ connectSummary.authHeaderStatus }}</span>
           <span class="pill-inline">{{ connectSummary.quickstartRequestCount }} requests</span>
+          <span class="pill-inline">{{ connectSummary.acceptanceStatus }}</span>
+          <span class="pill-inline">{{ connectSummary.acceptanceCheckCount }} checks</span>
         </div>
         <div class="studio-link-row">
           <button title="Open preconfigured Workflow Studio demo link" :disabled="!connectSummary.studioLink" @click="openStudioLink">
@@ -538,6 +548,15 @@ onMounted(async () => {
           </div>
           <span v-if="!quickstartRequests.length">No quickstart requests loaded</span>
         </div>
+        <div class="acceptance-list">
+          <div v-for="check in acceptanceChecks.slice(0, 8)" :key="check.id || check.request_id">
+            <code>{{ check.request_id || "request" }}</code>
+            <span>{{ check.id || "check" }}</span>
+            <small>{{ check.proves || "acceptance evidence not loaded" }}</small>
+            <em>{{ pretty(check.expect) }}</em>
+          </div>
+          <span v-if="!acceptanceChecks.length">No acceptance checklist loaded</span>
+        </div>
         <div class="curl-script-preview">
           <div>
             <span>cURL script</span>
@@ -562,7 +581,7 @@ onMounted(async () => {
             <span>{{ endpoint.path }}</span>
           </div>
         </div>
-        <pre>{{ pretty({ workflow_studio: connectPackage?.workflow_studio, consumer_quickstart: connectPackage?.consumer_quickstart, protocols: connectPackage?.protocols, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
+        <pre>{{ pretty({ workflow_studio: connectPackage?.workflow_studio, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
       </section>
       <section>
         <div class="section-title"><Rocket :size="15" /> Killer Demo</div>

@@ -284,6 +284,11 @@ Killer Demo slice 已新增可运行证据束：
   demo 或第三方接入时从可视化界面拷贝 first-call smoke 脚本的操作成本。
 - `python -m cbn network quickstart --output curl|powershell` 已支持直接输出可执行
   first-call 脚本；第三方接入、demo 和本地 smoke 不再需要先解析 JSON 字段。
+- `NetworkConnectPackage.acceptance` / `consumer_quickstart.acceptance` 已新增
+  `NetworkConnectionAcceptance` 机器可读验收清单，覆盖 health、workflow inspect、
+  Bridge contract、自然语言 harness plan、workflow run、events/audit/artifacts
+  的期望证据；`python -m cbn network quickstart --output acceptance` 可直接输出该
+  checklist，Workflow Studio Connect 面板同步展示每个 check。
 - CLI 已新增 `python -m cbn network connect-package` 只读入口，输出同一份
   `NetworkConnectPackage`。外部程序无需先接 daemon/WebUI，也能一次性读取
   AgentCliCard/RunReceipt contract、daemon endpoint catalog、protocol facade 和

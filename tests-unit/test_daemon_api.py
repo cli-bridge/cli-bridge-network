@@ -130,6 +130,9 @@ class DaemonApiTests(unittest.TestCase):
             self.assertEqual(payload["agent_node_bundle"]["bridge_message_channel"], "agent.adapter.node_bundle")
             self.assertEqual(payload["agent_workflow_request"]["bridge_message_channel"], "agent.workflow.request.plan")
             self.assertEqual(payload["agent_workflow_request"]["reusable_harness"]["kind"], "NaturalLanguageWorkflowHarness")
+            self.assertEqual(payload["acceptance"]["kind"], "NetworkConnectionAcceptance")
+            self.assertEqual(payload["acceptance"]["check_count"], 8)
+            self.assertEqual(payload["acceptance"]["checks"][4]["request_id"], "run_workflow")
             self.assertEqual(payload["workflow_studio"]["kind"], "WorkflowStudioDemoLink")
             self.assertTrue(payload["workflow_studio"]["session_token_included"])
             self.assertIn("sessionToken=demo-token", payload["workflow_studio"]["url"])
@@ -162,6 +165,9 @@ class DaemonApiTests(unittest.TestCase):
                 payload["requests"][4]["json"]["path"],
                 "workflows/cli-anything-macrocli-mermaid-routing.example.json",
             )
+            self.assertEqual(payload["acceptance"]["kind"], "NetworkConnectionAcceptance")
+            self.assertEqual(payload["acceptance"]["checks"][3]["request_id"], "plan_agent_request")
+            self.assertEqual(payload["acceptance"]["checks"][3]["expect"]["json.ok"], True)
             self.assertIn("--data", payload["requests"][4]["curl"])
             self.assertIn("curl -X POST", payload["curl_script"])
             self.assertIn("'X-CBN-Session' = 'header-token'", payload["powershell_script"])

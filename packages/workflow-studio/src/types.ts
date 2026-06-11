@@ -208,6 +208,24 @@ export interface QuickstartRequest {
   curl?: string;
 }
 
+export interface ConnectionAcceptanceCheck {
+  id?: string;
+  request_id?: string;
+  proves?: string;
+  expect?: Record<string, unknown>;
+}
+
+export interface NetworkConnectionAcceptance {
+  kind?: "NetworkConnectionAcceptance";
+  status?: string;
+  workflow_path?: string;
+  required_request_ids?: string[];
+  check_count?: number;
+  checks?: ConnectionAcceptanceCheck[];
+  success_signals?: string[];
+  failure_recovery?: string[];
+}
+
 export interface NetworkConnectPackage {
   ok?: boolean;
   kind?: "NetworkConnectPackage";
@@ -256,6 +274,7 @@ export interface NetworkConnectPackage {
     task_count?: number;
     bridge_message_channel?: string;
   };
+  acceptance?: NetworkConnectionAcceptance;
   consumer_quickstart?: {
     kind?: "NetworkConnectQuickstart";
     status?: string;
@@ -280,6 +299,7 @@ export interface NetworkConnectPackage {
       artifacts?: string;
     };
     requests?: QuickstartRequest[];
+    acceptance?: NetworkConnectionAcceptance;
     curl_script?: string;
     powershell_script?: string;
     sequence?: string[];
@@ -305,6 +325,8 @@ export interface ConnectSummary {
   runEndpoint: string;
   planEndpoint: string;
   quickstartRequestCount: number;
+  acceptanceStatus: string;
+  acceptanceCheckCount: number;
   curlScript: string;
   powershellScript: string;
 }

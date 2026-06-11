@@ -369,13 +369,15 @@ canvas {
   white-space: nowrap;
 }
 
-.request-sequence {
+.request-sequence,
+.acceptance-list {
   display: grid;
   gap: 6px;
   margin-bottom: 8px;
 }
 
-.request-sequence div {
+.request-sequence div,
+.acceptance-list div {
   display: grid;
   min-height: 48px;
   grid-template-columns: 46px 112px minmax(0, 1fr);
@@ -390,31 +392,39 @@ canvas {
 .request-sequence code,
 .request-sequence span,
 .request-sequence small,
-.request-sequence em {
+.request-sequence em,
+.acceptance-list code,
+.acceptance-list span,
+.acceptance-list small,
+.acceptance-list em {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.request-sequence code {
+.request-sequence code,
+.acceptance-list code {
   color: #4c5949;
   font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
   font-size: 11px;
 }
 
-.request-sequence span {
+.request-sequence span,
+.acceptance-list span {
   color: #243026;
   font-size: 11px;
   font-weight: 650;
 }
 
-.request-sequence small {
+.request-sequence small,
+.acceptance-list small {
   color: #647160;
   font-size: 11px;
 }
 
-.request-sequence em {
+.request-sequence em,
+.acceptance-list em {
   grid-column: 1 / 4;
   color: #4c5949;
   font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
@@ -422,7 +432,8 @@ canvas {
   font-style: normal;
 }
 
-.request-sequence > span {
+.request-sequence > span,
+.acceptance-list > span {
   border: 1px solid #d1dacd;
   border-radius: 6px;
   background: #ffffff;

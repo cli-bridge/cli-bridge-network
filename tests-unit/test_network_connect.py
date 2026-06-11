@@ -35,9 +35,18 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertTrue(payload["workflow_studio"]["session_token_included"])
         self.assertIn("daemonUrl=http%3A%2F%2F127.0.0.1%3A8787", payload["workflow_studio"]["url"])
         self.assertIn("sessionToken=test-token", payload["workflow_studio"]["url"])
+        self.assertEqual(payload["acceptance"]["kind"], "NetworkConnectionAcceptance")
+        self.assertEqual(payload["acceptance"]["check_count"], 8)
+        self.assertIn("run_workflow", payload["acceptance"]["required_request_ids"])
+        self.assertEqual(payload["acceptance"]["checks"][3]["request_id"], "plan_agent_request")
+        self.assertEqual(
+            payload["acceptance"]["checks"][3]["expect"]["json.reusable_harness.kind"],
+            "NaturalLanguageWorkflowHarness",
+        )
         quickstart = payload["consumer_quickstart"]
         self.assertEqual(quickstart["kind"], "NetworkConnectQuickstart")
         self.assertEqual(quickstart["status"], "ready")
+        self.assertEqual(quickstart["acceptance"], payload["acceptance"])
         self.assertEqual(quickstart["required_headers"]["X-CBN-Session"], "test-token")
         self.assertEqual(quickstart["entrypoints"]["open_studio"], payload["workflow_studio"]["url"])
         self.assertEqual(
@@ -156,6 +165,9 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(payload["requests"][4]["id"], "run_workflow")
         self.assertEqual(payload["requests"][4]["headers"]["X-CBN-Session"], "test-token")
         self.assertIn("curl -X POST", payload["requests"][4]["curl"])
+        self.assertEqual(payload["acceptance"]["kind"], "NetworkConnectionAcceptance")
+        self.assertEqual(payload["acceptance"]["check_count"], 8)
+        self.assertEqual(payload["acceptance"]["checks"][4]["request_id"], "run_workflow")
         self.assertIn("curl -X GET 'http://127.0.0.1:8787/health'", payload["curl_script"])
         self.assertIn("$Body_run_workflow", payload["powershell_script"])
         self.assertEqual(
@@ -163,6 +175,34 @@ class NetworkConnectPackageTests(unittest.TestCase):
             "workflows/cli-anything-macrocli-mermaid-routing.example.json",
         )
         self.assertNotIn("contracts", payload)
+
+    def test_network_quickstart_cli_outputs_acceptance_checklist(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "network",
+                "quickstart",
+                "--workflow-path",
+                "workflows/cli-anything-macrocli-mermaid-routing.example.json",
+                "--base-url",
+                "http://127.0.0.1:8787",
+                "--output",
+                "acceptance",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["kind"], "NetworkConnectionAcceptance")
+        self.assertEqual(payload["check_count"], 8)
+        self.assertEqual(payload["checks"][0]["request_id"], "health")
+        self.assertEqual(payload["checks"][3]["expect"]["json.kind"], "AdapterAgentWorkflowRequestPlan")
+        self.assertNotIn("curl_script", payload)
 
     def test_network_quickstart_cli_outputs_shell_scripts(self):
         base_args = [
