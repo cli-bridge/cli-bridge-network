@@ -213,6 +213,16 @@ def network_connect_package(
         mvp_readiness=mvp_readiness,
         mvp_presenter_brief=mvp_presenter_brief,
     )
+    consumer_manifest = _network_consumer_manifest(
+        workflow_path=workflow_path,
+        network_entry_profile=network_entry_profile,
+        network_harness_agent=network_harness_agent,
+        consumer_launch_contract=consumer_launch_contract,
+        consumer_sdk_bootstrap=consumer_sdk_bootstrap,
+        registration_surface=registration_surface,
+        direct_cli_readiness=direct_cli_readiness,
+        mvp_readiness=mvp_readiness,
+    )
     return {
         "apiVersion": CONNECT_API_VERSION,
         "kind": "NetworkConnectPackage",
@@ -284,6 +294,7 @@ def network_connect_package(
         "mvp_presenter_brief": mvp_presenter_brief,
         "consumer_launch_contract": consumer_launch_contract,
         "consumer_sdk_bootstrap": consumer_sdk_bootstrap,
+        "consumer_manifest": consumer_manifest,
         "agent_node_bundle": _compact_agent_bundle(agent_bundle),
         "agent_workflow_request": _compact_workflow_request_plan(request_plan),
         "setup_guidance": setup_guidance,
@@ -387,6 +398,7 @@ def _consumer_sdk_bootstrap(
         "entrypoints": {
             "connect_package": entrypoints.get("connect_package"),
             "quickstart": entrypoints.get("quickstart"),
+            "consumer_manifest": entrypoints.get("consumer_manifest"),
             "launch_contract": entrypoints.get("launch_contract"),
             "entry_profile": entrypoints.get("entry_profile"),
             "harness_agent": entrypoints.get("harness_agent"),
@@ -539,6 +551,123 @@ def _consumer_launch_contract(
             "Do not rely on CBN internal daemon state outside the listed entrypoints.",
             "Do not persist or echo session token values from this payload.",
             "Do not run confirmed writes until the user explicitly sets confirmed=true.",
+        ],
+    }
+
+
+def _network_consumer_manifest(
+    *,
+    workflow_path: str,
+    network_entry_profile: dict[str, Any],
+    network_harness_agent: dict[str, Any],
+    consumer_launch_contract: dict[str, Any],
+    consumer_sdk_bootstrap: dict[str, Any],
+    registration_surface: dict[str, Any],
+    direct_cli_readiness: dict[str, Any],
+    mvp_readiness: dict[str, Any],
+) -> dict[str, Any]:
+    """Small redacted manifest that an external program can persist as its CBN entry file."""
+
+    sdk_requests = [
+        {
+            "id": request.get("id"),
+            "method": request.get("method"),
+            "url": request.get("url"),
+            "json": request.get("json"),
+            "response_kind": request.get("response_kind"),
+            "required": request.get("required", False),
+        }
+        for request in consumer_sdk_bootstrap.get("requests", [])
+        if isinstance(request, dict) and request.get("id")
+    ]
+    importers = [
+        {
+            "id": importer.get("id"),
+            "entrypoint": importer.get("entrypoint"),
+            "write_gate": importer.get("write_gate"),
+            "default_side_effects": importer.get("default_side_effects"),
+        }
+        for importer in registration_surface.get("importers", [])
+        if isinstance(importer, dict) and importer.get("id")
+    ]
+    return {
+        "apiVersion": CONNECT_API_VERSION,
+        "kind": "NetworkConsumerManifest",
+        "status": "ready"
+        if network_entry_profile.get("status") == "ready"
+        and network_harness_agent.get("status") == "ready"
+        and consumer_launch_contract.get("status") == "ready"
+        and consumer_sdk_bootstrap.get("status") == "ready"
+        else "needs_attention",
+        "manifest_id": "cbn.consumer.manifest.cli-cli-network.v1",
+        "audience": "external_program_or_sdk",
+        "workflow_path": workflow_path,
+        "base_url": network_entry_profile.get("base_url"),
+        "contracts": {
+            "external_protocol": (network_entry_profile.get("compatibility") or {}).get("external_protocol"),
+            "internal_bus": (network_entry_profile.get("compatibility") or {}).get("internal_bus"),
+            "launch_contract": consumer_launch_contract.get("contract_id"),
+            "sdk_bootstrap": consumer_sdk_bootstrap.get("bootstrap_id"),
+            "harness_agent": network_harness_agent.get("contract_id"),
+        },
+        "auth": {
+            "required_headers": (network_entry_profile.get("auth") or {}).get("required_headers", {}),
+            "session_token_header": (consumer_sdk_bootstrap.get("auth") or {}).get("session_token_header"),
+            "session_token_required": bool(
+                (network_entry_profile.get("auth") or {}).get("session_token_required")
+            ),
+            "secret_values_echoed": False,
+        },
+        "entrypoints": {
+            "open_studio": (consumer_launch_contract.get("entrypoints") or {}).get("open_studio"),
+            "connect_package": (consumer_sdk_bootstrap.get("entrypoints") or {}).get("connect_package"),
+            "quickstart": (consumer_sdk_bootstrap.get("entrypoints") or {}).get("quickstart"),
+            "consumer_manifest": (consumer_sdk_bootstrap.get("entrypoints") or {}).get("consumer_manifest"),
+            "launch_contract": (consumer_sdk_bootstrap.get("entrypoints") or {}).get("launch_contract"),
+            "entry_profile": (consumer_sdk_bootstrap.get("entrypoints") or {}).get("entry_profile"),
+            "harness_agent": (consumer_sdk_bootstrap.get("entrypoints") or {}).get("harness_agent"),
+            "run_workflow": (consumer_sdk_bootstrap.get("entrypoints") or {}).get("run_workflow"),
+            "evidence": (consumer_sdk_bootstrap.get("entrypoints") or {}).get("evidence", {}),
+        },
+        "harness_agent": {
+            "kind": (consumer_launch_contract.get("harness_agent") or {}).get("kind"),
+            "bridge_message_channel": (network_harness_agent.get("bridge") or {}).get("message_channel"),
+            "bridge_route_count": (network_harness_agent.get("bridge") or {}).get("route_count", 0),
+            "run_endpoint": (consumer_launch_contract.get("harness_agent") or {}).get("run_endpoint"),
+        },
+        "request_sequence": consumer_sdk_bootstrap.get("required_sequence", []),
+        "request_count": len(sdk_requests),
+        "requests": sdk_requests,
+        "typed_responses": consumer_sdk_bootstrap.get("typed_responses", {}),
+        "registration": {
+            "importer_count": registration_surface.get("importer_count", 0),
+            "dry_run_by_default": (registration_surface.get("default_policy") or {}).get("dry_run_by_default"),
+            "writes_require_explicit_flag": (registration_surface.get("default_policy") or {}).get(
+                "writes_require_explicit_flag"
+            ),
+            "importers": importers,
+        },
+        "readiness": {
+            "mvp_score": mvp_readiness.get("score"),
+            "mvp_status": mvp_readiness.get("status"),
+            "direct_cli_profile_count": (direct_cli_readiness.get("summary") or {}).get("profile_count", 0),
+            "direct_cli_capability_count": (direct_cli_readiness.get("summary") or {}).get("capability_count", 0),
+            "direct_cli_recovery_type_count": (direct_cli_readiness.get("summary") or {}).get(
+                "recovery_type_count",
+                0,
+            ),
+        },
+        "safety": {
+            "dry_run_default": True,
+            "confirmed_default": False,
+            "secret_values_included": False,
+            "writes_require_explicit_confirmation": True,
+            "side_effects_require_confirmation": True,
+        },
+        "next_commands": [
+            "python -m cbn network consumer-manifest --base-url http://127.0.0.1:8787",
+            "python -m cbn network verify --base-url http://127.0.0.1:8787",
+            "python -m cbn import catalog",
         ],
     }
 
@@ -1975,6 +2104,7 @@ def _endpoint_catalog(*, base_url: str | None, workflow_path: str) -> list[dict[
         ("GET", "/network/entry-profile", "read only the stable external integration profile"),
         ("GET", "/network/harness-agent", "read only the reusable natural-language harness agent contract"),
         ("GET", "/network/sdk-bootstrap", "read only the stable SDK bootstrap contract for external programs"),
+        ("GET", "/network/consumer-manifest", "read the redacted persistable consumer network manifest"),
         ("GET", "/network/readiness", "read only the killer MVP readiness matrix"),
         ("POST", "/network/verify", "run the live network acceptance checklist"),
         ("GET", "/imports/catalog", "read the dry-run-first CLI importer catalog"),
@@ -2352,6 +2482,7 @@ def _consumer_quickstart(
         "open_studio": studio_link.get("url"),
         "connect_package": _absolute_url(clean_base_url, f"/network/connect-package?{launch_query}"),
         "quickstart": _absolute_url(clean_base_url, f"/network/quickstart?{launch_query}"),
+        "consumer_manifest": _absolute_url(clean_base_url, f"/network/consumer-manifest?{launch_query}"),
         "sdk_bootstrap": _absolute_url(clean_base_url, f"/network/sdk-bootstrap?{launch_query}"),
         "health": _absolute_url(clean_base_url, "/health"),
         "acceptance": _absolute_url(clean_base_url, f"/network/acceptance?{launch_query}"),

@@ -637,6 +637,12 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(payload["agent_node_bundle"]["harnesses"][0]["kind"], "AgentHarness")
         self.assertEqual(payload["consumer_quickstart"]["entrypoints"]["run_workflow"]["url"], "http://127.0.0.1:8787/workflows/run")
         self.assertEqual(payload["consumer_quickstart"]["sdk_snippets"][1]["language"], "typescript")
+        self.assertEqual(payload["consumer_manifest"]["kind"], "NetworkConsumerManifest")
+        self.assertEqual(payload["consumer_manifest"]["status"], "ready")
+        self.assertEqual(payload["consumer_manifest"]["manifest_id"], "cbn.consumer.manifest.cli-cli-network.v1")
+        self.assertEqual(payload["consumer_manifest"]["entrypoints"]["run_workflow"]["url"], "http://127.0.0.1:8787/workflows/run")
+        self.assertEqual(payload["consumer_manifest"]["readiness"]["mvp_score"], "17/17")
+        self.assertFalse(payload["consumer_manifest"]["safety"]["secret_values_included"])
         self.assertEqual(payload["demo_readiness"]["status"], "ready")
 
     def test_network_quickstart_cli_outputs_first_call_package(self):
@@ -670,6 +676,7 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertIn("sessionToken=test-token", payload["entrypoints"]["open_studio"])
         self.assertIn("/network/connect-package?", payload["entrypoints"]["connect_package"])
         self.assertIn("/network/quickstart?", payload["entrypoints"]["quickstart"])
+        self.assertIn("/network/consumer-manifest?", payload["entrypoints"]["consumer_manifest"])
         self.assertIn("/network/sdk-bootstrap?", payload["entrypoints"]["sdk_bootstrap"])
         self.assertIn("/network/acceptance?", payload["entrypoints"]["acceptance"])
         self.assertEqual(payload["entrypoints"]["plan_agent_request"]["method"], "POST")
@@ -1008,6 +1015,69 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(payload["harness"]["run_endpoint"], "http://127.0.0.1:8787/workflows/run")
         self.assertEqual(payload["typed_responses"]["run_workflow"], "WorkflowRunReceipt")
         self.assertIn("run_workflow", payload["required_sequence"])
+        self.assertNotIn("test-token", json.dumps(payload, ensure_ascii=False))
+        self.assertNotIn("consumer_quickstart", payload)
+
+    def test_network_consumer_manifest_cli_outputs_redacted_manifest(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "network",
+                "consumer-manifest",
+                "--workflow-path",
+                "workflows/cli-anything-macrocli-mermaid-routing.example.json",
+                "--base-url",
+                "http://127.0.0.1:8787",
+                "--session-token",
+                "test-token",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["kind"], "NetworkConsumerManifest")
+        self.assertEqual(payload["status"], "ready")
+        self.assertEqual(payload["manifest_id"], "cbn.consumer.manifest.cli-cli-network.v1")
+        self.assertEqual(payload["entrypoints"]["run_workflow"]["url"], "http://127.0.0.1:8787/workflows/run")
+        self.assertEqual(payload["auth"]["required_headers"]["X-CBN-Session"], "REDACTED")
+        self.assertEqual(payload["typed_responses"]["run_workflow"], "WorkflowRunReceipt")
+        self.assertEqual(payload["readiness"]["mvp_score"], "17/17")
+        self.assertNotIn("test-token", json.dumps(payload, ensure_ascii=False))
+        self.assertNotIn("consumer_quickstart", payload)
+
+    def test_network_quickstart_cli_outputs_consumer_manifest(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "network",
+                "quickstart",
+                "--workflow-path",
+                "workflows/cli-anything-macrocli-mermaid-routing.example.json",
+                "--base-url",
+                "http://127.0.0.1:8787",
+                "--session-token",
+                "test-token",
+                "--output",
+                "consumer-manifest",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["kind"], "NetworkConsumerManifest")
+        self.assertEqual(payload["status"], "ready")
+        self.assertIn("run_workflow", payload["request_sequence"])
+        self.assertFalse(payload["safety"]["secret_values_included"])
         self.assertNotIn("test-token", json.dumps(payload, ensure_ascii=False))
         self.assertNotIn("consumer_quickstart", payload)
 

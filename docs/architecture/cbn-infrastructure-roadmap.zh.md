@@ -304,6 +304,14 @@ Killer Demo slice 已新增可运行证据束：
   这样 demo 首屏无需手动点击 Connect，即可展示 `MVP 17/17`、demo script
   和 5 个产品演示阶段；请求超时同步上调到 15 秒以覆盖 Windows 本地 daemon
   启动和协议聚合的冷启动波动。
+- `NetworkConsumerManifest` 已新增为外部程序可持久化的最小接入文件：从
+  `NetworkConnectPackage` 派生，但只保留已脱敏的 auth header、entrypoints、
+  request sequence、typed responses、harness agent、registration importer、
+  MVP readiness 和 safety policy。CLI 支持
+  `python -m cbn network consumer-manifest` 与
+  `python -m cbn network quickstart --output consumer-manifest`，daemon 同步暴露
+  `/network/consumer-manifest`；该 manifest 明确不回显 session token，适合让
+  外部 SDK/程序保存为“一次性接入 CBN 网络”的本地配置。
 - Killer demo report 已新增 `communication_trace`：从真实 workflow run result 中提取
   `BridgeMessage argsFrom` handoff，展示 producer task、consumer task、selector、
   BridgeMessage valid 状态、selected value preview、resolved arg preview 和 artifact
