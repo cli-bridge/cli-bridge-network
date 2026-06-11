@@ -684,6 +684,7 @@ export interface NetworkConnectPackage {
   demo_playbook?: KillerMvpDemoPlaybook;
   direct_cli_readiness?: DirectCliReadinessReport;
   network_entry_profile?: NetworkEntryProfile;
+  network_harness_agent?: NetworkHarnessAgent;
   mvp_readiness?: KillerMvpReadiness;
   mvp_presenter_brief?: KillerMvpPresenterBrief;
   consumer_launch_contract?: ConsumerLaunchContract;
@@ -741,6 +742,11 @@ export interface ConsumerLaunchContract {
   entrypoints?: {
     open_studio?: string;
     plan_agent_request?: {
+      method?: string;
+      url?: string;
+      json?: Record<string, unknown>;
+    };
+    harness_agent?: string | {
       method?: string;
       url?: string;
       json?: Record<string, unknown>;
@@ -850,6 +856,7 @@ export interface NetworkEntryProfile {
     open_studio?: string;
     health?: string;
     import_catalog?: string;
+    harness_agent?: string;
     plan_agent_request?: {
       method?: string;
       url?: string;
@@ -903,6 +910,72 @@ export interface NetworkEntryProfile {
     targets?: string[];
     export_count?: number;
   };
+}
+
+export interface NetworkHarnessAgent {
+  kind?: "NetworkHarnessAgent";
+  status?: string;
+  contract_id?: string;
+  audience?: string;
+  workflow_path?: string;
+  base_url?: string | null;
+  auth?: {
+    required_headers?: Record<string, string>;
+    session_token_required?: boolean;
+    session_token_included?: boolean;
+    secret_values_echoed?: boolean;
+  };
+  natural_language?: {
+    message?: string;
+    binding?: string;
+    intent?: Record<string, unknown>;
+    plan_endpoint?: {
+      method?: string;
+      url?: string;
+      json?: Record<string, unknown>;
+    };
+  };
+  harness?: {
+    kind?: string;
+    accepts?: string[];
+    emits?: string[];
+    contract?: string;
+    agent_card_count?: number;
+    agent_task_count?: number;
+    roles?: string[];
+    harness_ids?: string[];
+  };
+  bridge?: {
+    message_kind?: string;
+    message_channel?: string;
+    parser_ref?: string;
+    route_count?: number;
+    routes?: Array<Record<string, unknown>>;
+    message?: Record<string, unknown>;
+  };
+  run?: {
+    dry_run_default?: boolean;
+    confirmed_default?: boolean;
+    method?: string;
+    endpoint?: string;
+    json?: Record<string, unknown>;
+    cli?: string;
+  };
+  evidence?: {
+    events?: string;
+    audit?: string;
+    artifacts?: string;
+    acceptance?: string;
+  };
+  setup?: {
+    status?: string;
+    setup_required?: boolean;
+    requires_user_count?: number;
+    secret_count?: number;
+    secret_values_included?: boolean;
+  };
+  safety?: Record<string, unknown>;
+  next_commands?: string[];
 }
 
 export interface CliAnythingPluginHealth {
@@ -999,6 +1072,10 @@ export interface ConnectSummary {
   entryProfileStableFields: string;
   entryProfileAuth: string;
   entryProfileEvidence: string;
+  networkHarnessStatus: string;
+  networkHarnessId: string;
+  networkHarnessRouteCount: number;
+  networkHarnessRunEndpoint: string;
   mvpReadinessStatus: string;
   mvpReadinessScore: string;
   mvpReadinessGoals: string;

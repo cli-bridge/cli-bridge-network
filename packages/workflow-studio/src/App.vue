@@ -42,6 +42,7 @@ import type {
   KillerMvpReadiness,
   NetworkConnectionAcceptance,
   NetworkEntryProfile,
+  NetworkHarnessAgent,
   NetworkConnectionAcceptanceReport,
   NetworkConnectPackage,
   NetworkConnectQuickstart,
@@ -127,6 +128,7 @@ const directQuickstartRequests = computed<QuickstartRequest[]>(() =>
 );
 const quickstartParity = computed(() => summarizeQuickstartParity(connectQuickstart.value, directQuickstartContract.value));
 const connectEntryProfile = computed<NetworkEntryProfile>(() => connectPackage.value?.network_entry_profile ?? {});
+const connectNetworkHarnessAgent = computed<NetworkHarnessAgent>(() => connectPackage.value?.network_harness_agent ?? {});
 const directEntryProfile = computed<NetworkEntryProfile>(() => entryProfile.value ?? {});
 const entryProfileParity = computed(() => summarizeEntryProfileParity(connectEntryProfile.value, directEntryProfile.value));
 const connectMvpReadiness = computed<KillerMvpReadiness>(() => connectPackage.value?.mvp_readiness ?? {});
@@ -744,6 +746,7 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
   const playbook = payload?.demo_playbook ?? {};
   const quickstart = payload?.consumer_quickstart ?? {};
   const entryProfile = payload?.network_entry_profile ?? {};
+  const networkHarnessAgent = payload?.network_harness_agent ?? {};
   const mvp = payload?.mvp_readiness ?? {};
   const presenter = payload?.mvp_presenter_brief ?? {};
   const launchContract = payload?.consumer_launch_contract ?? {};
@@ -772,6 +775,10 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
         ? "session token required"
         : "no session header",
     entryProfileEvidence: `${numberValue(entryProfile.evidence?.acceptance_check_count) ?? 0} checks · ${numberValue(entryProfile.evidence?.demo_stage_count) ?? 0} stages`,
+    networkHarnessStatus: stringValue(networkHarnessAgent.status) ?? "not loaded",
+    networkHarnessId: stringValue(networkHarnessAgent.contract_id) ?? "not loaded",
+    networkHarnessRouteCount: numberValue(networkHarnessAgent.bridge?.route_count) ?? 0,
+    networkHarnessRunEndpoint: stringValue(networkHarnessAgent.run?.endpoint) ?? "not loaded",
     mvpReadinessStatus: stringValue(mvp.status) ?? stringValue(summary.mvp_readiness_status) ?? "not loaded",
     mvpReadinessScore: stringValue(mvp.score) ?? stringValue(summary.mvp_readiness_score) ?? "0/0",
     mvpReadinessGoals: Object.entries(mvp.product_goals ?? {}).filter(([, ready]) => ready).length + "/" + Object.keys(mvp.product_goals ?? {}).length,
@@ -1498,6 +1505,9 @@ onMounted(async () => {
           <span :class="['pill-inline', connectSummary.entryProfileStatus === 'ready' ? 'ok' : 'blocked']">
             entry {{ connectSummary.entryProfileStatus }}
           </span>
+          <span :class="['pill-inline', connectSummary.networkHarnessStatus === 'ready' ? 'ok' : 'blocked']">
+            harness contract {{ connectSummary.networkHarnessStatus }}
+          </span>
           <span :class="['pill-inline', connectSummary.mvpReadinessStatus === 'ready' ? 'ok' : 'blocked']">
             mvp {{ connectSummary.mvpReadinessStatus }}
           </span>
@@ -1561,6 +1571,24 @@ onMounted(async () => {
           <div>
             <span>Parity detail</span>
             <code>{{ entryProfileParity.detail }}</code>
+          </div>
+        </div>
+        <div class="quickstart-grid">
+          <div>
+            <span>Harness contract</span>
+            <code>{{ connectSummary.networkHarnessId }}</code>
+          </div>
+          <div>
+            <span>Harness status</span>
+            <code>{{ connectSummary.networkHarnessStatus }}</code>
+          </div>
+          <div>
+            <span>Harness routes</span>
+            <code>{{ connectSummary.networkHarnessRouteCount }} BridgeMessage routes</code>
+          </div>
+          <div>
+            <span>Harness run</span>
+            <code>{{ connectSummary.networkHarnessRunEndpoint }}</code>
           </div>
         </div>
         <div class="contract-status-grid">
@@ -2199,7 +2227,7 @@ onMounted(async () => {
             <span>{{ endpoint.path }}</span>
           </div>
         </div>
-        <pre>{{ pretty({ daemon_verify: networkVerifyReport, import_catalog: importCatalog, direct_cli_readiness: directCliReadiness, one_shot_direct_cli_readiness: connectPackage?.direct_cli_readiness, direct_cli_parity: directCliParity, direct_quickstart: directQuickstart, quickstart_parity: quickstartParity, direct_entry_profile: entryProfile, entry_profile_parity: entryProfileParity, direct_launch_contract: launchContract, launch_contract_parity: launchContractParity, direct_acceptance: directAcceptance, acceptance_parity: acceptanceParity, direct_readiness: directReadiness, readiness_parity: readinessParity, network_entry_profile: connectPackage?.network_entry_profile, consumer_launch_contract: connectPackage?.consumer_launch_contract, mvp_readiness: connectPackage?.mvp_readiness, mvp_presenter_brief: connectPackage?.mvp_presenter_brief, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, demo_playbook: connectPackage?.demo_playbook, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, plugins: connectPackage?.plugins, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
+        <pre>{{ pretty({ daemon_verify: networkVerifyReport, import_catalog: importCatalog, direct_cli_readiness: directCliReadiness, one_shot_direct_cli_readiness: connectPackage?.direct_cli_readiness, direct_cli_parity: directCliParity, direct_quickstart: directQuickstart, quickstart_parity: quickstartParity, direct_entry_profile: entryProfile, entry_profile_parity: entryProfileParity, direct_launch_contract: launchContract, launch_contract_parity: launchContractParity, direct_acceptance: directAcceptance, acceptance_parity: acceptanceParity, direct_readiness: directReadiness, readiness_parity: readinessParity, network_entry_profile: connectPackage?.network_entry_profile, network_harness_agent: connectNetworkHarnessAgent, consumer_launch_contract: connectPackage?.consumer_launch_contract, mvp_readiness: connectPackage?.mvp_readiness, mvp_presenter_brief: connectPackage?.mvp_presenter_brief, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, demo_playbook: connectPackage?.demo_playbook, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, plugins: connectPackage?.plugins, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
       </section>
       <section>
         <div class="section-title"><Rocket :size="15" /> Killer Demo</div>

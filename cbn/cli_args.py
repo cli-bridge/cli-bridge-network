@@ -324,6 +324,35 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_AGENT_CONNECT_MESSAGE,
         help="Agent prompt used to shape the reusable workflow request.",
     )
+    network_harness_agent = network_subcommands.add_parser(
+        "harness-agent",
+        help="Print only the reusable natural-language harness agent contract.",
+    )
+    network_harness_agent.add_argument(
+        "--workflow-path",
+        default="workflows/cli-anything-macrocli-mermaid-routing.example.json",
+        help="Workflow JSON path to expose in the harness agent contract.",
+    )
+    network_harness_agent.add_argument("--base-url", help="Daemon base URL to embed in endpoint URLs.")
+    network_harness_agent.add_argument(
+        "--studio-url",
+        default="http://127.0.0.1:5177",
+        help="Workflow Studio base URL to embed as a preconfigured demo link.",
+    )
+    network_harness_agent.add_argument(
+        "--dashboard-url",
+        default="http://127.0.0.1:5173",
+        help="Maintainer dashboard URL to embed in the Workflow Studio demo link.",
+    )
+    network_harness_agent.add_argument(
+        "--session-token",
+        help="Optional daemon session token to include in auth metadata.",
+    )
+    network_harness_agent.add_argument(
+        "--message",
+        default=DEFAULT_AGENT_CONNECT_MESSAGE,
+        help="Agent prompt used to shape the reusable workflow request.",
+    )
     network_acceptance = network_subcommands.add_parser(
         "acceptance",
         help="Print only the machine-readable acceptance checklist for external CBN consumers.",
@@ -384,11 +413,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     network_quickstart.add_argument(
         "--output",
-        choices=["json", "curl", "powershell", "acceptance", "readiness", "launch-contract", "entry-profile"],
+        choices=[
+            "json",
+            "curl",
+            "powershell",
+            "acceptance",
+            "readiness",
+            "launch-contract",
+            "entry-profile",
+            "harness-agent",
+        ],
         default="json",
         help=(
             "Output JSON quickstart, a cURL script, a PowerShell script, the acceptance checklist, "
-            "MVP readiness, the small consumer launch contract, or the stable entry profile."
+            "MVP readiness, the small consumer launch contract, the stable entry profile, "
+            "or the reusable harness agent contract."
         ),
     )
     network_verify = network_subcommands.add_parser(

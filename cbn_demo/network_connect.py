@@ -110,6 +110,14 @@ def network_connect_package(
     registration_surface = _registration_surface()
     plugin_health = _plugin_health()
     direct_cli_readiness = direct_cli_readiness_report(registry=registry)
+    network_harness_agent = _network_harness_agent_contract(
+        workflow_path=workflow_path,
+        base_url=base_url,
+        quickstart=quickstart,
+        request_plan=request_plan,
+        agent_bundle=agent_bundle,
+        setup_guidance=setup_guidance,
+    )
     demo_playbook = _demo_playbook(
         workflow_path=workflow_path,
         studio_link=studio_link,
@@ -146,6 +154,7 @@ def network_connect_package(
         direct_cli_readiness=direct_cli_readiness,
         studio_link=studio_link,
         network_entry_profile=network_entry_profile,
+        network_harness_agent=network_harness_agent,
     )
     mvp_presenter_brief = _mvp_presenter_brief(
         workflow=workflow,
@@ -233,6 +242,7 @@ def network_connect_package(
         "demo_readiness": demo_readiness,
         "demo_playbook": demo_playbook,
         "network_entry_profile": network_entry_profile,
+        "network_harness_agent": network_harness_agent,
         "mvp_readiness": mvp_readiness,
         "mvp_presenter_brief": mvp_presenter_brief,
         "consumer_launch_contract": consumer_launch_contract,
@@ -338,6 +348,7 @@ def _consumer_launch_contract(
         "entrypoints": {
             "open_studio": _redact_launch_secret(entrypoints.get("open_studio")),
             "plan_agent_request": entrypoints.get("plan_agent_request"),
+            "harness_agent": entrypoints.get("harness_agent"),
             "run_workflow": entrypoints.get("run_workflow"),
             "verify_network": _redact_launch_secret(
                 (network_entry_profile.get("primary_entrypoints") or {}).get("verify_network")
@@ -362,6 +373,116 @@ def _consumer_launch_contract(
             "Do not rely on CBN internal daemon state outside the listed entrypoints.",
             "Do not persist or echo session token values from this payload.",
             "Do not run confirmed writes until the user explicitly sets confirmed=true.",
+        ],
+    }
+
+
+def _network_harness_agent_contract(
+    *,
+    workflow_path: str,
+    base_url: str | None,
+    quickstart: dict[str, Any],
+    request_plan: dict[str, Any],
+    agent_bundle: dict[str, Any],
+    setup_guidance: dict[str, Any],
+) -> dict[str, Any]:
+    """Stable, low-noise contract for reusing the natural-language CLI-CLI harness."""
+
+    entrypoints = quickstart.get("entrypoints") if isinstance(quickstart.get("entrypoints"), dict) else {}
+    headers = quickstart.get("required_headers") if isinstance(quickstart.get("required_headers"), dict) else {}
+    compact_request = _compact_workflow_request_plan(request_plan)
+    compact_bundle = _compact_agent_bundle(agent_bundle)
+    harness = compact_request.get("reusable_harness") if isinstance(compact_request.get("reusable_harness"), dict) else {}
+    request = compact_request.get("request") if isinstance(compact_request.get("request"), dict) else {}
+    run = compact_request.get("run") if isinstance(compact_request.get("run"), dict) else {}
+    run_http = run.get("http") if isinstance(run.get("http"), dict) else {}
+    bridge_routes = (
+        compact_request.get("bridge_routes")
+        if isinstance(compact_request.get("bridge_routes"), list)
+        else []
+    )
+    bridge_message = (
+        compact_request.get("bridge_message")
+        if isinstance(compact_request.get("bridge_message"), dict)
+        else {}
+    )
+    plan_entrypoint = entrypoints.get("plan_agent_request") if isinstance(entrypoints.get("plan_agent_request"), dict) else {}
+    run_entrypoint = entrypoints.get("run_workflow") if isinstance(entrypoints.get("run_workflow"), dict) else {}
+    return {
+        "apiVersion": CONNECT_API_VERSION,
+        "kind": "NetworkHarnessAgent",
+        "status": "ready"
+        if request_plan.get("ok") and harness.get("kind") == "NaturalLanguageWorkflowHarness"
+        else "needs_attention",
+        "contract_id": "cbn.network.harness-agent.natural-language.v1",
+        "audience": "external_program",
+        "workflow_path": workflow_path,
+        "base_url": base_url,
+        "auth": {
+            "required_headers": _redact_entry_profile_secrets(headers),
+            "session_token_required": "X-CBN-Session" in headers,
+            "session_token_included": bool(headers.get("X-CBN-Session")),
+            "secret_values_echoed": False,
+        },
+        "natural_language": {
+            "message": request.get("message"),
+            "binding": request.get("binding"),
+            "intent": request.get("intent", {}),
+            "plan_endpoint": _redact_entry_profile_secrets(plan_entrypoint),
+        },
+        "harness": {
+            "kind": harness.get("kind"),
+            "accepts": harness.get("accepts", []),
+            "emits": harness.get("emits", []),
+            "contract": harness.get("contract"),
+            "agent_card_count": compact_bundle.get("card_count", 0),
+            "agent_task_count": compact_bundle.get("task_count", 0),
+            "roles": [card.get("id") for card in _list_of_dicts(compact_bundle.get("cards")) if card.get("id")],
+            "harness_ids": [
+                item.get("id")
+                for item in _list_of_dicts(compact_bundle.get("harnesses"))
+                if item.get("id")
+            ],
+        },
+        "bridge": {
+            "message_kind": bridge_message.get("kind"),
+            "message_channel": bridge_message.get("channel"),
+            "parser_ref": bridge_message.get("parser_ref"),
+            "route_count": len(bridge_routes),
+            "routes": bridge_routes,
+            "message": bridge_message,
+        },
+        "run": {
+            "dry_run_default": True,
+            "confirmed_default": False,
+            "method": run_http.get("method", "POST"),
+            "endpoint": run_http.get("url") or run_entrypoint.get("url"),
+            "json": run_http.get("json") or run.get("payload", {}),
+            "cli": run.get("cli"),
+        },
+        "evidence": {
+            "events": entrypoints.get("events"),
+            "audit": entrypoints.get("audit"),
+            "artifacts": entrypoints.get("artifacts"),
+            "acceptance": entrypoints.get("acceptance"),
+        },
+        "setup": {
+            "status": setup_guidance.get("status"),
+            "setup_required": setup_guidance.get("setup_required"),
+            "requires_user_count": setup_guidance.get("requires_user_count", 0),
+            "secret_count": setup_guidance.get("secret_count", 0),
+            "secret_values_included": setup_guidance.get("safety", {}).get("secret_values_included"),
+        },
+        "safety": {
+            "additive_contract": True,
+            "confirmed_writes_disabled_by_default": True,
+            "secret_values_echoed": False,
+            "use_run_endpoint_after_plan": True,
+        },
+        "next_commands": [
+            f"python -m cbn network harness-agent --workflow-path {workflow_path}",
+            f"python -m cbn_adapter_agent --workflow-request-plan --workflow-path {workflow_path}",
+            f"python -m cbn workflow run {workflow_path} --dry-run",
         ],
     }
 
@@ -442,6 +563,7 @@ def _network_entry_profile(
             "internal_bus": "CBN BridgeMessage",
             "stable_fields": [
                 "network_entry_profile",
+                "network_harness_agent",
                 "consumer_quickstart",
                 "consumer_launch_contract",
                 "agent_workflow_request",
@@ -459,6 +581,7 @@ def _network_entry_profile(
             "open_studio": _redact_entry_profile_secrets(entrypoints.get("open_studio")),
             "health": _redact_entry_profile_secrets(entrypoints.get("health")),
             "import_catalog": _redact_entry_profile_secrets(entrypoints.get("import_catalog")),
+            "harness_agent": _redact_entry_profile_secrets(entrypoints.get("harness_agent")),
             "plan_agent_request": _redact_entry_profile_secrets(plan_entrypoint),
             "run_workflow": _redact_entry_profile_secrets(run_entrypoint),
             "verify_network": _redact_entry_profile_secrets(
@@ -529,6 +652,7 @@ def _mvp_readiness(
     direct_cli_readiness: dict[str, Any],
     studio_link: dict[str, Any],
     network_entry_profile: dict[str, Any],
+    network_harness_agent: dict[str, Any],
 ) -> dict[str, Any]:
     """Product-facing readiness matrix for the current killer MVP surface."""
 
@@ -588,6 +712,18 @@ def _mvp_readiness(
                 "bridge_route_count": request_plan.get("bridge_route_count", 0),
             },
             "repair_adapter_agent_workflow_request_plan",
+        ),
+        _mvp_check(
+            "network_harness_agent_contract",
+            "Network harness agent contract",
+            network_harness_agent.get("status") == "ready",
+            "External programs can read one focused natural-language harness contract before running the CLI-CLI workflow.",
+            {
+                "contract_id": network_harness_agent.get("contract_id"),
+                "route_count": (network_harness_agent.get("bridge") or {}).get("route_count", 0),
+                "secret_values_echoed": (network_harness_agent.get("auth") or {}).get("secret_values_echoed"),
+            },
+            "repair_network_harness_agent_contract",
         ),
         _mvp_check(
             "network_entry_profile",
@@ -694,6 +830,7 @@ def _mvp_readiness(
     product_goals = {
         "show_cli_cli_protocol": _checks_ready(checks, "internal_bridge_contract", "killer_workflow_dag"),
         "run_reusable_harness_agent": _checks_ready(checks, "natural_language_harness_agent", "quickstart_acceptance"),
+        "reuse_harness_agent_contract": _checks_ready(checks, "network_harness_agent_contract"),
         "integrate_next_cli": _checks_ready(checks, "cli_registration_surface", "cli_anything_split"),
         "integrate_direct_cli_profiles": _checks_ready(checks, "direct_cli_readiness"),
         "one_shot_external_network_entry": _checks_ready(checks, "network_entry_profile", "external_agent_cli_contract"),
@@ -1263,6 +1400,7 @@ def _endpoint_catalog(*, base_url: str | None, workflow_path: str) -> list[dict[
         ("GET", "/network/acceptance", "read only the machine-readable network acceptance checklist"),
         ("GET", "/network/launch-contract", "read only the redacted launch contract for external programs"),
         ("GET", "/network/entry-profile", "read only the stable external integration profile"),
+        ("GET", "/network/harness-agent", "read only the reusable natural-language harness agent contract"),
         ("GET", "/network/readiness", "read only the killer MVP readiness matrix"),
         ("POST", "/network/verify", "run the live network acceptance checklist"),
         ("GET", "/imports/catalog", "read the dry-run-first CLI importer catalog"),
@@ -1642,6 +1780,7 @@ def _consumer_quickstart(
         "acceptance": _absolute_url(clean_base_url, f"/network/acceptance?{launch_query}"),
         "launch_contract": _absolute_url(clean_base_url, f"/network/launch-contract?{launch_query}"),
         "entry_profile": _absolute_url(clean_base_url, f"/network/entry-profile?{launch_query}"),
+        "harness_agent": _absolute_url(clean_base_url, f"/network/harness-agent?{launch_query}"),
         "import_catalog": _absolute_url(clean_base_url, "/imports/catalog"),
         "direct_cli_readiness": _absolute_url(clean_base_url, "/direct-cli/readiness"),
         "inspect_workflow": _absolute_url(clean_base_url, f"/workflows?{workflow_query}"),
@@ -1666,6 +1805,7 @@ def _consumer_quickstart(
         _quickstart_request("health", "GET", entrypoints["health"], headers=headers),
         _quickstart_request("launch_contract", "GET", entrypoints["launch_contract"], headers=headers),
         _quickstart_request("entry_profile", "GET", entrypoints["entry_profile"], headers=headers),
+        _quickstart_request("harness_agent", "GET", entrypoints["harness_agent"], headers=headers),
         _quickstart_request("import_catalog", "GET", entrypoints["import_catalog"], headers=headers),
         _quickstart_request("direct_cli_readiness", "GET", entrypoints["direct_cli_readiness"], headers=headers),
         _quickstart_request("inspect_workflow", "GET", entrypoints["inspect_workflow"], headers=headers),
@@ -1723,6 +1863,7 @@ def _consumer_quickstart(
             "open_studio",
             "launch_contract",
             "entry_profile",
+            "harness_agent",
             "import_catalog",
             "direct_cli_readiness",
             "inspect_workflow",
@@ -1789,62 +1930,69 @@ def _quickstart_sequence_steps(*, requests: list[dict[str, Any]], studio_url: st
         ),
         request_step(
             4,
+            "harness_agent",
+            "Read harness agent",
+            "Read the focused natural-language harness contract before planning a workflow request.",
+            "NetworkHarnessAgent.status == ready and route_count >= 1.",
+        ),
+        request_step(
+            5,
             "import_catalog",
             "Discover importers",
             "Read the dry-run-first CLI registration catalog before choosing a harness or adapter.",
             "CliRegistrationSurface.status == ready and importer_count >= 1.",
         ),
         request_step(
-            5,
+            6,
             "direct_cli_readiness",
             "Inspect direct CLI readiness",
             "Confirm typed parser coverage and setup recovery for direct external CLI profiles.",
             "DirectCliReadinessReport.ok == true and recovery_type_count >= 1.",
         ),
         request_step(
-            6,
+            7,
             "inspect_workflow",
             "Inspect workflow DAG",
             "Confirm the selected workflow is valid and has CLI tasks before execution.",
             "workflow.valid == true and task_count >= 1.",
         ),
         request_step(
-            7,
+            8,
             "inspect_bridge_contract",
             "Inspect Bridge Contract",
             "Understand ToolManifest, BridgeMessage, Artifact, and selector boundaries.",
             "bridge contract ok and route_count >= 1.",
         ),
         request_step(
-            8,
+            9,
             "inspect_agent_nodes",
             "Inspect harness agent nodes",
             "Read reusable AgentCard, AgentHarness, AgentTask, and BridgeMessage node bindings.",
             "AdapterAgentNodeBundle includes cards, harnesses, and BridgeMessage.",
         ),
         request_step(
-            9,
+            10,
             "export_protocols",
             "Export protocol facades",
             "Expose MCP, A2A, and ACP workflow descriptors from the same internal bus contract.",
             "protocol exports include mcp, a2a, and acp.",
         ),
         request_step(
-            10,
+            11,
             "plan_agent_request",
             "Plan natural-language run",
             "Bind a natural-language request to the reusable CLI-CLI harness run contract.",
             "AdapterAgentWorkflowRequestPlan.reusable_harness.kind == NaturalLanguageWorkflowHarness.",
         ),
         request_step(
-            11,
+            12,
             "run_workflow",
             "Run workflow",
             "Execute the CLI-CLI chain through the daemon with dry-run/confirmation gates.",
             "workflow run receipt status == completed.",
         ),
         {
-            "order": 12,
+            "order": 13,
             "id": "read_evidence",
             "kind": "evidence",
             "title": "Read evidence",
@@ -1866,6 +2014,7 @@ def _quickstart_sdk_snippets(
         "health",
         "launch_contract",
         "entry_profile",
+        "harness_agent",
         "import_catalog",
         "direct_cli_readiness",
         "plan_agent_request",
@@ -1929,6 +2078,7 @@ def _python_consumer_snippet(requests_by_id: dict[str, dict[str, Any]], *, heade
             "health",
             "launch_contract",
             "entry_profile",
+            "harness_agent",
             "import_catalog",
             "direct_cli_readiness",
             "plan_agent_request",
@@ -1963,12 +2113,13 @@ def _python_consumer_snippet(requests_by_id: dict[str, dict[str, Any]], *, heade
             "call('health')",
             "launch_contract = call('launch_contract')",
             "entry_profile = call('entry_profile')",
+            "harness_agent = call('harness_agent')",
             "catalog = call('import_catalog')",
             "direct_cli = call('direct_cli_readiness')",
             "plan = call('plan_agent_request')",
             "receipt = call('run_workflow')",
             "evidence = {key: call(key) for key in ('events', 'audit', 'artifacts')}",
-            "print(json.dumps({'launch_contract': launch_contract.get('status'), 'entry_profile': entry_profile.get('status'), 'importers': catalog.get('importer_count'), 'direct_cli': direct_cli.get('summary', {}).get('capability_count'), 'plan': plan.get('kind'), 'workflow_status': receipt.get('status'), 'evidence': {k: len(v) for k, v in evidence.items()}}, indent=2))",
+            "print(json.dumps({'launch_contract': launch_contract.get('status'), 'entry_profile': entry_profile.get('status'), 'harness_agent': harness_agent.get('status'), 'importers': catalog.get('importer_count'), 'direct_cli': direct_cli.get('summary', {}).get('capability_count'), 'plan': plan.get('kind'), 'workflow_status': receipt.get('status'), 'evidence': {k: len(v) for k, v in evidence.items()}}, indent=2))",
         ]
     )
 
@@ -1981,7 +2132,7 @@ def _typescript_consumer_snippet(requests_by_id: dict[str, dict[str, Any]], *, h
             "json": request.get("json") if isinstance(request.get("json"), dict) else None,
         }
         for request_id, request in requests_by_id.items()
-        if request_id in {"health", "launch_contract", "entry_profile", "import_catalog", "direct_cli_readiness", "plan_agent_request", "run_workflow", "events", "audit", "artifacts"}
+        if request_id in {"health", "launch_contract", "entry_profile", "harness_agent", "import_catalog", "direct_cli_readiness", "plan_agent_request", "run_workflow", "events", "audit", "artifacts"}
     }
     return "\n".join(
         [
@@ -2002,12 +2153,13 @@ def _typescript_consumer_snippet(requests_by_id: dict[str, dict[str, Any]], *, h
             "await call('health');",
             "const launchContract = await call('launch_contract');",
             "const entryProfile = await call('entry_profile');",
+            "const harnessAgent = await call('harness_agent');",
             "const catalog = await call('import_catalog');",
             "const directCli = await call('direct_cli_readiness');",
             "const plan = await call('plan_agent_request');",
             "const receipt = await call('run_workflow');",
             "const [events, audit, artifacts] = await Promise.all([call('events'), call('audit'), call('artifacts')]);",
-            "console.log({ launchContract: launchContract.status, entryProfile: entryProfile.status, importers: catalog.importer_count, directCli: directCli.summary?.capability_count, plan: plan.kind, workflowStatus: receipt.status, evidence: { events: events.length, audit: audit.length, artifacts: artifacts.length } });",
+            "console.log({ launchContract: launchContract.status, entryProfile: entryProfile.status, harnessAgent: harnessAgent.status, importers: catalog.importer_count, directCli: directCli.summary?.capability_count, plan: plan.kind, workflowStatus: receipt.status, evidence: { events: events.length, audit: audit.length, artifacts: artifacts.length } });",
         ]
     )
 
@@ -2043,6 +2195,19 @@ def _network_connection_acceptance(*, workflow_path: str, requests: list[dict[st
                 "json.status": "ready",
                 "json.auth.secret_values_echoed": False,
                 "json.compatibility.internal_bus": "CBN BridgeMessage",
+            },
+        ),
+        _acceptance_check(
+            "harness_agent_readable",
+            "harness_agent",
+            "External consumers can fetch the focused natural-language harness agent contract.",
+            {
+                "http_status": 200,
+                "json.kind": "NetworkHarnessAgent",
+                "json.status": "ready",
+                "json.auth.secret_values_echoed": False,
+                "json.harness.kind": "NaturalLanguageWorkflowHarness",
+                "json.bridge.route_count_min": 1,
             },
         ),
         _acceptance_check(
@@ -2152,6 +2317,7 @@ def _network_connection_acceptance(*, workflow_path: str, requests: list[dict[st
             "health.status == ok",
             "consumer_launch_contract.status == ready",
             "network_entry_profile.status == ready",
+            "network_harness_agent.status == ready",
             "import_catalog.importer_count >= 1",
             "direct_cli_readiness.ok == true",
             "workflow.valid == true",
@@ -2166,6 +2332,7 @@ def _network_connection_acceptance(*, workflow_path: str, requests: list[dict[st
             "If health fails, verify daemon URL and X-CBN-Session.",
             "If launch_contract fails, verify the daemon exposes /network/launch-contract from the current CBN build.",
             "If entry_profile fails, verify the daemon exposes /network/entry-profile and redacts session tokens.",
+            "If harness_agent fails, verify the daemon exposes /network/harness-agent and the workflow request plan is ready.",
             "If import_catalog fails, verify the daemon exposes /imports/catalog from the current CBN build.",
             "If direct_cli_readiness fails, verify the daemon exposes /direct-cli/readiness and parser fixtures are available.",
             "If workflow inspection fails, verify workflow_path and required manifests.",

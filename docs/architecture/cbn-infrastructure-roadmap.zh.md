@@ -229,6 +229,16 @@ Killer Demo slice 已新增可运行证据束：
   扩展为 13/13。外部程序读取一次 package 后，不只知道如何跑当前 workflow，
   也能判断 Feishu/Jimeng/Obsidian/CAW 这类 direct CLI profile 是否有 typed parser、
   fixture 和首次设置恢复路径。
+- `NetworkConnectPackage.network_harness_agent` 已新增为 focused reusable harness
+  contract：它把 natural-language request binding、`NaturalLanguageWorkflowHarness`
+  角色、AgentCard/AgentTask 数、`agent.workflow.request.plan` BridgeMessage、
+  selector route、dry-run run endpoint、evidence endpoints 和 setup/secret safety
+  聚合成一份低噪声对象。daemon 新增只读 `GET /network/harness-agent`，CLI 新增
+  `python -m cbn network harness-agent`，`consumer_quickstart` 同步新增
+  `harness_agent` 请求；acceptance checklist 从 14 项扩展为 15 项，
+  `KillerMvpReadiness` 从 13/13 扩展为 14/14。外部程序现在可以先读取
+  entry profile，再读取 focused harness agent contract，最后再决定是否调用
+  `/adapter-agent/workflow-request-plan` 或直接按 run endpoint dry-run 执行 workflow。
 - Killer demo report 已新增 `communication_trace`：从真实 workflow run result 中提取
   `BridgeMessage argsFrom` handoff，展示 producer task、consumer task、selector、
   BridgeMessage valid 状态、selected value preview、resolved arg preview 和 artifact
@@ -404,8 +414,8 @@ Killer Demo slice 已新增可运行证据束：
 - Workflow Studio 已新增 direct `Accept` 操作，会调用 `/network/acceptance`，
   并把 direct checklist 与 `NetworkConnectPackage.acceptance` /
   `consumer_quickstart.acceptance` 按 status、check_count、required_request_ids
-  以及 check id/request id 做 parity 对比；Connect 面板同步展示当前 13 个
-  first-call requests 与 13 个 acceptance checks，避免验收证据只停留在大包嵌套副本。
+  以及 check id/request id 做 parity 对比；Connect 面板同步展示当前 15 个
+  first-call requests 与 15 个 acceptance checks，避免验收证据只停留在大包嵌套副本。
 - Workflow Studio 的 browser-side `Verify` 已同步支持 `json.count_min` /
   `json.length_min` 和 `json.<field>_count_min`，因此前端 replay quickstart 与
   daemon-side `Daemon Verify` 对同一份 `NetworkConnectionAcceptance` 使用一致的
@@ -489,10 +499,11 @@ Killer Demo slice 已新增可运行证据束：
   做 contract id、status、run endpoint 和 required request ids 的 parity 对比，
   让演示现场能证明小入口不是大包里的静态副本。
 - `NetworkConnectPackage.mvp_readiness` 已新增为 killer MVP 产品验收矩阵：用
-  12 个机器可读 checks 覆盖 external AgentCli contract、internal BridgeMessage
+  14 个机器可读 checks 覆盖 external AgentCli contract、internal BridgeMessage
   bus、Workflow Studio、killer workflow DAG、natural-language harness agent、
-  one-shot network entry、first-call acceptance、CLI registration、CLI-Anything
-  split、setup guidance、MCP/A2A/ACP facade 和 demo playbook。它同时输出
+  focused network harness agent contract、one-shot network entry、first-call
+  acceptance、CLI registration、direct CLI readiness、CLI-Anything split、setup
+  guidance、MCP/A2A/ACP facade 和 demo playbook。它同时输出
   product goals（展示 CLI-CLI 协议、复用 harness agent、集成下一个 CLI、
   一次性外部接入、Studio demo、首跑安全设置）和 recommended next action；
   Workflow Studio Connect 面板同步显示 readiness score、goal count 和 checklist。

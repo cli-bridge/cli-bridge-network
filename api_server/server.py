@@ -105,6 +105,7 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/network/acceptance"},
     {"method": "GET", "path": "/network/launch-contract"},
     {"method": "GET", "path": "/network/entry-profile"},
+    {"method": "GET", "path": "/network/harness-agent"},
     {"method": "GET", "path": "/network/readiness"},
     {"method": "POST", "path": "/network/verify"},
     {"method": "POST", "path": "/protocols/accept-workflow"},
@@ -625,6 +626,7 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             "/network/acceptance",
             "/network/launch-contract",
             "/network/entry-profile",
+            "/network/harness-agent",
             "/network/readiness",
         }:
             result = _network_connect_package_from_query(self, runtime, query)
@@ -655,6 +657,13 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 self._send(
                     200 if result["ok"] and profile.get("kind") == "NetworkEntryProfile" else 422,
                     profile,
+                )
+                return
+            if parsed.path == "/network/harness-agent":
+                harness_agent = result.get("network_harness_agent", {})
+                self._send(
+                    200 if result["ok"] and harness_agent.get("kind") == "NetworkHarnessAgent" else 422,
+                    harness_agent,
                 )
                 return
             if parsed.path == "/network/readiness":
