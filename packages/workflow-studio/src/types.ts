@@ -872,11 +872,13 @@ export interface KillerMvpPresenterBrief {
   live_demo_flow?: PresenterFlowStep[];
   integration_handoff?: {
     connect_package_url?: string;
+    sdk_bootstrap_url?: string;
     readiness_url?: string;
     studio_url?: string;
     run_workflow_url?: string;
     verify_command?: string;
     readiness_command?: string;
+    sdk_bootstrap_command?: string;
     next_cli_command?: string;
   };
   decision_gates?: Record<string, unknown>;

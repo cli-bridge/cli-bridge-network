@@ -256,8 +256,9 @@ Killer Demo slice 已新增可运行证据束：
   count、required sequence、run endpoint 和 secret policy parity 对比。当前
   quickstart/acceptance 已把 `sdk_bootstrap` 纳入一等 request/check，acceptance
   checklist 从 15 项扩展为 16 项，`KillerMvpReadiness` 从 14/14 扩展为 15/15。
-  该 slice 让第三方程序可以先读取小合同初始化 SDK，再按需升级读取 quickstart 或完整
-  package。
+  `KillerMvpPresenterBrief.integration_handoff` 同步给出 `sdk_bootstrap_url` 和
+  `sdk_bootstrap_command`，demo playbook 新增 `show_sdk_bootstrap` 步骤，现场演示能
+  直接说明“外部程序先读小合同初始化 SDK，再按需升级读取 quickstart 或完整 package”。
 - Killer demo report 已新增 `communication_trace`：从真实 workflow run result 中提取
   `BridgeMessage argsFrom` handoff，展示 producer task、consumer task、selector、
   BridgeMessage valid 状态、selected value preview、resolved arg preview 和 artifact

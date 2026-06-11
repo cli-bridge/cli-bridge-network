@@ -1197,6 +1197,20 @@ def _demo_playbook(
             "success_signal": "Connect panel shows AgentCliCard/RunReceipt, BridgeMessage routes, setup guidance, and registration surface.",
         },
         {
+            "id": "show_sdk_bootstrap",
+            "title": "Show SDK bootstrap handoff",
+            "intent": "Show the smallest stable contract another program can read before calling the network.",
+            "action": "inspect_endpoint",
+            "target": entrypoints.get("sdk_bootstrap"),
+            "command": _network_quickstart_command(
+                workflow_path,
+                base_url=base_url,
+                session_token=session_token,
+                output="sdk-bootstrap",
+            ),
+            "success_signal": "ConsumerSdkBootstrap.status == ready and typed_responses.run_workflow == WorkflowRunReceipt.",
+        },
+        {
             "id": "run_killer_demo",
             "title": "Run CLI-CLI killer demo",
             "intent": "Prove macrocli output can route through BridgeMessage into Mermaid and produce artifacts.",
@@ -1241,6 +1255,7 @@ def _demo_playbook(
         "success_criteria": [
             "Workflow Studio opens with the target workflow path.",
             "Connect Package exposes external protocol boundary and internal BridgeMessage contract.",
+            "SDK bootstrap exposes the small external-program handoff without secret values.",
             "Harness agent request can call the CLI-CLI workflow through /workflows/run.",
             "Runtime event, audit, and artifact evidence is visible after the run.",
             "MCP/A2A/ACP descriptors export for the same workflow.",
@@ -1248,6 +1263,12 @@ def _demo_playbook(
         ],
         "next_commands": [
             verify_command,
+            _network_quickstart_command(
+                workflow_path,
+                base_url=base_url,
+                session_token=session_token,
+                output="sdk-bootstrap",
+            ),
             f"python -m cbn demo killer --workflow-path {workflow_path} --run --dry-run --smoke-suite",
             "python -m cbn import command --help",
         ],
@@ -1291,6 +1312,12 @@ def _mvp_presenter_brief(
         base_url=base_url,
         session_token=session_token,
         output="readiness",
+    )
+    sdk_bootstrap_command = _network_quickstart_command(
+        workflow_path,
+        base_url=base_url,
+        session_token=session_token,
+        output="sdk-bootstrap",
     )
     verify_command = _network_verify_command(workflow_path, base_url=base_url, session_token=session_token)
     brief_ready = bool(
@@ -1339,6 +1366,13 @@ def _mvp_presenter_brief(
             "value": network_entry_profile.get("profile_id"),
         },
         {
+            "id": "sdk_bootstrap_handoff",
+            "title": "SDKs get a small typed bootstrap",
+            "evidence_source": "consumer_sdk_bootstrap",
+            "metric": "requests",
+            "value": f"{quickstart.get('consumer_sdk_bootstrap_request_count', 0) or len(quickstart.get('requests', []))} typed requests",
+        },
+        {
             "id": "first_call_acceptance",
             "title": "External first-call sequence is replayable",
             "evidence_source": "consumer_quickstart.acceptance",
@@ -1373,11 +1407,13 @@ def _mvp_presenter_brief(
         "live_demo_flow": live_demo_flow,
         "integration_handoff": {
             "connect_package_url": connect_package_url,
+            "sdk_bootstrap_url": entrypoints.get("sdk_bootstrap"),
             "readiness_url": readiness_url,
             "studio_url": studio_link.get("url"),
             "run_workflow_url": request_plan_http.get("url") or entrypoints.get("run_workflow", {}).get("url"),
             "verify_command": verify_command,
             "readiness_command": readiness_command,
+            "sdk_bootstrap_command": sdk_bootstrap_command,
             "next_cli_command": (registration_surface.get("next_commands") or ["python -m cbn import command --help"])[0],
         },
         "decision_gates": {
@@ -1390,7 +1426,12 @@ def _mvp_presenter_brief(
             "playbook_step_count": demo_playbook.get("step_count", 0),
         },
         "recommended_next_action": mvp_readiness.get("recommended_next_action", "open_workflow_studio_demo"),
-        "next_commands": [verify_command, readiness_command, (registration_surface.get("next_commands") or ["python -m cbn import command --help"])[0]],
+        "next_commands": [
+            verify_command,
+            readiness_command,
+            sdk_bootstrap_command,
+            (registration_surface.get("next_commands") or ["python -m cbn import command --help"])[0],
+        ],
     }
 
 
