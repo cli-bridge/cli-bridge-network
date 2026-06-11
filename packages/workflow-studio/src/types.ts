@@ -884,6 +884,8 @@ export interface KillerMvpPresenterBrief {
     events_url?: string;
     audit_url?: string;
     artifacts_url?: string;
+    registration_catalog_url?: string;
+    registration_catalog_command?: string;
     sdk_bootstrap_url?: string;
     readiness_url?: string;
     studio_url?: string;
@@ -892,6 +894,10 @@ export interface KillerMvpPresenterBrief {
     readiness_command?: string;
     sdk_bootstrap_command?: string;
     next_cli_command?: string;
+    cli_anything_import_command?: string;
+    mcp_import_command?: string;
+    skill_import_command?: string;
+    parser_fixture_command?: string;
   };
   decision_gates?: Record<string, unknown>;
   recommended_next_action?: string;
@@ -1177,6 +1183,13 @@ export interface ConnectSummary {
   presenterEventsUrl: string;
   presenterAuditUrl: string;
   presenterArtifactsUrl: string;
+  presenterRegistrationCatalogUrl: string;
+  presenterRegistrationCatalogCommand: string;
+  presenterNextCliCommand: string;
+  presenterCliAnythingImportCommand: string;
+  presenterMcpImportCommand: string;
+  presenterSkillImportCommand: string;
+  presenterParserFixtureCommand: string;
   presenterSdkBootstrapUrl: string;
   presenterSdkBootstrapCommand: string;
   launchContractStatus: string;

@@ -1300,6 +1300,9 @@ def _mvp_presenter_brief(
     request = request_plan.get("request") if isinstance(request_plan.get("request"), dict) else {}
     agent_message = request.get("message") or DEFAULT_AGENT_CONNECT_MESSAGE
     harness = request_plan.get("reusable_harness") if isinstance(request_plan.get("reusable_harness"), dict) else {}
+    registration_next_commands = [
+        str(command) for command in registration_surface.get("next_commands", []) if isinstance(command, str)
+    ]
     product_goals = mvp_readiness.get("product_goals") if isinstance(mvp_readiness.get("product_goals"), dict) else {}
     goal_count = len(product_goals)
     ready_goal_count = sum(1 for ready in product_goals.values() if ready)
@@ -1433,6 +1436,35 @@ def _mvp_presenter_brief(
             "events_url": entrypoints.get("events"),
             "audit_url": entrypoints.get("audit"),
             "artifacts_url": entrypoints.get("artifacts"),
+            "registration_catalog_url": entrypoints.get("import_catalog"),
+            "registration_catalog_command": registration_next_commands[0]
+            if registration_next_commands
+            else "python -m cbn import catalog",
+            "next_cli_command": _registration_command(
+                registration_surface,
+                "command",
+                fallback="python -m cbn import command --help",
+            ),
+            "cli_anything_import_command": _registration_command(
+                registration_surface,
+                "cli-anything",
+                fallback="python -m cbn import cli-anything --help",
+            ),
+            "mcp_import_command": _registration_command(
+                registration_surface,
+                "mcp",
+                fallback="python -m cbn import mcp --help",
+            ),
+            "skill_import_command": _registration_command(
+                registration_surface,
+                "skill",
+                fallback="python -m cbn import skill --help",
+            ),
+            "parser_fixture_command": _registration_command(
+                registration_surface,
+                "parser-fixture",
+                fallback="python -m cbn record-parser-fixture --help",
+            ),
             "sdk_bootstrap_url": entrypoints.get("sdk_bootstrap"),
             "readiness_url": readiness_url,
             "studio_url": studio_link.get("url"),
@@ -1440,7 +1472,6 @@ def _mvp_presenter_brief(
             "verify_command": verify_command,
             "readiness_command": readiness_command,
             "sdk_bootstrap_command": sdk_bootstrap_command,
-            "next_cli_command": (registration_surface.get("next_commands") or ["python -m cbn import command --help"])[0],
         },
         "decision_gates": {
             "ready_goal_count": ready_goal_count,
@@ -2938,6 +2969,16 @@ def _demo_killer_command(workflow_path: str, *, smoke_suite: bool) -> str:
     if smoke_suite:
         args.append("--smoke-suite")
     return _command(args)
+
+
+def _registration_command(registration_surface: dict[str, Any], importer_id: str, *, fallback: str) -> str:
+    importers = registration_surface.get("importers") if isinstance(registration_surface.get("importers"), list) else []
+    for importer in importers:
+        if isinstance(importer, dict) and importer.get("id") == importer_id:
+            command = importer.get("help_command") or importer.get("example")
+            if isinstance(command, str) and command:
+                return command
+    return fallback
 
 
 def _network_quickstart_command(

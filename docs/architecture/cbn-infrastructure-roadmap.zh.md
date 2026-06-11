@@ -278,6 +278,11 @@ Killer Demo slice 已新增可运行证据束：
   `demo_smoke_command`、`events_url`、`audit_url` 和 `artifacts_url`，Workflow Studio
   同步展示 killer demo run/smoke 命令与 evidence endpoints，并提供 Copy Demo 入口。
   现场演示可以按“运行 demo -> 查看 artifact/event/audit 证据”完成闭环。
+- `KillerMvpPresenterBrief.integration_handoff` 已补充 `registration_catalog_url`、
+  `registration_catalog_command`、`next_cli_command`、`cli_anything_import_command`、
+  `mcp_import_command`、`skill_import_command` 和 `parser_fixture_command`。
+  Workflow Studio 同步展示 next CLI/CLI-Anything/MCP/skill/parser fixture 注册入口，
+  并提供 Copy CLI 入口，让“下一个 CLI 如何进网络”不依赖 raw JSON。
 - Killer demo report 已新增 `communication_trace`：从真实 workflow run result 中提取
   `BridgeMessage argsFrom` handoff，展示 producer task、consumer task、selector、
   BridgeMessage valid 状态、selected value preview、resolved arg preview 和 artifact

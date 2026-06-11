@@ -820,6 +820,13 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
     presenterEventsUrl: stringValue(presenterHandoff.events_url) ?? "not loaded",
     presenterAuditUrl: stringValue(presenterHandoff.audit_url) ?? "not loaded",
     presenterArtifactsUrl: stringValue(presenterHandoff.artifacts_url) ?? "not loaded",
+    presenterRegistrationCatalogUrl: stringValue(presenterHandoff.registration_catalog_url) ?? "not loaded",
+    presenterRegistrationCatalogCommand: stringValue(presenterHandoff.registration_catalog_command) ?? "not loaded",
+    presenterNextCliCommand: stringValue(presenterHandoff.next_cli_command) ?? "not loaded",
+    presenterCliAnythingImportCommand: stringValue(presenterHandoff.cli_anything_import_command) ?? "not loaded",
+    presenterMcpImportCommand: stringValue(presenterHandoff.mcp_import_command) ?? "not loaded",
+    presenterSkillImportCommand: stringValue(presenterHandoff.skill_import_command) ?? "not loaded",
+    presenterParserFixtureCommand: stringValue(presenterHandoff.parser_fixture_command) ?? "not loaded",
     presenterSdkBootstrapUrl: stringValue(presenterHandoff.sdk_bootstrap_url) ?? "not loaded",
     presenterSdkBootstrapCommand: stringValue(presenterHandoff.sdk_bootstrap_command) ?? "not loaded",
     launchContractStatus: stringValue(launchContract.status) ?? "not loaded",
@@ -1933,6 +1940,30 @@ onMounted(async () => {
             <code>{{ connectSummary.presenterArtifactsUrl }} · {{ connectSummary.presenterEventsUrl }} · {{ connectSummary.presenterAuditUrl }}</code>
           </div>
           <div>
+            <span>Import catalog</span>
+            <code>{{ connectSummary.presenterRegistrationCatalogUrl }}</code>
+          </div>
+          <div>
+            <span>Next CLI</span>
+            <code>{{ connectSummary.presenterNextCliCommand }}</code>
+          </div>
+          <div>
+            <span>CLI-Anything import</span>
+            <code>{{ connectSummary.presenterCliAnythingImportCommand }}</code>
+          </div>
+          <div>
+            <span>MCP import</span>
+            <code>{{ connectSummary.presenterMcpImportCommand }}</code>
+          </div>
+          <div>
+            <span>Skill import</span>
+            <code>{{ connectSummary.presenterSkillImportCommand }}</code>
+          </div>
+          <div>
+            <span>Parser fixture</span>
+            <code>{{ connectSummary.presenterParserFixtureCommand }}</code>
+          </div>
+          <div>
             <span>SDK bootstrap</span>
             <code>{{ connectSummary.presenterSdkBootstrapUrl }}</code>
           </div>
@@ -1990,6 +2021,9 @@ onMounted(async () => {
           </button>
           <button title="Copy killer demo run command" :disabled="!connectSummary.presenterDemoRunCommand || connectSummary.presenterDemoRunCommand === 'not loaded'" @click="copyText('demo-run-command', connectSummary.presenterDemoRunCommand)">
             <Copy :size="14" /> {{ copiedScript === "demo-run-command" ? "Copied" : "Copy Demo" }}
+          </button>
+          <button title="Copy next CLI registration command" :disabled="!connectSummary.presenterNextCliCommand || connectSummary.presenterNextCliCommand === 'not loaded'" @click="copyText('next-cli-command', connectSummary.presenterNextCliCommand)">
+            <Copy :size="14" /> {{ copiedScript === "next-cli-command" ? "Copied" : "Copy CLI" }}
           </button>
           <button title="Copy SDK bootstrap command" :disabled="!connectSummary.presenterSdkBootstrapCommand || connectSummary.presenterSdkBootstrapCommand === 'not loaded'" @click="copyText('sdk-bootstrap-command', connectSummary.presenterSdkBootstrapCommand)">
             <Copy :size="14" /> {{ copiedScript === "sdk-bootstrap-command" ? "Copied" : "Copy SDK" }}
