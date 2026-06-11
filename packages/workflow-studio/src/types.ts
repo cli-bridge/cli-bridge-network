@@ -876,6 +876,9 @@ export interface KillerMvpPresenterBrief {
     harness_agent_url?: string;
     agent_plan_url?: string;
     agent_plan_command?: string;
+    protocol_export_url?: string;
+    protocol_export_command?: string;
+    protocol_smoke_command?: string;
     sdk_bootstrap_url?: string;
     readiness_url?: string;
     studio_url?: string;
@@ -1161,6 +1164,9 @@ export interface ConnectSummary {
   presenterConnectPackageCommand: string;
   presenterHarnessAgentUrl: string;
   presenterAgentPlanCommand: string;
+  presenterProtocolExportUrl: string;
+  presenterProtocolExportCommand: string;
+  presenterProtocolSmokeCommand: string;
   presenterSdkBootstrapUrl: string;
   presenterSdkBootstrapCommand: string;
   launchContractStatus: string;

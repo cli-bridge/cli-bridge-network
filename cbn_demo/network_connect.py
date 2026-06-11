@@ -1327,6 +1327,8 @@ def _mvp_presenter_brief(
         output="sdk-bootstrap",
     )
     agent_plan_command = _adapter_agent_workflow_request_command(workflow_path, message=agent_message)
+    protocol_export_command = _protocol_export_workflows_command(workflow_path)
+    protocol_smoke_command = _protocol_smoke_suite_command(workflow_path)
     verify_command = _network_verify_command(workflow_path, base_url=base_url, session_token=session_token)
     brief_ready = bool(
         mvp_readiness.get("status") == "ready"
@@ -1421,6 +1423,9 @@ def _mvp_presenter_brief(
             if isinstance(entrypoints.get("plan_agent_request"), dict)
             else None,
             "agent_plan_command": agent_plan_command,
+            "protocol_export_url": entrypoints.get("export_protocols"),
+            "protocol_export_command": protocol_export_command,
+            "protocol_smoke_command": protocol_smoke_command,
             "sdk_bootstrap_url": entrypoints.get("sdk_bootstrap"),
             "readiness_url": readiness_url,
             "studio_url": studio_link.get("url"),
@@ -1443,6 +1448,8 @@ def _mvp_presenter_brief(
         "next_commands": [
             connect_package_command,
             agent_plan_command,
+            protocol_export_command,
+            protocol_smoke_command,
             verify_command,
             readiness_command,
             sdk_bootstrap_command,
@@ -2894,6 +2901,25 @@ def _adapter_agent_workflow_request_command(workflow_path: str, *, message: str)
             workflow_path,
             "--message",
             message,
+        ]
+    )
+
+
+def _protocol_export_workflows_command(workflow_path: str) -> str:
+    return _command(["python", "-m", "cbn", "protocol", "export-workflows", "all", "--path", workflow_path])
+
+
+def _protocol_smoke_suite_command(workflow_path: str) -> str:
+    return _command(
+        [
+            "python",
+            "-m",
+            "cbn",
+            "protocol",
+            "smoke-suite",
+            "--workflow-path",
+            workflow_path,
+            "--workflow-dry-run",
         ]
     )
 

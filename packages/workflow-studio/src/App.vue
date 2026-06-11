@@ -812,6 +812,9 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
     presenterConnectPackageCommand: stringValue(presenterHandoff.connect_package_command) ?? "not loaded",
     presenterHarnessAgentUrl: stringValue(presenterHandoff.harness_agent_url) ?? "not loaded",
     presenterAgentPlanCommand: stringValue(presenterHandoff.agent_plan_command) ?? "not loaded",
+    presenterProtocolExportUrl: stringValue(presenterHandoff.protocol_export_url) ?? "not loaded",
+    presenterProtocolExportCommand: stringValue(presenterHandoff.protocol_export_command) ?? "not loaded",
+    presenterProtocolSmokeCommand: stringValue(presenterHandoff.protocol_smoke_command) ?? "not loaded",
     presenterSdkBootstrapUrl: stringValue(presenterHandoff.sdk_bootstrap_url) ?? "not loaded",
     presenterSdkBootstrapCommand: stringValue(presenterHandoff.sdk_bootstrap_command) ?? "not loaded",
     launchContractStatus: stringValue(launchContract.status) ?? "not loaded",
@@ -1901,6 +1904,18 @@ onMounted(async () => {
             <code>{{ connectSummary.presenterAgentPlanCommand }}</code>
           </div>
           <div>
+            <span>Protocol export</span>
+            <code>{{ connectSummary.presenterProtocolExportUrl }}</code>
+          </div>
+          <div>
+            <span>Protocol command</span>
+            <code>{{ connectSummary.presenterProtocolExportCommand }}</code>
+          </div>
+          <div>
+            <span>Protocol smoke</span>
+            <code>{{ connectSummary.presenterProtocolSmokeCommand }}</code>
+          </div>
+          <div>
             <span>SDK bootstrap</span>
             <code>{{ connectSummary.presenterSdkBootstrapUrl }}</code>
           </div>
@@ -1952,6 +1967,9 @@ onMounted(async () => {
           </button>
           <button title="Copy natural-language harness plan command" :disabled="!connectSummary.presenterAgentPlanCommand || connectSummary.presenterAgentPlanCommand === 'not loaded'" @click="copyText('agent-plan-command', connectSummary.presenterAgentPlanCommand)">
             <Copy :size="14" /> {{ copiedScript === "agent-plan-command" ? "Copied" : "Copy Harness" }}
+          </button>
+          <button title="Copy MCP/A2A/ACP protocol export command" :disabled="!connectSummary.presenterProtocolExportCommand || connectSummary.presenterProtocolExportCommand === 'not loaded'" @click="copyText('protocol-export-command', connectSummary.presenterProtocolExportCommand)">
+            <Copy :size="14" /> {{ copiedScript === "protocol-export-command" ? "Copied" : "Copy Protocols" }}
           </button>
           <button title="Copy SDK bootstrap command" :disabled="!connectSummary.presenterSdkBootstrapCommand || connectSummary.presenterSdkBootstrapCommand === 'not loaded'" @click="copyText('sdk-bootstrap-command', connectSummary.presenterSdkBootstrapCommand)">
             <Copy :size="14" /> {{ copiedScript === "sdk-bootstrap-command" ? "Copied" : "Copy SDK" }}

@@ -269,6 +269,11 @@ Killer Demo slice 已新增可运行证据束：
   `agent_plan_url` 和 `agent_plan_command`，Workflow Studio 同步展示自然语言
   harness agent 的 focused contract 与 CLI 规划命令，并提供 Copy Harness 入口。
   这让 demo 能直接展示“用自然语言绑定 CLI-CLI workflow”的可复用 agent 路径。
+- `KillerMvpPresenterBrief.integration_handoff` 已补充 `protocol_export_url`、
+  `protocol_export_command` 和 `protocol_smoke_command`，Workflow Studio 同步展示
+  MCP/A2A/ACP descriptor export 与 smoke 命令，并提供 Copy Protocols 入口。
+  demo 现场可以从同一份 workflow 一键导出协议 facade，再用 workflow dry-run smoke
+  证明 MCP/A2A/ACP 路径覆盖。
 - Killer demo report 已新增 `communication_trace`：从真实 workflow run result 中提取
   `BridgeMessage argsFrom` handoff，展示 producer task、consumer task、selector、
   BridgeMessage valid 状态、selected value preview、resolved arg preview 和 artifact
