@@ -281,6 +281,7 @@ export interface NetworkConnectPackage {
     };
     requests?: QuickstartRequest[];
     curl_script?: string;
+    powershell_script?: string;
     sequence?: string[];
   };
   next_commands?: string[];
@@ -305,6 +306,7 @@ export interface ConnectSummary {
   planEndpoint: string;
   quickstartRequestCount: number;
   curlScript: string;
+  powershellScript: string;
 }
 
 export interface AgentWorkflowRequestPlan {

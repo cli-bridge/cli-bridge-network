@@ -69,6 +69,9 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(len(quickstart["requests"]), 8)
         self.assertTrue(quickstart["curl_script"].startswith("set -e\ncurl -X GET"))
         self.assertIn("curl -X POST 'http://127.0.0.1:8787/workflows/run'", quickstart["curl_script"])
+        self.assertTrue(quickstart["powershell_script"].startswith("$ErrorActionPreference = 'Stop'"))
+        self.assertIn("'X-CBN-Session' = 'test-token'", quickstart["powershell_script"])
+        self.assertIn("Invoke-RestMethod -Method 'POST'", quickstart["powershell_script"])
         endpoint_paths = {endpoint["path"] for endpoint in payload["daemon_endpoints"]}
         self.assertIn("/network/quickstart", endpoint_paths)
         self.assertIn("/adapter-agent/workflow-request-plan", endpoint_paths)
@@ -154,6 +157,7 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(payload["requests"][4]["headers"]["X-CBN-Session"], "test-token")
         self.assertIn("curl -X POST", payload["requests"][4]["curl"])
         self.assertIn("curl -X GET 'http://127.0.0.1:8787/health'", payload["curl_script"])
+        self.assertIn("$Body_run_workflow", payload["powershell_script"])
         self.assertEqual(
             payload["entrypoints"]["run_workflow"]["json"]["path"],
             "workflows/cli-anything-macrocli-mermaid-routing.example.json",

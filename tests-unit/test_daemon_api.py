@@ -164,6 +164,8 @@ class DaemonApiTests(unittest.TestCase):
             )
             self.assertIn("--data", payload["requests"][4]["curl"])
             self.assertIn("curl -X POST", payload["curl_script"])
+            self.assertIn("'X-CBN-Session' = 'header-token'", payload["powershell_script"])
+            self.assertIn("Invoke-RestMethod -Method 'POST'", payload["powershell_script"])
             self.assertIn("sessionToken=header-token", payload["entrypoints"]["open_studio"])
             self.assertNotIn("contracts", payload)
 

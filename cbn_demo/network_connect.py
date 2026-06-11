@@ -388,6 +388,7 @@ def _consumer_quickstart(
         "entrypoints": entrypoints,
         "requests": requests,
         "curl_script": _quickstart_curl_script(requests),
+        "powershell_script": _quickstart_powershell_script(requests, headers=headers),
         "sequence": [
             "open_studio",
             "inspect_workflow",
@@ -425,6 +426,27 @@ def _quickstart_curl_script(requests: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _quickstart_powershell_script(requests: list[dict[str, Any]], *, headers: dict[str, str]) -> str:
+    lines = ["$ErrorActionPreference = 'Stop'"]
+    lines.append(f"$Headers = {_powershell_hashtable(headers)}")
+    for request in requests:
+        method = _powershell_quote(str(request.get("method", "GET")))
+        url = _powershell_quote(str(request.get("url", "")))
+        body = request.get("json")
+        if isinstance(body, dict):
+            variable = "$Body_" + str(request.get("id", "request")).replace("-", "_")
+            lines.append(f"{variable} = @'")
+            lines.append(json.dumps(body, ensure_ascii=False))
+            lines.append("'@")
+            lines.append(
+                f"Invoke-RestMethod -Method {method} -Uri {url} -Headers $Headers "
+                f"-ContentType 'application/json' -Body {variable}"
+            )
+        else:
+            lines.append(f"Invoke-RestMethod -Method {method} -Uri {url} -Headers $Headers")
+    return "\n".join(lines)
+
+
 def _quickstart_curl(
     *,
     method: str,
@@ -443,6 +465,17 @@ def _quickstart_curl(
 
 def _shell_quote(value: str) -> str:
     return "'" + value.replace("'", "'\"'\"'") + "'"
+
+
+def _powershell_quote(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _powershell_hashtable(values: dict[str, str]) -> str:
+    if not values:
+        return "@{}"
+    pairs = [f"{_powershell_quote(key)} = {_powershell_quote(value)}" for key, value in values.items()]
+    return "@{ " + "; ".join(pairs) + " }"
 
 
 def _absolute_url(base_url: str | None, path: str) -> str:

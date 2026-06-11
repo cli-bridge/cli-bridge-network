@@ -260,6 +260,7 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
     planEndpoint: stringValue(quickstart.entrypoints?.plan_agent_request?.url) ?? "",
     quickstartRequestCount: Array.isArray(quickstart.requests) ? quickstart.requests.length : 0,
     curlScript: stringValue(quickstart.curl_script) ?? "",
+    powershellScript: stringValue(quickstart.powershell_script) ?? "",
   };
 }
 
@@ -525,6 +526,10 @@ onMounted(async () => {
         <div class="curl-script-preview">
           <span>cURL script</span>
           <code>{{ connectSummary.curlScript || "not loaded" }}</code>
+        </div>
+        <div class="curl-script-preview">
+          <span>PowerShell script</span>
+          <code>{{ connectSummary.powershellScript || "not loaded" }}</code>
         </div>
         <div class="endpoint-list">
           <div v-for="endpoint in connectEndpoints.slice(0, 6)" :key="`${endpoint.method}:${endpoint.path}`">
