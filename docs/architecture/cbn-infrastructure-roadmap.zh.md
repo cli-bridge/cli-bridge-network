@@ -291,9 +291,10 @@ Killer Demo slice 已新增可运行证据束：
   预览环境。
 - `NetworkConnectPackage` 已新增 `consumer_quickstart`：为外部程序提供机器可读
   first-call 指南，包括 required headers、open Studio URL、inspect workflow、
-  inspect Bridge contract、plan agent request、run workflow、events/audit/artifacts
-  入口和建议调用顺序。Workflow Studio Connect 面板同步展示 quickstart status、
-  鉴权 header 状态和 plan/run endpoint。
+  inspect Bridge contract、inspect agent nodes、export MCP/A2A/ACP protocols、
+  plan agent request、run workflow、events/audit/artifacts 入口和建议调用顺序。
+  Workflow Studio Connect 面板同步展示 quickstart status、鉴权 header 状态和
+  plan/run endpoint。
 - CLI 已新增 `python -m cbn network quickstart`，复用同一份
   `NetworkConnectPackage` 生成逻辑，但只输出 `consumer_quickstart`，让外部程序或
   demo 脚本能低噪声读取 first-call HTTP payload、headers 和推荐调用顺序。
@@ -302,9 +303,10 @@ Killer Demo slice 已新增可运行证据束：
   required headers 与预配置 Studio link，便于外部程序按标准鉴权 header 直接读取
   first-call payload。
 - `consumer_quickstart` 已新增 `requests[]` 可执行请求计划：按 health、inspect
-  workflow、inspect Bridge contract、plan agent request、run workflow、
-  events/audit/artifacts 顺序展开 method、url、headers 和 POST json，外部程序无需
-  再自行从 entrypoints 拼装首批 HTTP 调用。
+  workflow、inspect Bridge contract、inspect agent nodes、export MCP/A2A/ACP
+  protocols、plan agent request、run workflow、events/audit/artifacts 顺序展开
+  method、url、headers 和 POST json，外部程序无需再自行从 entrypoints 拼装首批
+  HTTP 调用。
 - Workflow Studio Connect 面板已将 `requests[]` 渲染为 first-call request
   sequence，每行展示 method、request id 和 URL；演示时可以直接看到外部程序接入
   CBN 网络所需的首批 HTTP 调用顺序，而不必展开原始 JSON。
@@ -321,9 +323,10 @@ Killer Demo slice 已新增可运行证据束：
   first-call 脚本；第三方接入、demo 和本地 smoke 不再需要先解析 JSON 字段。
 - `NetworkConnectPackage.acceptance` / `consumer_quickstart.acceptance` 已新增
   `NetworkConnectionAcceptance` 机器可读验收清单，覆盖 health、workflow inspect、
-  Bridge contract、自然语言 harness plan、workflow run、events/audit/artifacts
-  的期望证据；`python -m cbn network quickstart --output acceptance` 可直接输出该
-  checklist，Workflow Studio Connect 面板同步展示每个 check。
+  Bridge contract、agent node bundle、MCP/A2A/ACP protocol exports、自然语言
+  harness plan、workflow run、events/audit/artifacts 的期望证据；`python -m cbn
+  network quickstart --output acceptance` 可直接输出该 checklist，Workflow Studio
+  Connect 面板同步展示每个 check。
 - Workflow Studio Connect 面板已新增 `Verify` 操作，会按 quickstart request
   sequence 真实调用 daemon 并用 `NetworkConnectionAcceptance` 的 expect 字段判定
   pass/fail/skipped；这让 demo 现场可以直接证明外部程序一键接入 CBN 网络后的

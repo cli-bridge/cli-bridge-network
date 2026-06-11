@@ -892,7 +892,7 @@ onMounted(async () => {
           </div>
         </div>
         <div class="request-sequence">
-          <div v-for="request in quickstartRequests.slice(0, 8)" :key="request.id || request.url">
+          <div v-for="request in quickstartRequests.slice(0, 10)" :key="request.id || request.url">
             <code>{{ request.method || "GET" }}</code>
             <span>{{ request.id || "request" }}</span>
             <small>{{ request.url || "not loaded" }}</small>
@@ -901,7 +901,7 @@ onMounted(async () => {
           <span v-if="!quickstartRequests.length">No quickstart requests loaded</span>
         </div>
         <div class="acceptance-list">
-          <div v-for="check in acceptanceChecks.slice(0, 8)" :key="check.id || check.request_id" :class="acceptanceResult(check)?.status || 'pending'">
+          <div v-for="check in acceptanceChecks.slice(0, 10)" :key="check.id || check.request_id" :class="acceptanceResult(check)?.status || 'pending'">
             <code>{{ check.request_id || "request" }}</code>
             <span>{{ check.id || "check" }}</span>
             <small>{{ check.proves || "acceptance evidence not loaded" }}</small>

@@ -477,6 +477,16 @@ def _consumer_quickstart(
     clean_base_url = base_url.rstrip("/") if base_url else None
     workflow_query = urlencode({"path": workflow_path})
     contract_query = urlencode({"workflow_path": workflow_path})
+    protocol_query = urlencode({"target": "all", "path": workflow_path})
+    agent_query = urlencode(
+        {
+            "workflow_path": workflow_path,
+            "message": (request_plan.get("request") or {}).get(
+                "message",
+                "Connect an external program to this CBN workflow.",
+            ),
+        }
+    )
     headers = {"X-CBN-Session": session_token} if session_token else {}
     plan_payload = {
         "workflow_path": workflow_path,
@@ -502,6 +512,8 @@ def _consumer_quickstart(
         "health": _absolute_url(clean_base_url, "/health"),
         "inspect_workflow": _absolute_url(clean_base_url, f"/workflows?{workflow_query}"),
         "inspect_bridge_contract": _absolute_url(clean_base_url, f"/messages/contract?{contract_query}"),
+        "inspect_agent_nodes": _absolute_url(clean_base_url, f"/adapter-agent/node-bundle?{agent_query}"),
+        "export_protocols": _absolute_url(clean_base_url, f"/protocols/workflows?{protocol_query}"),
         "plan_agent_request": {
             "method": "POST",
             "url": plan_url,
@@ -523,6 +535,18 @@ def _consumer_quickstart(
             "inspect_bridge_contract",
             "GET",
             entrypoints["inspect_bridge_contract"],
+            headers=headers,
+        ),
+        _quickstart_request(
+            "inspect_agent_nodes",
+            "GET",
+            entrypoints["inspect_agent_nodes"],
+            headers=headers,
+        ),
+        _quickstart_request(
+            "export_protocols",
+            "GET",
+            entrypoints["export_protocols"],
             headers=headers,
         ),
         _quickstart_request(
@@ -556,6 +580,8 @@ def _consumer_quickstart(
             "open_studio",
             "inspect_workflow",
             "inspect_bridge_contract",
+            "inspect_agent_nodes",
+            "export_protocols",
             "plan_agent_request",
             "run_workflow",
             "read_events_audit_artifacts",
@@ -583,6 +609,30 @@ def _network_connection_acceptance(*, workflow_path: str, requests: list[dict[st
             "inspect_bridge_contract",
             "BridgeMessage selector routes are available for CLI-CLI handoff inspection.",
             {"http_status": 200, "json.ok": True, "json.summary.route_count_min": 1},
+        ),
+        _acceptance_check(
+            "agent_nodes_readable",
+            "inspect_agent_nodes",
+            "Reusable harness agent nodes can be inspected before execution.",
+            {
+                "http_status": 200,
+                "json.kind": "AdapterAgentNodeBundle",
+                "json.ok": True,
+                "json.cards_count_min": 1,
+                "json.harnesses_count_min": 1,
+                "json.bridge_message.kind": "BridgeMessage",
+            },
+        ),
+        _acceptance_check(
+            "protocol_exports_readable",
+            "export_protocols",
+            "MCP/A2A/ACP workflow descriptors can be exported for external protocol facades.",
+            {
+                "http_status": 200,
+                "json.exports.mcp.protocol": "mcp",
+                "json.exports.a2a.protocol": "a2a",
+                "json.exports.acp.protocol": "acp",
+            },
         ),
         _acceptance_check(
             "natural_language_harness_plan",
@@ -631,6 +681,8 @@ def _network_connection_acceptance(*, workflow_path: str, requests: list[dict[st
             "health.status == ok",
             "workflow.valid == true",
             "bridge_contract.summary.route_count >= 1",
+            "agent_node_bundle.kind == AdapterAgentNodeBundle",
+            "protocol_exports include mcp, a2a, acp",
             "agent_workflow_request.reusable_harness.kind == NaturalLanguageWorkflowHarness",
             "workflow_run.status == completed",
             "events/audit/artifacts endpoints return JSON arrays",
@@ -778,6 +830,10 @@ def _acceptance_actual_value(key: str, payload: Any, http_status: int) -> Any:
     json_key = key.removeprefix("json.")
     if json_key == "type":
         return _json_type_name(payload)
+    if json_key.endswith("_count_min"):
+        value = _json_path(payload, json_key.removesuffix("_count_min"))
+        if isinstance(value, (list, dict, str)):
+            return len(value)
     if json_key.endswith("_min"):
         return _json_path(payload, json_key.removesuffix("_min"))
     if json_key.endswith("_type"):
