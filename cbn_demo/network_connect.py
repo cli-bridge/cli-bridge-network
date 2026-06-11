@@ -895,6 +895,7 @@ def _consumer_quickstart(
     entrypoints = {
         "open_studio": studio_link.get("url"),
         "health": _absolute_url(clean_base_url, "/health"),
+        "import_catalog": _absolute_url(clean_base_url, "/imports/catalog"),
         "inspect_workflow": _absolute_url(clean_base_url, f"/workflows?{workflow_query}"),
         "inspect_bridge_contract": _absolute_url(clean_base_url, f"/messages/contract?{contract_query}"),
         "inspect_agent_nodes": _absolute_url(clean_base_url, f"/adapter-agent/node-bundle?{agent_query}"),
@@ -915,6 +916,7 @@ def _consumer_quickstart(
     }
     requests = [
         _quickstart_request("health", "GET", entrypoints["health"], headers=headers),
+        _quickstart_request("import_catalog", "GET", entrypoints["import_catalog"], headers=headers),
         _quickstart_request("inspect_workflow", "GET", entrypoints["inspect_workflow"], headers=headers),
         _quickstart_request(
             "inspect_bridge_contract",
@@ -968,6 +970,7 @@ def _consumer_quickstart(
         "powershell_script": _quickstart_powershell_script(requests, headers=headers),
         "sequence": [
             "open_studio",
+            "import_catalog",
             "inspect_workflow",
             "inspect_bridge_contract",
             "inspect_agent_nodes",
@@ -986,7 +989,7 @@ def _quickstart_sdk_snippets(
     headers: dict[str, str],
 ) -> list[dict[str, Any]]:
     requests_by_id = {str(request.get("id")): request for request in requests if request.get("id")}
-    required_ids = ["health", "plan_agent_request", "run_workflow", "events", "audit", "artifacts"]
+    required_ids = ["health", "import_catalog", "plan_agent_request", "run_workflow", "events", "audit", "artifacts"]
     python_code = _python_consumer_snippet(requests_by_id, headers=headers)
     typescript_code = _typescript_consumer_snippet(requests_by_id, headers=headers)
     return [
@@ -1038,7 +1041,7 @@ def _python_consumer_snippet(requests_by_id: dict[str, dict[str, Any]], *, heade
 
     request_lines = "\n".join(
         request_line(request_id)
-        for request_id in ["health", "plan_agent_request", "run_workflow", "events", "audit", "artifacts"]
+        for request_id in ["health", "import_catalog", "plan_agent_request", "run_workflow", "events", "audit", "artifacts"]
         if request_id in requests_by_id
     )
     return "\n".join(
@@ -1063,10 +1066,11 @@ def _python_consumer_snippet(requests_by_id: dict[str, dict[str, Any]], *, heade
             "        return json.loads(response.read().decode('utf-8'))",
             "",
             "call('health')",
+            "catalog = call('import_catalog')",
             "plan = call('plan_agent_request')",
             "receipt = call('run_workflow')",
             "evidence = {key: call(key) for key in ('events', 'audit', 'artifacts')}",
-            "print(json.dumps({'plan': plan.get('kind'), 'workflow_status': receipt.get('status'), 'evidence': {k: len(v) for k, v in evidence.items()}}, indent=2))",
+            "print(json.dumps({'importers': catalog.get('importer_count'), 'plan': plan.get('kind'), 'workflow_status': receipt.get('status'), 'evidence': {k: len(v) for k, v in evidence.items()}}, indent=2))",
         ]
     )
 
@@ -1079,7 +1083,7 @@ def _typescript_consumer_snippet(requests_by_id: dict[str, dict[str, Any]], *, h
             "json": request.get("json") if isinstance(request.get("json"), dict) else None,
         }
         for request_id, request in requests_by_id.items()
-        if request_id in {"health", "plan_agent_request", "run_workflow", "events", "audit", "artifacts"}
+        if request_id in {"health", "import_catalog", "plan_agent_request", "run_workflow", "events", "audit", "artifacts"}
     }
     return "\n".join(
         [
@@ -1098,10 +1102,11 @@ def _typescript_consumer_snippet(requests_by_id: dict[str, dict[str, Any]], *, h
             "}",
             "",
             "await call('health');",
+            "const catalog = await call('import_catalog');",
             "const plan = await call('plan_agent_request');",
             "const receipt = await call('run_workflow');",
             "const [events, audit, artifacts] = await Promise.all([call('events'), call('audit'), call('artifacts')]);",
-            "console.log({ plan: plan.kind, workflowStatus: receipt.status, evidence: { events: events.length, audit: audit.length, artifacts: artifacts.length } });",
+            "console.log({ importers: catalog.importer_count, plan: plan.kind, workflowStatus: receipt.status, evidence: { events: events.length, audit: audit.length, artifacts: artifacts.length } });",
         ]
     )
 
@@ -1114,6 +1119,17 @@ def _network_connection_acceptance(*, workflow_path: str, requests: list[dict[st
             "health",
             "CBN daemon answers authenticated first-call requests.",
             {"http_status": 200, "json.status": "ok"},
+        ),
+        _acceptance_check(
+            "import_catalog_readable",
+            "import_catalog",
+            "External consumers can discover CLI registration importers before choosing a harness.",
+            {
+                "http_status": 200,
+                "json.kind": "CliRegistrationSurface",
+                "json.status": "ready",
+                "json.importer_count_min": 1,
+            },
         ),
         _acceptance_check(
             "workflow_dag_loads",
@@ -1196,6 +1212,7 @@ def _network_connection_acceptance(*, workflow_path: str, requests: list[dict[st
         "checks": checks,
         "success_signals": [
             "health.status == ok",
+            "import_catalog.importer_count >= 1",
             "workflow.valid == true",
             "bridge_contract.summary.route_count >= 1",
             "agent_node_bundle.kind == AdapterAgentNodeBundle",
@@ -1206,6 +1223,7 @@ def _network_connection_acceptance(*, workflow_path: str, requests: list[dict[st
         ],
         "failure_recovery": [
             "If health fails, verify daemon URL and X-CBN-Session.",
+            "If import_catalog fails, verify the daemon exposes /imports/catalog from the current CBN build.",
             "If workflow inspection fails, verify workflow_path and required manifests.",
             "If run_workflow fails, rerun plan_agent_request and inspect bridge routes before retrying.",
         ],

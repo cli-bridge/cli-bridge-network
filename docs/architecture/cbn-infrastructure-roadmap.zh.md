@@ -424,6 +424,11 @@ Killer Demo slice 已新增可运行证据束：
   调用 daemon `GET /imports/catalog`，Connect 面板会展示 direct catalog importers、
   next commands，并与 one-shot `NetworkConnectPackage.registration_surface` 做数量一致性
   对比，避免 UI 只依赖 connect package 的嵌套副本。
+- `consumer_quickstart.entrypoints`、`requests[]`、SDK snippets 与 acceptance
+  checklist 已纳入 `import_catalog` 首呼叫路径。第三方程序读取一次
+  `network connect-package` 或 `network quickstart` 后，不仅能调用 workflow，也能在
+  同一份 first-call package 中发现可导入的 CLI/skill/MCP/parser/CLI-Anything
+  注册入口。
   外部程序现在无需生成完整 connect package，也能通过 CLI 或 HTTP 只读获取
   importer id、entrypoint、help command、accepts/produces、write/confirm gate、
   dry-run-first policy 和示例命令，降低“把下一个 CLI 接入 CBN”的发现成本。
