@@ -162,6 +162,10 @@ class DaemonApiTests(unittest.TestCase):
             self.assertEqual(payload["workflow_studio"]["dashboard_url"], "http://127.0.0.1:5199")
             self.assertIn("dashboardUrl=http%3A%2F%2F127.0.0.1%3A5199", payload["workflow_studio"]["url"])
             self.assertIn("sessionToken=demo-token", payload["workflow_studio"]["url"])
+            self.assertIn(f"--base-url {base_url}", payload["next_commands"][0])
+            self.assertIn("--session-token demo-token", payload["next_commands"][0])
+            self.assertIn(f"--base-url {base_url}", payload["demo_readiness"]["next_commands"][2])
+            self.assertIn("--session-token demo-token", payload["demo_readiness"]["next_commands"][2])
             endpoint_paths = {endpoint["path"].split("?", 1)[0] for endpoint in payload["daemon_endpoints"]}
             self.assertIn("/workflows/run", endpoint_paths)
             self.assertIn("/adapter-agent/workflow-request-plan", endpoint_paths)
@@ -248,6 +252,7 @@ class DaemonApiTests(unittest.TestCase):
         self.assertGreaterEqual(payload["results"][8]["evidence"]["json.count_min"]["actual"], 1)
         self.assertEqual(payload["results"][9]["request_id"], "artifacts")
         self.assertGreaterEqual(payload["results"][9]["evidence"]["json.count_min"]["actual"], 1)
+        self.assertIn("--session-token verify-token", payload["next_commands"][0])
 
     def test_network_verify_route_runs_acceptance_against_daemon(self):
         with daemon_url(session_token="verify-token") as base_url:
@@ -276,6 +281,7 @@ class DaemonApiTests(unittest.TestCase):
         self.assertEqual(payload["results"][5]["evidence"]["json.reusable_harness.kind"]["actual"], "NaturalLanguageWorkflowHarness")
         self.assertEqual(payload["results"][9]["request_id"], "artifacts")
         self.assertGreaterEqual(payload["results"][9]["evidence"]["json.count_min"]["actual"], 1)
+        self.assertIn("--session-token verify-token", payload["next_commands"][0])
 
     def test_adapter_agent_orchestrate_route_returns_auth_fallback(self):
         with daemon_url() as base_url:

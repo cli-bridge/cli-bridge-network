@@ -55,6 +55,8 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(demo["demo_endpoint"]["path"], "/demo/killer")
         self.assertIn("inspect_agent_nodes", demo["acceptance_request_ids"])
         self.assertIn("python -m cbn demo killer", demo["next_commands"][0])
+        self.assertIn("--base-url http://127.0.0.1:8787", demo["next_commands"][2])
+        self.assertIn("--session-token test-token", demo["next_commands"][2])
         self.assertEqual(payload["agent_workflow_request"]["kind"], "AdapterAgentWorkflowRequestPlan")
         self.assertEqual(payload["agent_workflow_request"]["reusable_harness"]["kind"], "NaturalLanguageWorkflowHarness")
         self.assertEqual(payload["agent_workflow_request"]["bridge_message_channel"], "agent.workflow.request.plan")
@@ -143,6 +145,8 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertIn("/network/verify", endpoint_paths)
         self.assertIn("/adapter-agent/workflow-request-plan", endpoint_paths)
         self.assertTrue(any(endpoint["url"].startswith("http://127.0.0.1:8787/") for endpoint in payload["daemon_endpoints"]))
+        self.assertIn("--base-url http://127.0.0.1:8787", payload["next_commands"][0])
+        self.assertIn("--session-token test-token", payload["next_commands"][0])
 
     def test_workflow_studio_demo_link_encodes_query_parameters(self):
         payload = workflow_studio_demo_link(

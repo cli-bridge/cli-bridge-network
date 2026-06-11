@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -86,6 +87,8 @@ def network_connect_package(
         protocol_summary=protocol_summary,
         endpoint_catalog=endpoint_catalog,
         studio_link=studio_link,
+        base_url=base_url,
+        session_token=session_token,
     )
     return {
         "apiVersion": CONNECT_API_VERSION,
@@ -132,7 +135,7 @@ def network_connect_package(
         "agent_workflow_request": _compact_workflow_request_plan(request_plan),
         "acceptance": quickstart["acceptance"],
         "consumer_quickstart": quickstart,
-        "next_commands": _next_commands(workflow_path),
+        "next_commands": _next_commands(workflow_path, base_url=base_url, session_token=session_token),
     }
 
 
@@ -144,6 +147,8 @@ def _demo_readiness(
     protocol_summary: dict[str, Any],
     endpoint_catalog: list[dict[str, Any]],
     studio_link: dict[str, Any],
+    base_url: str | None,
+    session_token: str | None,
 ) -> dict[str, Any]:
     endpoint_by_path = {
         str(endpoint.get("path", "")).split("?", 1)[0]: endpoint
@@ -235,7 +240,7 @@ def _demo_readiness(
         "next_commands": [
             f"python -m cbn demo killer --workflow-path {workflow_path} --run --dry-run",
             f"python -m cbn demo killer --workflow-path {workflow_path} --run --dry-run --smoke-suite",
-            f"python -m cbn network verify --workflow-path {workflow_path}",
+            _network_verify_command(workflow_path, base_url=base_url, session_token=session_token),
         ],
     }
 
@@ -347,8 +352,13 @@ def network_acceptance_report(
         "acceptance": acceptance,
         "results": results,
         "next_commands": [
-            f"python -m cbn network quickstart --workflow-path {workflow_path} --base-url {base_url}",
-            f"python -m cbn network quickstart --workflow-path {workflow_path} --base-url {base_url} --output acceptance",
+            _network_quickstart_command(workflow_path, base_url=base_url, session_token=session_token),
+            _network_quickstart_command(
+                workflow_path,
+                base_url=base_url,
+                session_token=session_token,
+                output="acceptance",
+            ),
         ],
     }
 
@@ -1072,14 +1082,44 @@ def _absolute_url(base_url: str | None, path: str) -> str:
     return f"{base_url}{path}" if base_url else path
 
 
-def _next_commands(workflow_path: str) -> list[str]:
+def _next_commands(workflow_path: str, *, base_url: str | None, session_token: str | None) -> list[str]:
     return [
-        f"python -m cbn network verify --workflow-path {workflow_path} --base-url http://127.0.0.1:8787",
+        _network_verify_command(workflow_path, base_url=base_url, session_token=session_token),
         f"python -m cbn_adapter_agent --workflow-request-plan --workflow-path {workflow_path}",
         f"python -m cbn workflow inspect {workflow_path}",
         f"python -m cbn protocol export-workflows all --path {workflow_path}",
         f"python -m cbn demo killer --workflow-path {workflow_path} --run --dry-run",
     ]
+
+
+def _network_verify_command(workflow_path: str, *, base_url: str | None, session_token: str | None) -> str:
+    args = ["python", "-m", "cbn", "network", "verify", "--workflow-path", workflow_path]
+    if base_url:
+        args.extend(["--base-url", base_url.rstrip("/")])
+    if session_token:
+        args.extend(["--session-token", session_token])
+    return _command(args)
+
+
+def _network_quickstart_command(
+    workflow_path: str,
+    *,
+    base_url: str | None,
+    session_token: str | None,
+    output: str | None = None,
+) -> str:
+    args = ["python", "-m", "cbn", "network", "quickstart", "--workflow-path", workflow_path]
+    if base_url:
+        args.extend(["--base-url", base_url.rstrip("/")])
+    if session_token:
+        args.extend(["--session-token", session_token])
+    if output:
+        args.extend(["--output", output])
+    return _command(args)
+
+
+def _command(args: list[str]) -> str:
+    return " ".join(shlex.quote(str(arg)) for arg in args)
 
 
 def _read_json(path: Path) -> dict[str, Any]:
