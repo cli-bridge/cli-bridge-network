@@ -415,6 +415,7 @@ export interface NetworkConnectPackage {
     protocol_export_count?: number;
     agent_card_count?: number;
     registration_importer_count?: number;
+    consumer_snippet_count?: number;
     setup_status?: string;
     setup_required?: boolean;
     setup_user_gate_count?: number;
@@ -534,6 +535,7 @@ export interface NetworkConnectPackage {
     };
     requests?: QuickstartRequest[];
     acceptance?: NetworkConnectionAcceptance;
+    sdk_snippets?: QuickstartSdkSnippet[];
     curl_script?: string;
     powershell_script?: string;
     sequence?: string[];
@@ -551,6 +553,7 @@ export interface ConnectSummary {
   protocolExports: number;
   agentCards: number;
   registrationImporters: number;
+  consumerSnippets: number;
   registrationPolicy: string;
   demoReadinessStatus: string;
   demoStageCount: number;
@@ -583,6 +586,23 @@ export interface ConnectSummary {
   acceptanceCheckCount: number;
   curlScript: string;
   powershellScript: string;
+}
+
+export interface QuickstartSdkSnippet {
+  id?: string;
+  title?: string;
+  language?: string;
+  runtime?: string;
+  entrypoint?: string;
+  workflow_path?: string;
+  uses_request_ids?: string[];
+  code?: string;
+  safety?: {
+    dry_run?: boolean;
+    confirmed?: boolean;
+    writes_files?: boolean;
+    requires_daemon?: boolean;
+  };
 }
 
 export interface DemoPlaybookStep {

@@ -38,6 +38,7 @@ import type {
   NetworkConnectionAcceptanceReport,
   NetworkConnectPackage,
   ProtocolSummary,
+  QuickstartSdkSnippet,
   QuickstartRequest,
   StudioConfig,
   WorkflowInspect,
@@ -132,6 +133,11 @@ const connectNextCommands = computed<string[]>(() => {
 const quickstartRequests = computed<QuickstartRequest[]>(() =>
   Array.isArray(connectPackage.value?.consumer_quickstart?.requests)
     ? connectPackage.value.consumer_quickstart.requests
+    : [],
+);
+const quickstartSdkSnippets = computed<QuickstartSdkSnippet[]>(() =>
+  Array.isArray(connectPackage.value?.consumer_quickstart?.sdk_snippets)
+    ? connectPackage.value.consumer_quickstart.sdk_snippets
     : [],
 );
 const acceptanceChecks = computed<ConnectionAcceptanceCheck[]>(() => {
@@ -453,6 +459,7 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
     protocolExports: numberValue(summary.protocol_export_count) ?? 0,
     agentCards: numberValue(summary.agent_card_count) ?? 0,
     registrationImporters: numberValue(registration.importer_count) ?? numberValue(summary.registration_importer_count) ?? 0,
+    consumerSnippets: numberValue(summary.consumer_snippet_count) ?? quickstartSdkSnippets.value.length,
     registrationPolicy: registration.default_policy?.dry_run_by_default ? "dry-run imports" : "check import policy",
     demoReadinessStatus: stringValue(demo.status) ?? "not loaded",
     demoStageCount: numberValue(demo.stage_count) ?? 0,
@@ -915,6 +922,10 @@ onMounted(async () => {
             <strong>{{ connectSummary.registrationImporters }}</strong>
           </div>
           <div>
+            <span>Snippets</span>
+            <strong>{{ connectSummary.consumerSnippets }}</strong>
+          </div>
+          <div>
             <span>Demo</span>
             <strong>{{ connectSummary.demoStageCount }}</strong>
           </div>
@@ -1140,6 +1151,20 @@ onMounted(async () => {
             <em>{{ request.curl || "curl not loaded" }}</em>
           </div>
           <span v-if="!quickstartRequests.length">No quickstart requests loaded</span>
+        </div>
+        <div class="snippet-list">
+          <div v-for="snippet in quickstartSdkSnippets.slice(0, 4)" :key="snippet.id || snippet.language">
+            <header>
+              <strong>{{ snippet.title || snippet.id || "Consumer snippet" }}</strong>
+              <span>{{ snippet.language || "code" }} · {{ snippet.runtime || "runtime" }}</span>
+              <button title="Copy consumer snippet" @click="copyText(`snippet-${snippet.id || snippet.language}`, snippet.code || '')">
+                <Copy :size="14" /> {{ copiedScript === `snippet-${snippet.id || snippet.language}` ? "Copied" : "Copy" }}
+              </button>
+            </header>
+            <small>{{ snippet.entrypoint || "run_workflow" }} · {{ (snippet.uses_request_ids || []).join(" -> ") || "quickstart" }}</small>
+            <code>{{ snippet.code || "snippet not loaded" }}</code>
+          </div>
+          <span v-if="!quickstartSdkSnippets.length">No consumer snippets loaded</span>
         </div>
         <div class="acceptance-list">
           <div v-for="check in acceptanceChecks.slice(0, 10)" :key="check.id || check.request_id" :class="acceptanceResult(check)?.status || 'pending'">

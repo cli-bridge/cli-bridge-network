@@ -148,6 +148,7 @@ class DaemonApiTests(unittest.TestCase):
             self.assertFalse(payload["summary"]["setup_required"])
             self.assertEqual(payload["summary"]["setup_user_gate_count"], 0)
             self.assertEqual(payload["summary"]["registration_importer_count"], 6)
+            self.assertEqual(payload["summary"]["consumer_snippet_count"], 2)
             self.assertIn("mcp", payload["protocols"]["targets"])
             self.assertEqual(payload["protocols"]["a2a"]["skill_count"], 1)
             self.assertEqual(payload["protocols"]["acp"]["workflow_count"], 1)
@@ -203,6 +204,8 @@ class DaemonApiTests(unittest.TestCase):
             self.assertIn("--session-token demo-token", payload["next_commands"][0])
             self.assertIn(f"--base-url {base_url}", payload["demo_readiness"]["next_commands"][2])
             self.assertIn("--session-token demo-token", payload["demo_readiness"]["next_commands"][2])
+            self.assertEqual(payload["consumer_quickstart"]["sdk_snippets"][0]["language"], "python")
+            self.assertIn("urllib.request", payload["consumer_quickstart"]["sdk_snippets"][0]["code"])
             endpoint_paths = {endpoint["path"].split("?", 1)[0] for endpoint in payload["daemon_endpoints"]}
             self.assertIn("/workflows/run", endpoint_paths)
             self.assertIn("/adapter-agent/workflow-request-plan", endpoint_paths)
@@ -243,6 +246,8 @@ class DaemonApiTests(unittest.TestCase):
             self.assertIn("curl -X POST", payload["curl_script"])
             self.assertIn("'X-CBN-Session' = 'header-token'", payload["powershell_script"])
             self.assertIn("Invoke-RestMethod -Method 'POST'", payload["powershell_script"])
+            self.assertEqual(payload["sdk_snippets"][1]["language"], "typescript")
+            self.assertIn("await call('run_workflow')", payload["sdk_snippets"][1]["code"])
             self.assertIn("sessionToken=header-token", payload["entrypoints"]["open_studio"])
             self.assertNotIn("contracts", payload)
 

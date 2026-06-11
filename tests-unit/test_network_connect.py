@@ -57,6 +57,7 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(payload["summary"]["setup_user_gate_count"], 0)
         self.assertEqual(payload["summary"]["setup_secret_count"], 0)
         self.assertEqual(payload["summary"]["registration_importer_count"], 6)
+        self.assertEqual(payload["summary"]["consumer_snippet_count"], 2)
         self.assertTrue(payload["summary"]["demo_ready"])
         self.assertEqual(payload["summary"]["demo_stage_count"], 7)
         self.assertEqual(payload["summary"]["demo_playbook_step_count"], 6)
@@ -211,6 +212,16 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertTrue(quickstart["powershell_script"].startswith("$ErrorActionPreference = 'Stop'"))
         self.assertIn("'X-CBN-Session' = 'test-token'", quickstart["powershell_script"])
         self.assertIn("Invoke-RestMethod -Method 'POST'", quickstart["powershell_script"])
+        snippets = {snippet["id"]: snippet for snippet in quickstart["sdk_snippets"]}
+        self.assertEqual(set(snippets), {"python-stdlib-consumer", "typescript-fetch-consumer"})
+        self.assertEqual(snippets["python-stdlib-consumer"]["language"], "python")
+        self.assertEqual(snippets["python-stdlib-consumer"]["entrypoint"], "run_workflow")
+        self.assertFalse(snippets["python-stdlib-consumer"]["safety"]["confirmed"])
+        self.assertIn("'run_workflow'", snippets["python-stdlib-consumer"]["code"])
+        self.assertIn("urllib.request", snippets["python-stdlib-consumer"]["code"])
+        self.assertNotIn("true", snippets["python-stdlib-consumer"]["code"])
+        self.assertIn("const requests", snippets["typescript-fetch-consumer"]["code"])
+        self.assertIn("await call('run_workflow')", snippets["typescript-fetch-consumer"]["code"])
         endpoint_paths = {endpoint["path"] for endpoint in payload["daemon_endpoints"]}
         self.assertIn("/network/quickstart", endpoint_paths)
         self.assertIn("/network/verify", endpoint_paths)
@@ -317,6 +328,7 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(payload["agent_node_bundle"]["cards"][0]["kind"], "AgentCard")
         self.assertEqual(payload["agent_node_bundle"]["harnesses"][0]["kind"], "AgentHarness")
         self.assertEqual(payload["consumer_quickstart"]["entrypoints"]["run_workflow"]["url"], "http://127.0.0.1:8787/workflows/run")
+        self.assertEqual(payload["consumer_quickstart"]["sdk_snippets"][1]["language"], "typescript")
         self.assertEqual(payload["demo_readiness"]["status"], "ready")
 
     def test_network_quickstart_cli_outputs_first_call_package(self):
@@ -361,6 +373,9 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(payload["acceptance"]["kind"], "NetworkConnectionAcceptance")
         self.assertEqual(payload["acceptance"]["check_count"], 10)
         self.assertEqual(payload["acceptance"]["checks"][6]["request_id"], "run_workflow")
+        self.assertEqual(len(payload["sdk_snippets"]), 2)
+        self.assertEqual(payload["sdk_snippets"][0]["uses_request_ids"][0], "health")
+        self.assertIn("plan_agent_request", payload["sdk_snippets"][0]["uses_request_ids"])
         self.assertIn("curl -X GET 'http://127.0.0.1:8787/health'", payload["curl_script"])
         self.assertIn("$Body_run_workflow", payload["powershell_script"])
         self.assertEqual(

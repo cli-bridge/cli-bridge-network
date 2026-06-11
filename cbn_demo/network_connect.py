@@ -121,6 +121,7 @@ def network_connect_package(
             "protocol_export_count": protocol_summary["export_count"],
             "agent_card_count": len(agent_bundle.get("cards", [])),
             "registration_importer_count": registration_surface["importer_count"],
+            "consumer_snippet_count": len(quickstart.get("sdk_snippets", [])),
             "agent_workflow_request_ready": request_plan.get("ok"),
             "setup_status": setup_guidance.get("status"),
             "setup_required": setup_guidance.get("setup_required"),
@@ -1083,6 +1084,11 @@ def _consumer_quickstart(
         "entrypoints": entrypoints,
         "requests": requests,
         "acceptance": _network_connection_acceptance(workflow_path=workflow_path, requests=requests),
+        "sdk_snippets": _quickstart_sdk_snippets(
+            workflow_path=workflow_path,
+            requests=requests,
+            headers=headers,
+        ),
         "curl_script": _quickstart_curl_script(requests),
         "powershell_script": _quickstart_powershell_script(requests, headers=headers),
         "sequence": [
@@ -1096,6 +1102,133 @@ def _consumer_quickstart(
             "read_events_audit_artifacts",
         ],
     }
+
+
+def _quickstart_sdk_snippets(
+    *,
+    workflow_path: str,
+    requests: list[dict[str, Any]],
+    headers: dict[str, str],
+) -> list[dict[str, Any]]:
+    requests_by_id = {str(request.get("id")): request for request in requests if request.get("id")}
+    required_ids = ["health", "plan_agent_request", "run_workflow", "events", "audit", "artifacts"]
+    python_code = _python_consumer_snippet(requests_by_id, headers=headers)
+    typescript_code = _typescript_consumer_snippet(requests_by_id, headers=headers)
+    return [
+        {
+            "id": "python-stdlib-consumer",
+            "title": "Python stdlib consumer",
+            "language": "python",
+            "runtime": "python>=3.10",
+            "entrypoint": "run_workflow",
+            "workflow_path": workflow_path,
+            "uses_request_ids": required_ids,
+            "code": python_code,
+            "safety": {
+                "dry_run": True,
+                "confirmed": False,
+                "writes_files": False,
+                "requires_daemon": True,
+            },
+        },
+        {
+            "id": "typescript-fetch-consumer",
+            "title": "TypeScript fetch consumer",
+            "language": "typescript",
+            "runtime": "node>=18 or browser fetch",
+            "entrypoint": "run_workflow",
+            "workflow_path": workflow_path,
+            "uses_request_ids": required_ids,
+            "code": typescript_code,
+            "safety": {
+                "dry_run": True,
+                "confirmed": False,
+                "writes_files": False,
+                "requires_daemon": True,
+            },
+        },
+    ]
+
+
+def _python_consumer_snippet(requests_by_id: dict[str, dict[str, Any]], *, headers: dict[str, str]) -> str:
+    def request_line(request_id: str) -> str:
+        request = requests_by_id[request_id]
+        payload = request.get("json") if isinstance(request.get("json"), dict) else None
+        payload_literal = repr(payload) if payload is not None else "None"
+        return (
+            f"    {request_id!r}: "
+            f"{{'method': {str(request.get('method') or 'GET')!r}, 'url': {str(request.get('url') or '')!r}, "
+            f"'json': {payload_literal}}},"
+        )
+
+    request_lines = "\n".join(
+        request_line(request_id)
+        for request_id in ["health", "plan_agent_request", "run_workflow", "events", "audit", "artifacts"]
+        if request_id in requests_by_id
+    )
+    return "\n".join(
+        [
+            "import json",
+            "import urllib.request",
+            "",
+            f"HEADERS = {json.dumps(headers, ensure_ascii=False)}",
+            "REQUESTS = {",
+            request_lines,
+            "}",
+            "",
+            "def call(request_id):",
+            "    request = REQUESTS[request_id]",
+            "    body = None",
+            "    headers = dict(HEADERS)",
+            "    if request['json'] is not None:",
+            "        body = json.dumps(request['json']).encode('utf-8')",
+            "        headers['Content-Type'] = 'application/json'",
+            "    http_request = urllib.request.Request(request['url'], data=body, headers=headers, method=request['method'])",
+            "    with urllib.request.urlopen(http_request, timeout=30) as response:",
+            "        return json.loads(response.read().decode('utf-8'))",
+            "",
+            "call('health')",
+            "plan = call('plan_agent_request')",
+            "receipt = call('run_workflow')",
+            "evidence = {key: call(key) for key in ('events', 'audit', 'artifacts')}",
+            "print(json.dumps({'plan': plan.get('kind'), 'workflow_status': receipt.get('status'), 'evidence': {k: len(v) for k, v in evidence.items()}}, indent=2))",
+        ]
+    )
+
+
+def _typescript_consumer_snippet(requests_by_id: dict[str, dict[str, Any]], *, headers: dict[str, str]) -> str:
+    serializable_requests = {
+        request_id: {
+            "method": request.get("method") or "GET",
+            "url": request.get("url") or "",
+            "json": request.get("json") if isinstance(request.get("json"), dict) else None,
+        }
+        for request_id, request in requests_by_id.items()
+        if request_id in {"health", "plan_agent_request", "run_workflow", "events", "audit", "artifacts"}
+    }
+    return "\n".join(
+        [
+            f"const headers = {json.dumps(headers, ensure_ascii=False)};",
+            f"const requests = {json.dumps(serializable_requests, ensure_ascii=False, indent=2)};",
+            "",
+            "async function call(requestId: keyof typeof requests) {",
+            "  const request = requests[requestId];",
+            "  const response = await fetch(request.url, {",
+            "    method: request.method,",
+            "    headers: request.json ? { ...headers, 'Content-Type': 'application/json' } : headers,",
+            "    body: request.json ? JSON.stringify(request.json) : undefined,",
+            "  });",
+            "  if (!response.ok) throw new Error(`${requestId} failed: ${response.status}`);",
+            "  return response.json();",
+            "}",
+            "",
+            "await call('health');",
+            "const plan = await call('plan_agent_request');",
+            "const receipt = await call('run_workflow');",
+            "const [events, audit, artifacts] = await Promise.all([call('events'), call('audit'), call('artifacts')]);",
+            "console.log({ plan: plan.kind, workflowStatus: receipt.status, evidence: { events: events.length, audit: audit.length, artifacts: artifacts.length } });",
+        ]
+    )
 
 
 def _network_connection_acceptance(*, workflow_path: str, requests: list[dict[str, Any]]) -> dict[str, Any]:
