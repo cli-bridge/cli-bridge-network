@@ -808,6 +808,8 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
     presenterHeadline: stringValue(presenter.headline) ?? "Presenter brief not loaded",
     presenterProofPoints: Array.isArray(presenter.proof_points) ? presenter.proof_points.length : 0,
     presenterFlowSteps: Array.isArray(presenter.live_demo_flow) ? presenter.live_demo_flow.length : 0,
+    presenterConnectPackageUrl: stringValue(presenterHandoff.connect_package_url) ?? "not loaded",
+    presenterConnectPackageCommand: stringValue(presenterHandoff.connect_package_command) ?? "not loaded",
     presenterSdkBootstrapUrl: stringValue(presenterHandoff.sdk_bootstrap_url) ?? "not loaded",
     presenterSdkBootstrapCommand: stringValue(presenterHandoff.sdk_bootstrap_command) ?? "not loaded",
     launchContractStatus: stringValue(launchContract.status) ?? "not loaded",
@@ -1877,8 +1879,16 @@ onMounted(async () => {
             <code>{{ connectPresenterBrief.integration_handoff?.studio_url || connectSummary.studioLink || "not loaded" }}</code>
           </div>
           <div>
+            <span>Connect package</span>
+            <code>{{ connectSummary.presenterConnectPackageUrl }}</code>
+          </div>
+          <div>
             <span>Readiness</span>
             <code>{{ connectPresenterBrief.integration_handoff?.readiness_url || "not loaded" }}</code>
+          </div>
+          <div>
+            <span>Connect command</span>
+            <code>{{ connectSummary.presenterConnectPackageCommand }}</code>
           </div>
           <div>
             <span>SDK bootstrap</span>
@@ -1926,6 +1936,9 @@ onMounted(async () => {
           </button>
           <button title="Ask the daemon to run the full network acceptance report" :disabled="loading === 'network verify'" @click="verifyDaemonAcceptance">
             <Network :size="15" /> Daemon Verify
+          </button>
+          <button title="Copy one-shot connect package command" :disabled="!connectSummary.presenterConnectPackageCommand || connectSummary.presenterConnectPackageCommand === 'not loaded'" @click="copyText('connect-package-command', connectSummary.presenterConnectPackageCommand)">
+            <Copy :size="14" /> {{ copiedScript === "connect-package-command" ? "Copied" : "Copy Package" }}
           </button>
           <button title="Copy SDK bootstrap command" :disabled="!connectSummary.presenterSdkBootstrapCommand || connectSummary.presenterSdkBootstrapCommand === 'not loaded'" @click="copyText('sdk-bootstrap-command', connectSummary.presenterSdkBootstrapCommand)">
             <Copy :size="14" /> {{ copiedScript === "sdk-bootstrap-command" ? "Copied" : "Copy SDK" }}

@@ -872,6 +872,7 @@ export interface KillerMvpPresenterBrief {
   live_demo_flow?: PresenterFlowStep[];
   integration_handoff?: {
     connect_package_url?: string;
+    connect_package_command?: string;
     sdk_bootstrap_url?: string;
     readiness_url?: string;
     studio_url?: string;
@@ -1153,6 +1154,8 @@ export interface ConnectSummary {
   presenterHeadline: string;
   presenterProofPoints: number;
   presenterFlowSteps: number;
+  presenterConnectPackageUrl: string;
+  presenterConnectPackageCommand: string;
   presenterSdkBootstrapUrl: string;
   presenterSdkBootstrapCommand: string;
   launchContractStatus: string;

@@ -179,6 +179,8 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(presenter["decision_gates"]["setup_status"], "ready_to_run")
         self.assertEqual(presenter["integration_handoff"]["run_workflow_url"], "http://127.0.0.1:8787/workflows/run")
         self.assertIn("/network/connect-package?", presenter["integration_handoff"]["connect_package_url"])
+        self.assertIn("network connect-package", presenter["integration_handoff"]["connect_package_command"])
+        self.assertIn("--session-token test-token", presenter["integration_handoff"]["connect_package_command"])
         self.assertIn("/network/sdk-bootstrap?", presenter["integration_handoff"]["sdk_bootstrap_url"])
         self.assertIn("/network/readiness?", presenter["integration_handoff"]["readiness_url"])
         self.assertIn("--output readiness", presenter["integration_handoff"]["readiness_command"])

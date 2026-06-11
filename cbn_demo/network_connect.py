@@ -1306,6 +1306,11 @@ def _mvp_presenter_brief(
         base,
         f"/network/connect-package?{urlencode({'workflow_path': workflow_path})}",
     )
+    connect_package_command = _network_connect_package_command(
+        workflow_path,
+        base_url=base_url,
+        session_token=session_token,
+    )
     readiness_url = _absolute_url(base, f"/network/readiness?{urlencode({'workflow_path': workflow_path})}")
     readiness_command = _network_quickstart_command(
         workflow_path,
@@ -1407,6 +1412,7 @@ def _mvp_presenter_brief(
         "live_demo_flow": live_demo_flow,
         "integration_handoff": {
             "connect_package_url": connect_package_url,
+            "connect_package_command": connect_package_command,
             "sdk_bootstrap_url": entrypoints.get("sdk_bootstrap"),
             "readiness_url": readiness_url,
             "studio_url": studio_link.get("url"),
@@ -1427,6 +1433,7 @@ def _mvp_presenter_brief(
         },
         "recommended_next_action": mvp_readiness.get("recommended_next_action", "open_workflow_studio_demo"),
         "next_commands": [
+            connect_package_command,
             verify_command,
             readiness_command,
             sdk_bootstrap_command,
@@ -2851,6 +2858,15 @@ def _next_commands(workflow_path: str, *, base_url: str | None, session_token: s
 
 def _network_verify_command(workflow_path: str, *, base_url: str | None, session_token: str | None) -> str:
     args = ["python", "-m", "cbn", "network", "verify", "--workflow-path", workflow_path]
+    if base_url:
+        args.extend(["--base-url", base_url.rstrip("/")])
+    if session_token:
+        args.extend(["--session-token", session_token])
+    return _command(args)
+
+
+def _network_connect_package_command(workflow_path: str, *, base_url: str | None, session_token: str | None) -> str:
+    args = ["python", "-m", "cbn", "network", "connect-package", "--workflow-path", workflow_path]
     if base_url:
         args.extend(["--base-url", base_url.rstrip("/")])
     if session_token:
