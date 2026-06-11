@@ -22,6 +22,7 @@ from cbn_core.agent_cli_contract import (
 from cbn_core.import_catalog import cli_registration_surface
 from cbn_core.manifest import ManifestRegistry
 from cbn_demo.killer import DEFAULT_KILLER_WORKFLOW_PATH, KILLER_CAPABILITIES
+from cbn_plugins.cli_anything import CliAnythingHub
 from cbn_core.bridge_contract import workflow_bridge_contract_report
 from cbn_protocol.exports import export_all_workflow_protocols
 from cbn_workflow.catalog import inspect_workflow
@@ -105,6 +106,7 @@ def network_connect_package(
         session_token=session_token,
     )
     registration_surface = _registration_surface()
+    plugin_health = _plugin_health()
     demo_playbook = _demo_playbook(
         workflow_path=workflow_path,
         studio_link=studio_link,
@@ -136,6 +138,9 @@ def network_connect_package(
             "demo_ready": demo_readiness.get("status") == "ready",
             "demo_stage_count": demo_readiness.get("stage_count", 0),
             "demo_playbook_step_count": demo_playbook["step_count"],
+            "cli_anything_split_status": plugin_health.get("cli_anything", {})
+            .get("module_split", {})
+            .get("status"),
             "external_contract_ready": external_contract.get("ok"),
             "recommended_next_action": "call_daemon_endpoints" if ok else "fix_connect_package_inputs",
         },
@@ -160,6 +165,7 @@ def network_connect_package(
         "daemon_endpoints": endpoint_catalog,
         "workflow": _compact_workflow(workflow),
         "protocols": protocol_summary,
+        "plugins": plugin_health,
         "workflow_studio": studio_link,
         "demo_readiness": demo_readiness,
         "demo_playbook": demo_playbook,
@@ -171,6 +177,22 @@ def network_connect_package(
         "consumer_quickstart": quickstart,
         "next_commands": _next_commands(workflow_path, base_url=base_url, session_token=session_token),
     }
+
+
+def _plugin_health() -> dict[str, Any]:
+    try:
+        cli_anything = CliAnythingHub().status()
+    except Exception as exc:  # pragma: no cover - defensive one-shot packaging guard
+        cli_anything = {
+            "plugin_id": "cli-anything",
+            "ok": False,
+            "error": str(exc),
+            "module_split": {
+                "kind": "CliAnythingModuleSplitReport",
+                "status": "unknown",
+            },
+        }
+    return {"cli_anything": cli_anything}
 
 
 def _demo_readiness(

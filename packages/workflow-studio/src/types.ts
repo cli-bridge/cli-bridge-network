@@ -437,6 +437,7 @@ export interface NetworkConnectPackage {
     demo_ready?: boolean;
     demo_stage_count?: number;
     demo_playbook_step_count?: number;
+    cli_anything_split_status?: string;
     external_contract_ready?: boolean;
     recommended_next_action?: string;
   };
@@ -476,6 +477,9 @@ export interface NetworkConnectPackage {
     mcp?: { workflow_tool_count?: number; wire_facade?: string };
     a2a?: { skill_count?: number; wire_facade?: string };
     acp?: { workflow_count?: number; wire_facade?: string };
+  };
+  plugins?: {
+    cli_anything?: CliAnythingPluginHealth;
   };
   workflow_studio?: {
     kind?: "WorkflowStudioDemoLink";
@@ -561,6 +565,35 @@ export interface NetworkConnectPackage {
   next_commands?: string[];
 }
 
+export interface CliAnythingPluginHealth {
+  plugin_id?: string;
+  entrypoint?: string;
+  entrypoint_path?: string | null;
+  entrypoint_available?: boolean;
+  source_repo_dir?: string;
+  source_repo_available?: boolean;
+  version?: string | null;
+  module_split?: CliAnythingModuleSplitReport;
+}
+
+export interface CliAnythingModuleSplitReport {
+  kind?: "CliAnythingModuleSplitReport";
+  status?: string;
+  facade_module?: string;
+  facade_path?: string | null;
+  facade_line_count?: number | null;
+  expected_part_count?: number;
+  present_part_count?: number;
+  parts?: Array<{
+    id?: string;
+    module?: string;
+    present?: boolean;
+    path?: string | null;
+  }>;
+  strategy?: string;
+  next_targets?: string[];
+}
+
 export interface ExternalProtocolPackageBoundary {
   kind?: "ExternalProtocolPackageBoundary";
   package_name?: string;
@@ -635,6 +668,10 @@ export interface ConnectSummary {
   registrationImporters: number;
   consumerSnippets: number;
   registrationPolicy: string;
+  cliAnythingSplitStatus: string;
+  cliAnythingSplitParts: string;
+  cliAnythingFacadeLines: number;
+  cliAnythingEntrypoint: string;
   demoReadinessStatus: string;
   demoStageCount: number;
   demoPlaybookStatus: string;

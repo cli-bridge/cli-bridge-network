@@ -40,6 +40,12 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(health["metadata"]["npm_name"], "@agent-cli/contract")
         self.assertEqual(health["metadata"]["python_name"], "agent-cli-contract")
         self.assertTrue(health["independence"]["ok"])
+        self.assertEqual(payload["summary"]["cli_anything_split_status"], "ready")
+        cli_anything = payload["plugins"]["cli_anything"]
+        self.assertEqual(cli_anything["plugin_id"], "cli-anything")
+        self.assertEqual(cli_anything["module_split"]["kind"], "CliAnythingModuleSplitReport")
+        self.assertEqual(cli_anything["module_split"]["status"], "ready")
+        self.assertEqual(cli_anything["module_split"]["present_part_count"], 6)
         self.assertEqual(payload["contracts"]["external"]["receipt_mapping"]["message_channel"], "agent-cli.run.receipt")
         internal = payload["contracts"]["internal"]
         self.assertEqual(internal["protocol"], "CBN BridgeMessage CLI-to-CLI Protocol")
@@ -344,6 +350,7 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(payload["agent_workflow_request"]["bridge_message"]["channel"], "agent.workflow.request.plan")
         self.assertEqual(len(payload["agent_workflow_request"]["bridge_routes"]), 2)
         self.assertEqual(payload["registration_surface"]["importer_count"], 6)
+        self.assertEqual(payload["plugins"]["cli_anything"]["module_split"]["status"], "ready")
         self.assertIn("cbn import agent-cli-card", payload["registration_surface"]["importers"][2]["entrypoint"])
         self.assertEqual(payload["demo_playbook"]["steps"][3]["command"], payload["demo_playbook"]["next_commands"][0])
         self.assertIn("python -m cbn import command --help", payload["demo_playbook"]["next_commands"])

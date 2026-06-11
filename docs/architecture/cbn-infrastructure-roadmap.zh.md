@@ -249,6 +249,9 @@ Killer Demo slice 已新增可运行证据束：
   `/plugins/cli-anything/status` 现在同步返回 `module_split` 健康报告，列出
   facade 文件、剩余 facade 行数、6 个已拆出 parts 模块、present count 和下一步
   拆分目标，便于验证“先 facade 后拆实现”的进度而不破坏现有调用。
+  `NetworkConnectPackage.plugins.cli_anything` 也会携带同一份 plugin health，让外部
+  程序读取 one-shot package 时即可判断 CLI-Anything integration 仍是可维护的
+  facade/parts 结构。
 - 把 `cbn_adapter_agent` 抽象为可参与 workflow 的 Agent node，承载自然语言
   调度、初次设置引导和 BridgeMessage 收发。
 - `cbn_agent` 已新增最小核心模型层：`AgentCard`、`AgentHarness`、
@@ -386,7 +389,10 @@ Killer Demo slice 已新增可运行证据束：
 - CLI 已新增 `python -m cbn network connect-package` 只读入口，输出同一份
   `NetworkConnectPackage`。外部程序无需先接 daemon/WebUI，也能一次性读取
   AgentCliCard/RunReceipt contract、daemon endpoint catalog、protocol facade 和
-  Agent-as-Node 摘要。
+  Agent-as-Node 摘要。Workflow Studio Connect 面板同步展示
+  `plugins.cli_anything.module_split` 的 ready/incomplete 状态、present/expected
+  parts、facade 行数和每个 part module 路径，方便 demo 现场说明 CLI-Anything
+  已按 facade 兼容策略拆包。
 - `cbn_adapter_agent.workflow_request.build_agent_workflow_request_plan` 已新增
   确定性自然语言请求入口：输入 agent message + workflow path，输出
   `AdapterAgentWorkflowRequestPlan`，包含 workflow run payload、CLI/HTTP 调用方式、

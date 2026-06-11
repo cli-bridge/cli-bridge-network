@@ -111,6 +111,11 @@ const connectExternalPackageOffenders = computed(() =>
     ? connectExternalPackageHealth.value.independence.offenders
     : [],
 );
+const connectCliAnythingHealth = computed(() => connectPackage.value?.plugins?.cli_anything ?? {});
+const connectCliAnythingSplit = computed(() => connectCliAnythingHealth.value.module_split ?? {});
+const connectCliAnythingSplitParts = computed(() =>
+  Array.isArray(connectCliAnythingSplit.value.parts) ? connectCliAnythingSplit.value.parts : [],
+);
 const connectAgentBundle = computed(() => connectPackage.value?.agent_node_bundle ?? {});
 const connectAgentCards = computed(() => (Array.isArray(connectAgentBundle.value.cards) ? connectAgentBundle.value.cards : []));
 const connectAgentHarnesses = computed(() => (Array.isArray(connectAgentBundle.value.harnesses) ? connectAgentBundle.value.harnesses : []));
@@ -492,6 +497,8 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
   const setup = payload?.setup_guidance ?? {};
   const harness = payload?.agent_workflow_request ?? {};
   const registration = payload?.registration_surface ?? {};
+  const cliAnything = payload?.plugins?.cli_anything ?? {};
+  const cliAnythingSplit = cliAnything.module_split ?? {};
   const harnessBridge =
     harness.bridge_message && typeof harness.bridge_message === "object"
       ? (harness.bridge_message as { metadata?: { channel?: unknown }; channel?: unknown })
@@ -514,6 +521,10 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
     registrationImporters: numberValue(registration.importer_count) ?? numberValue(summary.registration_importer_count) ?? 0,
     consumerSnippets: numberValue(summary.consumer_snippet_count) ?? quickstartSdkSnippets.value.length,
     registrationPolicy: registration.default_policy?.dry_run_by_default ? "dry-run imports" : "check import policy",
+    cliAnythingSplitStatus: stringValue(cliAnythingSplit.status) ?? stringValue(summary.cli_anything_split_status) ?? "not loaded",
+    cliAnythingSplitParts: `${numberValue(cliAnythingSplit.present_part_count) ?? 0}/${numberValue(cliAnythingSplit.expected_part_count) ?? 0}`,
+    cliAnythingFacadeLines: numberValue(cliAnythingSplit.facade_line_count) ?? 0,
+    cliAnythingEntrypoint: cliAnything.entrypoint_available ? "cli-hub available" : "cli-hub not found",
     demoReadinessStatus: stringValue(demo.status) ?? "not loaded",
     demoStageCount: numberValue(demo.stage_count) ?? 0,
     demoPlaybookStatus: stringValue(playbook.status) ?? "not loaded",
@@ -982,6 +993,10 @@ onMounted(async () => {
             <strong>{{ connectSummary.registrationImporters }}</strong>
           </div>
           <div>
+            <span>Split</span>
+            <strong>{{ connectSummary.cliAnythingSplitParts }}</strong>
+          </div>
+          <div>
             <span>Snippets</span>
             <strong>{{ connectSummary.consumerSnippets }}</strong>
           </div>
@@ -1011,6 +1026,10 @@ onMounted(async () => {
           <span class="pill-inline">{{ connectSummary.quickstartStatus }}</span>
           <span class="pill-inline">{{ connectSummary.authHeaderStatus }}</span>
           <span class="pill-inline">{{ connectSummary.registrationPolicy }}</span>
+          <span :class="['pill-inline', connectSummary.cliAnythingSplitStatus === 'ready' ? 'ok' : connectSummary.cliAnythingSplitStatus === 'incomplete' ? 'blocked' : '']">
+            split {{ connectSummary.cliAnythingSplitStatus }}
+          </span>
+          <span class="pill-inline">{{ connectSummary.cliAnythingEntrypoint }}</span>
           <span :class="['pill-inline', importCatalogParity === 'catalog parity' ? 'ok' : importCatalogParity === 'catalog drift' ? 'blocked' : '']">
             {{ importCatalogParity }}
           </span>
@@ -1130,6 +1149,29 @@ onMounted(async () => {
             <span>Source scan</span>
             <strong>{{ connectSummary.externalPackageSourceFiles }}</strong>
           </div>
+        </div>
+        <div class="contract-status-grid">
+          <div>
+            <span>CLI-Anything split</span>
+            <strong>{{ connectSummary.cliAnythingSplitStatus }}</strong>
+          </div>
+          <div>
+            <span>Parts</span>
+            <strong>{{ connectSummary.cliAnythingSplitParts }}</strong>
+          </div>
+          <div>
+            <span>Facade lines</span>
+            <strong>{{ connectSummary.cliAnythingFacadeLines }}</strong>
+          </div>
+        </div>
+        <div class="package-health-list">
+          <div v-for="part in connectCliAnythingSplitParts" :key="part.id || part.module" :class="part.present ? 'ok' : 'blocked'">
+            <strong>{{ part.id || "part" }}</strong>
+            <span>{{ part.present ? "present" : "missing" }}</span>
+            <small>{{ part.module || "module not loaded" }}</small>
+            <code>{{ part.path || "path not loaded" }}</code>
+          </div>
+          <span v-if="!connectCliAnythingSplitParts.length">No CLI-Anything split health loaded</span>
         </div>
         <div class="package-health-list">
           <div v-for="file in connectExternalPackageFiles.slice(0, 6)" :key="file.id || file.relative_path" :class="file.exists ? 'ok' : 'blocked'">
@@ -1346,7 +1388,7 @@ onMounted(async () => {
             <span>{{ endpoint.path }}</span>
           </div>
         </div>
-        <pre>{{ pretty({ daemon_verify: networkVerifyReport, import_catalog: importCatalog, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, demo_playbook: connectPackage?.demo_playbook, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
+        <pre>{{ pretty({ daemon_verify: networkVerifyReport, import_catalog: importCatalog, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, demo_playbook: connectPackage?.demo_playbook, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, plugins: connectPackage?.plugins, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
       </section>
       <section>
         <div class="section-title"><Rocket :size="15" /> Killer Demo</div>

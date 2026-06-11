@@ -207,6 +207,9 @@ class DaemonApiTests(unittest.TestCase):
             importer_ids = {importer["id"] for importer in payload["registration_surface"]["importers"]}
             self.assertIn("cli-anything", importer_ids)
             self.assertIn("agent-cli-card", importer_ids)
+            self.assertEqual(payload["summary"]["cli_anything_split_status"], "ready")
+            self.assertEqual(payload["plugins"]["cli_anything"]["module_split"]["status"], "ready")
+            self.assertEqual(payload["plugins"]["cli_anything"]["module_split"]["present_part_count"], 6)
             self.assertEqual(payload["acceptance"]["kind"], "NetworkConnectionAcceptance")
             self.assertEqual(payload["acceptance"]["check_count"], 11)
             self.assertEqual(payload["acceptance"]["checks"][1]["request_id"], "import_catalog")
