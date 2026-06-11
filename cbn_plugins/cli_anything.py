@@ -88,10 +88,7 @@ from cbn_plugins.cli_anything_parts.live import (
     workflow_live_summary as _workflow_live_summary,
 )
 from cbn_plugins.cli_anything_parts.onboarding import (
-    onboarding_next_commands as _onboarding_parts_next_commands,
-    onboarding_stage_results as _onboarding_parts_stage_results,
-    onboarding_summary as _onboarding_parts_summary,
-    probe_blocked_onboarding_report as _onboarding_parts_probe_blocked_report,
+    onboard_harness as _onboarding_parts_onboard_harness,
 )
 from cbn_plugins.cli_anything_parts.planning import (
     bootstrap_plan as _planning_bootstrap_plan,
@@ -970,159 +967,20 @@ class CliAnythingHub:
         smoke_extra_args: tuple[str, ...] = (),
         operation_runner: Any | None = None,
     ) -> dict[str, Any]:
-        probe = self.probe_harness(
-            harness_name,
+        return _onboarding_parts_onboard_harness(
+            self,
             title=title,
-            from_market=from_market,
-        )
-        if not probe["ok"]:
-            return _onboarding_parts_probe_blocked_report(
-                plugin_id=PLUGIN_ID,
-                harness_name=harness_name,
-                from_market=from_market,
-                write=write,
-                confirmed=confirmed,
-                install=install,
-                allow_blocked=allow_blocked,
-                include_workflows=include_workflows,
-                run_smoke_suite=run_smoke_suite,
-                probe=probe,
-            )
-
-        evaluation = probe["evaluation"]
-        capability_id = evaluation["capability_id"]
-        adaptation = evaluation["adaptation"]
-        write_requested_without_confirmation = bool(write and not confirmed)
-        write_blocked_by_gate = bool(
-            write
-            and confirmed
-            and not allow_blocked
-            and not (
-                evaluation["gates"]["manifest_valid"]
-                and not evaluation["blockers"]
-            )
-        )
-        install_requested_without_confirmation = bool(install and not confirmed)
-        if write and confirmed and not write_blocked_by_gate:
-            adaptation = self.adapt_harness(
-                harness_name,
-                title=title,
-                from_market=from_market,
-                write=True,
-            )
-        install_plan_obj = self.harness_plan("install", harness_name)
-        install_plan = install_plan_obj.as_dict()
-        install_gate = self.harness_operation_gate(
-            "install",
-            harness_name,
-            from_market=from_market,
-        )
-        install_result = None
-        install_execution_status = "not_requested"
-        install_execution_blockers: list[str] = []
-        if install and not confirmed:
-            install_execution_status = "requires_confirmation"
-        elif install and confirmed and not allow_blocked and not install_gate.get("ok"):
-            install_execution_status = "blocked"
-            install_execution_blockers = list(install_gate.get("blockers", []))
-        elif install and confirmed and operation_runner is None:
-            install_execution_status = "blocked"
-            install_execution_blockers = ["operation runner is required for confirmed install"]
-        elif install and confirmed:
-            install_result = operation_runner.execute(install_plan_obj)
-            install_execution_status = str(install_result.get("status", "unknown"))
-            if install_execution_status != "completed":
-                install_execution_blockers = list(install_result.get("blockers", [])) or [
-                    f"harness install operation {install_execution_status}"
-                ]
-        verification = self.verify_harness(
-            harness_name,
-            title=title,
+            harness_name=harness_name,
             from_market=from_market,
             include_workflows=include_workflows,
             run_smoke_suite=run_smoke_suite,
             smoke_extra_args=smoke_extra_args,
-        )
-        verification_blockers = (
-            verification.get("verification_blockers", [])
-            if verification.get("ok")
-            else [verification.get("error", "verification failed")]
-        )
-        manifest_written = bool(adaptation.get("written"))
-        ready_for_manifest_write = bool(
-            verification.get("ready_for_manifest_write")
-            if verification.get("ok")
-            else evaluation["gates"]["manifest_valid"] and not evaluation["blockers"]
-        )
-        ready_for_install = bool(install_gate.get("ok"))
-        ready_for_runtime_verification = bool(
-            verification.get("ready_for_runtime_verification")
-            if verification.get("ok")
-            else False
-        )
-        effective_evaluation = verification.get("evaluation", evaluation) if verification.get("ok") else evaluation
-        manifest_already_imported = bool(effective_evaluation["gates"].get("manifest_imported"))
-        harness_already_installed = bool(effective_evaluation["gates"].get("installed"))
-        smoke_suite = verification.get("protocol_smoke_suite", {}) if verification.get("ok") else {}
-        stage_results = _onboarding_parts_stage_results(
-            evaluation=evaluation,
-            probe=probe,
-            adaptation=adaptation,
-            install_gate=install_gate,
-            verification_blockers=verification_blockers,
-            ready_for_manifest_write=ready_for_manifest_write,
-            ready_for_install=ready_for_install,
-            ready_for_runtime_verification=ready_for_runtime_verification,
-            manifest_written=manifest_written,
-            manifest_already_imported=manifest_already_imported,
-            harness_already_installed=harness_already_installed,
             write=write,
             confirmed=confirmed,
             install=install,
             allow_blocked=allow_blocked,
-            write_blocked_by_gate=write_blocked_by_gate,
-            install_execution_status=install_execution_status,
-            install_execution_blockers=install_execution_blockers,
-            smoke_suite=smoke_suite,
+            operation_runner=operation_runner,
         )
-        next_commands = _onboarding_parts_next_commands(harness_name, capability_id)
-        return {
-            "ok": True,
-            "plugin_id": PLUGIN_ID,
-            "kind": "CliAnythingHarnessOnboarding",
-            "harness_name": harness_name,
-            "from_market": from_market,
-            "write": write,
-            "confirmed": confirmed,
-            "install": install,
-            "allow_blocked": allow_blocked,
-            "include_workflows": include_workflows,
-            "run_smoke_suite": run_smoke_suite,
-            "capability_id": capability_id,
-            "summary": _onboarding_parts_summary(
-                ready_for_manifest_write=ready_for_manifest_write,
-                manifest_written=manifest_written,
-                write_blocked_by_gate=write_blocked_by_gate,
-                write_requested_without_confirmation=write_requested_without_confirmation,
-                ready_for_install=ready_for_install,
-                install_requested_without_confirmation=install_requested_without_confirmation,
-                install_execution_status=install_execution_status,
-                ready_for_runtime_verification=ready_for_runtime_verification,
-                smoke_suite=smoke_suite,
-                recommended_next_action=evaluation["recommended_next_action"],
-            ),
-            "stage_results": stage_results,
-            "reports": {
-                "evaluation": evaluation,
-                "probe": probe,
-                "adaptation": adaptation,
-                "install_plan": install_plan,
-                "install_gate": install_gate,
-                "install_result": install_result,
-                "verification": verification,
-            },
-            "next_commands": next_commands,
-        }
 
     def candidate_harnesses(
         self,
