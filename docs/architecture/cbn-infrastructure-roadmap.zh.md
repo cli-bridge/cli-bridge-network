@@ -40,6 +40,13 @@ submodule 或独立 npm/PyPI 包。
 CBN 侧 `cbn_core.agent_cli_contract` 已在映射前消费该外置 validator；当前优先
 加载已安装的 `agent_cli_contract` 包，未安装时降级到
 `external_protocols/agent-cli-contract/python` 的 submodule/source-tree 边界。
+`cbn_core.agent_cli_contract_package_boundary()` 与
+`agent_cli_contract_package_health()` 已把该外置协议包边界提升为 core 级机器可读
+报告：校验 package.json、pyproject、schemas、fixtures、TypeScript types、Python
+validator、static check 和 conformance smoke 是否齐备，并扫描 Python/TS/scripts
+源码确认不 import CBN runtime/protocol 模块。`NetworkConnectPackage.contracts.external`
+同步携带 `package_health`，让第三方程序第一次读取 one-shot package 时即可判断
+`agent-cli-contract` 是否仍是可拆包、可独立发包的干净边界。
 
 ### 2. CBN 内部总线 Contract
 

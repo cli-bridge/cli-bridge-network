@@ -5,7 +5,12 @@ import sys
 import unittest
 from pathlib import Path
 
-from cbn_core.agent_cli_contract import agent_cli_card_to_tool_manifests, run_receipt_to_cbn_records
+from cbn_core.agent_cli_contract import (
+    agent_cli_card_to_tool_manifests,
+    agent_cli_contract_package_boundary,
+    agent_cli_contract_package_health,
+    run_receipt_to_cbn_records,
+)
 from cbn_core.manifest import validate_manifest_dict
 from cbn_core.message import validate_bridge_message
 
@@ -39,6 +44,28 @@ class AgentCliContractTests(unittest.TestCase):
         payload = json.loads(proc.stdout)
         self.assertTrue(payload["ok"])
         self.assertTrue(payload["independent_boundary"]["ok"])
+
+    def test_package_boundary_health_is_machine_readable(self):
+        boundary = agent_cli_contract_package_boundary(CONTRACT_ROOT)
+        health = agent_cli_contract_package_health(CONTRACT_ROOT)
+
+        self.assertEqual(boundary["kind"], "ExternalProtocolPackageBoundary")
+        self.assertEqual(boundary["npm_name"], "@agent-cli/contract")
+        self.assertEqual(boundary["python_name"], "agent-cli-contract")
+        self.assertEqual(boundary["schemas"]["AgentCliCard"], str(CONTRACT_ROOT / "schemas/agent-cli-card.schema.json"))
+        self.assertTrue(boundary["dependency_boundary"]["standalone"])
+        self.assertIn("cbn_core", boundary["dependency_boundary"]["forbidden_cbn_modules"])
+        self.assertIn("cbn_protocol", boundary["dependency_boundary"]["forbidden_cbn_modules"])
+        self.assertIn("ToolManifest", boundary["cbn_mapping_responsibility"]["AgentCliCard"])
+        self.assertEqual(health["kind"], "AgentCliContractPackageHealth")
+        self.assertTrue(health["ok"], health)
+        self.assertEqual(health["metadata"]["npm_name"], "@agent-cli/contract")
+        self.assertEqual(health["metadata"]["python_name"], "agent-cli-contract")
+        self.assertEqual(health["metadata"]["python_dependencies"], [])
+        self.assertGreaterEqual(health["file_count"], 12)
+        self.assertTrue(all(item["exists"] for item in health["files"]))
+        self.assertTrue(health["independence"]["ok"], health["independence"])
+        self.assertEqual(health["independence"]["offenders"], [])
 
     def test_standalone_cli_validates_card_and_receipt(self):
         env = {**os.environ, "PYTHONPATH": str(CONTRACT_ROOT / "python")}

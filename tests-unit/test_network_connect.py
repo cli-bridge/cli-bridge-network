@@ -34,6 +34,12 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertTrue(boundary["python_validator"].replace("\\", "/").endswith("python/agent_cli_contract/validator.py"))
         self.assertIn("conformance_smoke.py", boundary["conformance_smoke"]["script"])
         self.assertIn("ToolManifest", boundary["cbn_mapping_responsibility"]["AgentCliCard"])
+        health = payload["contracts"]["external"]["package_health"]
+        self.assertEqual(health["kind"], "AgentCliContractPackageHealth")
+        self.assertTrue(health["ok"])
+        self.assertEqual(health["metadata"]["npm_name"], "@agent-cli/contract")
+        self.assertEqual(health["metadata"]["python_name"], "agent-cli-contract")
+        self.assertTrue(health["independence"]["ok"])
         self.assertEqual(payload["contracts"]["external"]["receipt_mapping"]["message_channel"], "agent-cli.run.receipt")
         internal = payload["contracts"]["internal"]
         self.assertEqual(internal["protocol"], "CBN BridgeMessage CLI-to-CLI Protocol")
@@ -307,6 +313,7 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(payload["summary"]["recommended_next_action"], "call_daemon_endpoints")
         self.assertEqual(payload["contracts"]["external"]["generated_capability_ids"], ["example.macrocli.backends"])
         self.assertEqual(payload["contracts"]["external"]["package_boundary"]["package_name"], "agent-cli-contract")
+        self.assertTrue(payload["contracts"]["external"]["package_health"]["ok"])
         self.assertIn(
             "RunReceipt schema",
             payload["contracts"]["external"]["package_boundary"]["dependency_boundary"]["allowed_scope"],

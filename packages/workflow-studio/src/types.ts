@@ -446,6 +446,8 @@ export interface NetworkConnectPackage {
     external?: {
       protocol?: string;
       accepted_kinds?: string[];
+      package_boundary?: ExternalProtocolPackageBoundary;
+      package_health?: AgentCliContractPackageHealth;
       generated_capability_ids?: string[];
       receipt_mapping?: {
         message_kind?: string;
@@ -541,6 +543,63 @@ export interface NetworkConnectPackage {
     sequence?: string[];
   };
   next_commands?: string[];
+}
+
+export interface ExternalProtocolPackageBoundary {
+  kind?: "ExternalProtocolPackageBoundary";
+  package_name?: string;
+  npm_name?: string;
+  python_name?: string;
+  version?: string;
+  root?: string;
+  schemas?: Record<string, string>;
+  typescript_types?: string;
+  python_validator?: string;
+  fixtures?: Record<string, string>;
+  conformance_smoke?: {
+    command?: string;
+    script?: string;
+  };
+  dependency_boundary?: {
+    standalone?: boolean;
+    forbidden_cbn_modules?: string[];
+    allowed_scope?: string[];
+  };
+  cbn_mapping_responsibility?: Record<string, string>;
+}
+
+export interface AgentCliContractPackageHealth {
+  kind?: "AgentCliContractPackageHealth";
+  ok?: boolean;
+  root?: string;
+  package_boundary?: ExternalProtocolPackageBoundary;
+  metadata?: {
+    npm_name?: string;
+    npm_version?: string;
+    npm_private?: boolean;
+    npm_exports?: Record<string, unknown>;
+    python_name?: string;
+    python_version?: string;
+    python_dependencies?: string[];
+    python_requires?: string;
+  };
+  file_count?: number;
+  files?: Array<{
+    id?: string;
+    path?: string;
+    relative_path?: string;
+    role?: string;
+    exists?: boolean;
+  }>;
+  independence?: {
+    ok?: boolean;
+    forbidden_cbn_modules?: string[];
+    offenders?: Array<{
+      path?: string;
+      module?: string;
+    }>;
+    source_file_count?: number;
+  };
 }
 
 export interface ConnectSummary {

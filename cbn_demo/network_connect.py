@@ -13,7 +13,12 @@ from urllib.parse import urlencode
 from cbn_adapter_agent.nodes import build_adapter_agent_node_bundle
 from cbn_adapter_agent.tool_call_plan import build_agent_tool_call_plan
 from cbn_adapter_agent.workflow_request import build_agent_workflow_request_plan
-from cbn_core.agent_cli_contract import agent_cli_card_to_tool_manifests, run_receipt_to_cbn_records
+from cbn_core.agent_cli_contract import (
+    agent_cli_card_to_tool_manifests,
+    agent_cli_contract_package_boundary,
+    agent_cli_contract_package_health,
+    run_receipt_to_cbn_records,
+)
 from cbn_core.manifest import ManifestRegistry
 from cbn_demo.killer import DEFAULT_KILLER_WORKFLOW_PATH, KILLER_CAPABILITIES
 from cbn_core.bridge_contract import workflow_bridge_contract_report
@@ -484,14 +489,18 @@ def _external_agent_cli_contract() -> dict[str, Any]:
     receipt = _read_json(CONTRACT_RECEIPT_FIXTURE)
     manifests = agent_cli_card_to_tool_manifests(card)
     receipt_mapping = run_receipt_to_cbn_records(receipt)
+    package_health = agent_cli_contract_package_health(CONTRACT_ROOT)
     return {
-        "ok": bool(manifests) and receipt_mapping.get("message", {}).get("kind") == "BridgeMessage",
+        "ok": bool(manifests)
+        and receipt_mapping.get("message", {}).get("kind") == "BridgeMessage"
+        and package_health.get("ok"),
         "protocol": "agent-cli-contract",
         "root": str(CONTRACT_ROOT),
         "card_fixture": str(CONTRACT_CARD_FIXTURE),
         "receipt_fixture": str(CONTRACT_RECEIPT_FIXTURE),
         "accepted_kinds": ["AgentCliCard", "RunReceipt"],
-        "package_boundary": _agent_cli_contract_package_boundary(),
+        "package_boundary": agent_cli_contract_package_boundary(CONTRACT_ROOT),
+        "package_health": package_health,
         "generated_capability_ids": [manifest["metadata"]["id"] for manifest in manifests],
         "receipt_mapping": {
             "kind": receipt_mapping.get("kind"),
@@ -500,54 +509,6 @@ def _external_agent_cli_contract() -> dict[str, Any]:
             "artifact_count": len(receipt_mapping.get("artifacts", [])),
             "audit_event_type": (receipt_mapping.get("audit_event") or {}).get("type"),
             "event_type": (receipt_mapping.get("event") or {}).get("type"),
-        },
-    }
-
-
-def _agent_cli_contract_package_boundary() -> dict[str, Any]:
-    return {
-        "kind": "ExternalProtocolPackageBoundary",
-        "package_name": "agent-cli-contract",
-        "npm_name": "@agent-cli/contract",
-        "python_name": "agent-cli-contract",
-        "version": "0.1.0",
-        "root": str(CONTRACT_ROOT),
-        "schemas": {
-            "AgentCliCard": str(CONTRACT_ROOT / "schemas/agent-cli-card.schema.json"),
-            "RunReceipt": str(CONTRACT_ROOT / "schemas/run-receipt.schema.json"),
-        },
-        "typescript_types": str(CONTRACT_ROOT / "ts/index.ts"),
-        "python_validator": str(CONTRACT_ROOT / "python/agent_cli_contract/validator.py"),
-        "fixtures": {
-            "AgentCliCard": str(CONTRACT_CARD_FIXTURE),
-            "RunReceipt": str(CONTRACT_RECEIPT_FIXTURE),
-        },
-        "conformance_smoke": {
-            "command": "python external_protocols/agent-cli-contract/scripts/conformance_smoke.py",
-            "script": str(CONTRACT_ROOT / "scripts/conformance_smoke.py"),
-        },
-        "dependency_boundary": {
-            "standalone": True,
-            "forbidden_cbn_modules": [
-                "api_server",
-                "cbn_workflow",
-                "cbn_runtime",
-                "cbn_protocol",
-                "cbn_artifact",
-                "cbn_audit",
-            ],
-            "allowed_scope": [
-                "AgentCliCard schema",
-                "RunReceipt schema",
-                "TypeScript types",
-                "Python validation CLI",
-                "fixtures",
-                "conformance smoke",
-            ],
-        },
-        "cbn_mapping_responsibility": {
-            "AgentCliCard": "CBN maps external command declarations to ToolManifest records.",
-            "RunReceipt": "CBN maps run receipts to BridgeMessage, Artifact records, Audit evidence, and Events.",
         },
     }
 

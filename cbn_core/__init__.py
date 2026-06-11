@@ -1,7 +1,12 @@
 """Core Python contracts for the CBN MVP runtime."""
 
 from cbn_core.manifest import CapabilityManifest, ManifestRegistry
-from cbn_core.agent_cli_contract import agent_cli_card_to_tool_manifests, run_receipt_to_cbn_records
+from cbn_core.agent_cli_contract import (
+    agent_cli_card_to_tool_manifests,
+    agent_cli_contract_package_boundary,
+    agent_cli_contract_package_health,
+    run_receipt_to_cbn_records,
+)
 from cbn_core.bridge_contract import (
     artifact_contract,
     bridge_message_contract,
@@ -23,6 +28,8 @@ __all__ = [
     "CapabilityManifest",
     "ManifestRegistry",
     "agent_cli_card_to_tool_manifests",
+    "agent_cli_contract_package_boundary",
+    "agent_cli_contract_package_health",
     "artifact_contract",
     "bridge_message_contract",
     "bridge_args_from_selectors",
