@@ -508,6 +508,9 @@ Killer Demo slice 已新增可运行证据束：
   并把 direct profile 与 `NetworkConnectPackage.network_entry_profile` 做 profile id、
   status、integration mode、run endpoint 和 stable fields 的 parity 对比，
   让演示现场可以证明轻量接入摘要不是只藏在 one-shot 大包里的静态副本。
+  `consumer_quickstart` 已把 `entry_profile` 纳入 first-call requests、sequence
+  steps、SDK snippets 和 acceptance checklist；`network verify` 会实际 replay
+  `/network/entry-profile`，并验收 kind/status/internal bus/redaction 信号。
 - `consumer_quickstart.entrypoints`、`requests[]`、SDK snippets 与 acceptance
   checklist 已纳入 `import_catalog` 首呼叫路径。第三方程序读取一次
   `network connect-package` 或 `network quickstart` 后，不仅能调用 workflow，也能在

@@ -575,6 +575,8 @@ export interface NetworkConnectPackage {
     entrypoints?: {
       open_studio?: string;
       health?: string;
+      launch_contract?: string;
+      entry_profile?: string;
       import_catalog?: string;
       inspect_workflow?: string;
       inspect_bridge_contract?: string;
