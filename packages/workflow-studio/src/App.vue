@@ -55,6 +55,7 @@ const config = reactive<StudioConfig>({
   dryRun: urlConfig.get("dryRun") !== "false",
   confirmed: urlConfig.get("confirmed") === "true",
 });
+const dashboardUrl = computed(() => urlConfig.get("dashboardUrl") || "http://127.0.0.1:5173");
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const graphRef = ref<StudioGraph | null>(null);
@@ -155,6 +156,10 @@ function openStudioLink() {
   if (url) {
     window.open(url, "_blank", "noopener,noreferrer");
   }
+}
+
+function openDashboardConsole() {
+  window.open(dashboardUrl.value, "_blank", "noopener,noreferrer");
 }
 
 async function copyText(label: string, text: string) {
@@ -603,7 +608,7 @@ onMounted(async () => {
         <button title="Load one-shot network connection package" @click="inspectConnectPackage">
           <Network :size="16" /> Connect
         </button>
-        <button title="Open maintainer console" onclick="window.open('../dashboard/src/index.html', '_blank')">
+        <button title="Open maintainer console" @click="openDashboardConsole">
           <Wrench :size="16" /> Console
         </button>
       </div>
