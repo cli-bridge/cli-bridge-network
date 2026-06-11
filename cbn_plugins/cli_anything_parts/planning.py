@@ -4,6 +4,15 @@ from __future__ import annotations
 
 from typing import Any
 
+from cbn_plugins.manager import PluginManager
+from cbn_plugins.cli_anything_parts.verification import load_manifest_registry
+from cbn_protocol.acceptance_queue import cli_to_cli_acceptance_queue
+from cbn_protocol.lifecycle_suite import protocol_lifecycle_suite
+from cbn_protocol.readiness import protocol_readiness_report
+
+
+PLUGIN_ID = "cli-anything"
+
 
 def safe_plugin_report(builder: Any) -> dict[str, Any]:
     try:
@@ -185,6 +194,215 @@ def mvp_plan_stages(summary: dict[str, Any]) -> list[dict[str, Any]]:
             "recommended_next_action": "run_protocol_smoke_then_add_conformance_coverage",
         },
     ]
+
+
+def mvp_plan(
+    hub: Any,
+    query: str | None = "file",
+    limit: int = 20,
+    max_harnesses: int = 5,
+    include_blocked: bool = True,
+    workflow_paths: tuple[str, ...] = (),
+    max_workflows: int = 10,
+    registry: Any | None = None,
+    workflow_runner: Any | None = None,
+) -> dict[str, Any]:
+    bounded_limit = max(0, min(limit, 500))
+    bounded_max_harnesses = max(0, min(max_harnesses, 50))
+    bounded_max_workflows = max(1, min(max_workflows, 50))
+    environment = hub._environment_verification()
+    install_gate = safe_plugin_report(lambda: PluginManager(root=hub.paths.root).operation_gate(PLUGIN_ID, "install"))
+    install_queue = hub.market_install_queue(
+        query=query,
+        limit=bounded_limit,
+        max_installs=bounded_max_harnesses,
+        include_blocked=include_blocked,
+    )
+    adaptation_queue = hub.adaptation_queue(
+        query=query,
+        limit=bounded_limit,
+        max_harnesses=bounded_max_harnesses,
+        include_blocked=include_blocked,
+        require_smoke=True,
+        run_smoke=False,
+        confirmed=False,
+    )
+    registry = registry or load_manifest_registry(hub.paths.manifests)
+    protocol_readiness = protocol_readiness_report(registry, include_workflows=True)
+    acceptance_queue = (
+        cli_to_cli_acceptance_queue(
+            registry,
+            workflow_runner,
+            workflow_paths=workflow_paths or None,
+            max_workflows=bounded_max_workflows,
+            run=False,
+            dry_run=True,
+            confirmed=False,
+            include_payloads=False,
+        )
+        if workflow_runner is not None
+        else {
+            "ok": False,
+            "kind": "CliToCliAcceptanceQueue",
+            "skipped": True,
+            "reason": "workflow_runner was not provided",
+            "summary": {
+                "workflow_count": 0,
+                "accepted_workflow_count": 0,
+                "blocked_workflow_count": 0,
+                "route_count": 0,
+                "route_ready_count": 0,
+                "blocked_route_count": 0,
+            },
+            "rows": [],
+            "failures": [],
+            "next_steps": ["Call mvp-plan through the CLI or daemon runtime to include acceptance evidence."],
+        }
+    )
+    summary = mvp_plan_summary(
+        environment=environment,
+        install_gate=install_gate,
+        install_queue=install_queue,
+        adaptation_queue=adaptation_queue,
+        protocol_readiness=protocol_readiness,
+        acceptance_queue=acceptance_queue,
+    )
+    return {
+        "ok": True,
+        "plugin_id": PLUGIN_ID,
+        "kind": "CliAnythingMvpPlan",
+        "query": query,
+        "limit": bounded_limit,
+        "max_harnesses": bounded_max_harnesses,
+        "include_blocked": include_blocked,
+        "workflow_paths": list(workflow_paths),
+        "max_workflows": bounded_max_workflows,
+        "summary": summary,
+        "stages": mvp_plan_stages(summary),
+        "reports": {
+            "environment": environment,
+            "install_gate": install_gate,
+            "install_queue": install_queue,
+            "adaptation_queue": adaptation_queue,
+            "protocol_readiness": protocol_readiness,
+            "acceptance_queue": acceptance_queue,
+        },
+        "next_commands": [
+            "python -m cbn plugin preflight cli-anything",
+            "python -m cbn plugin install cli-anything --yes",
+            (
+                f"python -m cbn plugin install-queue cli-anything --query {query or '<query>'} "
+                f"--limit {bounded_limit} --max-installs {bounded_max_harnesses}"
+            ),
+            (
+                f"python -m cbn plugin adaptation-queue cli-anything --query {query or '<query>'} "
+                f"--limit {bounded_limit} --max-harnesses {bounded_max_harnesses}"
+            ),
+            "python -m cbn protocol acceptance-queue --run --dry-run",
+            "python -m cbn protocol readiness --include-workflows",
+            "python -m cbn protocol smoke-suite --workflow-dry-run",
+        ],
+    }
+
+
+def bootstrap_plan(
+    hub: Any,
+    harness_name: str = "mermaid",
+    query: str | None = "file",
+    include_workflows: bool = True,
+    workflow_path: str = "workflows/cli-anything-macrocli-mermaid-routing.example.json",
+) -> dict[str, Any]:
+    manager = PluginManager(root=hub.paths.root)
+    environment = hub._environment_verification()
+    install_plan = safe_plugin_report(lambda: manager.plan(PLUGIN_ID, "install").as_dict())
+    update_plan = safe_plugin_report(lambda: manager.plan(PLUGIN_ID, "update").as_dict())
+    install_gate = safe_plugin_report(lambda: manager.operation_gate(PLUGIN_ID, "install"))
+    update_gate = safe_plugin_report(lambda: manager.operation_gate(PLUGIN_ID, "update"))
+    entrypoint_available = bool(
+        any(item.get("available") for item in environment.get("entrypoints", []) if isinstance(item, dict))
+    )
+    market_scan = (
+        hub.candidate_harnesses(query=query, limit=10, with_probes=True, compact=True)
+        if entrypoint_available
+        else {
+            "ok": False,
+            "skipped": True,
+            "reason": "cli-hub entrypoint is not available yet",
+            "query": query,
+            "candidate_summary": [],
+        }
+    )
+    onboarding = hub.onboard_harness(
+        harness_name,
+        from_market=entrypoint_available,
+        write=False,
+        confirmed=False,
+        install=False,
+        include_workflows=include_workflows,
+        run_smoke_suite=False,
+    )
+    lifecycle_suite = protocol_lifecycle_suite(
+        capability_id="git.version",
+        workflow_path=workflow_path,
+    )
+    source_downloaded = bool(environment.get("source_downloaded"))
+    source_trusted = environment.get("source_trusted")
+    summary = {
+        "source_downloaded": source_downloaded,
+        "source_trusted": source_trusted,
+        "entrypoint_available": entrypoint_available,
+        "install_gate_ok": bool(install_gate.get("ok")),
+        "update_gate_ok": bool(update_gate.get("ok")),
+        "market_scan_ok": bool(market_scan.get("ok")),
+        "market_scan_skipped": bool(market_scan.get("skipped")),
+        "onboarding_ok": bool(onboarding.get("ok")),
+        "onboarding_stage_count": len(onboarding.get("stage_results", []))
+        if isinstance(onboarding.get("stage_results"), list)
+        else 0,
+        "protocol_lifecycle_ok": bool(lifecycle_suite.get("ok")),
+        "recommended_next_action": bootstrap_next_action(
+            source_downloaded=source_downloaded,
+            source_trusted=source_trusted,
+            entrypoint_available=entrypoint_available,
+            install_gate_ok=bool(install_gate.get("ok")),
+            market_scan_ok=bool(market_scan.get("ok")),
+            onboarding_ok=bool(onboarding.get("ok")),
+            protocol_lifecycle_ok=bool(lifecycle_suite.get("ok")),
+        ),
+    }
+    return {
+        "ok": True,
+        "plugin_id": PLUGIN_ID,
+        "kind": "CliAnythingBootstrapPlan",
+        "harness_name": harness_name,
+        "query": query,
+        "include_workflows": include_workflows,
+        "workflow_path": workflow_path,
+        "summary": summary,
+        "stages": bootstrap_stages(summary, harness_name, query, workflow_path),
+        "plans": {
+            "install": install_plan,
+            "update": update_plan,
+        },
+        "reports": {
+            "environment": environment,
+            "install_gate": install_gate,
+            "update_gate": update_gate,
+            "market_scan": market_scan,
+            "onboarding": onboarding,
+            "protocol_lifecycle_suite": lifecycle_suite,
+        },
+        "next_commands": [
+            "python -m cbn plugin bootstrap-plan cli-anything",
+            "python -m cbn plugin preflight cli-anything",
+            "python -m cbn plugin install cli-anything --yes",
+            "python -m cbn plugin provenance cli-anything",
+            "python -m cbn plugin check-update cli-anything --remote",
+            f"python -m cbn plugin candidates cli-anything --query {query or '<query>'} --limit 10 --with-probes --compact",
+            f"python -m cbn plugin onboard-harness cli-anything {harness_name} --from-market",
+            f"python -m cbn protocol lifecycle-suite --capability-id git.version --workflow-path {workflow_path}",
+        ],
+    }
 
 
 def bootstrap_next_action(

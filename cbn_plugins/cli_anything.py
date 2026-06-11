@@ -94,11 +94,8 @@ from cbn_plugins.cli_anything_parts.onboarding import (
     probe_blocked_onboarding_report as _onboarding_parts_probe_blocked_report,
 )
 from cbn_plugins.cli_anything_parts.planning import (
-    bootstrap_next_action as _bootstrap_next_action,
-    bootstrap_stages as _bootstrap_stages,
-    mvp_plan_stages as _mvp_plan_stages,
-    mvp_plan_summary as _mvp_plan_summary,
-    safe_plugin_report as _safe_plugin_report,
+    bootstrap_plan as _planning_bootstrap_plan,
+    mvp_plan as _planning_mvp_plan,
 )
 from cbn_plugins.cli_anything_parts.queue import (
     blocked_entry_from_evaluation as _blocked_entry_from_evaluation,
@@ -147,9 +144,7 @@ from cbn_plugins.cli_anything_parts.verification import (
     verification_stages as _verification_stages,
     workflow_matches_for_capability as _workflow_matches_for_capability,
 )
-from cbn_protocol.acceptance_queue import cli_to_cli_acceptance_queue
 from cbn_protocol.compatibility import check_all_protocols
-from cbn_protocol.lifecycle_suite import protocol_lifecycle_suite
 from cbn_protocol.readiness import protocol_readiness_report
 
 
@@ -2008,102 +2003,17 @@ class CliAnythingHub:
     ) -> dict[str, Any]:
         """Return the read-only MVP control plan for the next CLI-Anything work."""
 
-        bounded_limit = max(0, min(limit, 500))
-        bounded_max_harnesses = max(0, min(max_harnesses, 50))
-        bounded_max_workflows = max(1, min(max_workflows, 50))
-        environment = self._environment_verification()
-        install_gate = _safe_plugin_report(lambda: PluginManager(root=self.paths.root).operation_gate(PLUGIN_ID, "install"))
-        install_queue = self.market_install_queue(
+        return _planning_mvp_plan(
+            self,
             query=query,
-            limit=bounded_limit,
-            max_installs=bounded_max_harnesses,
+            limit=limit,
+            max_harnesses=max_harnesses,
             include_blocked=include_blocked,
+            workflow_paths=workflow_paths,
+            max_workflows=max_workflows,
+            registry=registry,
+            workflow_runner=workflow_runner,
         )
-        adaptation_queue = self.adaptation_queue(
-            query=query,
-            limit=bounded_limit,
-            max_harnesses=bounded_max_harnesses,
-            include_blocked=include_blocked,
-            require_smoke=True,
-            run_smoke=False,
-            confirmed=False,
-        )
-        registry = registry or _load_manifest_registry(self.paths.manifests)
-        protocol_readiness = protocol_readiness_report(registry, include_workflows=True)
-        acceptance_queue = (
-            cli_to_cli_acceptance_queue(
-                registry,
-                workflow_runner,
-                workflow_paths=workflow_paths or None,
-                max_workflows=bounded_max_workflows,
-                run=False,
-                dry_run=True,
-                confirmed=False,
-                include_payloads=False,
-            )
-            if workflow_runner is not None
-            else {
-                "ok": False,
-                "kind": "CliToCliAcceptanceQueue",
-                "skipped": True,
-                "reason": "workflow_runner was not provided",
-                "summary": {
-                    "workflow_count": 0,
-                    "accepted_workflow_count": 0,
-                    "blocked_workflow_count": 0,
-                    "route_count": 0,
-                    "route_ready_count": 0,
-                    "blocked_route_count": 0,
-                },
-                "rows": [],
-                "failures": [],
-                "next_steps": ["Call mvp-plan through the CLI or daemon runtime to include acceptance evidence."],
-            }
-        )
-        summary = _mvp_plan_summary(
-            environment=environment,
-            install_gate=install_gate,
-            install_queue=install_queue,
-            adaptation_queue=adaptation_queue,
-            protocol_readiness=protocol_readiness,
-            acceptance_queue=acceptance_queue,
-        )
-        return {
-            "ok": True,
-            "plugin_id": PLUGIN_ID,
-            "kind": "CliAnythingMvpPlan",
-            "query": query,
-            "limit": bounded_limit,
-            "max_harnesses": bounded_max_harnesses,
-            "include_blocked": include_blocked,
-            "workflow_paths": list(workflow_paths),
-            "max_workflows": bounded_max_workflows,
-            "summary": summary,
-            "stages": _mvp_plan_stages(summary),
-            "reports": {
-                "environment": environment,
-                "install_gate": install_gate,
-                "install_queue": install_queue,
-                "adaptation_queue": adaptation_queue,
-                "protocol_readiness": protocol_readiness,
-                "acceptance_queue": acceptance_queue,
-            },
-            "next_commands": [
-                "python -m cbn plugin preflight cli-anything",
-                "python -m cbn plugin install cli-anything --yes",
-                (
-                    f"python -m cbn plugin install-queue cli-anything --query {query or '<query>'} "
-                    f"--limit {bounded_limit} --max-installs {bounded_max_harnesses}"
-                ),
-                (
-                    f"python -m cbn plugin adaptation-queue cli-anything --query {query or '<query>'} "
-                    f"--limit {bounded_limit} --max-harnesses {bounded_max_harnesses}"
-                ),
-                "python -m cbn protocol acceptance-queue --run --dry-run",
-                "python -m cbn protocol readiness --include-workflows",
-                "python -m cbn protocol smoke-suite --workflow-dry-run",
-            ],
-        }
 
     def bootstrap_plan(
         self,
@@ -2114,97 +2024,13 @@ class CliAnythingHub:
     ) -> dict[str, Any]:
         """Return the read-only bootstrap runbook for installing CLI-Anything."""
 
-        manager = PluginManager(root=self.paths.root)
-        environment = self._environment_verification()
-        install_plan = _safe_plugin_report(lambda: manager.plan(PLUGIN_ID, "install").as_dict())
-        update_plan = _safe_plugin_report(lambda: manager.plan(PLUGIN_ID, "update").as_dict())
-        install_gate = _safe_plugin_report(lambda: manager.operation_gate(PLUGIN_ID, "install"))
-        update_gate = _safe_plugin_report(lambda: manager.operation_gate(PLUGIN_ID, "update"))
-        entrypoint_available = bool(
-            any(item.get("available") for item in environment.get("entrypoints", []) if isinstance(item, dict))
-        )
-        market_scan = (
-            self.candidate_harnesses(query=query, limit=10, with_probes=True, compact=True)
-            if entrypoint_available
-            else {
-                "ok": False,
-                "skipped": True,
-                "reason": "cli-hub entrypoint is not available yet",
-                "query": query,
-                "candidate_summary": [],
-            }
-        )
-        onboarding = self.onboard_harness(
-            harness_name,
-            from_market=entrypoint_available,
-            write=False,
-            confirmed=False,
-            install=False,
+        return _planning_bootstrap_plan(
+            self,
+            harness_name=harness_name,
+            query=query,
             include_workflows=include_workflows,
-            run_smoke_suite=False,
-        )
-        lifecycle_suite = protocol_lifecycle_suite(
-            capability_id="git.version",
             workflow_path=workflow_path,
         )
-        source_downloaded = bool(environment.get("source_downloaded"))
-        source_trusted = environment.get("source_trusted")
-        summary = {
-            "source_downloaded": source_downloaded,
-            "source_trusted": source_trusted,
-            "entrypoint_available": entrypoint_available,
-            "install_gate_ok": bool(install_gate.get("ok")),
-            "update_gate_ok": bool(update_gate.get("ok")),
-            "market_scan_ok": bool(market_scan.get("ok")),
-            "market_scan_skipped": bool(market_scan.get("skipped")),
-            "onboarding_ok": bool(onboarding.get("ok")),
-            "onboarding_stage_count": len(onboarding.get("stage_results", []))
-            if isinstance(onboarding.get("stage_results"), list)
-            else 0,
-            "protocol_lifecycle_ok": bool(lifecycle_suite.get("ok")),
-            "recommended_next_action": _bootstrap_next_action(
-                source_downloaded=source_downloaded,
-                source_trusted=source_trusted,
-                entrypoint_available=entrypoint_available,
-                install_gate_ok=bool(install_gate.get("ok")),
-                market_scan_ok=bool(market_scan.get("ok")),
-                onboarding_ok=bool(onboarding.get("ok")),
-                protocol_lifecycle_ok=bool(lifecycle_suite.get("ok")),
-            ),
-        }
-        return {
-            "ok": True,
-            "plugin_id": PLUGIN_ID,
-            "kind": "CliAnythingBootstrapPlan",
-            "harness_name": harness_name,
-            "query": query,
-            "include_workflows": include_workflows,
-            "workflow_path": workflow_path,
-            "summary": summary,
-            "stages": _bootstrap_stages(summary, harness_name, query, workflow_path),
-            "plans": {
-                "install": install_plan,
-                "update": update_plan,
-            },
-            "reports": {
-                "environment": environment,
-                "install_gate": install_gate,
-                "update_gate": update_gate,
-                "market_scan": market_scan,
-                "onboarding": onboarding,
-                "protocol_lifecycle_suite": lifecycle_suite,
-            },
-            "next_commands": [
-                "python -m cbn plugin bootstrap-plan cli-anything",
-                "python -m cbn plugin preflight cli-anything",
-                "python -m cbn plugin install cli-anything --yes",
-                "python -m cbn plugin provenance cli-anything",
-                "python -m cbn plugin check-update cli-anything --remote",
-                f"python -m cbn plugin candidates cli-anything --query {query or '<query>'} --limit 10 --with-probes --compact",
-                f"python -m cbn plugin onboard-harness cli-anything {harness_name} --from-market",
-                f"python -m cbn protocol lifecycle-suite --capability-id git.version --workflow-path {workflow_path}",
-            ],
-        }
 
     def _environment_verification(self) -> dict[str, Any]:
         return _sync_environment_verification(self.paths.root)
