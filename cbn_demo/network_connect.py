@@ -31,8 +31,9 @@ from cbn_demo.network_acceptance import network_connection_acceptance, run_accep
 from cbn_demo.network_contracts import (
     consumer_launch_contract as build_consumer_launch_contract,
     consumer_sdk_bootstrap as build_consumer_sdk_bootstrap,
+    network_entry_profile as build_network_entry_profile,
     network_consumer_manifest as build_network_consumer_manifest,
-    redact_entry_profile_secrets,
+    network_harness_agent_contract as build_network_harness_agent_contract,
 )
 from cbn_demo.network_quickstart import (
     quickstart_curl_script,
@@ -80,6 +81,8 @@ def network_connect_package(
         dry_run=True,
         confirmed=False,
     )
+    compact_agent_bundle = _compact_agent_bundle(agent_bundle)
+    compact_request_plan = _compact_workflow_request_plan(request_plan)
     setup_guidance = _compact_setup_guidance(
         build_agent_tool_call_plan(
             workflow_path=workflow_path,
@@ -126,12 +129,13 @@ def network_connect_package(
     registration_surface = _registration_surface()
     plugin_health = _plugin_health()
     direct_cli_readiness = direct_cli_readiness_report(registry=registry)
-    network_harness_agent = _network_harness_agent_contract(
+    network_harness_agent = build_network_harness_agent_contract(
         workflow_path=workflow_path,
         base_url=base_url,
         quickstart=quickstart,
         request_plan=request_plan,
-        agent_bundle=agent_bundle,
+        compact_request=compact_request_plan,
+        compact_bundle=compact_agent_bundle,
         setup_guidance=setup_guidance,
     )
     demo_playbook = _demo_playbook(
@@ -143,7 +147,15 @@ def network_connect_package(
         base_url=base_url,
         session_token=session_token,
     )
-    network_entry_profile = _network_entry_profile(
+    quickstart_headers = (
+        quickstart.get("required_headers") if isinstance(quickstart.get("required_headers"), dict) else {}
+    )
+    verify_network_command = _network_verify_command(
+        workflow_path,
+        base_url=base_url,
+        session_token=quickstart_headers.get("X-CBN-Session"),
+    )
+    network_entry_profile = build_network_entry_profile(
         workflow_path=workflow_path,
         base_url=base_url,
         quickstart=quickstart,
@@ -154,6 +166,7 @@ def network_connect_package(
         protocol_summary=protocol_summary,
         external_contract=external_contract,
         setup_guidance=setup_guidance,
+        verify_network_command=verify_network_command,
     )
     consumer_sdk_bootstrap = build_consumer_sdk_bootstrap(
         workflow_path=workflow_path,
@@ -311,253 +324,14 @@ def network_connect_package(
         "consumer_launch_contract": consumer_launch_contract,
         "consumer_sdk_bootstrap": consumer_sdk_bootstrap,
         "consumer_manifest": consumer_manifest,
-        "agent_node_bundle": _compact_agent_bundle(agent_bundle),
-        "agent_workflow_request": _compact_workflow_request_plan(request_plan),
+        "agent_node_bundle": compact_agent_bundle,
+        "agent_workflow_request": compact_request_plan,
         "setup_guidance": setup_guidance,
         "registration_surface": registration_surface,
         "acceptance": quickstart["acceptance"],
         "consumer_quickstart": quickstart,
         "next_commands": _next_commands(workflow_path, base_url=base_url, session_token=session_token),
 }
-
-
-def _network_harness_agent_contract(
-    *,
-    workflow_path: str,
-    base_url: str | None,
-    quickstart: dict[str, Any],
-    request_plan: dict[str, Any],
-    agent_bundle: dict[str, Any],
-    setup_guidance: dict[str, Any],
-) -> dict[str, Any]:
-    """Stable, low-noise contract for reusing the natural-language CLI-CLI harness."""
-
-    entrypoints = quickstart.get("entrypoints") if isinstance(quickstart.get("entrypoints"), dict) else {}
-    headers = quickstart.get("required_headers") if isinstance(quickstart.get("required_headers"), dict) else {}
-    compact_request = _compact_workflow_request_plan(request_plan)
-    compact_bundle = _compact_agent_bundle(agent_bundle)
-    harness = compact_request.get("reusable_harness") if isinstance(compact_request.get("reusable_harness"), dict) else {}
-    request = compact_request.get("request") if isinstance(compact_request.get("request"), dict) else {}
-    run = compact_request.get("run") if isinstance(compact_request.get("run"), dict) else {}
-    run_http = run.get("http") if isinstance(run.get("http"), dict) else {}
-    bridge_routes = (
-        compact_request.get("bridge_routes")
-        if isinstance(compact_request.get("bridge_routes"), list)
-        else []
-    )
-    bridge_message = (
-        compact_request.get("bridge_message")
-        if isinstance(compact_request.get("bridge_message"), dict)
-        else {}
-    )
-    plan_entrypoint = entrypoints.get("plan_agent_request") if isinstance(entrypoints.get("plan_agent_request"), dict) else {}
-    run_entrypoint = entrypoints.get("run_workflow") if isinstance(entrypoints.get("run_workflow"), dict) else {}
-    return {
-        "apiVersion": CONNECT_API_VERSION,
-        "kind": "NetworkHarnessAgent",
-        "status": "ready"
-        if request_plan.get("ok") and harness.get("kind") == "NaturalLanguageWorkflowHarness"
-        else "needs_attention",
-        "contract_id": "cbn.network.harness-agent.natural-language.v1",
-        "audience": "external_program",
-        "workflow_path": workflow_path,
-        "base_url": base_url,
-        "auth": {
-            "required_headers": redact_entry_profile_secrets(headers),
-            "session_token_required": "X-CBN-Session" in headers,
-            "session_token_included": bool(headers.get("X-CBN-Session")),
-            "secret_values_echoed": False,
-        },
-        "natural_language": {
-            "message": request.get("message"),
-            "binding": request.get("binding"),
-            "intent": request.get("intent", {}),
-            "plan_endpoint": redact_entry_profile_secrets(plan_entrypoint),
-        },
-        "harness": {
-            "kind": harness.get("kind"),
-            "accepts": harness.get("accepts", []),
-            "emits": harness.get("emits", []),
-            "contract": harness.get("contract"),
-            "agent_card_count": compact_bundle.get("card_count", 0),
-            "agent_task_count": compact_bundle.get("task_count", 0),
-            "roles": [card.get("id") for card in _list_of_dicts(compact_bundle.get("cards")) if card.get("id")],
-            "harness_ids": [
-                item.get("id")
-                for item in _list_of_dicts(compact_bundle.get("harnesses"))
-                if item.get("id")
-            ],
-        },
-        "bridge": {
-            "message_kind": bridge_message.get("kind"),
-            "message_channel": bridge_message.get("channel"),
-            "parser_ref": bridge_message.get("parser_ref"),
-            "route_count": len(bridge_routes),
-            "routes": bridge_routes,
-            "message": bridge_message,
-        },
-        "run": {
-            "dry_run_default": True,
-            "confirmed_default": False,
-            "method": run_http.get("method", "POST"),
-            "endpoint": run_http.get("url") or run_entrypoint.get("url"),
-            "json": run_http.get("json") or run.get("payload", {}),
-            "cli": run.get("cli"),
-        },
-        "evidence": {
-            "events": entrypoints.get("events"),
-            "audit": entrypoints.get("audit"),
-            "artifacts": entrypoints.get("artifacts"),
-            "acceptance": entrypoints.get("acceptance"),
-        },
-        "setup": {
-            "status": setup_guidance.get("status"),
-            "setup_required": setup_guidance.get("setup_required"),
-            "requires_user_count": setup_guidance.get("requires_user_count", 0),
-            "secret_count": setup_guidance.get("secret_count", 0),
-            "secret_values_included": setup_guidance.get("safety", {}).get("secret_values_included"),
-        },
-        "safety": {
-            "additive_contract": True,
-            "confirmed_writes_disabled_by_default": True,
-            "secret_values_echoed": False,
-            "use_run_endpoint_after_plan": True,
-        },
-        "next_commands": [
-            f"python -m cbn network harness-agent --workflow-path {workflow_path}",
-            f"python -m cbn_adapter_agent --workflow-request-plan --workflow-path {workflow_path}",
-            f"python -m cbn workflow run {workflow_path} --dry-run",
-        ],
-    }
-
-
-def _network_entry_profile(
-    *,
-    workflow_path: str,
-    base_url: str | None,
-    quickstart: dict[str, Any],
-    request_plan: dict[str, Any],
-    registration_surface: dict[str, Any],
-    demo_readiness: dict[str, Any],
-    demo_playbook: dict[str, Any],
-    protocol_summary: dict[str, Any],
-    external_contract: dict[str, Any],
-    setup_guidance: dict[str, Any],
-) -> dict[str, Any]:
-    """Compact integration profile for programs entering CBN in one read."""
-
-    entrypoints = quickstart.get("entrypoints") if isinstance(quickstart.get("entrypoints"), dict) else {}
-    acceptance = quickstart.get("acceptance") if isinstance(quickstart.get("acceptance"), dict) else {}
-    headers = quickstart.get("required_headers") if isinstance(quickstart.get("required_headers"), dict) else {}
-    reusable_harness = (
-        request_plan.get("reusable_harness")
-        if isinstance(request_plan.get("reusable_harness"), dict)
-        else {}
-    )
-    request = request_plan.get("request") if isinstance(request_plan.get("request"), dict) else {}
-    run = request_plan.get("run") if isinstance(request_plan.get("run"), dict) else {}
-    run_http = run.get("http") if isinstance(run.get("http"), dict) else {}
-    bridge_routes = request_plan.get("bridge_routes") if isinstance(request_plan.get("bridge_routes"), list) else []
-    bridge_message = (
-        request_plan.get("bridge_message")
-        if isinstance(request_plan.get("bridge_message"), dict)
-        else {}
-    )
-    bridge_metadata = bridge_message.get("metadata") if isinstance(bridge_message.get("metadata"), dict) else {}
-    bridge_channel = request_plan.get("bridge_message_channel") or bridge_metadata.get("channel") or bridge_message.get("channel")
-    plan_entrypoint = entrypoints.get("plan_agent_request") if isinstance(entrypoints.get("plan_agent_request"), dict) else {}
-    run_entrypoint = entrypoints.get("run_workflow") if isinstance(entrypoints.get("run_workflow"), dict) else {}
-    importers = registration_surface.get("importers") if isinstance(registration_surface.get("importers"), list) else []
-    entry_status = "ready" if quickstart.get("status") in {"ready", "ready_without_daemon_url"} and request_plan.get("ok") else "needs_attention"
-    return {
-        "apiVersion": CONNECT_API_VERSION,
-        "kind": "NetworkEntryProfile",
-        "status": entry_status,
-        "profile_id": "cbn.network.entry.cli-cli-harness.v1",
-        "display_name": "CBN CLI-CLI Harness Network Entry",
-        "workflow_path": workflow_path,
-        "base_url": base_url,
-        "integration_mode": "one_shot_package",
-        "compatibility": {
-            "api_version": CONNECT_API_VERSION,
-            "additive_fields_only": True,
-            "external_protocol": external_contract.get("protocol"),
-            "external_kinds": external_contract.get("accepted_kinds", []),
-            "internal_bus": "CBN BridgeMessage",
-            "stable_fields": [
-                "network_entry_profile",
-                "network_harness_agent",
-                "consumer_quickstart",
-                "consumer_launch_contract",
-                "consumer_sdk_bootstrap",
-                "agent_workflow_request",
-                "acceptance",
-                "contracts.external",
-            ],
-        },
-        "auth": {
-            "required_headers": redact_entry_profile_secrets(headers),
-            "session_token_required": "X-CBN-Session" in headers,
-            "session_token_included": bool(headers.get("X-CBN-Session")),
-            "secret_values_echoed": False,
-        },
-        "primary_entrypoints": {
-            "open_studio": redact_entry_profile_secrets(entrypoints.get("open_studio")),
-            "health": redact_entry_profile_secrets(entrypoints.get("health")),
-            "import_catalog": redact_entry_profile_secrets(entrypoints.get("import_catalog")),
-            "harness_agent": redact_entry_profile_secrets(entrypoints.get("harness_agent")),
-            "plan_agent_request": redact_entry_profile_secrets(plan_entrypoint),
-            "run_workflow": redact_entry_profile_secrets(run_entrypoint),
-            "verify_network": redact_entry_profile_secrets(
-                _network_verify_command(
-                    workflow_path,
-                    base_url=base_url,
-                    session_token=headers.get("X-CBN-Session"),
-                )
-            ),
-        },
-        "harness_agent": {
-            "kind": reusable_harness.get("kind"),
-            "request_binding": (request.get("binding") if isinstance(request, dict) else None),
-            "message": request.get("message"),
-            "accepts": reusable_harness.get("accepts", []),
-            "emits": reusable_harness.get("emits", []),
-            "bridge_message_channel": bridge_channel,
-            "bridge_route_count": len(bridge_routes),
-            "plan_endpoint": plan_entrypoint.get("url"),
-            "run_endpoint": run_http.get("url") or run_entrypoint.get("url"),
-        },
-        "evidence": {
-            "acceptance_status": acceptance.get("status"),
-            "acceptance_check_count": acceptance.get("check_count", 0),
-            "required_request_ids": acceptance.get("required_request_ids", []),
-            "evidence_endpoints": {
-                "events": entrypoints.get("events"),
-                "audit": entrypoints.get("audit"),
-                "artifacts": entrypoints.get("artifacts"),
-            },
-            "demo_status": demo_readiness.get("status"),
-            "demo_stage_count": demo_readiness.get("stage_count", 0),
-            "playbook_status": demo_playbook.get("status"),
-            "playbook_step_count": demo_playbook.get("step_count", 0),
-        },
-        "registration": {
-            "status": registration_surface.get("status"),
-            "importer_count": registration_surface.get("importer_count", 0),
-            "importer_ids": [str(importer.get("id")) for importer in importers if isinstance(importer, dict)],
-            "next_commands": registration_surface.get("next_commands", []),
-        },
-        "setup": {
-            "status": setup_guidance.get("status"),
-            "setup_required": setup_guidance.get("setup_required"),
-            "requires_user_count": setup_guidance.get("requires_user_count", 0),
-            "secret_count": setup_guidance.get("secret_count", 0),
-        },
-        "protocol_facades": {
-            "targets": protocol_summary.get("targets", []),
-            "export_count": protocol_summary.get("export_count", 0),
-        },
-    }
 
 
 def _mvp_readiness(
