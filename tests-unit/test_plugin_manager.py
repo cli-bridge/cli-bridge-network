@@ -51,7 +51,7 @@ class PluginManagerTests(unittest.TestCase):
 
     def test_verify_plan_run_executes_safe_read_only_subset(self):
         with patch(
-            "cbn_plugins.manager._run_command",
+            "cbn_plugins.manager_parts.verification.run_command",
             return_value={"exit_code": 0, "stdout": "{}", "stderr": ""},
         ) as run_command:
             result = PluginManager().verify_plan("cli-anything", run=True, timeout_seconds=30)
