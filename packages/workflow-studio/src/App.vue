@@ -105,6 +105,9 @@ const connectEndpoints = computed(() => (Array.isArray(connectPackage.value?.dae
 const connectDemoStages = computed<ConnectDemoStage[]>(() =>
   Array.isArray(connectPackage.value?.demo_readiness?.stages) ? connectPackage.value.demo_readiness.stages : [],
 );
+const connectDemoPlaybookSteps = computed(() =>
+  Array.isArray(connectPackage.value?.demo_playbook?.steps) ? connectPackage.value.demo_playbook.steps : [],
+);
 const connectSetupGuidance = computed(() => connectPackage.value?.setup_guidance ?? {});
 const connectSetupCalls = computed(() =>
   Array.isArray(connectPackage.value?.setup_guidance?.tool_calls) ? connectPackage.value.setup_guidance.tool_calls : [],
@@ -121,6 +124,7 @@ const connectNextCommands = computed<string[]>(() => {
   const commands = [
     ...(Array.isArray(connectPackage.value?.next_commands) ? connectPackage.value.next_commands : []),
     ...(Array.isArray(connectPackage.value?.demo_readiness?.next_commands) ? connectPackage.value.demo_readiness.next_commands : []),
+    ...(Array.isArray(connectPackage.value?.demo_playbook?.next_commands) ? connectPackage.value.demo_playbook.next_commands : []),
     ...(Array.isArray(connectPackage.value?.registration_surface?.next_commands) ? connectPackage.value.registration_surface.next_commands : []),
   ].filter((command): command is string => typeof command === "string" && command.trim().length > 0);
   return Array.from(new Set(commands));
@@ -428,6 +432,7 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
   const summary = payload?.summary ?? {};
   const studio = payload?.workflow_studio ?? {};
   const demo = payload?.demo_readiness ?? {};
+  const playbook = payload?.demo_playbook ?? {};
   const quickstart = payload?.consumer_quickstart ?? {};
   const acceptance = payload?.acceptance ?? quickstart.acceptance ?? {};
   const setup = payload?.setup_guidance ?? {};
@@ -451,6 +456,8 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
     registrationPolicy: registration.default_policy?.dry_run_by_default ? "dry-run imports" : "check import policy",
     demoReadinessStatus: stringValue(demo.status) ?? "not loaded",
     demoStageCount: numberValue(demo.stage_count) ?? 0,
+    demoPlaybookStatus: stringValue(playbook.status) ?? "not loaded",
+    demoPlaybookSteps: numberValue(playbook.step_count) ?? numberValue(summary.demo_playbook_step_count) ?? 0,
     setupStatus: stringValue(setup.status) ?? stringValue(summary.setup_status) ?? "not loaded",
     setupRequired: setup.setup_required || summary.setup_required ? "setup required" : "ready",
     setupUserGates: numberValue(setup.requires_user_count) ?? numberValue(summary.setup_user_gate_count) ?? 0,
@@ -912,6 +919,10 @@ onMounted(async () => {
             <strong>{{ connectSummary.demoStageCount }}</strong>
           </div>
           <div>
+            <span>Playbook</span>
+            <strong>{{ connectSummary.demoPlaybookSteps }}</strong>
+          </div>
+          <div>
             <span>Setup</span>
             <strong>{{ connectSummary.setupStatus }}</strong>
           </div>
@@ -932,6 +943,7 @@ onMounted(async () => {
           <span class="pill-inline">{{ connectSummary.acceptanceStatus }}</span>
           <span class="pill-inline">{{ connectSummary.acceptanceCheckCount }} checks</span>
           <span class="pill-inline">{{ connectSummary.demoReadinessStatus }}</span>
+          <span class="pill-inline">{{ connectSummary.demoPlaybookStatus }}</span>
           <span :class="['pill-inline', connectSetupGuidance.setup_required ? 'blocked' : 'ok']">{{ connectSummary.setupRequired }}</span>
           <span class="pill-inline">{{ connectSummary.setupUserGates }} user gates</span>
           <span class="pill-inline">{{ connectSummary.setupSecrets }} secrets</span>
@@ -1081,6 +1093,15 @@ onMounted(async () => {
           <span v-if="!connectRegistrationImporters.length">No registration importers loaded</span>
         </div>
         <div class="demo-stage-list">
+          <div v-for="step in connectDemoPlaybookSteps.slice(0, 6)" :key="step.id || step.title">
+            <strong>{{ step.title || step.id || "Demo step" }}</strong>
+            <span>{{ step.action || "action" }}</span>
+            <small>{{ step.intent || "demo flow" }}</small>
+            <code>{{ step.command || step.success_signal || step.target || "ready" }}</code>
+          </div>
+          <span v-if="!connectDemoPlaybookSteps.length">No demo playbook loaded</span>
+        </div>
+        <div class="demo-stage-list">
           <div v-for="stage in connectDemoStages" :key="stage.id || stage.title">
             <strong>{{ stage.title || stage.id || "Demo stage" }}</strong>
             <span>{{ stage.id || "stage" }}</span>
@@ -1165,7 +1186,7 @@ onMounted(async () => {
             <span>{{ endpoint.path }}</span>
           </div>
         </div>
-        <pre>{{ pretty({ daemon_verify: networkVerifyReport, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
+        <pre>{{ pretty({ daemon_verify: networkVerifyReport, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, demo_playbook: connectPackage?.demo_playbook, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
       </section>
       <section>
         <div class="section-title"><Rocket :size="15" /> Killer Demo</div>

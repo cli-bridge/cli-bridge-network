@@ -99,6 +99,15 @@ def network_connect_package(
         session_token=session_token,
     )
     registration_surface = _registration_surface()
+    demo_playbook = _demo_playbook(
+        workflow_path=workflow_path,
+        studio_link=studio_link,
+        demo_readiness=demo_readiness,
+        quickstart=quickstart,
+        registration_surface=registration_surface,
+        base_url=base_url,
+        session_token=session_token,
+    )
     return {
         "apiVersion": CONNECT_API_VERSION,
         "kind": "NetworkConnectPackage",
@@ -119,6 +128,7 @@ def network_connect_package(
             "setup_secret_count": setup_guidance.get("secret_count", 0),
             "demo_ready": demo_readiness.get("status") == "ready",
             "demo_stage_count": demo_readiness.get("stage_count", 0),
+            "demo_playbook_step_count": demo_playbook["step_count"],
             "external_contract_ready": external_contract.get("ok"),
             "recommended_next_action": "call_daemon_endpoints" if ok else "fix_connect_package_inputs",
         },
@@ -145,6 +155,7 @@ def network_connect_package(
         "protocols": protocol_summary,
         "workflow_studio": studio_link,
         "demo_readiness": demo_readiness,
+        "demo_playbook": demo_playbook,
         "agent_node_bundle": _compact_agent_bundle(agent_bundle),
         "agent_workflow_request": _compact_workflow_request_plan(request_plan),
         "setup_guidance": setup_guidance,
@@ -257,6 +268,94 @@ def _demo_readiness(
             f"python -m cbn demo killer --workflow-path {workflow_path} --run --dry-run",
             f"python -m cbn demo killer --workflow-path {workflow_path} --run --dry-run --smoke-suite",
             _network_verify_command(workflow_path, base_url=base_url, session_token=session_token),
+        ],
+    }
+
+
+def _demo_playbook(
+    *,
+    workflow_path: str,
+    studio_link: dict[str, Any],
+    demo_readiness: dict[str, Any],
+    quickstart: dict[str, Any],
+    registration_surface: dict[str, Any],
+    base_url: str | None,
+    session_token: str | None,
+) -> dict[str, Any]:
+    entrypoints = quickstart.get("entrypoints") if isinstance(quickstart.get("entrypoints"), dict) else {}
+    open_studio = str(studio_link.get("url") or entrypoints.get("open_studio") or "")
+    verify_command = _network_verify_command(workflow_path, base_url=base_url, session_token=session_token)
+    steps = [
+        {
+            "id": "open_workflow_studio",
+            "title": "Open Workflow Studio",
+            "intent": "Use the product UI as the primary demo surface.",
+            "action": "open_url",
+            "target": open_studio,
+            "success_signal": "Workflow DAG, Connect Package, and evidence dock are visible.",
+        },
+        {
+            "id": "inspect_one_shot_contract",
+            "title": "Inspect one-shot connection package",
+            "intent": "Show external protocol boundary, internal bus contracts, agent nodes, and quickstart calls.",
+            "action": "click",
+            "target": "Connect",
+            "success_signal": "Connect panel shows AgentCliCard/RunReceipt, BridgeMessage routes, setup guidance, and registration surface.",
+        },
+        {
+            "id": "run_killer_demo",
+            "title": "Run CLI-CLI killer demo",
+            "intent": "Prove macrocli output can route through BridgeMessage into Mermaid and produce artifacts.",
+            "action": "click",
+            "target": "Demo",
+            "success_signal": "Killer Demo stages complete and artifact/event/audit counts are non-zero.",
+        },
+        {
+            "id": "verify_network_acceptance",
+            "title": "Verify external consumer acceptance",
+            "intent": "Replay the first-call request sequence against the live daemon.",
+            "action": "click_or_cli",
+            "target": "Daemon Verify",
+            "command": verify_command,
+            "success_signal": "NetworkConnectionAcceptanceReport.status == passed.",
+        },
+        {
+            "id": "show_protocol_facades",
+            "title": "Show MCP/A2A/ACP workflow facades",
+            "intent": "Show the same CLI-CLI workflow can be exported to external protocol descriptors.",
+            "action": "inspect_endpoint",
+            "target": entrypoints.get("export_protocols"),
+            "success_signal": "Protocol targets include mcp, a2a, and acp.",
+        },
+        {
+            "id": "register_next_cli",
+            "title": "Register the next CLI",
+            "intent": "Show the low-friction path for adding more CLIs to the network.",
+            "action": "copy_command",
+            "target": "registration_surface.next_commands",
+            "command": (registration_surface.get("next_commands") or ["python -m cbn import command --help"])[0],
+            "success_signal": "Importer help confirms dry-run-first registration entrypoints.",
+        },
+    ]
+    return {
+        "apiVersion": CONNECT_API_VERSION,
+        "kind": "KillerMvpDemoPlaybook",
+        "status": "ready" if demo_readiness.get("status") == "ready" else "needs_attention",
+        "workflow_path": workflow_path,
+        "step_count": len(steps),
+        "steps": steps,
+        "success_criteria": [
+            "Workflow Studio opens with the target workflow path.",
+            "Connect Package exposes external protocol boundary and internal BridgeMessage contract.",
+            "Harness agent request can call the CLI-CLI workflow through /workflows/run.",
+            "Runtime event, audit, and artifact evidence is visible after the run.",
+            "MCP/A2A/ACP descriptors export for the same workflow.",
+            "Registration surface lists dry-run-first importers for the next CLI.",
+        ],
+        "next_commands": [
+            verify_command,
+            f"python -m cbn demo killer --workflow-path {workflow_path} --run --dry-run --smoke-suite",
+            "python -m cbn import command --help",
         ],
     }
 

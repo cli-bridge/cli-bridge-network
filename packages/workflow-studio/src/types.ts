@@ -421,6 +421,7 @@ export interface NetworkConnectPackage {
     setup_secret_count?: number;
     demo_ready?: boolean;
     demo_stage_count?: number;
+    demo_playbook_step_count?: number;
     external_contract_ready?: boolean;
     recommended_next_action?: string;
   };
@@ -487,6 +488,7 @@ export interface NetworkConnectPackage {
     acceptance_request_ids?: string[];
     next_commands?: string[];
   };
+  demo_playbook?: KillerMvpDemoPlaybook;
   agent_node_bundle?: {
     kind?: "AdapterAgentNodeBundle";
     ok?: boolean;
@@ -552,6 +554,8 @@ export interface ConnectSummary {
   registrationPolicy: string;
   demoReadinessStatus: string;
   demoStageCount: number;
+  demoPlaybookStatus: string;
+  demoPlaybookSteps: number;
   setupStatus: string;
   setupRequired: string;
   setupUserGates: number;
@@ -579,6 +583,26 @@ export interface ConnectSummary {
   acceptanceCheckCount: number;
   curlScript: string;
   powershellScript: string;
+}
+
+export interface DemoPlaybookStep {
+  id?: string;
+  title?: string;
+  intent?: string;
+  action?: string;
+  target?: unknown;
+  command?: string;
+  success_signal?: string;
+}
+
+export interface KillerMvpDemoPlaybook {
+  kind?: "KillerMvpDemoPlaybook";
+  status?: string;
+  workflow_path?: string;
+  step_count?: number;
+  steps?: DemoPlaybookStep[];
+  success_criteria?: string[];
+  next_commands?: string[];
 }
 
 export interface CliRegistrationImporter {
