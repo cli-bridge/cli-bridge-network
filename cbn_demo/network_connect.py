@@ -366,6 +366,20 @@ def _redact_launch_secret(value: Any) -> Any:
     return re.sub(r"(--session-token)(?:=|\s+)\S+", r"\1 REDACTED", redacted)
 
 
+def _redact_entry_profile_secrets(value: Any) -> Any:
+    if isinstance(value, dict):
+        redacted: dict[str, Any] = {}
+        for key, item in value.items():
+            if str(key).lower() in {"x-cbn-session", "authorization"} and item:
+                redacted[str(key)] = "REDACTED"
+            else:
+                redacted[str(key)] = _redact_entry_profile_secrets(item)
+        return redacted
+    if isinstance(value, list):
+        return [_redact_entry_profile_secrets(item) for item in value]
+    return _redact_launch_secret(value)
+
+
 def _network_entry_profile(
     *,
     workflow_path: str,
@@ -429,20 +443,23 @@ def _network_entry_profile(
             ],
         },
         "auth": {
-            "required_headers": headers,
+            "required_headers": _redact_entry_profile_secrets(headers),
             "session_token_required": "X-CBN-Session" in headers,
             "session_token_included": bool(headers.get("X-CBN-Session")),
+            "secret_values_echoed": False,
         },
         "primary_entrypoints": {
-            "open_studio": entrypoints.get("open_studio"),
-            "health": entrypoints.get("health"),
-            "import_catalog": entrypoints.get("import_catalog"),
-            "plan_agent_request": plan_entrypoint,
-            "run_workflow": run_entrypoint,
-            "verify_network": _network_verify_command(
-                workflow_path,
-                base_url=base_url,
-                session_token=headers.get("X-CBN-Session"),
+            "open_studio": _redact_entry_profile_secrets(entrypoints.get("open_studio")),
+            "health": _redact_entry_profile_secrets(entrypoints.get("health")),
+            "import_catalog": _redact_entry_profile_secrets(entrypoints.get("import_catalog")),
+            "plan_agent_request": _redact_entry_profile_secrets(plan_entrypoint),
+            "run_workflow": _redact_entry_profile_secrets(run_entrypoint),
+            "verify_network": _redact_entry_profile_secrets(
+                _network_verify_command(
+                    workflow_path,
+                    base_url=base_url,
+                    session_token=headers.get("X-CBN-Session"),
+                )
             ),
         },
         "harness_agent": {

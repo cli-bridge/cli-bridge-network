@@ -501,7 +501,13 @@ Killer Demo slice 已新增可运行证据束：
   `GET /network/entry-profile` 输出。它只暴露 integration mode、auth metadata、
   stable fields、外部 `agent-cli-contract` 与内部 `CBN BridgeMessage` 兼容关系、
   primary entrypoints 和 bridge route 摘要，让外部程序无需解析完整
-  `NetworkConnectPackage` 也能先判断自己如何进入 CBN 网络。
+  `NetworkConnectPackage` 也能先判断自己如何进入 CBN 网络；其中 header、URL
+  和 verify command 里的 session token 会统一 redacted，只保留
+  `session_token_required/included` 这类布尔信号。
+  Workflow Studio 已新增 `Profile` 操作，会直接调用 `/network/entry-profile`，
+  并把 direct profile 与 `NetworkConnectPackage.network_entry_profile` 做 profile id、
+  status、integration mode、run endpoint 和 stable fields 的 parity 对比，
+  让演示现场可以证明轻量接入摘要不是只藏在 one-shot 大包里的静态副本。
 - `consumer_quickstart.entrypoints`、`requests[]`、SDK snippets 与 acceptance
   checklist 已纳入 `import_catalog` 首呼叫路径。第三方程序读取一次
   `network connect-package` 或 `network quickstart` 后，不仅能调用 workflow，也能在

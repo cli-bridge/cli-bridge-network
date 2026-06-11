@@ -361,6 +361,11 @@ class DaemonApiTests(unittest.TestCase):
             self.assertEqual(payload["compatibility"]["internal_bus"], "CBN BridgeMessage")
             self.assertTrue(payload["auth"]["session_token_required"])
             self.assertTrue(payload["auth"]["session_token_included"])
+            self.assertFalse(payload["auth"]["secret_values_echoed"])
+            self.assertEqual(payload["auth"]["required_headers"]["X-CBN-Session"], "REDACTED")
+            self.assertIn("sessionToken=REDACTED", payload["primary_entrypoints"]["open_studio"])
+            self.assertIn("--session-token REDACTED", payload["primary_entrypoints"]["verify_network"])
+            self.assertNotIn("header-token", json.dumps(payload, ensure_ascii=False))
             self.assertNotIn("contracts", payload)
 
     def test_network_readiness_route_returns_mvp_matrix(self):

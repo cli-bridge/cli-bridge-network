@@ -558,6 +558,11 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertIn("consumer_launch_contract", payload["compatibility"]["stable_fields"])
         self.assertTrue(payload["auth"]["session_token_required"])
         self.assertTrue(payload["auth"]["session_token_included"])
+        self.assertFalse(payload["auth"]["secret_values_echoed"])
+        self.assertEqual(payload["auth"]["required_headers"]["X-CBN-Session"], "REDACTED")
+        self.assertIn("sessionToken=REDACTED", payload["primary_entrypoints"]["open_studio"])
+        self.assertIn("--session-token REDACTED", payload["primary_entrypoints"]["verify_network"])
+        self.assertNotIn("test-token", json.dumps(payload, ensure_ascii=False))
         self.assertNotIn("contracts", payload)
 
     def test_network_quickstart_cli_outputs_acceptance_checklist(self):
@@ -684,7 +689,9 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(payload["kind"], "NetworkEntryProfile")
         self.assertEqual(payload["status"], "ready")
         self.assertEqual(payload["primary_entrypoints"]["run_workflow"]["url"], "http://127.0.0.1:8787/workflows/run")
-        self.assertEqual(payload["auth"]["required_headers"]["X-CBN-Session"], "test-token")
+        self.assertEqual(payload["auth"]["required_headers"]["X-CBN-Session"], "REDACTED")
+        self.assertFalse(payload["auth"]["secret_values_echoed"])
+        self.assertNotIn("test-token", json.dumps(payload, ensure_ascii=False))
         self.assertNotIn("consumer_quickstart", payload)
 
     def test_network_quickstart_cli_outputs_shell_scripts(self):

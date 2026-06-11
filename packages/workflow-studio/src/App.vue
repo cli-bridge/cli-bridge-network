@@ -38,6 +38,7 @@ import type {
   DockState,
   EvidenceSummary,
   KillerDemoReport,
+  NetworkEntryProfile,
   NetworkConnectionAcceptanceReport,
   NetworkConnectPackage,
   ProtocolSummary,
@@ -76,6 +77,7 @@ const workflowRequestPlan = ref<AgentWorkflowRequestPlan | null>(null);
 const toolCallPlan = ref<AdapterAgentToolCallPlan | null>(null);
 const connectPackage = ref<NetworkConnectPackage | null>(null);
 const launchContract = ref<ConsumerLaunchContract | null>(null);
+const entryProfile = ref<NetworkEntryProfile | null>(null);
 const importCatalog = ref<CliRegistrationSurface | null>(null);
 const networkVerifyReport = ref<NetworkConnectionAcceptanceReport | null>(null);
 const health = ref<unknown>(null);
@@ -107,7 +109,9 @@ const setupCheckpoints = computed(() =>
   Array.isArray(toolCallPlan.value?.long_running_loop?.checkpoints) ? toolCallPlan.value.long_running_loop.checkpoints : [],
 );
 const connectSummary = computed<ConnectSummary>(() => summarizeConnectPackage(connectPackage.value));
-const connectEntryProfile = computed(() => connectPackage.value?.network_entry_profile ?? {});
+const connectEntryProfile = computed<NetworkEntryProfile>(() => connectPackage.value?.network_entry_profile ?? {});
+const directEntryProfile = computed<NetworkEntryProfile>(() => entryProfile.value ?? {});
+const entryProfileParity = computed(() => summarizeEntryProfileParity(connectEntryProfile.value, directEntryProfile.value));
 const connectMvpReadiness = computed(() => connectPackage.value?.mvp_readiness ?? {});
 const connectMvpChecks = computed(() =>
   Array.isArray(connectMvpReadiness.value.checks) ? connectMvpReadiness.value.checks : [],
@@ -277,6 +281,10 @@ async function inspectLaunchContract() {
   launchContract.value = (await call("launch", () => api.value.networkLaunchContract())) as ConsumerLaunchContract;
 }
 
+async function inspectEntryProfile() {
+  entryProfile.value = (await call("profile", () => api.value.networkEntryProfile())) as NetworkEntryProfile;
+}
+
 async function inspectImportCatalog() {
   importCatalog.value = (await call("imports", () => api.value.importCatalog())) as CliRegistrationSurface;
 }
@@ -412,6 +420,7 @@ async function loadAll() {
     inspectWorkflowRequestPlan(),
     inspectConnectPackage(),
     inspectLaunchContract(),
+    inspectEntryProfile(),
     inspectImportCatalog(),
     refreshEvidence(),
   ]);
@@ -708,6 +717,31 @@ function summarizeLaunchContractParity(nested: ConsumerLaunchContract, direct: C
   };
 }
 
+function summarizeEntryProfileParity(nested: NetworkEntryProfile, direct: NetworkEntryProfile): { status: string; detail: string } {
+  if (!direct.kind) {
+    return { status: "profile not loaded", detail: "Direct /network/entry-profile has not been fetched." };
+  }
+  if (!nested.kind) {
+    return { status: "profile direct only", detail: "Direct endpoint is loaded; connect package is not loaded yet." };
+  }
+  const sameProfile = nested.profile_id === direct.profile_id;
+  const sameStatus = nested.status === direct.status;
+  const sameMode = nested.integration_mode === direct.integration_mode;
+  const nestedRun = nested.harness_agent?.run_endpoint ?? nested.primary_entrypoints?.run_workflow?.url;
+  const directRun = direct.harness_agent?.run_endpoint ?? direct.primary_entrypoints?.run_workflow?.url;
+  const sameRunEndpoint = nestedRun === directRun;
+  const nestedStable = Array.isArray(nested.compatibility?.stable_fields) ? nested.compatibility.stable_fields.join("|") : "";
+  const directStable = Array.isArray(direct.compatibility?.stable_fields) ? direct.compatibility.stable_fields.join("|") : "";
+  const sameStableFields = nestedStable === directStable;
+  const matched = sameProfile && sameStatus && sameMode && sameRunEndpoint && sameStableFields;
+  return {
+    status: matched ? "profile parity" : "profile drift",
+    detail: matched
+      ? "Direct entry profile matches the one-shot package copy."
+      : "Direct entry profile differs from the one-shot package copy.",
+  };
+}
+
 function summarizeConnectContracts(payload: NetworkConnectPackage | null): BridgeContractSummary {
   const internal = payload?.contracts?.internal ?? {};
   const contracts = internal.contracts ?? {};
@@ -939,6 +973,9 @@ onMounted(async () => {
         </button>
         <button title="Load one-shot network connection package" @click="inspectConnectPackage">
           <Network :size="16" /> Connect
+        </button>
+        <button title="Load direct network entry profile" @click="inspectEntryProfile">
+          <Braces :size="16" /> Profile
         </button>
         <button title="Load direct consumer launch contract" @click="inspectLaunchContract">
           <ClipboardList :size="16" /> Launch
@@ -1228,12 +1265,12 @@ onMounted(async () => {
             <strong>{{ connectEntryProfile.display_name || connectSummary.entryProfileId }}</strong>
           </div>
           <div>
-            <span>Auth</span>
-            <strong>{{ connectSummary.entryProfileAuth }}</strong>
+            <span>Direct profile</span>
+            <strong>{{ directEntryProfile.status || "not loaded" }}</strong>
           </div>
           <div>
-            <span>Evidence</span>
-            <strong>{{ connectSummary.entryProfileEvidence }}</strong>
+            <span>Parity</span>
+            <strong>{{ entryProfileParity.status }}</strong>
           </div>
         </div>
         <div class="quickstart-grid">
@@ -1252,6 +1289,24 @@ onMounted(async () => {
           <div>
             <span>Verify</span>
             <code>{{ connectEntryProfile.primary_entrypoints?.verify_network || "not loaded" }}</code>
+          </div>
+        </div>
+        <div class="quickstart-grid">
+          <div>
+            <span>Direct ID</span>
+            <code>{{ directEntryProfile.profile_id || "not loaded" }}</code>
+          </div>
+          <div>
+            <span>Direct run</span>
+            <code>{{ directEntryProfile.harness_agent?.run_endpoint || directEntryProfile.primary_entrypoints?.run_workflow?.url || "not loaded" }}</code>
+          </div>
+          <div>
+            <span>Auth</span>
+            <code>{{ directEntryProfile.auth?.session_token_included ? "session token included" : directEntryProfile.auth?.session_token_required ? "session token required" : connectSummary.entryProfileAuth }}</code>
+          </div>
+          <div>
+            <span>Parity detail</span>
+            <code>{{ entryProfileParity.detail }}</code>
           </div>
         </div>
         <div class="contract-status-grid">
@@ -1735,7 +1790,7 @@ onMounted(async () => {
             <span>{{ endpoint.path }}</span>
           </div>
         </div>
-        <pre>{{ pretty({ daemon_verify: networkVerifyReport, import_catalog: importCatalog, direct_launch_contract: launchContract, launch_contract_parity: launchContractParity, network_entry_profile: connectPackage?.network_entry_profile, consumer_launch_contract: connectPackage?.consumer_launch_contract, mvp_readiness: connectPackage?.mvp_readiness, mvp_presenter_brief: connectPackage?.mvp_presenter_brief, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, demo_playbook: connectPackage?.demo_playbook, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, plugins: connectPackage?.plugins, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
+        <pre>{{ pretty({ daemon_verify: networkVerifyReport, import_catalog: importCatalog, direct_entry_profile: entryProfile, entry_profile_parity: entryProfileParity, direct_launch_contract: launchContract, launch_contract_parity: launchContractParity, network_entry_profile: connectPackage?.network_entry_profile, consumer_launch_contract: connectPackage?.consumer_launch_contract, mvp_readiness: connectPackage?.mvp_readiness, mvp_presenter_brief: connectPackage?.mvp_presenter_brief, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, demo_playbook: connectPackage?.demo_playbook, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, plugins: connectPackage?.plugins, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
       </section>
       <section>
         <div class="section-title"><Rocket :size="15" /> Killer Demo</div>
