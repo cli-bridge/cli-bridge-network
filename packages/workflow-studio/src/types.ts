@@ -618,6 +618,8 @@ export interface NetworkConnectPackage {
     mvp_readiness_status?: string;
     mvp_readiness_score?: string;
     mvp_presenter_brief_status?: string;
+    mvp_demo_script_status?: string;
+    mvp_demo_script_phase_count?: number;
     recommended_next_action?: string;
   };
   contracts?: {
@@ -694,6 +696,7 @@ export interface NetworkConnectPackage {
   network_harness_agent?: NetworkHarnessAgent;
   mvp_readiness?: KillerMvpReadiness;
   mvp_presenter_brief?: KillerMvpPresenterBrief;
+  mvp_demo_script?: KillerMvpDemoScript;
   consumer_launch_contract?: ConsumerLaunchContract;
   consumer_sdk_bootstrap?: ConsumerSdkBootstrap;
   agent_node_bundle?: {
@@ -926,6 +929,46 @@ export interface PresenterCommandDeckItem {
   command?: string;
   proves?: string;
   copy_label?: string;
+}
+
+export interface KillerMvpDemoScript {
+  kind?: "KillerMvpDemoScript";
+  status?: string;
+  script_id?: string;
+  title?: string;
+  workflow_path?: string;
+  workflow_id?: string;
+  audience?: string[];
+  promise?: string;
+  phase_count?: number;
+  phases?: KillerMvpDemoScriptPhase[];
+  runtime_story?: {
+    primary_surface?: string;
+    external_protocol?: string;
+    internal_bus?: string;
+    harness_agent?: string;
+    one_shot_entry?: string;
+    sdk_bootstrap?: string;
+    secret_policy?: string;
+  };
+  evidence_sources?: Record<string, string | null | undefined>;
+  success_criteria?: string[];
+  operator_cues?: string[];
+  handoff_commands?: string[];
+  registration_next_commands?: string[];
+  protocol_targets?: string[];
+}
+
+export interface KillerMvpDemoScriptPhase {
+  id?: string;
+  title?: string;
+  narrative?: string;
+  playbook_step_ids?: string[];
+  playbook_titles?: string[];
+  command_ids?: string[];
+  commands?: PresenterCommandDeckItem[];
+  evidence_sources?: string[];
+  success_signal?: string;
 }
 
 export interface NetworkEntryProfile {
@@ -1180,6 +1223,10 @@ export interface ConnectSummary {
   presenterHeadline: string;
   presenterProofPoints: number;
   presenterFlowSteps: number;
+  demoScriptStatus: string;
+  demoScriptTitle: string;
+  demoScriptPhases: number;
+  demoScriptPromise: string;
   presenterConnectPackageUrl: string;
   presenterConnectPackageCommand: string;
   presenterHarnessAgentUrl: string;

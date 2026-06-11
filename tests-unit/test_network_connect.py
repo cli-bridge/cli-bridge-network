@@ -104,6 +104,33 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertIn("--session-token test-token", playbook["steps"][4]["command"])
         self.assertEqual(playbook["steps"][6]["id"], "register_next_cli")
         self.assertIn("Registration surface", " ".join(playbook["success_criteria"]))
+        demo_script = payload["mvp_demo_script"]
+        self.assertEqual(demo_script["kind"], "KillerMvpDemoScript")
+        self.assertEqual(demo_script["status"], "ready")
+        self.assertEqual(payload["summary"]["mvp_demo_script_status"], "ready")
+        self.assertEqual(payload["summary"]["mvp_demo_script_phase_count"], 5)
+        self.assertEqual(demo_script["script_id"], "cbn.killer-mvp.demo-script.v1")
+        self.assertEqual(demo_script["runtime_story"]["primary_surface"], "Workflow Studio")
+        self.assertEqual(demo_script["runtime_story"]["harness_agent"], "NaturalLanguageWorkflowHarness")
+        self.assertEqual(demo_script["phase_count"], 5)
+        self.assertEqual(
+            [phase["id"] for phase in demo_script["phases"]],
+            [
+                "open_network_surface",
+                "show_cli_cli_protocol",
+                "call_with_harness_agent",
+                "run_and_inspect_evidence",
+                "prove_extensibility",
+            ],
+        )
+        phase_by_id = {phase["id"]: phase for phase in demo_script["phases"]}
+        self.assertIn("connect_package", phase_by_id["open_network_surface"]["command_ids"])
+        self.assertIn("plan_harness", phase_by_id["call_with_harness_agent"]["command_ids"])
+        self.assertIn("run_demo", phase_by_id["run_and_inspect_evidence"]["command_ids"])
+        self.assertIn("register_next_cli", phase_by_id["prove_extensibility"]["command_ids"])
+        self.assertIn("artifacts", demo_script["evidence_sources"])
+        self.assertIn("mcp", demo_script["protocol_targets"])
+        self.assertEqual(len(demo_script["handoff_commands"]), 6)
         entry_profile = payload["network_entry_profile"]
         self.assertEqual(entry_profile["kind"], "NetworkEntryProfile")
         self.assertEqual(entry_profile["status"], "ready")
@@ -148,9 +175,9 @@ class NetworkConnectPackageTests(unittest.TestCase):
         mvp = payload["mvp_readiness"]
         self.assertEqual(mvp["kind"], "KillerMvpReadiness")
         self.assertEqual(mvp["status"], "ready")
-        self.assertEqual(mvp["score"], "16/16")
+        self.assertEqual(mvp["score"], "17/17")
         self.assertEqual(payload["summary"]["mvp_readiness_status"], "ready")
-        self.assertEqual(payload["summary"]["mvp_readiness_score"], "16/16")
+        self.assertEqual(payload["summary"]["mvp_readiness_score"], "17/17")
         checks = {check["id"]: check for check in mvp["checks"]}
         self.assertTrue(checks["external_agent_cli_contract"]["ready"])
         self.assertTrue(checks["internal_bridge_contract"]["ready"])
@@ -168,6 +195,9 @@ class NetworkConnectPackageTests(unittest.TestCase):
             checks["presenter_command_deck"]["evidence"]["command_ids"][:3],
             ["connect_package", "plan_harness", "run_demo"],
         )
+        self.assertTrue(checks["mvp_demo_script"]["ready"])
+        self.assertEqual(checks["mvp_demo_script"]["evidence"]["phase_count"], 5)
+        self.assertEqual(checks["mvp_demo_script"]["evidence"]["primary_surface"], "Workflow Studio")
         self.assertTrue(mvp["product_goals"]["show_cli_cli_protocol"])
         self.assertTrue(mvp["product_goals"]["run_reusable_harness_agent"])
         self.assertTrue(mvp["product_goals"]["reuse_harness_agent_contract"])
@@ -175,13 +205,14 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertTrue(mvp["product_goals"]["integrate_direct_cli_profiles"])
         self.assertTrue(mvp["product_goals"]["one_shot_external_network_entry"])
         self.assertTrue(mvp["product_goals"]["present_mvp_from_command_deck"])
+        self.assertTrue(mvp["product_goals"]["present_product_demo_script"])
         self.assertEqual(mvp["recommended_next_action"], "open_workflow_studio_demo")
         presenter = payload["mvp_presenter_brief"]
         self.assertEqual(presenter["kind"], "KillerMvpPresenterBrief")
         self.assertEqual(presenter["status"], "ready")
         self.assertEqual(payload["summary"]["mvp_presenter_brief_status"], "ready")
         self.assertIn("BridgeMessage handoffs", presenter["headline"])
-        self.assertEqual(presenter["decision_gates"]["mvp_readiness_score"], "16/16")
+        self.assertEqual(presenter["decision_gates"]["mvp_readiness_score"], "17/17")
         self.assertEqual(presenter["decision_gates"]["setup_status"], "ready_to_run")
         self.assertEqual(presenter["integration_handoff"]["run_workflow_url"], "http://127.0.0.1:8787/workflows/run")
         self.assertIn("/network/connect-package?", presenter["integration_handoff"]["connect_package_url"])
@@ -242,7 +273,7 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(launch["harness_agent"]["kind"], "NaturalLanguageWorkflowHarness")
         self.assertEqual(launch["harness_agent"]["bridge_route_count"], 2)
         self.assertEqual(launch["harness_agent"]["run_endpoint"], "http://127.0.0.1:8787/workflows/run")
-        self.assertEqual(launch["success_gates"]["mvp_readiness_score"], "16/16")
+        self.assertEqual(launch["success_gates"]["mvp_readiness_score"], "17/17")
         self.assertEqual(launch["success_gates"]["acceptance_check_count"], 16)
         self.assertEqual([step["request_id"] for step in launch["launch_sequence"]], launch["required_request_ids"])
         self.assertIn("plan_agent_request", launch["required_request_ids"])
@@ -598,7 +629,7 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(payload["network_entry_profile"]["status"], "ready")
         self.assertEqual(payload["network_harness_agent"]["status"], "ready")
         self.assertEqual(payload["network_harness_agent"]["kind"], "NetworkHarnessAgent")
-        self.assertEqual(payload["mvp_readiness"]["score"], "16/16")
+        self.assertEqual(payload["mvp_readiness"]["score"], "17/17")
         self.assertEqual(payload["direct_cli_readiness"]["kind"], "DirectCliReadinessReport")
         self.assertEqual(payload["direct_cli_readiness"]["summary"]["capability_count"], 18)
         self.assertEqual(payload["network_entry_profile"]["primary_entrypoints"]["run_workflow"]["url"], "http://127.0.0.1:8787/workflows/run")
@@ -911,7 +942,7 @@ class NetworkConnectPackageTests(unittest.TestCase):
         payload = json.loads(proc.stdout)
         self.assertEqual(payload["kind"], "KillerMvpReadiness")
         self.assertEqual(payload["status"], "ready")
-        self.assertEqual(payload["score"], "16/16")
+        self.assertEqual(payload["score"], "17/17")
         self.assertEqual(payload["recommended_next_action"], "open_workflow_studio_demo")
 
     def test_network_quickstart_cli_outputs_launch_contract(self):

@@ -246,7 +246,7 @@ class DaemonApiTests(unittest.TestCase):
             mvp = payload["mvp_readiness"]
             self.assertEqual(mvp["kind"], "KillerMvpReadiness")
             self.assertEqual(mvp["status"], "ready")
-            self.assertEqual(mvp["score"], "16/16")
+            self.assertEqual(mvp["score"], "17/17")
             self.assertTrue(mvp["product_goals"]["demo_in_workflow_studio"])
             self.assertTrue(mvp["product_goals"]["one_shot_external_network_entry"])
             self.assertTrue(mvp["product_goals"]["reuse_harness_agent_contract"])
@@ -519,7 +519,7 @@ class DaemonApiTests(unittest.TestCase):
             self.assertEqual(response.status, 200)
             self.assertEqual(payload["kind"], "KillerMvpReadiness")
             self.assertEqual(payload["status"], "ready")
-            self.assertEqual(payload["score"], "16/16")
+            self.assertEqual(payload["score"], "17/17")
             self.assertTrue(payload["product_goals"]["one_shot_external_network_entry"])
             self.assertTrue(payload["product_goals"]["reuse_harness_agent_contract"])
             self.assertTrue(payload["product_goals"]["integrate_direct_cli_profiles"])
@@ -565,9 +565,9 @@ class DaemonApiTests(unittest.TestCase):
         self.assertEqual(payload["summary"]["failed"], 0)
         self.assertEqual(payload["summary"]["skipped"], 0)
         self.assertEqual(payload["summary"]["mvp_readiness_status"], "ready")
-        self.assertEqual(payload["summary"]["mvp_readiness_score"], "16/16")
+        self.assertEqual(payload["summary"]["mvp_readiness_score"], "17/17")
         self.assertEqual(payload["mvp_readiness"]["kind"], "KillerMvpReadiness")
-        self.assertEqual(payload["mvp_readiness"]["score"], "16/16")
+        self.assertEqual(payload["mvp_readiness"]["score"], "17/17")
         results_by_id = {result["request_id"]: result for result in payload["results"]}
         self.assertEqual(results_by_id["harness_agent"]["evidence"]["json.kind"]["actual"], "NetworkHarnessAgent")
         self.assertEqual(results_by_id["direct_cli_readiness"]["evidence"]["json.kind"]["actual"], "DirectCliReadinessReport")
@@ -602,7 +602,7 @@ class DaemonApiTests(unittest.TestCase):
         self.assertEqual(payload["summary"]["passed"], payload["summary"]["check_count"])
         self.assertEqual(payload["summary"]["failed"], 0)
         self.assertEqual(payload["summary"]["mvp_readiness_status"], "ready")
-        self.assertEqual(payload["summary"]["mvp_readiness_score"], "16/16")
+        self.assertEqual(payload["summary"]["mvp_readiness_score"], "17/17")
         self.assertEqual(payload["mvp_readiness"]["status"], "ready")
         results_by_id = {result["request_id"]: result for result in payload["results"]}
         self.assertEqual(results_by_id["export_protocols"]["evidence"]["json.exports.acp.protocol"]["actual"], "acp")

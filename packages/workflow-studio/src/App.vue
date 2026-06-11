@@ -40,6 +40,7 @@ import type {
   DockState,
   EvidenceSummary,
   KillerDemoReport,
+  KillerMvpDemoScript,
   KillerMvpReadiness,
   NetworkConnectionAcceptance,
   NetworkEntryProfile,
@@ -156,6 +157,10 @@ const connectPresenterFlow = computed(() =>
 );
 const connectPresenterCommandDeck = computed(() =>
   Array.isArray(connectPresenterBrief.value.command_deck) ? connectPresenterBrief.value.command_deck : [],
+);
+const connectMvpDemoScript = computed<KillerMvpDemoScript>(() => connectPackage.value?.mvp_demo_script ?? {});
+const connectMvpDemoScriptPhases = computed(() =>
+  Array.isArray(connectMvpDemoScript.value.phases) ? connectMvpDemoScript.value.phases : [],
 );
 const connectLaunchContract = computed<ConsumerLaunchContract>(() => connectPackage.value?.consumer_launch_contract ?? {});
 const directLaunchContract = computed<ConsumerLaunchContract>(() => launchContract.value ?? {});
@@ -773,6 +778,7 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
   const mvp = payload?.mvp_readiness ?? {};
   const presenter = payload?.mvp_presenter_brief ?? {};
   const presenterHandoff = presenter.integration_handoff ?? {};
+  const demoScript = payload?.mvp_demo_script ?? {};
   const launchContract = payload?.consumer_launch_contract ?? {};
   const sdkBootstrap = payload?.consumer_sdk_bootstrap ?? {};
   const acceptance = payload?.acceptance ?? quickstart.acceptance ?? {};
@@ -811,6 +817,10 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
     presenterHeadline: stringValue(presenter.headline) ?? "Presenter brief not loaded",
     presenterProofPoints: Array.isArray(presenter.proof_points) ? presenter.proof_points.length : 0,
     presenterFlowSteps: Array.isArray(presenter.live_demo_flow) ? presenter.live_demo_flow.length : 0,
+    demoScriptStatus: stringValue(demoScript.status) ?? stringValue(summary.mvp_demo_script_status) ?? "not loaded",
+    demoScriptTitle: stringValue(demoScript.title) ?? "MVP demo script not loaded",
+    demoScriptPhases: numberValue(demoScript.phase_count) ?? numberValue(summary.mvp_demo_script_phase_count) ?? 0,
+    demoScriptPromise: stringValue(demoScript.promise) ?? "not loaded",
     presenterConnectPackageUrl: stringValue(presenterHandoff.connect_package_url) ?? "not loaded",
     presenterConnectPackageCommand: stringValue(presenterHandoff.connect_package_command) ?? "not loaded",
     presenterHarnessAgentUrl: stringValue(presenterHandoff.harness_agent_url) ?? "not loaded",
@@ -1888,6 +1898,50 @@ onMounted(async () => {
             <span>Flow</span>
             <strong>{{ connectSummary.presenterFlowSteps }}</strong>
           </div>
+          <div>
+            <span>Demo script</span>
+            <strong>{{ connectSummary.demoScriptStatus }}</strong>
+          </div>
+          <div>
+            <span>Script phases</span>
+            <strong>{{ connectSummary.demoScriptPhases }}</strong>
+          </div>
+        </div>
+        <div class="quickstart-grid">
+          <div>
+            <span>Script title</span>
+            <code>{{ connectSummary.demoScriptTitle }}</code>
+          </div>
+          <div>
+            <span>Promise</span>
+            <code>{{ connectSummary.demoScriptPromise }}</code>
+          </div>
+          <div>
+            <span>Runtime story</span>
+            <code>{{ connectMvpDemoScript.runtime_story?.external_protocol || "not loaded" }} -> {{ connectMvpDemoScript.runtime_story?.internal_bus || "not loaded" }} -> {{ connectMvpDemoScript.runtime_story?.harness_agent || "not loaded" }}</code>
+          </div>
+          <div>
+            <span>Secret policy</span>
+            <code>{{ connectMvpDemoScript.runtime_story?.secret_policy || "not loaded" }}</code>
+          </div>
+        </div>
+        <div class="request-sequence">
+          <div v-for="phase in connectMvpDemoScriptPhases" :key="phase.id || phase.title" class="passed">
+            <code>{{ phase.id || "phase" }}</code>
+            <span>{{ phase.title || "MVP demo phase" }}</span>
+            <small>{{ phase.narrative || "demo narrative" }}</small>
+            <em>{{ phase.success_signal || "success signal" }}</em>
+            <button
+              v-for="command in phase.commands || []"
+              :key="`${phase.id || phase.title}-${command.id || command.command}`"
+              title="Copy demo phase command"
+              :disabled="!command.command"
+              @click="copyText(`demo-script-${phase.id || phase.title}-${command.id || command.title}`, command.command || '')"
+            >
+              <Copy :size="14" /> {{ copiedScript === `demo-script-${phase.id || phase.title}-${command.id || command.title}` ? "Copied" : (command.copy_label || "Copy") }}
+            </button>
+          </div>
+          <span v-if="!connectMvpDemoScriptPhases.length">No MVP demo script loaded</span>
         </div>
         <div class="quickstart-grid">
           <div>
@@ -2490,7 +2544,7 @@ onMounted(async () => {
             <span>{{ endpoint.path }}</span>
           </div>
         </div>
-        <pre>{{ pretty({ daemon_verify: networkVerifyReport, import_catalog: importCatalog, direct_cli_readiness: directCliReadiness, one_shot_direct_cli_readiness: connectPackage?.direct_cli_readiness, direct_cli_parity: directCliParity, direct_quickstart: directQuickstart, quickstart_parity: quickstartParity, direct_entry_profile: entryProfile, entry_profile_parity: entryProfileParity, direct_network_harness_agent: directNetworkHarnessAgent, network_harness_parity: networkHarnessParity, direct_sdk_bootstrap: directSdkBootstrap, sdk_bootstrap_parity: sdkBootstrapParity, direct_launch_contract: launchContract, launch_contract_parity: launchContractParity, direct_acceptance: directAcceptance, acceptance_parity: acceptanceParity, direct_readiness: directReadiness, readiness_parity: readinessParity, network_entry_profile: connectPackage?.network_entry_profile, network_harness_agent: connectNetworkHarnessAgent, consumer_sdk_bootstrap: connectPackage?.consumer_sdk_bootstrap, consumer_launch_contract: connectPackage?.consumer_launch_contract, mvp_readiness: connectPackage?.mvp_readiness, mvp_presenter_brief: connectPackage?.mvp_presenter_brief, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, demo_playbook: connectPackage?.demo_playbook, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, plugins: connectPackage?.plugins, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
+        <pre>{{ pretty({ daemon_verify: networkVerifyReport, import_catalog: importCatalog, direct_cli_readiness: directCliReadiness, one_shot_direct_cli_readiness: connectPackage?.direct_cli_readiness, direct_cli_parity: directCliParity, direct_quickstart: directQuickstart, quickstart_parity: quickstartParity, direct_entry_profile: entryProfile, entry_profile_parity: entryProfileParity, direct_network_harness_agent: directNetworkHarnessAgent, network_harness_parity: networkHarnessParity, direct_sdk_bootstrap: directSdkBootstrap, sdk_bootstrap_parity: sdkBootstrapParity, direct_launch_contract: launchContract, launch_contract_parity: launchContractParity, direct_acceptance: directAcceptance, acceptance_parity: acceptanceParity, direct_readiness: directReadiness, readiness_parity: readinessParity, network_entry_profile: connectPackage?.network_entry_profile, network_harness_agent: connectNetworkHarnessAgent, consumer_sdk_bootstrap: connectPackage?.consumer_sdk_bootstrap, consumer_launch_contract: connectPackage?.consumer_launch_contract, mvp_readiness: connectPackage?.mvp_readiness, mvp_presenter_brief: connectPackage?.mvp_presenter_brief, mvp_demo_script: connectPackage?.mvp_demo_script, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, demo_playbook: connectPackage?.demo_playbook, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, plugins: connectPackage?.plugins, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
       </section>
       <section>
         <div class="section-title"><Rocket :size="15" /> Killer Demo</div>

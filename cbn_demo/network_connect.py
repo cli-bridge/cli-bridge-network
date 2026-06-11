@@ -153,6 +153,20 @@ def network_connect_package(
         registration_surface=registration_surface,
         agent_message=agent_message,
     )
+    mvp_demo_script = _mvp_demo_script(
+        workflow=workflow,
+        workflow_path=workflow_path,
+        protocol_summary=protocol_summary,
+        quickstart=quickstart,
+        demo_readiness=demo_readiness,
+        demo_playbook=demo_playbook,
+        setup_guidance=setup_guidance,
+        registration_surface=registration_surface,
+        network_entry_profile=network_entry_profile,
+        network_harness_agent=network_harness_agent,
+        consumer_sdk_bootstrap=consumer_sdk_bootstrap,
+        command_deck=presenter_command_deck,
+    )
     mvp_readiness = _mvp_readiness(
         workflow=workflow,
         bridge_contract=bridge_contract,
@@ -171,6 +185,7 @@ def network_connect_package(
         network_harness_agent=network_harness_agent,
         consumer_sdk_bootstrap=consumer_sdk_bootstrap,
         presenter_command_deck=presenter_command_deck,
+        mvp_demo_script=mvp_demo_script,
     )
     mvp_presenter_brief = _mvp_presenter_brief(
         workflow=workflow,
@@ -225,6 +240,8 @@ def network_connect_package(
             "demo_ready": demo_readiness.get("status") == "ready",
             "demo_stage_count": demo_readiness.get("stage_count", 0),
             "demo_playbook_step_count": demo_playbook["step_count"],
+            "mvp_demo_script_status": mvp_demo_script["status"],
+            "mvp_demo_script_phase_count": mvp_demo_script["phase_count"],
             "cli_anything_split_status": plugin_health.get("cli_anything", {})
             .get("module_split", {})
             .get("status"),
@@ -260,6 +277,7 @@ def network_connect_package(
         "workflow_studio": studio_link,
         "demo_readiness": demo_readiness,
         "demo_playbook": demo_playbook,
+        "mvp_demo_script": mvp_demo_script,
         "network_entry_profile": network_entry_profile,
         "network_harness_agent": network_harness_agent,
         "mvp_readiness": mvp_readiness,
@@ -804,6 +822,7 @@ def _mvp_readiness(
     network_harness_agent: dict[str, Any],
     consumer_sdk_bootstrap: dict[str, Any],
     presenter_command_deck: list[dict[str, Any]],
+    mvp_demo_script: dict[str, Any],
 ) -> dict[str, Any]:
     """Product-facing readiness matrix for the current killer MVP surface."""
 
@@ -835,6 +854,27 @@ def _mvp_readiness(
             isinstance(command, dict) and bool(command.get("command")) and bool(command.get("copy_label"))
             for command in presenter_command_deck
         )
+    )
+    expected_demo_script_phase_ids = [
+        "open_network_surface",
+        "show_cli_cli_protocol",
+        "call_with_harness_agent",
+        "run_and_inspect_evidence",
+        "prove_extensibility",
+    ]
+    demo_script_phases = (
+        mvp_demo_script.get("phases") if isinstance(mvp_demo_script.get("phases"), list) else []
+    )
+    demo_script_phase_ids = [
+        str(phase.get("id"))
+        for phase in demo_script_phases
+        if isinstance(phase, dict) and phase.get("id")
+    ]
+    mvp_demo_script_ready = bool(
+        mvp_demo_script.get("status") == "ready"
+        and demo_script_phase_ids == expected_demo_script_phase_ids
+        and int(mvp_demo_script.get("phase_count", 0) or 0) == len(expected_demo_script_phase_ids)
+        and (mvp_demo_script.get("runtime_story") or {}).get("harness_agent") == "NaturalLanguageWorkflowHarness"
     )
     checks = [
         _mvp_check(
@@ -1030,6 +1070,20 @@ def _mvp_readiness(
             },
             "repair_presenter_command_deck",
         ),
+        _mvp_check(
+            "mvp_demo_script",
+            "MVP demo script",
+            mvp_demo_script_ready,
+            "A product-ready demo script ties audience, phase order, CLI-CLI proof, harness agent, evidence, protocol export, and next-CLI registration together.",
+            {
+                "script_id": mvp_demo_script.get("script_id"),
+                "phase_count": mvp_demo_script.get("phase_count", 0),
+                "phase_ids": demo_script_phase_ids,
+                "expected_phase_ids": expected_demo_script_phase_ids,
+                "primary_surface": (mvp_demo_script.get("runtime_story") or {}).get("primary_surface"),
+            },
+            "repair_mvp_demo_script",
+        ),
     ]
     ready_count = sum(1 for check in checks if check["ready"])
     total = len(checks)
@@ -1048,6 +1102,7 @@ def _mvp_readiness(
         ),
         "demo_in_workflow_studio": _checks_ready(checks, "workflow_studio_surface", "killer_demo_playbook"),
         "present_mvp_from_command_deck": _checks_ready(checks, "presenter_command_deck"),
+        "present_product_demo_script": _checks_ready(checks, "mvp_demo_script"),
         "safe_first_run_setup": _checks_ready(checks, "setup_guidance"),
     }
     return {
@@ -1322,6 +1377,200 @@ def _demo_playbook(
             f"python -m cbn demo killer --workflow-path {workflow_path} --run --dry-run --smoke-suite",
             "python -m cbn import command --help",
         ],
+    }
+
+
+def _mvp_demo_script(
+    *,
+    workflow: dict[str, Any],
+    workflow_path: str,
+    protocol_summary: dict[str, Any],
+    quickstart: dict[str, Any],
+    demo_readiness: dict[str, Any],
+    demo_playbook: dict[str, Any],
+    setup_guidance: dict[str, Any],
+    registration_surface: dict[str, Any],
+    network_entry_profile: dict[str, Any],
+    network_harness_agent: dict[str, Any],
+    consumer_sdk_bootstrap: dict[str, Any],
+    command_deck: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Structured PM-facing script for presenting the killer MVP end to end."""
+
+    command_by_id = {
+        str(command.get("id")): command
+        for command in command_deck
+        if isinstance(command, dict) and command.get("id")
+    }
+    playbook_steps = demo_playbook.get("steps") if isinstance(demo_playbook.get("steps"), list) else []
+    playbook_step_by_id = {
+        str(step.get("id")): step
+        for step in playbook_steps
+        if isinstance(step, dict) and step.get("id")
+    }
+    entrypoints = quickstart.get("entrypoints") if isinstance(quickstart.get("entrypoints"), dict) else {}
+    evidence_endpoints = {
+        "events": entrypoints.get("events"),
+        "audit": entrypoints.get("audit"),
+        "artifacts": entrypoints.get("artifacts"),
+    }
+    registration_next_commands = [
+        str(command)
+        for command in registration_surface.get("next_commands", [])
+        if isinstance(command, str) and command
+    ]
+    phases = [
+        _mvp_demo_phase(
+            "open_network_surface",
+            "Open the CBN network surface",
+            "Establish that Workflow Studio is the user-facing surface and the connect package is the one-shot entrypoint.",
+            ["open_workflow_studio", "inspect_one_shot_contract"],
+            ["connect_package"],
+            ["workflow_studio", "network_entry_profile", "contracts.external"],
+            "Studio opens with the target workflow and Connect shows external protocol plus internal bus contracts.",
+            playbook_step_by_id,
+            command_by_id,
+        ),
+        _mvp_demo_phase(
+            "show_cli_cli_protocol",
+            "Show CLI-CLI protocol handoff",
+            "Explain how AgentCliCard enters CBN, becomes ToolManifest, and routes values through BridgeMessage selectors.",
+            ["inspect_one_shot_contract"],
+            ["connect_package"],
+            ["contracts.internal.bridge_contract", "workflow", "agent_workflow_request.bridge_routes"],
+            "BridgeMessage route count is visible and selector handoffs can be inspected before execution.",
+            playbook_step_by_id,
+            command_by_id,
+        ),
+        _mvp_demo_phase(
+            "call_with_harness_agent",
+            "Call the workflow through a reusable harness agent",
+            "Demonstrate that natural language can bind to the selected CLI-CLI workflow through a reusable agent contract.",
+            ["show_sdk_bootstrap", "verify_network_acceptance"],
+            ["plan_harness", "sdk_bootstrap"],
+            ["network_harness_agent", "consumer_sdk_bootstrap", "agent_workflow_request"],
+            "NaturalLanguageWorkflowHarness is ready and the SDK bootstrap exposes typed run_workflow responses.",
+            playbook_step_by_id,
+            command_by_id,
+        ),
+        _mvp_demo_phase(
+            "run_and_inspect_evidence",
+            "Run the killer workflow and inspect evidence",
+            "Run macrocli -> transform -> mermaid, then show artifact, event, and audit evidence from the same run.",
+            ["run_killer_demo", "verify_network_acceptance"],
+            ["run_demo"],
+            ["demo_readiness", "demo_playbook", "events", "audit", "artifacts"],
+            "Artifact, event, and audit endpoints all have replayable acceptance checks.",
+            playbook_step_by_id,
+            command_by_id,
+        ),
+        _mvp_demo_phase(
+            "prove_extensibility",
+            "Prove protocol facades and next-CLI onboarding",
+            "Export MCP/A2A/ACP descriptors and show the dry-run-first path for registering another CLI.",
+            ["show_protocol_facades", "register_next_cli"],
+            ["export_protocols", "register_next_cli"],
+            ["protocols", "registration_surface", "direct_cli_readiness"],
+            "Protocol targets include mcp, a2a, and acp, and importers cover CLI-Anything, MCP, skill, and parser fixtures.",
+            playbook_step_by_id,
+            command_by_id,
+        ),
+    ]
+    ready = bool(
+        workflow.get("valid")
+        and demo_readiness.get("status") == "ready"
+        and demo_playbook.get("status") == "ready"
+        and network_entry_profile.get("status") == "ready"
+        and network_harness_agent.get("status") == "ready"
+        and consumer_sdk_bootstrap.get("status") == "ready"
+        and len(phases) == 5
+    )
+    return {
+        "apiVersion": CONNECT_API_VERSION,
+        "kind": "KillerMvpDemoScript",
+        "status": "ready" if ready else "needs_attention",
+        "script_id": "cbn.killer-mvp.demo-script.v1",
+        "title": "CBN Killer MVP: CLI tools become a reusable agent-callable network",
+        "workflow_path": workflow_path,
+        "workflow_id": workflow.get("workflow_id"),
+        "audience": ["product_reviewer", "integration_partner", "developer_platform"],
+        "promise": "A third-party program can enter CBN once, inspect the CLI-CLI bus, call a natural-language harness agent, run the workflow, and reuse the network for the next CLI.",
+        "phase_count": len(phases),
+        "phases": phases,
+        "runtime_story": {
+            "primary_surface": "Workflow Studio",
+            "external_protocol": "AgentCliCard + RunReceipt",
+            "internal_bus": "CBN BridgeMessage",
+            "harness_agent": (network_harness_agent.get("harness") or {}).get(
+                "kind",
+                "NaturalLanguageWorkflowHarness",
+            ),
+            "one_shot_entry": network_entry_profile.get("profile_id"),
+            "sdk_bootstrap": consumer_sdk_bootstrap.get("bootstrap_id"),
+            "secret_policy": "redacted" if (setup_guidance.get("safety") or {}).get("secret_values_included") is False else "inspect",
+        },
+        "evidence_sources": {
+            "connect_package": "NetworkConnectPackage",
+            "readiness": "KillerMvpReadiness",
+            "demo_playbook": "KillerMvpDemoPlaybook",
+            "acceptance": "NetworkConnectionAcceptance",
+            "events": evidence_endpoints.get("events"),
+            "audit": evidence_endpoints.get("audit"),
+            "artifacts": evidence_endpoints.get("artifacts"),
+        },
+        "success_criteria": [
+            "Reviewer can follow the phase order without reading raw JSON first.",
+            "CLI-CLI BridgeMessage selector routing is visible before and after the run.",
+            "NaturalLanguageWorkflowHarness is reusable for external programs.",
+            "Runtime artifacts, events, and audit records prove execution.",
+            "MCP/A2A/ACP export and dry-run-first CLI registration prove extension paths.",
+        ],
+        "operator_cues": [
+            "Open with the one-shot connect package, then zoom into Workflow Studio.",
+            "Use the command deck only when the UI needs a CLI-backed proof point.",
+            "Call out secret redaction before showing setup or SDK bootstrap payloads.",
+            "End on next-CLI registration to show this is infrastructure, not a single demo.",
+        ],
+        "handoff_commands": [str(command.get("command")) for command in command_deck if isinstance(command, dict) and command.get("command")],
+        "registration_next_commands": registration_next_commands,
+        "protocol_targets": protocol_summary.get("targets", []),
+    }
+
+
+def _mvp_demo_phase(
+    phase_id: str,
+    title: str,
+    narrative: str,
+    playbook_step_ids: list[str],
+    command_ids: list[str],
+    evidence_sources: list[str],
+    success_signal: str,
+    playbook_step_by_id: dict[str, dict[str, Any]],
+    command_by_id: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "id": phase_id,
+        "title": title,
+        "narrative": narrative,
+        "playbook_step_ids": playbook_step_ids,
+        "playbook_titles": [
+            str(playbook_step_by_id[step_id].get("title"))
+            for step_id in playbook_step_ids
+            if step_id in playbook_step_by_id
+        ],
+        "command_ids": command_ids,
+        "commands": [
+            {
+                "id": command_id,
+                "title": command_by_id[command_id].get("title"),
+                "command": command_by_id[command_id].get("command"),
+                "copy_label": command_by_id[command_id].get("copy_label"),
+            }
+            for command_id in command_ids
+            if command_id in command_by_id
+        ],
+        "evidence_sources": evidence_sources,
+        "success_signal": success_signal,
     }
 
 
