@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
 from typing import Any
 
 from cbn_core.manifest import MANIFEST_API_VERSION
@@ -11,11 +13,13 @@ from cbn_core.message import BridgeMessage
 AGENT_CLI_API_VERSION = "agent-cli.dev/v1alpha1"
 AGENT_CLI_CARD_KIND = "AgentCliCard"
 RUN_RECEIPT_KIND = "RunReceipt"
+CONTRACT_PYTHON_ROOT = Path(__file__).resolve().parents[1] / "external_protocols" / "agent-cli-contract" / "python"
 
 
 def agent_cli_card_to_tool_manifests(card: dict[str, Any]) -> list[dict[str, Any]]:
     """Convert one AgentCliCard into CBN ToolManifest dictionaries."""
 
+    _validate_external_contract(card, target="card")
     _require_agent_cli_card(card)
     metadata = card["metadata"]
     spec = card["spec"]
@@ -74,6 +78,7 @@ def agent_cli_card_to_tool_manifests(card: dict[str, Any]) -> list[dict[str, Any
 def run_receipt_to_cbn_records(receipt: dict[str, Any]) -> dict[str, Any]:
     """Convert a RunReceipt into BridgeMessage plus audit/event correlation records."""
 
+    _validate_external_contract(receipt, target="receipt")
     _require_run_receipt(receipt)
     run_id = receipt["runId"]
     producer = f"{receipt['cardId']}.{receipt['commandId']}"
@@ -122,6 +127,33 @@ def run_receipt_to_cbn_records(receipt: dict[str, Any]) -> dict[str, Any]:
                 "artifact_count": len(artifacts),
             },
         },
+    }
+
+
+def _validate_external_contract(payload: dict[str, Any], *, target: str) -> None:
+    validators = _external_contract_validators()
+    validator = validators[target]
+    report = validator(payload)
+    if not report.get("ok"):
+        errors = report.get("errors", [])
+        if isinstance(errors, list) and errors:
+            raise ValueError(f"invalid Agent CLI {target}: {'; '.join(str(error) for error in errors)}")
+        raise ValueError(f"invalid Agent CLI {target}")
+
+
+def _external_contract_validators() -> dict[str, Any]:
+    try:
+        from agent_cli_contract import validate_agent_cli_card, validate_run_receipt
+    except ModuleNotFoundError:
+        if not CONTRACT_PYTHON_ROOT.exists():
+            raise
+        contract_path = str(CONTRACT_PYTHON_ROOT)
+        if contract_path not in sys.path:
+            sys.path.insert(0, contract_path)
+        from agent_cli_contract import validate_agent_cli_card, validate_run_receipt
+    return {
+        "card": validate_agent_cli_card,
+        "receipt": validate_run_receipt,
     }
 
 

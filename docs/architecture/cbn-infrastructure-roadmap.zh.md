@@ -37,6 +37,9 @@ submodule 或独立 npm/PyPI 包。
 支持 `agent-cli-contract validate card <file>` 与
 `agent-cli-contract validate receipt <file>`；source-tree 模式也可通过
 `python -m agent_cli_contract validate ...` 验证，不依赖 CBN runtime。
+CBN 侧 `cbn_core.agent_cli_contract` 已在映射前消费该外置 validator；当前优先
+加载已安装的 `agent_cli_contract` 包，未安装时降级到
+`external_protocols/agent-cli-contract/python` 的 submodule/source-tree 边界。
 
 ### 2. CBN 内部总线 Contract
 

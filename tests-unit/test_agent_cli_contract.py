@@ -113,6 +113,13 @@ class AgentCliContractTests(unittest.TestCase):
         report = validate_manifest_dict(manifest)
         self.assertTrue(report["valid"], report["errors"])
 
+    def test_cbn_mapping_uses_external_card_validator(self):
+        card = json.loads((CONTRACT_ROOT / "fixtures/agent-cli-card.valid.json").read_text(encoding="utf-8"))
+        card["spec"]["commands"][0]["policy"]["risk"] = "unsafe"
+
+        with self.assertRaisesRegex(ValueError, "policy.risk is unsupported"):
+            agent_cli_card_to_tool_manifests(card)
+
     def test_run_receipt_maps_to_bridge_message_and_correlation_records(self):
         receipt = json.loads((CONTRACT_ROOT / "fixtures/run-receipt.valid.json").read_text(encoding="utf-8"))
         records = run_receipt_to_cbn_records(receipt)
@@ -124,6 +131,13 @@ class AgentCliContractTests(unittest.TestCase):
         self.assertEqual(message["metadata"]["producer"], "example.macrocli.backends")
         self.assertEqual(message["metadata"]["channel"], "agent-cli.run.receipt")
         self.assertTrue(validate_bridge_message(message)["valid"])
+
+    def test_cbn_mapping_uses_external_receipt_validator(self):
+        receipt = json.loads((CONTRACT_ROOT / "fixtures/run-receipt.valid.json").read_text(encoding="utf-8"))
+        receipt["status"] = "unknown"
+
+        with self.assertRaisesRegex(ValueError, "status is unsupported"):
+            run_receipt_to_cbn_records(receipt)
 
 
 if __name__ == "__main__":
