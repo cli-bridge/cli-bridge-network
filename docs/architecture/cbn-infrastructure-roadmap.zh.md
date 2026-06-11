@@ -259,6 +259,8 @@ Killer Demo slice 已新增可运行证据束：
   `KillerMvpPresenterBrief.integration_handoff` 同步给出 `sdk_bootstrap_url` 和
   `sdk_bootstrap_command`，demo playbook 新增 `show_sdk_bootstrap` 步骤，现场演示能
   直接说明“外部程序先读小合同初始化 SDK，再按需升级读取 quickstart 或完整 package”。
+  Workflow Studio 的 Presenter brief 已直接展示 SDK bootstrap URL/command，并提供
+  SDK command 复制入口，避免现场演示依赖 raw JSON。
 - Killer demo report 已新增 `communication_trace`：从真实 workflow run result 中提取
   `BridgeMessage argsFrom` handoff，展示 producer task、consumer task、selector、
   BridgeMessage valid 状态、selected value preview、resolved arg preview 和 artifact

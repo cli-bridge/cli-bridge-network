@@ -1153,6 +1153,8 @@ export interface ConnectSummary {
   presenterHeadline: string;
   presenterProofPoints: number;
   presenterFlowSteps: number;
+  presenterSdkBootstrapUrl: string;
+  presenterSdkBootstrapCommand: string;
   launchContractStatus: string;
   launchContractId: string;
   launchSequenceSteps: number;

@@ -769,6 +769,7 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
   const networkHarnessAgent = payload?.network_harness_agent ?? {};
   const mvp = payload?.mvp_readiness ?? {};
   const presenter = payload?.mvp_presenter_brief ?? {};
+  const presenterHandoff = presenter.integration_handoff ?? {};
   const launchContract = payload?.consumer_launch_contract ?? {};
   const sdkBootstrap = payload?.consumer_sdk_bootstrap ?? {};
   const acceptance = payload?.acceptance ?? quickstart.acceptance ?? {};
@@ -807,6 +808,8 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
     presenterHeadline: stringValue(presenter.headline) ?? "Presenter brief not loaded",
     presenterProofPoints: Array.isArray(presenter.proof_points) ? presenter.proof_points.length : 0,
     presenterFlowSteps: Array.isArray(presenter.live_demo_flow) ? presenter.live_demo_flow.length : 0,
+    presenterSdkBootstrapUrl: stringValue(presenterHandoff.sdk_bootstrap_url) ?? "not loaded",
+    presenterSdkBootstrapCommand: stringValue(presenterHandoff.sdk_bootstrap_command) ?? "not loaded",
     launchContractStatus: stringValue(launchContract.status) ?? "not loaded",
     launchContractId: stringValue(launchContract.contract_id) ?? "not loaded",
     launchSequenceSteps: Array.isArray(launchContract.launch_sequence) ? launchContract.launch_sequence.length : 0,
@@ -1878,8 +1881,16 @@ onMounted(async () => {
             <code>{{ connectPresenterBrief.integration_handoff?.readiness_url || "not loaded" }}</code>
           </div>
           <div>
+            <span>SDK bootstrap</span>
+            <code>{{ connectSummary.presenterSdkBootstrapUrl }}</code>
+          </div>
+          <div>
             <span>Verify command</span>
             <code>{{ connectPresenterBrief.integration_handoff?.verify_command || "not loaded" }}</code>
+          </div>
+          <div>
+            <span>SDK command</span>
+            <code>{{ connectSummary.presenterSdkBootstrapCommand }}</code>
           </div>
         </div>
         <div class="request-sequence">
@@ -1915,6 +1926,9 @@ onMounted(async () => {
           </button>
           <button title="Ask the daemon to run the full network acceptance report" :disabled="loading === 'network verify'" @click="verifyDaemonAcceptance">
             <Network :size="15" /> Daemon Verify
+          </button>
+          <button title="Copy SDK bootstrap command" :disabled="!connectSummary.presenterSdkBootstrapCommand || connectSummary.presenterSdkBootstrapCommand === 'not loaded'" @click="copyText('sdk-bootstrap-command', connectSummary.presenterSdkBootstrapCommand)">
+            <Copy :size="14" /> {{ copiedScript === "sdk-bootstrap-command" ? "Copied" : "Copy SDK" }}
           </button>
           <code v-if="connectSummary.studioLink">{{ connectSummary.studioLink }}</code>
           <span v-else>No Workflow Studio link loaded</span>
