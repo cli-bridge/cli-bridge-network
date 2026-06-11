@@ -21,6 +21,7 @@ EXPECTED_PART_MODULES = (
     "live",
     "queue",
     "promotion",
+    "sync",
 )
 
 
