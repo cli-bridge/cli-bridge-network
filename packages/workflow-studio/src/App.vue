@@ -493,6 +493,14 @@ function acceptanceActualValue(key: string, payload: unknown, httpStatus: number
   if (jsonKey === "type") {
     return Array.isArray(payload) ? "array" : typeof payload;
   }
+  if (jsonKey === "count_min" || jsonKey === "length_min") {
+    return collectionLength(payload);
+  }
+  if (jsonKey.endsWith("_count_min")) {
+    const value = jsonPath(payload, jsonKey.slice(0, -"_count_min".length));
+    const length = collectionLength(value);
+    if (typeof length === "number") return length;
+  }
   if (jsonKey.endsWith("_min")) {
     return jsonPath(payload, jsonKey.slice(0, -"_min".length));
   }
@@ -500,6 +508,16 @@ function acceptanceActualValue(key: string, payload: unknown, httpStatus: number
     return typeof jsonPath(payload, jsonKey.slice(0, -"_type".length));
   }
   return jsonPath(payload, jsonKey);
+}
+
+function collectionLength(value: unknown): number | undefined {
+  if (Array.isArray(value) || typeof value === "string") {
+    return value.length;
+  }
+  if (value && typeof value === "object") {
+    return Object.keys(value).length;
+  }
+  return undefined;
 }
 
 function acceptanceValueMatches(key: string, actual: unknown, expected: unknown): boolean {
