@@ -9,10 +9,43 @@ from contextlib import contextmanager
 from http.server import ThreadingHTTPServer
 from unittest.mock import patch
 
-from api_server.server import CbnRequestHandler, ROUTE_SUMMARY
+from api_server.server import CbnRequestHandler, ROUTE_SUMMARY, _resolve_session_token
 
 
 class DaemonApiTests(unittest.TestCase):
+    def test_daemon_session_token_defaults_to_disabled_for_localhost(self):
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertIsNone(_resolve_session_token(host="127.0.0.1"))
+            self.assertIsNone(_resolve_session_token(host="localhost"))
+
+    def test_daemon_session_token_defaults_to_required_for_nonlocal_bind(self):
+        with patch.dict("os.environ", {}, clear=True):
+            token = _resolve_session_token(host="0.0.0.0")
+
+        self.assertIsInstance(token, str)
+        self.assertGreater(len(token), 16)
+
+    def test_daemon_session_token_can_be_enabled_or_disabled_explicitly(self):
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertIsNone(_resolve_session_token(host="0.0.0.0", require_session_token=False))
+            token = _resolve_session_token(host="127.0.0.1", require_session_token=True)
+
+        self.assertIsInstance(token, str)
+        self.assertGreater(len(token), 16)
+
+    def test_daemon_session_token_env_still_enables_gate(self):
+        with patch.dict("os.environ", {"CBN_DAEMON_SESSION_TOKEN": "env-token"}, clear=True):
+            self.assertEqual(_resolve_session_token(host="127.0.0.1"), "env-token")
+        with patch.dict("os.environ", {"CBN_DAEMON_REQUIRE_SESSION_TOKEN": "true"}, clear=True):
+            token = _resolve_session_token(host="127.0.0.1")
+
+        self.assertIsInstance(token, str)
+        self.assertGreater(len(token), 16)
+
+    def test_daemon_session_token_explicit_disable_wins_over_env(self):
+        with patch.dict("os.environ", {"CBN_DAEMON_SESSION_TOKEN": "env-token"}, clear=True):
+            self.assertIsNone(_resolve_session_token(host="127.0.0.1", require_session_token=False))
+
     def test_route_summary_exposes_cli_anything_evaluation(self):
         routes = {(route["method"], route["path"]) for route in ROUTE_SUMMARY}
         self.assertIn(("POST", "/plugins/cli-anything/evaluate-harness"), routes)
@@ -903,10 +936,26 @@ class DaemonApiTests(unittest.TestCase):
                 self.assertEqual(payload["status"], "ok")
                 self.assertFalse(payload["auth"]["session_token_required"])
                 self.assertFalse(payload["auth"]["session_token_supplied"])
+                self.assertEqual(payload["auth"]["session_token_mode"], "local_default_disabled")
+                self.assertEqual(payload["auth"]["session_token_source"], "none")
+                self.assertTrue(payload["auth"]["local_session_token_default"])
                 self.assertEqual(
                     response.headers["Access-Control-Allow-Origin"],
                     "http://localhost:3000",
                 )
+
+    def test_localhost_post_does_not_require_session_token_by_default(self):
+        with daemon_url() as base_url:
+            request = urllib.request.Request(
+                f"{base_url}/messages/validate",
+                data=json.dumps({"message": _sample_message()}).encode("utf-8"),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(request, timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(response.status, 200)
+                self.assertTrue(payload["valid"])
 
     def test_health_reports_session_token_gate_without_secret_value(self):
         with daemon_url(session_token="test-token") as base_url:
@@ -915,6 +964,8 @@ class DaemonApiTests(unittest.TestCase):
                 self.assertEqual(response.status, 200)
                 self.assertTrue(payload["auth"]["session_token_required"])
                 self.assertFalse(payload["auth"]["session_token_supplied"])
+                self.assertEqual(payload["auth"]["session_token_mode"], "required")
+                self.assertEqual(payload["auth"]["session_token_source"], "configured")
                 self.assertIn("X-CBN-Session", payload["auth"]["accepted_headers"])
                 serialized = json.dumps(payload, ensure_ascii=False)
                 self.assertNotIn("test-token", serialized)
@@ -2433,8 +2484,10 @@ def _sample_message():
 @contextmanager
 def daemon_url(session_token=None):
     server = ThreadingHTTPServer(("127.0.0.1", 0), CbnRequestHandler)
+    setattr(server, "local_session_token_default", True)
     if session_token is not None:
         setattr(server, "session_token", session_token)
+        setattr(server, "session_token_source", "configured")
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:

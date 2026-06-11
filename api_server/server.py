@@ -65,6 +65,7 @@ from cbn_tools.direct_cli_readiness import direct_cli_readiness_report
 
 ALLOWED_ORIGIN_HOSTS = {"127.0.0.1", "localhost", "::1"}
 SESSION_TOKEN_ENV = "CBN_DAEMON_SESSION_TOKEN"
+SESSION_TOKEN_REQUIRED_ENV = "CBN_DAEMON_REQUIRE_SESSION_TOKEN"
 
 
 ROUTE_SUMMARY = [
@@ -376,7 +377,7 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
         return False
 
     def _require_session_token(self) -> bool:
-        expected = getattr(self.server, "session_token", None)
+        expected = _server_session_token(self.server)
         if expected is None:
             return True
         token = self._session_token_from_headers()
@@ -396,11 +397,15 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
         if parsed.path == "/health":
+            token_required = _server_session_token(self.server) is not None
             self._send(
                 200,
                 health_payload(
-                    session_token_required=getattr(self.server, "session_token", None) is not None,
+                    session_token_required=token_required,
                     session_token_supplied=bool(self._session_token_from_headers()),
+                    session_token_mode="required" if token_required else "local_default_disabled",
+                    session_token_source=_server_session_token_source(self.server),
+                    local_session_token_default=bool(getattr(self.server, "local_session_token_default", False)),
                 ),
             )
             return
@@ -1438,18 +1443,92 @@ def _adapter_agent_turn_from_context(
     }
 
 
-def serve(host: str = "127.0.0.1", port: int = 8787) -> None:
+def serve(
+    host: str = "127.0.0.1",
+    port: int = 8787,
+    *,
+    session_token: str | None = None,
+    require_session_token: bool | None = None,
+) -> None:
     server = ThreadingHTTPServer((host, port), CbnRequestHandler)
-    token = os.environ.get(SESSION_TOKEN_ENV) or secrets.token_urlsafe(32)
+    token = _resolve_session_token(
+        host=host,
+        explicit_token=session_token,
+        require_session_token=require_session_token,
+    )
     setattr(server, "session_token", token)
+    setattr(server, "session_token_source", _session_token_source(host, token, explicit_token=session_token))
+    setattr(server, "local_session_token_default", _is_local_bind_host(host))
     print(f"CBN daemon API listening on http://{host}:{port}")
-    print(f"CBN daemon session token: {token}")
+    if token:
+        source = getattr(server, "session_token_source", "configured")
+        print(f"CBN daemon session token gate: enabled ({source})")
+        if source == "generated":
+            print(f"CBN daemon session token: {token}")
+    else:
+        print("CBN daemon session token gate: disabled for local-first demo use")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         print("CBN daemon API stopped")
     finally:
         server.server_close()
+
+
+def _resolve_session_token(
+    *,
+    host: str,
+    explicit_token: str | None = None,
+    require_session_token: bool | None = None,
+) -> str | None:
+    if require_session_token is False:
+        return None
+    token = explicit_token or os.environ.get(SESSION_TOKEN_ENV)
+    if token:
+        return token
+    if require_session_token is None:
+        required_from_env = _env_bool(os.environ.get(SESSION_TOKEN_REQUIRED_ENV))
+        require_session_token = required_from_env if required_from_env is not None else not _is_local_bind_host(host)
+    if require_session_token:
+        return secrets.token_urlsafe(32)
+    return None
+
+
+def _env_bool(value: str | None) -> bool | None:
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off", ""}:
+        return False
+    return None
+
+
+def _is_local_bind_host(host: str) -> bool:
+    return host.strip().lower() in ALLOWED_ORIGIN_HOSTS
+
+
+def _server_session_token(server: Any) -> str | None:
+    token = getattr(server, "session_token", None)
+    return token if isinstance(token, str) and token else None
+
+
+def _server_session_token_source(server: Any) -> str:
+    source = getattr(server, "session_token_source", None)
+    if isinstance(source, str) and source:
+        return source
+    return "configured" if _server_session_token(server) is not None else "none"
+
+
+def _session_token_source(host: str, token: str | None, *, explicit_token: str | None = None) -> str:
+    if not token:
+        return "none"
+    if explicit_token or os.environ.get(SESSION_TOKEN_ENV):
+        return "configured"
+    if not _is_local_bind_host(host) or _env_bool(os.environ.get(SESSION_TOKEN_REQUIRED_ENV)) is True:
+        return "generated"
+    return "configured"
 
 
 def _known_parser_refs() -> set[str]:

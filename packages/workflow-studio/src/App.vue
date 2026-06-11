@@ -104,6 +104,13 @@ const error = ref("");
 const copiedScript = ref("");
 const acceptanceResults = ref<AcceptanceExecutionResult[]>([]);
 const dock = reactive<DockState>({ events: [], audit: [], artifacts: [] });
+const showDiagnostics = ref(false);
+
+type ToastTone = "info" | "success" | "warning" | "danger";
+type ToastMessage = { id: number; tone: ToastTone; title: string; detail: string };
+
+const toasts = ref<ToastMessage[]>([]);
+let nextToastId = 1;
 
 const api = computed(() => new StudioApi(config));
 const healthAuth = computed(() => healthAuthSummary(health.value, config.sessionToken));
@@ -281,6 +288,83 @@ const acceptanceRunSummary = computed<AcceptanceRunSummary>(() => summarizeAccep
 const acceptanceResultByCheck = computed<Record<string, AcceptanceExecutionResult>>(() =>
   Object.fromEntries(acceptanceResults.value.map((result) => [result.check_id, result])),
 );
+const productStatus = computed(() => {
+  if (loading.value) {
+    return {
+      tone: "info",
+      title: `正在${humanLoadingLabel(loading.value)}`,
+      detail: "无需确认，完成后会自动刷新结果。",
+    };
+  }
+  if (error.value) {
+    return {
+      tone: "warning",
+      title: "有一步需要处理",
+      detail: error.value,
+    };
+  }
+  if (demoReport.value?.ok) {
+    return {
+      tone: "success",
+      title: "演示已完成",
+      detail: `${evidenceSummary.value.completedStages} 个阶段完成，生成 ${evidenceSummary.value.taskArtifactCount} 个结果。`,
+    };
+  }
+  if (connectPackage.value?.ok) {
+    return {
+      tone: "success",
+      title: "已准备好运行",
+      detail: "本地服务、流程和接入信息已经加载。",
+    };
+  }
+  return {
+    tone: "info",
+    title: "正在准备演示",
+    detail: "正在读取本地服务和默认流程。",
+  };
+});
+const setupStatusLabel = computed(() => (connectSetupGuidance.value.setup_required ? "需要完成初次设置" : "无需额外设置"));
+
+function notify(title: string, detail = "", tone: ToastTone = "info") {
+  const id = nextToastId++;
+  toasts.value = [...toasts.value, { id, tone, title, detail }];
+  window.setTimeout(() => dismissToast(id), tone === "danger" ? 5200 : 3600);
+}
+
+function dismissToast(id: number) {
+  toasts.value = toasts.value.filter((toast) => toast.id !== id);
+}
+
+function humanLoadingLabel(label: string): string {
+  const labels: Record<string, string> = {
+    health: "连接本地服务",
+    workflows: "读取流程列表",
+    workflow: "读取流程",
+    contract: "读取技术契约",
+    agent: "读取助手能力",
+    plan: "生成执行计划",
+    "setup plan": "检查初次设置",
+    connect: "准备接入信息",
+    quickstart: "准备快速开始",
+    launch: "读取启动信息",
+    profile: "读取入口配置",
+    harness: "读取助手配置",
+    "sdk bootstrap": "准备 SDK 信息",
+    "consumer manifest": "准备接入清单",
+    acceptance: "检查演示状态",
+    readiness: "检查可展示状态",
+    imports: "读取可接入工具",
+    "direct CLI": "检查外部工具",
+    "wire conformance": "检查协议兼容",
+    "network verify": "执行验收检查",
+    run: "运行流程",
+    demo: "运行演示",
+    events: "刷新事件",
+    audit: "刷新审计",
+    artifacts: "刷新结果",
+  };
+  return labels[label] ?? label;
+}
 
 async function call(label: string, fn: () => Promise<unknown>): Promise<unknown | null> {
   loading.value = label;
@@ -289,6 +373,7 @@ async function call(label: string, fn: () => Promise<unknown>): Promise<unknown 
     return await fn();
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
+    notify(`${humanLoadingLabel(label)}未完成`, error.value, "danger");
     return null;
   } finally {
     loading.value = "";
@@ -393,11 +478,13 @@ async function copyText(label: string, text: string) {
   try {
     await navigator.clipboard.writeText(text);
     copiedScript.value = label;
+    notify("已复制", "内容已放入剪贴板。", "success");
     window.setTimeout(() => {
       if (copiedScript.value === label) copiedScript.value = "";
     }, 1600);
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
+    notify("复制失败", error.value, "danger");
   }
 }
 
@@ -421,6 +508,7 @@ async function verifyConnectAcceptance() {
     loading.value = "";
   }
   await refreshEvidence();
+  notify("检查完成", `通过 ${acceptanceRunSummary.value.passed} 项，失败 ${acceptanceRunSummary.value.failed} 项。`, acceptanceRunSummary.value.failed ? "warning" : "success");
 }
 
 async function verifyDaemonAcceptance() {
@@ -432,6 +520,7 @@ async function verifyDaemonAcceptance() {
     ? networkVerifyReport.value.results
     : [];
   await refreshEvidence();
+  notify("验收报告已刷新", networkVerifyReport.value?.status || "已完成检查。", networkVerifyReport.value?.status === "passed" ? "success" : "info");
 }
 
 async function runAcceptanceCheck(
@@ -477,14 +566,24 @@ async function runAcceptanceCheck(
 }
 
 async function runWorkflow() {
-  runResult.value = await call("run", () => api.value.runWorkflow());
+  const payload = await call("run", () => api.value.runWorkflow());
+  runResult.value = payload;
   await refreshEvidence();
+  if (payload) notify("流程已运行", "结果和证据已自动刷新。", "success");
 }
 
 async function runKillerDemo() {
-  demoReport.value = (await call("demo", () => api.value.killerDemo())) as KillerDemoReport;
+  const payload = (await call("demo", () => api.value.killerDemo())) as KillerDemoReport | null;
+  demoReport.value = payload;
   runResult.value = demoReport.value?.summary ? demoReport.value : runResult.value;
   await refreshEvidence();
+  if (payload) {
+    notify(
+      payload.ok ? "演示完成" : "演示需要处理",
+      `${numberValue(payload.summary?.completed_stage_count) ?? 0} 个阶段完成，${numberValue(payload.summary?.blocked_stage_count) ?? 0} 个阶段阻塞。`,
+      payload.ok ? "success" : "warning",
+    );
+  }
 }
 
 async function refreshEvidence() {
@@ -522,6 +621,7 @@ async function loadAll() {
     inspectDirectCliReadiness(),
     inspectProtocolWireConformance(),
   ]);
+  if (!error.value) notify("演示环境已准备好", "可以直接运行演示或查看流程。", "success");
 }
 
 function pretty(payload: unknown): string {
@@ -1316,119 +1416,255 @@ onMounted(async () => {
       <header class="brand-block">
         <Network :size="22" />
         <div>
-          <h1>CBN Workflow Studio</h1>
-          <p>CLI-CLI workflow runtime</p>
+          <h1>CBN 演示工作台</h1>
+          <p>把本地命令工具串成可复用流程</p>
         </div>
       </header>
 
-      <label>
-        Daemon URL
-        <input v-model="config.daemonUrl" spellcheck="false" />
-      </label>
-      <label>
-        Session token
-        <input v-model="config.sessionToken" type="password" spellcheck="false" />
-      </label>
-      <label>
-        Workflow path
-        <textarea v-model="config.workflowPath" spellcheck="false" rows="3" />
-      </label>
-      <label>
-        Agent prompt
-        <textarea v-model="config.agentMessage" spellcheck="false" rows="3" />
-      </label>
-
-      <div class="switch-row">
-        <label class="check"><input v-model="config.dryRun" type="checkbox" /> dry-run</label>
-        <label class="check"><input v-model="config.confirmed" type="checkbox" /> confirmed</label>
-      </div>
-
-      <div class="command-grid">
-        <button title="Load health, workflow, contract, evidence" @click="loadAll">
-          <RefreshCw :size="16" /> Refresh
-        </button>
-        <button title="Run selected workflow through daemon" @click="runWorkflow">
-          <Play :size="16" /> Run
-        </button>
-        <button title="Run the CLI-Anything macrocli to mermaid killer demo" @click="runKillerDemo">
-          <Rocket :size="16" /> Demo
-        </button>
-        <button title="Inspect workflow contract" @click="inspectContract">
-          <ShieldCheck :size="16" /> Contract
-        </button>
-        <button title="Load Adapter Agent node bundle" @click="inspectAgentBundle">
-          <Bot :size="16" /> Agent
-        </button>
-        <button title="Plan natural-language agent workflow invocation" @click="inspectWorkflowRequestPlan">
-          <ClipboardList :size="16" /> Plan
-        </button>
-        <button title="Plan setup, secret, and login tool calls without executing them" @click="inspectSetupPlan">
-          <ShieldCheck :size="16" /> Setup
-        </button>
-        <button title="Load one-shot network connection package" @click="inspectConnectPackage">
-          <Network :size="16" /> Connect
-        </button>
-        <button title="Load direct first-call quickstart package" @click="inspectQuickstart">
-          <Play :size="16" /> Quick
-        </button>
-        <button title="Load direct network entry profile" @click="inspectEntryProfile">
-          <Braces :size="16" /> Profile
-        </button>
-        <button title="Load direct reusable network harness agent contract" @click="inspectNetworkHarnessAgent">
-          <Bot :size="16" /> Harness
-        </button>
-        <button title="Load direct consumer SDK bootstrap contract" @click="inspectSdkBootstrap">
-          <Boxes :size="16" /> SDK
-        </button>
-        <button title="Load direct external consumer manifest" @click="inspectConsumerManifest">
-          <FileJson :size="16" /> Manifest
-        </button>
-        <button title="Load direct consumer launch contract" @click="inspectLaunchContract">
-          <ClipboardList :size="16" /> Launch
-        </button>
-        <button title="Load direct network acceptance checklist" @click="inspectAcceptance">
-          <ShieldCheck :size="16" /> Accept
-        </button>
-        <button title="Load direct MVP readiness matrix" @click="inspectReadiness">
-          <Gauge :size="16" /> Ready
-        </button>
-        <button title="Load direct CLI import catalog from daemon" @click="inspectImportCatalog">
-          <FileJson :size="16" /> Imports
-        </button>
-        <button title="Load direct CLI profile parser and recovery readiness" @click="inspectDirectCliReadiness">
-          <Braces :size="16" /> Direct
-        </button>
-        <button title="Load direct MCP/A2A/ACP wire conformance report" @click="inspectProtocolWireConformance">
-          <Network :size="16" /> Wire
-        </button>
-        <button title="Open maintainer console" @click="openDashboardConsole">
-          <Wrench :size="16" /> Console
-        </button>
-      </div>
-
-      <section class="status-panel">
-        <div class="section-title"><Gauge :size="15" /> Health</div>
-        <div class="evidence-row">
-          <span :class="['pill-inline', healthAuth.required && !healthAuth.supplied ? 'blocked' : 'ok']">{{ healthAuth.status }}</span>
-          <span class="pill-inline">{{ healthAuth.detail }}</span>
-        </div>
-        <pre>{{ pretty(health) }}</pre>
+      <section class="hero-panel">
+        <span :class="['status-badge', productStatus.tone]">{{ productStatus.title }}</span>
+        <h2>一键查看命令之间如何协作</h2>
+        <p>{{ productStatus.detail }}</p>
       </section>
+
+      <label class="friendly-input">
+        这次想让流程完成什么
+        <textarea v-model="config.agentMessage" spellcheck="false" rows="4" />
+      </label>
+
+      <div class="primary-actions">
+        <button class="primary" title="运行默认演示流程" :disabled="loading === 'demo'" @click="runKillerDemo">
+          <Rocket :size="17" /> 运行演示
+        </button>
+        <button title="刷新演示状态和结果" @click="loadAll">
+          <RefreshCw :size="16" /> 刷新状态
+        </button>
+        <button title="只查看流程结构" @click="inspectWorkflow">
+          <Network :size="16" /> 查看流程
+        </button>
+        <button title="打开技术详情和原始日志" @click="showDiagnostics = true">
+          <Wrench :size="16" /> 技术详情
+        </button>
+      </div>
+
+      <div class="outcome-grid">
+        <div>
+          <span>展示准备</span>
+          <strong>{{ connectSummary.mvpReadinessScore }}</strong>
+        </div>
+        <div>
+          <span>流程步骤</span>
+          <strong>{{ tasks.length }}</strong>
+        </div>
+        <div>
+          <span>演示阶段</span>
+          <strong>{{ evidenceSummary.completedStages }}/{{ demoReport?.stages?.length || connectSummary.demoStageCount || 0 }}</strong>
+        </div>
+        <div>
+          <span>生成结果</span>
+          <strong>{{ evidenceSummary.taskArtifactCount }}</strong>
+        </div>
+      </div>
+
+      <section class="plain-card">
+        <div class="section-title"><Bot :size="15" /> 流程助手</div>
+        <p>默认以安全演示模式运行。需要登录、密钥或本地授权时，会用右上角提示提醒，不会打断当前页面。</p>
+        <div class="soft-list">
+          <span>{{ setupStatusLabel }}</span>
+          <span>{{ connectSummary.consumerManifestStatus === "ready" ? "可被其他程序接入" : "正在准备接入信息" }}</span>
+          <span>{{ connectSummary.acceptanceCheckCount }} 项自动检查</span>
+        </div>
+      </section>
+
+      <details class="compact-settings">
+        <summary>本地设置</summary>
+        <label>
+          本地服务地址
+          <input v-model="config.daemonUrl" spellcheck="false" />
+        </label>
+        <label>
+          默认流程
+          <textarea v-model="config.workflowPath" spellcheck="false" rows="3" />
+        </label>
+        <div class="switch-row">
+          <label class="check"><input v-model="config.dryRun" type="checkbox" /> 安全演示模式</label>
+          <label class="check"><input v-model="config.confirmed" type="checkbox" /> 允许真实执行</label>
+        </div>
+        <p class="muted-note">本地会话信息由启动链接或本地服务自动处理，普通用户无需填写。</p>
+      </details>
     </aside>
 
     <section class="graph-pane">
       <div class="toolbar">
         <div>
-          <strong>{{ workflow?.workflow_id || "workflow" }}</strong>
-          <span>{{ tasks.length }} tasks</span>
+          <strong>{{ workflow?.workflow_id || "默认演示流程" }}</strong>
+          <span>{{ tasks.length }} 个步骤</span>
         </div>
-        <span v-if="loading" class="pill">loading {{ loading }}</span>
-        <span v-if="error" class="pill danger">{{ error }}</span>
+        <span v-if="loading" class="pill">正在{{ humanLoadingLabel(loading) }}</span>
+        <span v-if="!loading && !error" class="pill">安全演示</span>
+        <button class="ghost-on-dark" title="打开技术详情" @click="showDiagnostics = true">
+          <Wrench :size="15" /> 详情
+        </button>
       </div>
       <canvas ref="canvasRef" width="1100" height="640" />
     </section>
 
-    <aside class="right-rail">
+    <aside class="product-rail">
+      <section class="result-hero">
+        <div class="section-title"><Rocket :size="15" /> 演示结果</div>
+        <strong>{{ evidenceSummary.status === "ready" ? "已跑通" : evidenceSummary.status === "not run" ? "等待运行" : "需要关注" }}</strong>
+        <p>{{ evidenceSummary.workflowStatus === "completed" ? "流程已经完成，结果和证据可以在下方查看。" : "点击“运行演示”后，这里会显示本次结果。" }}</p>
+      </section>
+
+      <section>
+        <div class="section-title"><Gauge :size="15" /> 当前状态</div>
+        <div class="product-metrics">
+          <div>
+            <span>准备度</span>
+            <strong>{{ connectSummary.mvpReadinessScore }}</strong>
+          </div>
+          <div>
+            <span>自动检查</span>
+            <strong>{{ connectSummary.acceptanceCheckCount }}</strong>
+          </div>
+          <div>
+            <span>流程交接</span>
+            <strong>{{ evidenceSummary.communicationHandoffs }}</strong>
+          </div>
+          <div>
+            <span>结果文件</span>
+            <strong>{{ evidenceSummary.taskArtifactCount }}</strong>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="section-title"><ClipboardList :size="15" /> 你可以这样演示</div>
+        <div class="friendly-steps">
+          <div v-for="stage in connectDemoStages.slice(0, 5)" :key="stage.id || stage.title">
+            <span>{{ stage.title || stage.id || "演示步骤" }}</span>
+            <small>{{ stage.proves || "展示流程能力" }}</small>
+          </div>
+          <div v-if="!connectDemoStages.length">
+            <span>加载默认流程</span>
+            <small>本地服务启动后会自动填充演示步骤。</small>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="section-title"><Network :size="15" /> 流程步骤</div>
+        <div class="friendly-steps">
+          <button
+            v-for="task in tasks.slice(0, 6)"
+            :key="task.id"
+            :class="['step-button', selectedTask?.id === task.id ? 'active' : '']"
+            @click="selectedTaskId = task.id"
+          >
+            <span>{{ task.id }}</span>
+            <small>{{ task.uses || task.capability?.risk || "命令步骤" }}</small>
+          </button>
+          <div v-if="!tasks.length">
+            <span>正在读取流程</span>
+            <small>请确认本地服务正在运行。</small>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="section-title"><FileJson :size="15" /> 最新产物</div>
+        <div class="artifact-strip">
+          <code v-for="artifactId in evidenceSummary.artifactIds" :key="artifactId">{{ artifactId }}</code>
+          <span v-if="!evidenceSummary.artifactIds.length">还没有生成结果</span>
+        </div>
+        <button title="刷新事件、审计和产物" @click="refreshEvidence">
+          <RefreshCw :size="15" /> 刷新结果
+        </button>
+      </section>
+
+      <section class="plain-card">
+        <div class="section-title"><ExternalLink :size="15" /> 更多操作</div>
+        <div class="secondary-actions">
+          <button title="运行普通流程" @click="runWorkflow"><Play :size="15" /> 运行流程</button>
+          <button title="复制给其他程序的接入地址" :disabled="!connectSummary.consumerManifestSelfUrl || connectSummary.consumerManifestSelfUrl === 'not loaded'" @click="copyText('consumer-manifest-url', connectSummary.consumerManifestSelfUrl)">
+            <Copy :size="15" /> 复制接入地址
+          </button>
+          <button title="打开维护者控制台" @click="openDashboardConsole"><Wrench :size="15" /> 维护控制台</button>
+        </div>
+      </section>
+    </aside>
+
+    <button v-if="showDiagnostics" class="diagnostics-backdrop" title="关闭技术详情" @click="showDiagnostics = false"></button>
+    <aside v-if="showDiagnostics" class="right-rail diagnostics-rail open">
+      <header class="diagnostics-header">
+        <div>
+          <strong>技术详情</strong>
+          <span>接口、日志、契约和原始数据</span>
+        </div>
+        <button title="关闭技术详情" @click="showDiagnostics = false">关闭</button>
+      </header>
+      <section class="diagnostic-actions">
+        <div class="section-title"><Wrench :size="15" /> 技术操作</div>
+        <div class="command-grid">
+          <button title="刷新服务、流程和结果" @click="loadAll">
+            <RefreshCw :size="16" /> 刷新
+          </button>
+          <button title="运行当前流程" @click="runWorkflow">
+            <Play :size="16" /> 运行
+          </button>
+          <button title="运行完整演示" @click="runKillerDemo">
+            <Rocket :size="16" /> 演示
+          </button>
+          <button title="查看流程契约" @click="inspectContract">
+            <ShieldCheck :size="16" /> 契约
+          </button>
+          <button title="查看助手节点" @click="inspectAgentBundle">
+            <Bot :size="16" /> 助手
+          </button>
+          <button title="生成自然语言执行计划" @click="inspectWorkflowRequestPlan">
+            <ClipboardList :size="16" /> 计划
+          </button>
+          <button title="检查首次设置、密钥和登录引导" @click="inspectSetupPlan">
+            <ShieldCheck :size="16" /> 设置
+          </button>
+          <button title="Load one-shot network connection package" @click="inspectConnectPackage">
+            <Network :size="16" /> Connect
+          </button>
+          <button title="Load direct first-call quickstart package" @click="inspectQuickstart">
+            <Play :size="16" /> Quick
+          </button>
+          <button title="Load direct network entry profile" @click="inspectEntryProfile">
+            <Braces :size="16" /> Profile
+          </button>
+          <button title="Load direct reusable network harness agent contract" @click="inspectNetworkHarnessAgent">
+            <Bot :size="16" /> Harness
+          </button>
+          <button title="Load direct consumer SDK bootstrap contract" @click="inspectSdkBootstrap">
+            <Boxes :size="16" /> SDK
+          </button>
+          <button title="Load direct external consumer manifest" @click="inspectConsumerManifest">
+            <FileJson :size="16" /> Manifest
+          </button>
+          <button title="Load direct consumer launch contract" @click="inspectLaunchContract">
+            <ClipboardList :size="16" /> Launch
+          </button>
+          <button title="Load direct network acceptance checklist" @click="inspectAcceptance">
+            <ShieldCheck :size="16" /> Accept
+          </button>
+          <button title="Load direct MVP readiness matrix" @click="inspectReadiness">
+            <Gauge :size="16" /> Ready
+          </button>
+          <button title="Load direct CLI import catalog from daemon" @click="inspectImportCatalog">
+            <FileJson :size="16" /> Imports
+          </button>
+          <button title="Load direct CLI profile parser and recovery readiness" @click="inspectDirectCliReadiness">
+            <Braces :size="16" /> Direct
+          </button>
+          <button title="Load direct MCP/A2A/ACP wire conformance report" @click="inspectProtocolWireConformance">
+            <Network :size="16" /> Wire
+          </button>
+        </div>
+      </section>
       <section>
         <div class="section-title"><Boxes :size="15" /> Task</div>
         <select v-model="selectedTaskId">
@@ -2802,17 +3038,46 @@ onMounted(async () => {
 
     <footer class="evidence-dock">
       <section>
-        <div class="section-title"><Activity :size="15" /> Events</div>
-        <pre>{{ pretty(dock.events) }}</pre>
+        <div class="section-title"><Activity :size="15" /> 运行动态</div>
+        <strong>{{ dock.events.length }} 条</strong>
+        <p>{{ dock.events.length ? "本次流程已有运行事件。" : "运行演示后会显示事件摘要。" }}</p>
+        <details>
+          <summary>查看原始事件</summary>
+          <pre>{{ pretty(dock.events) }}</pre>
+        </details>
       </section>
       <section>
-        <div class="section-title"><History :size="15" /> Audit</div>
-        <pre>{{ pretty(dock.audit) }}</pre>
+        <div class="section-title"><History :size="15" /> 操作记录</div>
+        <strong>{{ dock.audit.length }} 条</strong>
+        <p>{{ dock.audit.length ? "关键操作已经留痕。" : "还没有新的操作记录。" }}</p>
+        <details>
+          <summary>查看原始记录</summary>
+          <pre>{{ pretty(dock.audit) }}</pre>
+        </details>
       </section>
       <section>
-        <div class="section-title"><FileJson :size="15" /> Artifacts</div>
-        <pre>{{ pretty(dock.artifacts) }}</pre>
+        <div class="section-title"><FileJson :size="15" /> 结果产物</div>
+        <strong>{{ dock.artifacts.length }} 个</strong>
+        <p>{{ dock.artifacts.length ? "可以在技术详情里查看完整产物内容。" : "运行完成后会显示产物。" }}</p>
+        <details>
+          <summary>查看原始产物</summary>
+          <pre>{{ pretty(dock.artifacts) }}</pre>
+        </details>
       </section>
     </footer>
+
+    <div class="toast-stack" aria-live="polite" aria-atomic="false">
+      <button
+        v-for="toast in toasts"
+        :key="toast.id"
+        :class="['toast-card', toast.tone]"
+        type="button"
+        title="关闭提示"
+        @click="dismissToast(toast.id)"
+      >
+        <strong>{{ toast.title }}</strong>
+        <span v-if="toast.detail">{{ toast.detail }}</span>
+      </button>
+    </div>
   </main>
 </template>

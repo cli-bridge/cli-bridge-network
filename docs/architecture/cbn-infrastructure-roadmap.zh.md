@@ -332,6 +332,18 @@ Killer Demo slice 已新增可运行证据束：
 - 当前 demo 链路以 `workflows/cli-anything-macrocli-mermaid-routing.example.json`
   为默认入口，展示 macrocli -> parser payload -> Mermaid transform -> mermaid
   consumer 的 CLI-CLI BridgeMessage 通信链。
+- Workflow Studio 已从技术控制台视角收敛为 human-friendly 产品入口：首屏只保留
+  运行演示、刷新状态、查看流程、查看结果和接入地址等用户任务；daemon URL、
+  workflow path、contract、acceptance、wire、raw JSON、curl/PowerShell 等技术细节
+  统一折叠到“本地设置”或右侧“技术详情”抽屉，默认不渲染到首屏结构中。提醒机制
+  改为非阻塞 Toast，用于运行完成、复制成功、检查失败和恢复建议，不再用技术表单
+  或确认弹窗打断用户。
+- 本地 daemon session token gate 已改为 local-first 默认关闭：`127.0.0.1`、
+  `localhost`、`::1` 绑定默认不生成也不要求 session token，Studio 本地 demo 无需
+  用户粘贴 token；`0.0.0.0` 等非本地绑定仍默认生成 token。安全门仍可通过
+  `CBN_DAEMON_SESSION_TOKEN`、`CBN_DAEMON_REQUIRE_SESSION_TOKEN=true`、
+  `python -m cbn daemon serve --session-token ...` 或 `--require-session-token`
+  显式开启，也可用 `--no-session-token` 显式关闭。
 
 后续仍需继续推进的产品化收口：
 

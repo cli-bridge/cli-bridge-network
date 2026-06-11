@@ -790,7 +790,14 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(ROUTE_SUMMARY, ensure_ascii=False, indent=2))
             return 0
         if args.daemon_command == "serve":
-            serve(host=args.host, port=args.port)
+            if args.session_token and args.require_session_token is False:
+                parser.error("daemon serve cannot combine --session-token with --no-session-token")
+            serve(
+                host=args.host,
+                port=args.port,
+                session_token=args.session_token,
+                require_session_token=args.require_session_token,
+            )
             return 0
 
     if args.command == "plugin":

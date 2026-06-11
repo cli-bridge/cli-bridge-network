@@ -859,6 +859,24 @@ def build_parser() -> argparse.ArgumentParser:
     daemon_serve = daemon_subcommands.add_parser("serve", help="Serve the MVP daemon API.")
     daemon_serve.add_argument("--host", default="127.0.0.1")
     daemon_serve.add_argument("--port", type=int, default=8787)
+    daemon_serve.add_argument(
+        "--session-token",
+        help="Require this daemon session token for POST requests.",
+    )
+    token_gate = daemon_serve.add_mutually_exclusive_group()
+    token_gate.add_argument(
+        "--require-session-token",
+        action="store_true",
+        dest="require_session_token",
+        default=None,
+        help="Generate and require a daemon session token.",
+    )
+    token_gate.add_argument(
+        "--no-session-token",
+        action="store_false",
+        dest="require_session_token",
+        help="Disable the daemon session token gate.",
+    )
 
     plugin_parser = subcommands.add_parser("plugin", help="Manage external CBN plugins.")
     plugin_subcommands = plugin_parser.add_subparsers(dest="plugin_command")
