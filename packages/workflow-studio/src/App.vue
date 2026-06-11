@@ -493,8 +493,11 @@ async function loadAll() {
     inspectWorkflow(),
     inspectContract(),
     inspectAgentBundle(),
+    refreshEvidence(),
+  ]);
+  await inspectConnectPackage();
+  await Promise.all([
     inspectWorkflowRequestPlan(),
-    inspectConnectPackage(),
     inspectQuickstart(),
     inspectLaunchContract(),
     inspectEntryProfile(),
@@ -505,7 +508,6 @@ async function loadAll() {
     inspectImportCatalog(),
     inspectDirectCliReadiness(),
     inspectProtocolWireConformance(),
-    refreshEvidence(),
   ]);
 }
 

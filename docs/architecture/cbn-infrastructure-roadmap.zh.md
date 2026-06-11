@@ -297,6 +297,13 @@ Killer Demo slice 已新增可运行证据束：
   Workflow Studio 已直接渲染 script title、promise、runtime story 和每阶段
   copyable commands；`KillerMvpReadiness.mvp_demo_script` 同步把产品演示脚本
   纳入正式检查，`KillerMvpReadiness` 从 16/16 扩展为 17/17。
+- Workflow Studio 首屏加载已从全量并发请求调整为分阶段 bootstrap：先加载
+  health、workflow、contract、agent bundle 和 evidence，再优先加载
+  one-shot `NetworkConnectPackage`，最后补齐 quickstart、launch、SDK、
+  readiness、imports、direct CLI 和 wire conformance 等辅助面板。
+  这样 demo 首屏无需手动点击 Connect，即可展示 `MVP 17/17`、demo script
+  和 5 个产品演示阶段；请求超时同步上调到 15 秒以覆盖 Windows 本地 daemon
+  启动和协议聚合的冷启动波动。
 - Killer demo report 已新增 `communication_trace`：从真实 workflow run result 中提取
   `BridgeMessage argsFrom` handoff，展示 producer task、consumer task、selector、
   BridgeMessage valid 状态、selected value preview、resolved arg preview 和 artifact

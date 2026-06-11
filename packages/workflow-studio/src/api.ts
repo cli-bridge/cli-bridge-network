@@ -1,6 +1,6 @@
 import type { QuickstartRequest, StudioConfig } from "./types";
 
-const REQUEST_TIMEOUT_MS = 8000;
+const REQUEST_TIMEOUT_MS = 15000;
 
 export class StudioApi {
   constructor(
