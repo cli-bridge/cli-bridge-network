@@ -434,6 +434,8 @@ export interface NetworkConnectPackage {
       health?: string;
       inspect_workflow?: string;
       inspect_bridge_contract?: string;
+      inspect_agent_nodes?: string;
+      export_protocols?: string;
       plan_agent_request?: {
         method?: string;
         url?: string;
@@ -474,6 +476,8 @@ export interface ConnectSummary {
   authHeaderStatus: string;
   runEndpoint: string;
   planEndpoint: string;
+  agentNodesEndpoint: string;
+  protocolExportsEndpoint: string;
   quickstartRequestCount: number;
   acceptanceStatus: string;
   acceptanceCheckCount: number;

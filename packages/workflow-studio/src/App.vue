@@ -412,6 +412,8 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
     authHeaderStatus: headers["X-CBN-Session"] ? "X-CBN-Session ready" : "no session header",
     runEndpoint: stringValue(quickstart.entrypoints?.run_workflow?.url) ?? "",
     planEndpoint: stringValue(quickstart.entrypoints?.plan_agent_request?.url) ?? "",
+    agentNodesEndpoint: stringValue(quickstart.entrypoints?.inspect_agent_nodes) ?? "",
+    protocolExportsEndpoint: stringValue(quickstart.entrypoints?.export_protocols) ?? "",
     quickstartRequestCount: Array.isArray(quickstart.requests) ? quickstart.requests.length : 0,
     acceptanceStatus: stringValue(acceptance.status) ?? "not loaded",
     acceptanceCheckCount: numberValue(acceptance.check_count) ?? (Array.isArray(acceptance.checks) ? acceptance.checks.length : 0),
@@ -882,6 +884,14 @@ onMounted(async () => {
           <span v-if="!connectSummary.generatedCapabilities.length">No external capabilities loaded</span>
         </div>
         <div class="quickstart-grid">
+          <div>
+            <span>Agent nodes</span>
+            <code>{{ connectSummary.agentNodesEndpoint || "not loaded" }}</code>
+          </div>
+          <div>
+            <span>Protocol exports</span>
+            <code>{{ connectSummary.protocolExportsEndpoint || "not loaded" }}</code>
+          </div>
           <div>
             <span>Plan request</span>
             <code>{{ connectSummary.planEndpoint || "not loaded" }}</code>
