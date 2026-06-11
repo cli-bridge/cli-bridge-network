@@ -389,6 +389,25 @@ canvas {
   padding: 4px 7px;
 }
 
+.acceptance-list div {
+  grid-template-columns: 46px 112px minmax(0, 1fr) 64px;
+}
+
+.acceptance-list div.passed {
+  border-color: #9fbea0;
+  background: #f6fbf5;
+}
+
+.acceptance-list div.failed {
+  border-color: #cf9f9a;
+  background: #fff8f7;
+}
+
+.acceptance-list div.skipped {
+  border-color: #d5c58f;
+  background: #fffaf0;
+}
+
 .request-sequence code,
 .request-sequence span,
 .request-sequence small,
@@ -396,7 +415,9 @@ canvas {
 .acceptance-list code,
 .acceptance-list span,
 .acceptance-list small,
-.acceptance-list em {
+.acceptance-list em,
+.acceptance-list b,
+.acceptance-list strong {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -425,11 +446,25 @@ canvas {
 
 .request-sequence em,
 .acceptance-list em {
-  grid-column: 1 / 4;
+  grid-column: 1 / -1;
   color: #4c5949;
   font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
   font-size: 10px;
   font-style: normal;
+}
+
+.acceptance-list b {
+  color: #4c5949;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.acceptance-list strong {
+  grid-column: 1 / -1;
+  color: #8b2f28;
+  font-size: 10px;
+  font-weight: 600;
 }
 
 .request-sequence > span,
@@ -526,15 +561,21 @@ canvas {
 }
 
 .request-summary,
-.connect-summary {
+.connect-summary,
+.acceptance-summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 7px;
   margin-bottom: 8px;
 }
 
+.acceptance-summary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .request-summary div,
-.connect-summary div {
+.connect-summary div,
+.acceptance-summary div {
   display: grid;
   min-width: 0;
   gap: 2px;
@@ -545,7 +586,8 @@ canvas {
 }
 
 .request-summary span,
-.connect-summary span {
+.connect-summary span,
+.acceptance-summary span {
   overflow: hidden;
   color: #647160;
   font-size: 10px;
@@ -555,7 +597,8 @@ canvas {
 }
 
 .request-summary strong,
-.connect-summary strong {
+.connect-summary strong,
+.acceptance-summary strong {
   overflow: hidden;
   color: #243026;
   font-size: 12px;

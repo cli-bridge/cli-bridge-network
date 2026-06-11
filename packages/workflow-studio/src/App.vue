@@ -21,6 +21,8 @@ import {
 import { StudioApi } from "./api";
 import { mountWorkflowGraph, type StudioGraph } from "./graph";
 import type {
+  AcceptanceExecutionResult,
+  AcceptanceRunSummary,
   AdapterAgentNodeBundle,
   AgentWorkflowRequestPlan,
   ConnectionAcceptanceCheck,
@@ -65,6 +67,7 @@ const selectedTaskId = ref("");
 const loading = ref("");
 const error = ref("");
 const copiedScript = ref("");
+const acceptanceResults = ref<AcceptanceExecutionResult[]>([]);
 const dock = reactive<DockState>({ events: [], audit: [], artifacts: [] });
 
 const api = computed(() => new StudioApi(config));
@@ -88,6 +91,10 @@ const acceptanceChecks = computed<ConnectionAcceptanceCheck[]>(() => {
   const acceptance = connectPackage.value?.acceptance ?? connectPackage.value?.consumer_quickstart?.acceptance;
   return Array.isArray(acceptance?.checks) ? acceptance.checks : [];
 });
+const acceptanceRunSummary = computed<AcceptanceRunSummary>(() => summarizeAcceptanceResults(acceptanceResults.value, acceptanceChecks.value.length));
+const acceptanceResultByCheck = computed<Record<string, AcceptanceExecutionResult>>(() =>
+  Object.fromEntries(acceptanceResults.value.map((result) => [result.check_id, result])),
+);
 
 async function call(label: string, fn: () => Promise<unknown>): Promise<unknown | null> {
   loading.value = label;
@@ -153,6 +160,70 @@ async function copyText(label: string, text: string) {
     }, 1600);
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
+  }
+}
+
+async function verifyConnectAcceptance() {
+  if (!connectPackage.value) {
+    await inspectConnectPackage();
+  }
+  const checks = acceptanceChecks.value;
+  const requests = quickstartRequests.value;
+  acceptanceResults.value = [];
+  loading.value = "acceptance";
+  error.value = "";
+  try {
+    for (const check of checks) {
+      const result = await runAcceptanceCheck(check, requests);
+      acceptanceResults.value = [...acceptanceResults.value, result];
+    }
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    loading.value = "";
+  }
+  await refreshEvidence();
+}
+
+async function runAcceptanceCheck(
+  check: ConnectionAcceptanceCheck,
+  requests: QuickstartRequest[],
+): Promise<AcceptanceExecutionResult> {
+  const checkId = check.id || check.request_id || "acceptance_check";
+  const requestId = check.request_id || "";
+  const request = requests.find((candidate) => candidate.id === requestId);
+  if (!request) {
+    return {
+      check_id: checkId,
+      request_id: requestId || "unknown",
+      status: "skipped",
+      proves: check.proves,
+      expect: check.expect,
+      error: "matching quickstart request not found",
+    };
+  }
+  try {
+    const response = await api.value.quickstartRequest(request);
+    const evaluation = evaluateAcceptanceExpectation(check.expect ?? {}, response.payload, response.http_status);
+    return {
+      check_id: checkId,
+      request_id: requestId,
+      status: evaluation.passed ? "passed" : "failed",
+      http_status: response.http_status,
+      proves: check.proves,
+      expect: check.expect,
+      evidence: evaluation.evidence,
+      error: evaluation.error,
+    };
+  } catch (err) {
+    return {
+      check_id: checkId,
+      request_id: requestId,
+      status: "failed",
+      proves: check.proves,
+      expect: check.expect,
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
 }
 
@@ -285,6 +356,78 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
     curlScript: stringValue(quickstart.curl_script) ?? "",
     powershellScript: stringValue(quickstart.powershell_script) ?? "",
   };
+}
+
+function summarizeAcceptanceResults(results: AcceptanceExecutionResult[], expectedTotal: number): AcceptanceRunSummary {
+  const passed = results.filter((result) => result.status === "passed").length;
+  const failed = results.filter((result) => result.status === "failed").length;
+  const skipped = results.filter((result) => result.status === "skipped").length;
+  const total = expectedTotal || results.length;
+  const status = results.length === 0 ? "not run" : failed > 0 ? "failed" : skipped > 0 ? "partial" : results.length === total ? "passed" : "running";
+  return { status, passed, failed, skipped, total };
+}
+
+function acceptanceResult(check: ConnectionAcceptanceCheck): AcceptanceExecutionResult | undefined {
+  const key = check.id || check.request_id || "";
+  return acceptanceResultByCheck.value[key];
+}
+
+function evaluateAcceptanceExpectation(
+  expect: Record<string, unknown>,
+  payload: unknown,
+  httpStatus: number,
+): { passed: boolean; evidence: Record<string, unknown>; error?: string } {
+  const evidence: Record<string, unknown> = {};
+  const failures: string[] = [];
+  for (const [key, expected] of Object.entries(expect)) {
+    const actual = acceptanceActualValue(key, payload, httpStatus);
+    const ok = acceptanceValueMatches(key, actual, expected);
+    evidence[key] = { expected, actual, ok };
+    if (!ok) {
+      failures.push(`${key} expected ${String(expected)} but got ${String(actual)}`);
+    }
+  }
+  return {
+    passed: failures.length === 0,
+    evidence,
+    error: failures.length ? failures.join("; ") : undefined,
+  };
+}
+
+function acceptanceActualValue(key: string, payload: unknown, httpStatus: number): unknown {
+  if (key === "http_status") {
+    return httpStatus;
+  }
+  if (!key.startsWith("json.")) {
+    return undefined;
+  }
+  const jsonKey = key.slice("json.".length);
+  if (jsonKey === "type") {
+    return Array.isArray(payload) ? "array" : typeof payload;
+  }
+  if (jsonKey.endsWith("_min")) {
+    return jsonPath(payload, jsonKey.slice(0, -"_min".length));
+  }
+  if (jsonKey.endsWith("_type")) {
+    return typeof jsonPath(payload, jsonKey.slice(0, -"_type".length));
+  }
+  return jsonPath(payload, jsonKey);
+}
+
+function acceptanceValueMatches(key: string, actual: unknown, expected: unknown): boolean {
+  if (key.endsWith("_min") && typeof actual === "number" && typeof expected === "number") {
+    return actual >= expected;
+  }
+  return actual === expected;
+}
+
+function jsonPath(payload: unknown, path: string): unknown {
+  return path.split(".").reduce<unknown>((current, part) => {
+    if (current && typeof current === "object" && part in current) {
+      return (current as Record<string, unknown>)[part];
+    }
+    return undefined;
+  }, payload);
 }
 
 function numberValue(value: unknown): number | null {
@@ -517,13 +660,37 @@ onMounted(async () => {
           <span class="pill-inline">{{ connectSummary.quickstartRequestCount }} requests</span>
           <span class="pill-inline">{{ connectSummary.acceptanceStatus }}</span>
           <span class="pill-inline">{{ connectSummary.acceptanceCheckCount }} checks</span>
+          <span :class="['pill-inline', acceptanceRunSummary.status === 'passed' ? 'ok' : acceptanceRunSummary.status === 'failed' ? 'blocked' : '']">
+            {{ acceptanceRunSummary.status }}
+          </span>
         </div>
         <div class="studio-link-row">
           <button title="Open preconfigured Workflow Studio demo link" :disabled="!connectSummary.studioLink" @click="openStudioLink">
             <ExternalLink :size="15" /> Open Studio
           </button>
+          <button title="Run quickstart acceptance checks against the daemon" :disabled="!acceptanceChecks.length || loading === 'acceptance'" @click="verifyConnectAcceptance">
+            <ShieldCheck :size="15" /> Verify
+          </button>
           <code v-if="connectSummary.studioLink">{{ connectSummary.studioLink }}</code>
           <span v-else>No Workflow Studio link loaded</span>
+        </div>
+        <div class="acceptance-summary">
+          <div>
+            <span>Pass</span>
+            <strong>{{ acceptanceRunSummary.passed }}</strong>
+          </div>
+          <div>
+            <span>Fail</span>
+            <strong>{{ acceptanceRunSummary.failed }}</strong>
+          </div>
+          <div>
+            <span>Skip</span>
+            <strong>{{ acceptanceRunSummary.skipped }}</strong>
+          </div>
+          <div>
+            <span>Total</span>
+            <strong>{{ acceptanceRunSummary.total }}</strong>
+          </div>
         </div>
         <div class="artifact-strip">
           <code v-for="capabilityId in connectSummary.generatedCapabilities" :key="capabilityId">{{ capabilityId }}</code>
@@ -549,11 +716,13 @@ onMounted(async () => {
           <span v-if="!quickstartRequests.length">No quickstart requests loaded</span>
         </div>
         <div class="acceptance-list">
-          <div v-for="check in acceptanceChecks.slice(0, 8)" :key="check.id || check.request_id">
+          <div v-for="check in acceptanceChecks.slice(0, 8)" :key="check.id || check.request_id" :class="acceptanceResult(check)?.status || 'pending'">
             <code>{{ check.request_id || "request" }}</code>
             <span>{{ check.id || "check" }}</span>
             <small>{{ check.proves || "acceptance evidence not loaded" }}</small>
-            <em>{{ pretty(check.expect) }}</em>
+            <b>{{ acceptanceResult(check)?.status || "pending" }}</b>
+            <em>{{ pretty(acceptanceResult(check)?.evidence || check.expect) }}</em>
+            <strong v-if="acceptanceResult(check)?.error">{{ acceptanceResult(check)?.error }}</strong>
           </div>
           <span v-if="!acceptanceChecks.length">No acceptance checklist loaded</span>
         </div>

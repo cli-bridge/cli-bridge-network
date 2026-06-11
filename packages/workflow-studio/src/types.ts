@@ -226,6 +226,17 @@ export interface NetworkConnectionAcceptance {
   failure_recovery?: string[];
 }
 
+export interface AcceptanceExecutionResult {
+  check_id: string;
+  request_id: string;
+  status: "passed" | "failed" | "skipped";
+  http_status?: number;
+  proves?: string;
+  expect?: Record<string, unknown>;
+  evidence?: Record<string, unknown>;
+  error?: string;
+}
+
 export interface NetworkConnectPackage {
   ok?: boolean;
   kind?: "NetworkConnectPackage";
@@ -329,6 +340,14 @@ export interface ConnectSummary {
   acceptanceCheckCount: number;
   curlScript: string;
   powershellScript: string;
+}
+
+export interface AcceptanceRunSummary {
+  status: string;
+  passed: number;
+  failed: number;
+  skipped: number;
+  total: number;
 }
 
 export interface AgentWorkflowRequestPlan {

@@ -1,4 +1,4 @@
-import type { StudioConfig } from "./types";
+import type { QuickstartRequest, StudioConfig } from "./types";
 
 const REQUEST_TIMEOUT_MS = 8000;
 
@@ -53,6 +53,17 @@ export class StudioApi {
     return this.get(`/network/connect-package?${query.toString()}`);
   }
 
+  async quickstartRequest(request: QuickstartRequest): Promise<{ http_status: number; payload: unknown }> {
+    const method = request.method || "GET";
+    const headers = new Headers(request.headers);
+    const init: RequestInit = { method, headers };
+    if (request.json) {
+      headers.set("Content-Type", "application/json");
+      init.body = JSON.stringify(request.json);
+    }
+    return this.requestWithStatus(request.url || "", init);
+  }
+
   async runWorkflow(): Promise<unknown> {
     return this.post("/workflows/run", {
       path: this.config.workflowPath,
@@ -96,6 +107,11 @@ export class StudioApi {
   }
 
   private async request(path: string, init: RequestInit): Promise<unknown> {
+    const result = await this.requestWithStatus(path, init);
+    return result.payload;
+  }
+
+  private async requestWithStatus(pathOrUrl: string, init: RequestInit): Promise<{ http_status: number; payload: unknown }> {
     const headers = new Headers(init.headers);
     if (this.config.sessionToken.trim()) {
       headers.set("X-CBN-Session", this.config.sessionToken.trim());
@@ -103,18 +119,25 @@ export class StudioApi {
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
-      const response = await fetch(`${this.config.daemonUrl.replace(/\/$/, "")}${path}`, {
+      const response = await fetch(this.requestUrl(pathOrUrl), {
         ...init,
         headers,
         signal: controller.signal,
       });
       const payload = await response.json().catch(() => ({ error: "invalid JSON response" }));
       if (!response.ok) {
-        return { ok: false, status: response.status, payload };
+        return { http_status: response.status, payload: { ok: false, status: response.status, payload } };
       }
-      return payload;
+      return { http_status: response.status, payload };
     } finally {
       window.clearTimeout(timeout);
     }
+  }
+
+  private requestUrl(pathOrUrl: string): string {
+    if (/^https?:\/\//i.test(pathOrUrl)) {
+      return pathOrUrl;
+    }
+    return `${this.config.daemonUrl.replace(/\/$/, "")}${pathOrUrl}`;
   }
 }
