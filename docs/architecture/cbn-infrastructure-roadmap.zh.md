@@ -420,6 +420,10 @@ Killer Demo slice 已新增可运行证据束：
 - `cbn_core.import_catalog.cli_registration_surface()` 已成为 CLI 注册入口目录的单一
   事实源；`NetworkConnectPackage.registration_surface` 和新增
   `python -m cbn import catalog`、daemon `GET /imports/catalog` 均复用它。
+- Workflow Studio 已新增 direct import catalog 加载路径：左侧 `Imports` 按钮会直接
+  调用 daemon `GET /imports/catalog`，Connect 面板会展示 direct catalog importers、
+  next commands，并与 one-shot `NetworkConnectPackage.registration_surface` 做数量一致性
+  对比，避免 UI 只依赖 connect package 的嵌套副本。
   外部程序现在无需生成完整 connect package，也能通过 CLI 或 HTTP 只读获取
   importer id、entrypoint、help command、accepts/produces、write/confirm gate、
   dry-run-first policy 和示例命令，降低“把下一个 CLI 接入 CBN”的发现成本。

@@ -30,6 +30,7 @@ import type {
   BridgeContractReport,
   BridgeContractSection,
   BridgeContractSummary,
+  CliRegistrationSurface,
   ConnectDemoStage,
   ConnectionAcceptanceCheck,
   ConnectSummary,
@@ -72,6 +73,7 @@ const agentBundle = ref<AdapterAgentNodeBundle | null>(null);
 const workflowRequestPlan = ref<AgentWorkflowRequestPlan | null>(null);
 const toolCallPlan = ref<AdapterAgentToolCallPlan | null>(null);
 const connectPackage = ref<NetworkConnectPackage | null>(null);
+const importCatalog = ref<CliRegistrationSurface | null>(null);
 const networkVerifyReport = ref<NetworkConnectionAcceptanceReport | null>(null);
 const health = ref<unknown>(null);
 const selectedTaskId = ref("");
@@ -131,6 +133,18 @@ const connectHarnessRoutes = computed<Array<Record<string, unknown>>>(() =>
 const connectRegistrationImporters = computed(() =>
   Array.isArray(connectPackage.value?.registration_surface?.importers) ? connectPackage.value.registration_surface.importers : [],
 );
+const directImportCatalogImporters = computed(() =>
+  Array.isArray(importCatalog.value?.importers) ? importCatalog.value.importers : [],
+);
+const importCatalogNextCommands = computed<string[]>(() =>
+  Array.isArray(importCatalog.value?.next_commands) ? importCatalog.value.next_commands : [],
+);
+const importCatalogParity = computed(() => {
+  if (!importCatalog.value || !connectPackage.value?.registration_surface) return "not compared";
+  return importCatalog.value.importer_count === connectPackage.value.registration_surface.importer_count
+    ? "catalog parity"
+    : "catalog drift";
+});
 const connectNextCommands = computed<string[]>(() => {
   const commands = [
     ...(Array.isArray(connectPackage.value?.next_commands) ? connectPackage.value.next_commands : []),
@@ -208,6 +222,10 @@ async function inspectSetupPlan() {
 
 async function inspectConnectPackage() {
   connectPackage.value = (await call("connect", () => api.value.networkConnectPackage())) as NetworkConnectPackage;
+}
+
+async function inspectImportCatalog() {
+  importCatalog.value = (await call("imports", () => api.value.importCatalog())) as CliRegistrationSurface;
 }
 
 function openStudioLink() {
@@ -340,6 +358,7 @@ async function loadAll() {
     inspectAgentBundle(),
     inspectWorkflowRequestPlan(),
     inspectConnectPackage(),
+    inspectImportCatalog(),
     refreshEvidence(),
   ]);
 }
@@ -745,6 +764,9 @@ onMounted(async () => {
         <button title="Load one-shot network connection package" @click="inspectConnectPackage">
           <Network :size="16" /> Connect
         </button>
+        <button title="Load direct CLI import catalog from daemon" @click="inspectImportCatalog">
+          <FileJson :size="16" /> Imports
+        </button>
         <button title="Open maintainer console" @click="openDashboardConsole">
           <Wrench :size="16" /> Console
         </button>
@@ -973,6 +995,9 @@ onMounted(async () => {
           <span class="pill-inline">{{ connectSummary.quickstartStatus }}</span>
           <span class="pill-inline">{{ connectSummary.authHeaderStatus }}</span>
           <span class="pill-inline">{{ connectSummary.registrationPolicy }}</span>
+          <span :class="['pill-inline', importCatalogParity === 'catalog parity' ? 'ok' : importCatalogParity === 'catalog drift' ? 'blocked' : '']">
+            {{ importCatalogParity }}
+          </span>
           <span class="pill-inline">{{ connectSummary.quickstartRequestCount }} requests</span>
           <span class="pill-inline">{{ connectSummary.acceptanceStatus }}</span>
           <span class="pill-inline">{{ connectSummary.acceptanceCheckCount }} checks</span>
@@ -1008,6 +1033,37 @@ onMounted(async () => {
           </button>
           <code v-if="connectSummary.studioLink">{{ connectSummary.studioLink }}</code>
           <span v-else>No Workflow Studio link loaded</span>
+        </div>
+        <div class="contract-status-grid">
+          <div>
+            <span>Import catalog</span>
+            <strong>{{ importCatalog?.status || "not loaded" }}</strong>
+          </div>
+          <div>
+            <span>Direct imports</span>
+            <strong>{{ importCatalog?.importer_count ?? directImportCatalogImporters.length }}</strong>
+          </div>
+          <div>
+            <span>Policy</span>
+            <strong>{{ importCatalog?.default_policy?.dry_run_by_default ? "dry-run" : "not loaded" }}</strong>
+          </div>
+        </div>
+        <div class="endpoint-list">
+          <div v-for="importer in directImportCatalogImporters.slice(0, 6)" :key="`direct-${importer.id || importer.entrypoint}`">
+            <code>{{ importer.entrypoint || importer.id || "cbn import" }}</code>
+            <span>{{ importer.title || "Direct import catalog" }} · {{ importer.write_gate || importer.default_side_effects || "no writes" }}</span>
+          </div>
+          <span v-if="!directImportCatalogImporters.length">No direct import catalog loaded</span>
+        </div>
+        <div class="next-command-list">
+          <div v-for="(command, index) in importCatalogNextCommands.slice(0, 4)" :key="`import-${command}`">
+            <span>{{ index === 0 ? "Catalog" : `Import ${index + 1}` }}</span>
+            <code>{{ command }}</code>
+            <button title="Copy import catalog command" @click="copyText(`import-catalog-${index}`, command)">
+              <Copy :size="14" /> {{ copiedScript === `import-catalog-${index}` ? "Copied" : "Copy" }}
+            </button>
+          </div>
+          <span v-if="!importCatalogNextCommands.length">No import catalog commands loaded</span>
         </div>
         <div class="acceptance-summary">
           <div>
@@ -1263,7 +1319,7 @@ onMounted(async () => {
             <span>{{ endpoint.path }}</span>
           </div>
         </div>
-        <pre>{{ pretty({ daemon_verify: networkVerifyReport, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, demo_playbook: connectPackage?.demo_playbook, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
+        <pre>{{ pretty({ daemon_verify: networkVerifyReport, import_catalog: importCatalog, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, demo_playbook: connectPackage?.demo_playbook, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
       </section>
       <section>
         <div class="section-title"><Rocket :size="15" /> Killer Demo</div>

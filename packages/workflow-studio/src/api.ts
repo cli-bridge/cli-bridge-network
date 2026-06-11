@@ -60,6 +60,10 @@ export class StudioApi {
     return this.get(`/network/connect-package?${query.toString()}`);
   }
 
+  async importCatalog(): Promise<unknown> {
+    return this.get("/imports/catalog");
+  }
+
   async networkVerify(): Promise<unknown> {
     return this.post("/network/verify", {
       workflow_path: this.config.workflowPath,
