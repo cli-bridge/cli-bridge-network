@@ -170,6 +170,19 @@ ROUTE_SUMMARY = [
 ]
 
 
+NETWORK_PAYLOAD_ROUTES: dict[str, tuple[tuple[str, ...], str | None]] = {
+    "/network/connect-package": ((), None),
+    "/network/quickstart": (("consumer_quickstart",), "NetworkConnectQuickstart"),
+    "/network/acceptance": (("consumer_quickstart", "acceptance"), "NetworkConnectionAcceptance"),
+    "/network/launch-contract": (("consumer_launch_contract",), "ConsumerLaunchContract"),
+    "/network/entry-profile": (("network_entry_profile",), "NetworkEntryProfile"),
+    "/network/harness-agent": (("network_harness_agent",), "NetworkHarnessAgent"),
+    "/network/sdk-bootstrap": (("consumer_sdk_bootstrap",), "ConsumerSdkBootstrap"),
+    "/network/consumer-manifest": (("consumer_manifest",), "NetworkConsumerManifest"),
+    "/network/readiness": (("mvp_readiness",), "KillerMvpReadiness"),
+}
+
+
 class CbnRequestHandler(BaseHTTPRequestHandler):
     server_version = "CBNHTTP/0.1"
 
@@ -434,7 +447,7 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             self._send(200, PluginManager().provenance("cli-anything"))
             return
         if parsed.path == "/plugins/cli-anything/update-check":
-            remote = query.get("remote", ["false"])[0].lower() in {"1", "true", "yes"}
+            remote = _query_bool(query, "remote", default=False)
             result = PluginManager().update_check("cli-anything", remote=remote)
             self._send(200 if result["ready_for_update"] else 409, result)
             return
@@ -532,11 +545,11 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             )
             return
         if parsed.path == "/protocols/matrix":
-            include_workflows = query.get("include_workflows", ["false"])[0].lower() in {"1", "true", "yes"}
+            include_workflows = _query_bool(query, "include_workflows", default=False)
             self._send(200, protocol_matrix(runtime.registry, include_workflows=include_workflows))
             return
         if parsed.path == "/protocols/readiness":
-            include_workflows = query.get("include_workflows", ["true"])[0].lower() in {"1", "true", "yes"}
+            include_workflows = _query_bool(query, "include_workflows", default=True)
             workflow_path = query.get("workflow_path", query.get("path", [None]))[0]
             result = protocol_readiness_report(
                 runtime.registry,
@@ -577,10 +590,10 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 capability_ids=query.get("capability_id") or None,
                 workflow_paths=query.get("workflow_path") or query.get("path") or None,
                 extra_args=query.get("extra_arg", []),
-                dry_run=query.get("dry_run", ["false"])[0].lower() in {"1", "true", "yes"},
-                workflow_dry_run=query.get("workflow_dry_run", ["false"])[0].lower() in {"1", "true", "yes"},
-                workflow_confirmed=query.get("confirmed", ["false"])[0].lower() in {"1", "true", "yes"},
-                include_payloads=query.get("include_payloads", ["false"])[0].lower() in {"1", "true", "yes"},
+                dry_run=_query_bool(query, "dry_run", default=False),
+                workflow_dry_run=_query_bool(query, "workflow_dry_run", default=False),
+                workflow_confirmed=_query_bool(query, "confirmed", default=False),
+                include_payloads=_query_bool(query, "include_payloads", default=False),
             )
             self._send(200 if result["ok"] else 422, result)
             return
@@ -590,10 +603,10 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 runtime.workflow_runner,
                 workflow_paths=query.get("workflow_path") or query.get("path") or None,
                 max_workflows=int(query.get("max_workflows", ["50"])[0]),
-                run=query.get("run", ["false"])[0].lower() in {"1", "true", "yes"},
-                dry_run=query.get("dry_run", ["false"])[0].lower() in {"1", "true", "yes"},
-                confirmed=query.get("confirmed", ["false"])[0].lower() in {"1", "true", "yes"},
-                include_payloads=query.get("include_payloads", ["false"])[0].lower() in {"1", "true", "yes"},
+                run=_query_bool(query, "run", default=False),
+                dry_run=_query_bool(query, "dry_run", default=False),
+                confirmed=_query_bool(query, "confirmed", default=False),
+                include_payloads=_query_bool(query, "include_payloads", default=False),
             )
             self._send(200 if result["ok"] else 422, result)
             return
@@ -607,7 +620,7 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 dry_run=True,
                 confirmed=False,
                 include_payloads=False,
-                run_smoke_suite=query.get("smoke_suite", ["false"])[0].lower() in {"1", "true", "yes"},
+                run_smoke_suite=_query_bool(query, "smoke_suite", default=False),
             )
             self._send(200 if result["ok"] else 422, result)
             return
@@ -616,87 +629,21 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 runtime.registry,
                 runtime.workflow_runner,
                 workflow_path=query.get("workflow_path", query.get("path", [DEFAULT_KILLER_WORKFLOW_PATH]))[0],
-                run=query.get("run", ["true"])[0].lower() in {"1", "true", "yes"},
-                dry_run=query.get("dry_run", ["true"])[0].lower() in {"1", "true", "yes"},
-                confirmed=query.get("confirmed", ["false"])[0].lower() in {"1", "true", "yes"},
-                include_payloads=query.get("include_payloads", ["false"])[0].lower() in {"1", "true", "yes"},
-                run_smoke_suite=query.get("smoke_suite", ["true"])[0].lower() in {"1", "true", "yes"},
+                run=_query_bool(query, "run", default=True),
+                dry_run=_query_bool(query, "dry_run", default=True),
+                confirmed=_query_bool(query, "confirmed", default=False),
+                include_payloads=_query_bool(query, "include_payloads", default=False),
+                run_smoke_suite=_query_bool(query, "smoke_suite", default=True),
                 event_tail=runtime.event_bus.tail(limit=30),
                 audit_tail=runtime.audit_log.tail(limit=30),
                 artifact_list=runtime.artifact_store.list(limit=30),
             )
             self._send(200 if result["ok"] else 422, result)
             return
-        if parsed.path in {
-            "/network/connect-package",
-            "/network/quickstart",
-            "/network/acceptance",
-            "/network/launch-contract",
-            "/network/entry-profile",
-            "/network/harness-agent",
-            "/network/sdk-bootstrap",
-            "/network/consumer-manifest",
-            "/network/readiness",
-        }:
+        if parsed.path in NETWORK_PAYLOAD_ROUTES:
             result = _network_connect_package_from_query(self, runtime, query)
-            if parsed.path == "/network/quickstart":
-                quickstart = result.get("consumer_quickstart", {})
-                self._send(
-                    200 if result["ok"] and quickstart.get("kind") == "NetworkConnectQuickstart" else 422,
-                    quickstart,
-                )
-                return
-            if parsed.path == "/network/acceptance":
-                quickstart = result.get("consumer_quickstart", {})
-                acceptance = quickstart.get("acceptance") if isinstance(quickstart, dict) else {}
-                self._send(
-                    200 if result["ok"] and acceptance.get("kind") == "NetworkConnectionAcceptance" else 422,
-                    acceptance,
-                )
-                return
-            if parsed.path == "/network/launch-contract":
-                launch_contract = result.get("consumer_launch_contract", {})
-                self._send(
-                    200 if result["ok"] and launch_contract.get("kind") == "ConsumerLaunchContract" else 422,
-                    launch_contract,
-                )
-                return
-            if parsed.path == "/network/entry-profile":
-                profile = result.get("network_entry_profile", {})
-                self._send(
-                    200 if result["ok"] and profile.get("kind") == "NetworkEntryProfile" else 422,
-                    profile,
-                )
-                return
-            if parsed.path == "/network/harness-agent":
-                harness_agent = result.get("network_harness_agent", {})
-                self._send(
-                    200 if result["ok"] and harness_agent.get("kind") == "NetworkHarnessAgent" else 422,
-                    harness_agent,
-                )
-                return
-            if parsed.path == "/network/sdk-bootstrap":
-                sdk_bootstrap = result.get("consumer_sdk_bootstrap", {})
-                self._send(
-                    200 if result["ok"] and sdk_bootstrap.get("kind") == "ConsumerSdkBootstrap" else 422,
-                    sdk_bootstrap,
-                )
-                return
-            if parsed.path == "/network/consumer-manifest":
-                consumer_manifest = result.get("consumer_manifest", {})
-                self._send(
-                    200 if result["ok"] and consumer_manifest.get("kind") == "NetworkConsumerManifest" else 422,
-                    consumer_manifest,
-                )
-                return
-            if parsed.path == "/network/readiness":
-                readiness = result.get("mvp_readiness", {})
-                self._send(
-                    200 if result["ok"] and readiness.get("kind") == "KillerMvpReadiness" else 422,
-                    readiness,
-                )
-                return
-            self._send(200 if result["ok"] else 422, result)
+            payload, expected_kind = _network_payload(result, parsed.path)
+            self._send(200 if _network_payload_ok(result, payload, expected_kind) else 422, payload)
             return
         if parsed.path == "/approvals":
             approval_id = query.get("approval_id", [None])[0]
@@ -1268,7 +1215,7 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 smoke_args=tuple(smoke_args_raw),
                 smoke_timeout_seconds=int(payload.get("smoke_timeout_seconds", 10)),
             )
-            self._send(_repair_entrypoint_status(result), result)
+            self._send(_operation_execution_status(result), result)
             return
         if self.path == "/plugins/cli-anything/promotion-gate":
             smoke_args_raw = payload.get("smoke_extra_args", [])
@@ -1312,7 +1259,7 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 run=run,
                 confirmed=bool(payload.get("confirmed", False)),
             )
-            self._send(_adapter_smoke_status(result), result)
+            self._send(_operation_execution_status(result), result)
             return
         if self.path == "/plugins/cli-anything/adaptation-gate":
             run_smoke = bool(payload.get("run_smoke", False))
@@ -1570,6 +1517,22 @@ def _network_connect_package_from_query(
     )
 
 
+def _network_payload(result: dict[str, Any], route: str) -> tuple[Any, str | None]:
+    keys, expected_kind = NETWORK_PAYLOAD_ROUTES[route]
+    payload: Any = result
+    for key in keys:
+        payload = payload.get(key, {}) if isinstance(payload, dict) else {}
+    return payload, expected_kind
+
+
+def _network_payload_ok(result: dict[str, Any], payload: Any, expected_kind: str | None) -> bool:
+    if not result.get("ok"):
+        return False
+    if expected_kind is None:
+        return True
+    return isinstance(payload, dict) and payload.get("kind") == expected_kind
+
+
 def _query_profiles(query: dict[str, list[str]]) -> tuple[str, ...] | None:
     values = query.get("profile") or query.get("profiles") or []
     profiles: list[str] = []
@@ -1581,6 +1544,11 @@ def _query_profiles(query: dict[str, list[str]]) -> tuple[str, ...] | None:
     return tuple(profiles) or None
 
 
+def _query_bool(query: dict[str, list[str]], name: str, *, default: bool) -> bool:
+    raw = query.get(name, [str(default).lower()])[0]
+    return raw.strip().lower() in {"1", "true", "yes"}
+
+
 def _required_string(payload: dict[str, Any], field: str) -> str:
     value = payload.get(field)
     if not isinstance(value, str) or not value:
@@ -1588,19 +1556,7 @@ def _required_string(payload: dict[str, Any], field: str) -> str:
     return value
 
 
-def _repair_entrypoint_status(result: dict[str, Any]) -> int:
-    if not result.get("ok", False):
-        return 502
-    execution = result.get("execution") if isinstance(result.get("execution"), dict) else {}
-    status = execution.get("status")
-    if status in {"blocked", "requires_confirmation"}:
-        return 409
-    if status in {"failed", "timeout", "spawn_failed"}:
-        return 502
-    return 200
-
-
-def _adapter_smoke_status(result: dict[str, Any]) -> int:
+def _operation_execution_status(result: dict[str, Any]) -> int:
     if not result.get("ok", False):
         return 502
     execution = result.get("execution") if isinstance(result.get("execution"), dict) else {}

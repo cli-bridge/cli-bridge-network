@@ -49,111 +49,39 @@ export class StudioApi {
   }
 
   async networkConnectPackage(): Promise<unknown> {
-    const query = new URLSearchParams({
-      workflow_path: this.config.workflowPath,
-      message: this.config.agentMessage,
-      studio_url: this.studioOrigin,
-    });
-    if (this.config.sessionToken.trim()) {
-      query.set("session_token", this.config.sessionToken.trim());
-    }
-    return this.get(`/network/connect-package?${query.toString()}`);
+    return this.networkGet("connect-package");
   }
 
   async networkQuickstart(): Promise<unknown> {
-    const query = new URLSearchParams({
-      workflow_path: this.config.workflowPath,
-      message: this.config.agentMessage,
-      studio_url: this.studioOrigin,
-    });
-    if (this.config.sessionToken.trim()) {
-      query.set("session_token", this.config.sessionToken.trim());
-    }
-    return this.get(`/network/quickstart?${query.toString()}`);
+    return this.networkGet("quickstart");
   }
 
   async networkLaunchContract(): Promise<unknown> {
-    const query = new URLSearchParams({
-      workflow_path: this.config.workflowPath,
-      message: this.config.agentMessage,
-      studio_url: this.studioOrigin,
-    });
-    if (this.config.sessionToken.trim()) {
-      query.set("session_token", this.config.sessionToken.trim());
-    }
-    return this.get(`/network/launch-contract?${query.toString()}`);
+    return this.networkGet("launch-contract");
   }
 
   async networkEntryProfile(): Promise<unknown> {
-    const query = new URLSearchParams({
-      workflow_path: this.config.workflowPath,
-      message: this.config.agentMessage,
-      studio_url: this.studioOrigin,
-    });
-    if (this.config.sessionToken.trim()) {
-      query.set("session_token", this.config.sessionToken.trim());
-    }
-    return this.get(`/network/entry-profile?${query.toString()}`);
+    return this.networkGet("entry-profile");
   }
 
   async networkHarnessAgent(): Promise<unknown> {
-    const query = new URLSearchParams({
-      workflow_path: this.config.workflowPath,
-      message: this.config.agentMessage,
-      studio_url: this.studioOrigin,
-    });
-    if (this.config.sessionToken.trim()) {
-      query.set("session_token", this.config.sessionToken.trim());
-    }
-    return this.get(`/network/harness-agent?${query.toString()}`);
+    return this.networkGet("harness-agent");
   }
 
   async networkSdkBootstrap(): Promise<unknown> {
-    const query = new URLSearchParams({
-      workflow_path: this.config.workflowPath,
-      message: this.config.agentMessage,
-      studio_url: this.studioOrigin,
-    });
-    if (this.config.sessionToken.trim()) {
-      query.set("session_token", this.config.sessionToken.trim());
-    }
-    return this.get(`/network/sdk-bootstrap?${query.toString()}`);
+    return this.networkGet("sdk-bootstrap");
   }
 
   async networkConsumerManifest(): Promise<unknown> {
-    const query = new URLSearchParams({
-      workflow_path: this.config.workflowPath,
-      message: this.config.agentMessage,
-      studio_url: this.studioOrigin,
-    });
-    if (this.config.sessionToken.trim()) {
-      query.set("session_token", this.config.sessionToken.trim());
-    }
-    return this.get(`/network/consumer-manifest?${query.toString()}`);
+    return this.networkGet("consumer-manifest");
   }
 
   async networkAcceptance(): Promise<unknown> {
-    const query = new URLSearchParams({
-      workflow_path: this.config.workflowPath,
-      message: this.config.agentMessage,
-      studio_url: this.studioOrigin,
-    });
-    if (this.config.sessionToken.trim()) {
-      query.set("session_token", this.config.sessionToken.trim());
-    }
-    return this.get(`/network/acceptance?${query.toString()}`);
+    return this.networkGet("acceptance");
   }
 
   async networkReadiness(): Promise<unknown> {
-    const query = new URLSearchParams({
-      workflow_path: this.config.workflowPath,
-      message: this.config.agentMessage,
-      studio_url: this.studioOrigin,
-    });
-    if (this.config.sessionToken.trim()) {
-      query.set("session_token", this.config.sessionToken.trim());
-    }
-    return this.get(`/network/readiness?${query.toString()}`);
+    return this.networkGet("readiness");
   }
 
   async importCatalog(): Promise<unknown> {
@@ -234,6 +162,27 @@ export class StudioApi {
     });
   }
 
+  private async networkGet(path: string): Promise<unknown> {
+    return this.get(`/network/${path}?${this.networkQuery().toString()}`);
+  }
+
+  private networkQuery(): URLSearchParams {
+    const query = new URLSearchParams({
+      workflow_path: this.config.workflowPath,
+      message: this.config.agentMessage,
+      studio_url: this.studioOrigin,
+    });
+    const sessionToken = this.sessionToken();
+    if (sessionToken) {
+      query.set("session_token", sessionToken);
+    }
+    return query;
+  }
+
+  private sessionToken(): string {
+    return this.config.sessionToken.trim();
+  }
+
   private async request(path: string, init: RequestInit): Promise<unknown> {
     const result = await this.requestWithStatus(path, init);
     return result.payload;
@@ -241,8 +190,9 @@ export class StudioApi {
 
   private async requestWithStatus(pathOrUrl: string, init: RequestInit): Promise<{ http_status: number; payload: unknown }> {
     const headers = new Headers(init.headers);
-    if (this.config.sessionToken.trim()) {
-      headers.set("X-CBN-Session", this.config.sessionToken.trim());
+    const sessionToken = this.sessionToken();
+    if (sessionToken) {
+      headers.set("X-CBN-Session", sessionToken);
     }
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
