@@ -239,6 +239,12 @@ Killer Demo slice 已新增可运行证据束：
   `KillerMvpReadiness` 从 13/13 扩展为 14/14。外部程序现在可以先读取
   entry profile，再读取 focused harness agent contract，最后再决定是否调用
   `/adapter-agent/workflow-request-plan` 或直接按 run endpoint dry-run 执行 workflow。
+  Workflow Studio 已新增左侧 `Harness` 操作，会直接调用
+  `/network/harness-agent`，并把 direct harness contract 与
+  `NetworkConnectPackage.network_harness_agent` 按 contract id、status、run endpoint、
+  BridgeMessage route count 和 secret policy 做 parity 对比；Connect 面板同步展示
+  direct harness 状态、route 数、run endpoint 和 parity detail，避免该 focused
+  contract 只存在于 one-shot 大包的嵌套副本中。
 - Killer demo report 已新增 `communication_trace`：从真实 workflow run result 中提取
   `BridgeMessage argsFrom` handoff，展示 producer task、consumer task、selector、
   BridgeMessage valid 状态、selected value preview、resolved arg preview 和 artifact
