@@ -2927,14 +2927,14 @@ def _typescript_consumer_snippet(requests_by_id: dict[str, dict[str, Any]], *, h
 
 def _network_connection_acceptance(*, workflow_path: str, requests: list[dict[str, Any]]) -> dict[str, Any]:
     request_ids = [str(request.get("id", "")) for request in requests if request.get("id")]
-    checks = [
-        _acceptance_check(
+    check_specs = [
+        (
             "daemon_reachable",
             "health",
             "CBN daemon answers authenticated first-call requests.",
             {"http_status": 200, "json.status": "ok"},
         ),
-        _acceptance_check(
+        (
             "launch_contract_readable",
             "launch_contract",
             "External consumers can fetch the redacted minimum launch contract without reading the full package.",
@@ -2946,7 +2946,7 @@ def _network_connection_acceptance(*, workflow_path: str, requests: list[dict[st
                 "json.harness_agent.kind": "NaturalLanguageWorkflowHarness",
             },
         ),
-        _acceptance_check(
+        (
             "entry_profile_readable",
             "entry_profile",
             "External consumers can fetch the redacted stable entry profile before reading optional surfaces.",
@@ -2958,7 +2958,7 @@ def _network_connection_acceptance(*, workflow_path: str, requests: list[dict[st
                 "json.compatibility.internal_bus": "CBN BridgeMessage",
             },
         ),
-        _acceptance_check(
+        (
             "harness_agent_readable",
             "harness_agent",
             "External consumers can fetch the focused natural-language harness agent contract.",
@@ -2971,7 +2971,7 @@ def _network_connection_acceptance(*, workflow_path: str, requests: list[dict[st
                 "json.bridge.route_count_min": 1,
             },
         ),
-        _acceptance_check(
+        (
             "sdk_bootstrap_readable",
             "sdk_bootstrap",
             "External SDKs can fetch the stable bootstrap contract before choosing a larger package.",
@@ -2984,7 +2984,7 @@ def _network_connection_acceptance(*, workflow_path: str, requests: list[dict[st
                 "json.harness.bridge_route_count_min": 1,
             },
         ),
-        _acceptance_check(
+        (
             "consumer_manifest_readable",
             "consumer_manifest",
             "External programs can fetch the redacted persistable manifest used to enter the CBN network.",
@@ -2997,7 +2997,7 @@ def _network_connection_acceptance(*, workflow_path: str, requests: list[dict[st
                 "json.typed_responses.run_workflow": "WorkflowRunReceipt",
             },
         ),
-        _acceptance_check(
+        (
             "import_catalog_readable",
             "import_catalog",
             "External consumers can discover CLI registration importers before choosing a harness.",
@@ -3008,7 +3008,7 @@ def _network_connection_acceptance(*, workflow_path: str, requests: list[dict[st
                 "json.importer_count_min": 1,
             },
         ),
-        _acceptance_check(
+        (
             "direct_cli_readiness_readable",
             "direct_cli_readiness",
             "External consumers can inspect direct CLI typed parser coverage and first-run recovery gates.",
@@ -3021,19 +3021,19 @@ def _network_connection_acceptance(*, workflow_path: str, requests: list[dict[st
                 "json.summary.recovery_type_count_min": 1,
             },
         ),
-        _acceptance_check(
+        (
             "workflow_dag_loads",
             "inspect_workflow",
             "The selected CLI-CLI workflow DAG can be inspected before execution.",
             {"http_status": 200, "json.valid": True, "json.task_count_min": 1},
         ),
-        _acceptance_check(
+        (
             "bridge_contract_routes",
             "inspect_bridge_contract",
             "BridgeMessage selector routes are available for CLI-CLI handoff inspection.",
             {"http_status": 200, "json.ok": True, "json.summary.route_count_min": 1},
         ),
-        _acceptance_check(
+        (
             "agent_nodes_readable",
             "inspect_agent_nodes",
             "Reusable harness agent nodes can be inspected before execution.",
@@ -3046,7 +3046,7 @@ def _network_connection_acceptance(*, workflow_path: str, requests: list[dict[st
                 "json.bridge_message.kind": "BridgeMessage",
             },
         ),
-        _acceptance_check(
+        (
             "protocol_exports_readable",
             "export_protocols",
             "MCP/A2A/ACP workflow descriptors can be exported for external protocol facades.",
@@ -3057,7 +3057,7 @@ def _network_connection_acceptance(*, workflow_path: str, requests: list[dict[st
                 "json.exports.acp.protocol": "acp",
             },
         ),
-        _acceptance_check(
+        (
             "natural_language_harness_plan",
             "plan_agent_request",
             "A reusable harness agent can bind natural language to the workflow run contract.",
@@ -3068,30 +3068,39 @@ def _network_connection_acceptance(*, workflow_path: str, requests: list[dict[st
                 "json.reusable_harness.kind": "NaturalLanguageWorkflowHarness",
             },
         ),
-        _acceptance_check(
+        (
             "workflow_run_receipt",
             "run_workflow",
             "The daemon can produce a workflow run receipt for the CLI-CLI chain.",
             {"http_status": 200, "json.status": "completed", "json.workflow_id_type": "string"},
         ),
-        _acceptance_check(
+        (
             "runtime_events_readable",
             "events",
             "Runtime events include evidence after the workflow call.",
             {"http_status": 200, "json.type": "array", "json.count_min": 1},
         ),
-        _acceptance_check(
+        (
             "audit_evidence_readable",
             "audit",
             "Audit evidence includes records for demo and integration review.",
             {"http_status": 200, "json.type": "array", "json.count_min": 1},
         ),
-        _acceptance_check(
+        (
             "artifacts_readable",
             "artifacts",
             "Produced artifacts can be listed by the consumer after workflow execution.",
             {"http_status": 200, "json.type": "array", "json.count_min": 1},
         ),
+    ]
+    checks = [
+        {
+            "id": check_id,
+            "request_id": request_id,
+            "proves": proves,
+            "expect": expect,
+        }
+        for check_id, request_id, proves, expect in check_specs
     ]
     return {
         "kind": "NetworkConnectionAcceptance",
@@ -3130,21 +3139,6 @@ def _network_connection_acceptance(*, workflow_path: str, requests: list[dict[st
             "If run_workflow fails, rerun plan_agent_request and inspect bridge routes before retrying.",
         ],
     }
-
-
-def _acceptance_check(
-    check_id: str,
-    request_id: str,
-    proves: str,
-    expect: dict[str, Any],
-) -> dict[str, Any]:
-    return {
-        "id": check_id,
-        "request_id": request_id,
-        "proves": proves,
-        "expect": expect,
-    }
-
 
 def _run_acceptance_check(
     check: dict[str, Any],
