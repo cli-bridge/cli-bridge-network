@@ -380,6 +380,11 @@ Killer Demo slice 已新增可运行证据束：
   `GET /network/acceptance` 输出。`consumer_quickstart.entrypoints.acceptance`
   会指向同一份只读 checklist，让外部程序无需解析完整 quickstart 或 connect
   package 也能先拿到要 replay 的验收合同。
+- Workflow Studio 已新增 direct `Accept` 操作，会调用 `/network/acceptance`，
+  并把 direct checklist 与 `NetworkConnectPackage.acceptance` /
+  `consumer_quickstart.acceptance` 按 status、check_count、required_request_ids
+  以及 check id/request id 做 parity 对比；Connect 面板同步展示当前 13 个
+  first-call requests 与 13 个 acceptance checks，避免验收证据只停留在大包嵌套副本。
 - Workflow Studio 的 browser-side `Verify` 已同步支持 `json.count_min` /
   `json.length_min` 和 `json.<field>_count_min`，因此前端 replay quickstart 与
   daemon-side `Daemon Verify` 对同一份 `NetworkConnectionAcceptance` 使用一致的

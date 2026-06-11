@@ -38,6 +38,7 @@ import type {
   DockState,
   EvidenceSummary,
   KillerDemoReport,
+  NetworkConnectionAcceptance,
   NetworkEntryProfile,
   NetworkConnectionAcceptanceReport,
   NetworkConnectPackage,
@@ -78,6 +79,7 @@ const toolCallPlan = ref<AdapterAgentToolCallPlan | null>(null);
 const connectPackage = ref<NetworkConnectPackage | null>(null);
 const launchContract = ref<ConsumerLaunchContract | null>(null);
 const entryProfile = ref<NetworkEntryProfile | null>(null);
+const directAcceptance = ref<NetworkConnectionAcceptance | null>(null);
 const importCatalog = ref<CliRegistrationSurface | null>(null);
 const networkVerifyReport = ref<NetworkConnectionAcceptanceReport | null>(null);
 const health = ref<unknown>(null);
@@ -126,6 +128,14 @@ const connectPresenterFlow = computed(() =>
 const connectLaunchContract = computed<ConsumerLaunchContract>(() => connectPackage.value?.consumer_launch_contract ?? {});
 const directLaunchContract = computed<ConsumerLaunchContract>(() => launchContract.value ?? {});
 const launchContractParity = computed(() => summarizeLaunchContractParity(connectLaunchContract.value, directLaunchContract.value));
+const connectAcceptance = computed<NetworkConnectionAcceptance>(
+  () => connectPackage.value?.acceptance ?? connectPackage.value?.consumer_quickstart?.acceptance ?? {},
+);
+const directAcceptanceContract = computed<NetworkConnectionAcceptance>(() => directAcceptance.value ?? {});
+const directAcceptanceChecks = computed<ConnectionAcceptanceCheck[]>(() =>
+  Array.isArray(directAcceptanceContract.value.checks) ? directAcceptanceContract.value.checks : [],
+);
+const acceptanceParity = computed(() => summarizeAcceptanceParity(connectAcceptance.value, directAcceptanceContract.value));
 const connectLaunchSequence = computed(() =>
   Array.isArray(connectLaunchContract.value.launch_sequence) ? connectLaunchContract.value.launch_sequence : [],
 );
@@ -218,8 +228,7 @@ const quickstartSequenceSteps = computed<QuickstartSequenceStep[]>(() => {
   }));
 });
 const acceptanceChecks = computed<ConnectionAcceptanceCheck[]>(() => {
-  const acceptance = connectPackage.value?.acceptance ?? connectPackage.value?.consumer_quickstart?.acceptance;
-  return Array.isArray(acceptance?.checks) ? acceptance.checks : [];
+  return Array.isArray(connectAcceptance.value.checks) ? connectAcceptance.value.checks : [];
 });
 const acceptanceRunSummary = computed<AcceptanceRunSummary>(() => summarizeAcceptanceResults(acceptanceResults.value, acceptanceChecks.value.length));
 const acceptanceResultByCheck = computed<Record<string, AcceptanceExecutionResult>>(() =>
@@ -283,6 +292,10 @@ async function inspectLaunchContract() {
 
 async function inspectEntryProfile() {
   entryProfile.value = (await call("profile", () => api.value.networkEntryProfile())) as NetworkEntryProfile;
+}
+
+async function inspectAcceptance() {
+  directAcceptance.value = (await call("acceptance", () => api.value.networkAcceptance())) as NetworkConnectionAcceptance;
 }
 
 async function inspectImportCatalog() {
@@ -421,6 +434,7 @@ async function loadAll() {
     inspectConnectPackage(),
     inspectLaunchContract(),
     inspectEntryProfile(),
+    inspectAcceptance(),
     inspectImportCatalog(),
     refreshEvidence(),
   ]);
@@ -717,6 +731,34 @@ function summarizeLaunchContractParity(nested: ConsumerLaunchContract, direct: C
   };
 }
 
+function summarizeAcceptanceParity(nested: NetworkConnectionAcceptance, direct: NetworkConnectionAcceptance): { status: string; detail: string } {
+  if (!direct.kind) {
+    return { status: "acceptance not loaded", detail: "Direct /network/acceptance has not been fetched." };
+  }
+  if (!nested.kind) {
+    return { status: "acceptance direct only", detail: "Direct checklist is loaded; connect package checklist is not loaded yet." };
+  }
+  const sameStatus = nested.status === direct.status;
+  const sameCheckCount = nested.check_count === direct.check_count;
+  const nestedRequired = Array.isArray(nested.required_request_ids) ? nested.required_request_ids.join("|") : "";
+  const directRequired = Array.isArray(direct.required_request_ids) ? direct.required_request_ids.join("|") : "";
+  const sameRequired = nestedRequired === directRequired;
+  const nestedChecks = Array.isArray(nested.checks)
+    ? nested.checks.map((check) => `${check.id || ""}:${check.request_id || ""}`).join("|")
+    : "";
+  const directChecks = Array.isArray(direct.checks)
+    ? direct.checks.map((check) => `${check.id || ""}:${check.request_id || ""}`).join("|")
+    : "";
+  const sameChecks = nestedChecks === directChecks;
+  const matched = sameStatus && sameCheckCount && sameRequired && sameChecks;
+  return {
+    status: matched ? "acceptance parity" : "acceptance drift",
+    detail: matched
+      ? "Direct acceptance checklist matches the one-shot package copy."
+      : "Direct acceptance checklist differs from the one-shot package copy.",
+  };
+}
+
 function summarizeEntryProfileParity(nested: NetworkEntryProfile, direct: NetworkEntryProfile): { status: string; detail: string } {
   if (!direct.kind) {
     return { status: "profile not loaded", detail: "Direct /network/entry-profile has not been fetched." };
@@ -980,6 +1022,9 @@ onMounted(async () => {
         <button title="Load direct consumer launch contract" @click="inspectLaunchContract">
           <ClipboardList :size="16" /> Launch
         </button>
+        <button title="Load direct network acceptance checklist" @click="inspectAcceptance">
+          <ShieldCheck :size="16" /> Accept
+        </button>
         <button title="Load direct CLI import catalog from daemon" @click="inspectImportCatalog">
           <FileJson :size="16" /> Imports
         </button>
@@ -1239,6 +1284,9 @@ onMounted(async () => {
           <span class="pill-inline">{{ connectSummary.quickstartRequestCount }} requests</span>
           <span class="pill-inline">{{ connectSummary.acceptanceStatus }}</span>
           <span class="pill-inline">{{ connectSummary.acceptanceCheckCount }} checks</span>
+          <span :class="['pill-inline', acceptanceParity.status === 'acceptance parity' ? 'ok' : acceptanceParity.status === 'acceptance drift' ? 'blocked' : '']">
+            {{ acceptanceParity.status }}
+          </span>
           <span class="pill-inline">{{ connectSummary.demoReadinessStatus }}</span>
           <span class="pill-inline">{{ connectSummary.demoPlaybookStatus }}</span>
           <span :class="['pill-inline', connectSummary.entryProfileStatus === 'ready' ? 'ok' : 'blocked']">
@@ -1504,6 +1552,22 @@ onMounted(async () => {
         </div>
         <div class="acceptance-summary">
           <div>
+            <span>Direct</span>
+            <strong>{{ directAcceptanceContract.status || "not loaded" }}</strong>
+          </div>
+          <div>
+            <span>Direct checks</span>
+            <strong>{{ directAcceptanceContract.check_count ?? directAcceptanceChecks.length }}</strong>
+          </div>
+          <div>
+            <span>Parity</span>
+            <strong>{{ acceptanceParity.status }}</strong>
+          </div>
+          <div>
+            <span>Signal</span>
+            <strong>{{ directAcceptanceContract.success_signals?.length ?? 0 }}</strong>
+          </div>
+          <div>
             <span>Pass</span>
             <strong>{{ acceptanceRunSummary.passed }}</strong>
           </div>
@@ -1518,6 +1582,24 @@ onMounted(async () => {
           <div>
             <span>Total</span>
             <strong>{{ acceptanceRunSummary.total }}</strong>
+          </div>
+        </div>
+        <div class="quickstart-grid">
+          <div>
+            <span>Acceptance endpoint</span>
+            <code>{{ connectPackage?.consumer_quickstart?.entrypoints?.acceptance || "not loaded" }}</code>
+          </div>
+          <div>
+            <span>Required IDs</span>
+            <code>{{ (directAcceptanceContract.required_request_ids || connectAcceptance.required_request_ids || []).join(", ") || "not loaded" }}</code>
+          </div>
+          <div>
+            <span>Parity detail</span>
+            <code>{{ acceptanceParity.detail }}</code>
+          </div>
+          <div>
+            <span>Recovery</span>
+            <code>{{ (directAcceptanceContract.failure_recovery || []).slice(0, 2).join(" · ") || "not loaded" }}</code>
           </div>
         </div>
         <div class="daemon-verify-summary">
@@ -1723,7 +1805,7 @@ onMounted(async () => {
         </div>
         <div class="section-title"><FileJson :size="15" /> Raw Quickstart Requests</div>
         <div class="request-sequence">
-          <div v-for="request in quickstartRequests.slice(0, 12)" :key="request.id || request.url">
+          <div v-for="request in quickstartRequests.slice(0, 13)" :key="request.id || request.url">
             <code>{{ request.method || "GET" }}</code>
             <span>{{ request.id || "request" }}</span>
             <small>{{ request.url || "not loaded" }}</small>
@@ -1746,7 +1828,7 @@ onMounted(async () => {
           <span v-if="!quickstartSdkSnippets.length">No consumer snippets loaded</span>
         </div>
         <div class="acceptance-list">
-          <div v-for="check in acceptanceChecks.slice(0, 10)" :key="check.id || check.request_id" :class="acceptanceResult(check)?.status || 'pending'">
+          <div v-for="check in acceptanceChecks.slice(0, 13)" :key="check.id || check.request_id" :class="acceptanceResult(check)?.status || 'pending'">
             <code>{{ check.request_id || "request" }}</code>
             <span>{{ check.id || "check" }}</span>
             <small>{{ check.proves || "acceptance evidence not loaded" }}</small>
@@ -1790,7 +1872,7 @@ onMounted(async () => {
             <span>{{ endpoint.path }}</span>
           </div>
         </div>
-        <pre>{{ pretty({ daemon_verify: networkVerifyReport, import_catalog: importCatalog, direct_entry_profile: entryProfile, entry_profile_parity: entryProfileParity, direct_launch_contract: launchContract, launch_contract_parity: launchContractParity, network_entry_profile: connectPackage?.network_entry_profile, consumer_launch_contract: connectPackage?.consumer_launch_contract, mvp_readiness: connectPackage?.mvp_readiness, mvp_presenter_brief: connectPackage?.mvp_presenter_brief, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, demo_playbook: connectPackage?.demo_playbook, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, plugins: connectPackage?.plugins, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
+        <pre>{{ pretty({ daemon_verify: networkVerifyReport, import_catalog: importCatalog, direct_entry_profile: entryProfile, entry_profile_parity: entryProfileParity, direct_launch_contract: launchContract, launch_contract_parity: launchContractParity, direct_acceptance: directAcceptance, acceptance_parity: acceptanceParity, network_entry_profile: connectPackage?.network_entry_profile, consumer_launch_contract: connectPackage?.consumer_launch_contract, mvp_readiness: connectPackage?.mvp_readiness, mvp_presenter_brief: connectPackage?.mvp_presenter_brief, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, demo_playbook: connectPackage?.demo_playbook, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, plugins: connectPackage?.plugins, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
       </section>
       <section>
         <div class="section-title"><Rocket :size="15" /> Killer Demo</div>
