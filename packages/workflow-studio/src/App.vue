@@ -30,6 +30,7 @@ import type {
   DockState,
   EvidenceSummary,
   KillerDemoReport,
+  NetworkConnectionAcceptanceReport,
   NetworkConnectPackage,
   ProtocolSummary,
   QuickstartRequest,
@@ -62,6 +63,7 @@ const demoReport = ref<KillerDemoReport | null>(null);
 const agentBundle = ref<AdapterAgentNodeBundle | null>(null);
 const workflowRequestPlan = ref<AgentWorkflowRequestPlan | null>(null);
 const connectPackage = ref<NetworkConnectPackage | null>(null);
+const networkVerifyReport = ref<NetworkConnectionAcceptanceReport | null>(null);
 const health = ref<unknown>(null);
 const selectedTaskId = ref("");
 const loading = ref("");
@@ -182,6 +184,17 @@ async function verifyConnectAcceptance() {
   } finally {
     loading.value = "";
   }
+  await refreshEvidence();
+}
+
+async function verifyDaemonAcceptance() {
+  if (!connectPackage.value) {
+    await inspectConnectPackage();
+  }
+  networkVerifyReport.value = (await call("network verify", () => api.value.networkVerify())) as NetworkConnectionAcceptanceReport;
+  acceptanceResults.value = Array.isArray(networkVerifyReport.value?.results)
+    ? networkVerifyReport.value.results
+    : [];
   await refreshEvidence();
 }
 
@@ -671,6 +684,9 @@ onMounted(async () => {
           <button title="Run quickstart acceptance checks against the daemon" :disabled="!acceptanceChecks.length || loading === 'acceptance'" @click="verifyConnectAcceptance">
             <ShieldCheck :size="15" /> Verify
           </button>
+          <button title="Ask the daemon to run the full network acceptance report" :disabled="loading === 'network verify'" @click="verifyDaemonAcceptance">
+            <Network :size="15" /> Daemon Verify
+          </button>
           <code v-if="connectSummary.studioLink">{{ connectSummary.studioLink }}</code>
           <span v-else>No Workflow Studio link loaded</span>
         </div>
@@ -690,6 +706,24 @@ onMounted(async () => {
           <div>
             <span>Total</span>
             <strong>{{ acceptanceRunSummary.total }}</strong>
+          </div>
+        </div>
+        <div class="daemon-verify-summary">
+          <div>
+            <span>Daemon report</span>
+            <strong>{{ networkVerifyReport?.status || "not run" }}</strong>
+          </div>
+          <div>
+            <span>Requests</span>
+            <strong>{{ networkVerifyReport?.summary?.request_count ?? 0 }}</strong>
+          </div>
+          <div>
+            <span>Checks</span>
+            <strong>{{ networkVerifyReport?.summary?.check_count ?? 0 }}</strong>
+          </div>
+          <div>
+            <span>Base URL</span>
+            <strong>{{ networkVerifyReport?.base_url || "daemon" }}</strong>
           </div>
         </div>
         <div class="artifact-strip">
@@ -750,7 +784,7 @@ onMounted(async () => {
             <span>{{ endpoint.path }}</span>
           </div>
         </div>
-        <pre>{{ pretty({ workflow_studio: connectPackage?.workflow_studio, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
+        <pre>{{ pretty({ daemon_verify: networkVerifyReport, workflow_studio: connectPackage?.workflow_studio, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
       </section>
       <section>
         <div class="section-title"><Rocket :size="15" /> Killer Demo</div>

@@ -53,6 +53,15 @@ export class StudioApi {
     return this.get(`/network/connect-package?${query.toString()}`);
   }
 
+  async networkVerify(): Promise<unknown> {
+    return this.post("/network/verify", {
+      workflow_path: this.config.workflowPath,
+      studio_url: this.studioOrigin,
+      message: this.config.agentMessage,
+      timeout_seconds: 8,
+    });
+  }
+
   async quickstartRequest(request: QuickstartRequest): Promise<{ http_status: number; payload: unknown }> {
     const method = request.method || "GET";
     const headers = new Headers(request.headers);

@@ -300,6 +300,10 @@ Killer Demo slice 已新增可运行证据束：
 - daemon 已新增 `POST /network/verify`，外部程序可不依赖本地 Python CLI，直接用
   HTTP 触发同一份 live acceptance report；`NetworkConnectPackage.daemon_endpoints`
   也会暴露该验收入口。
+- Workflow Studio Connect 面板已新增 `Daemon Verify` 操作，直接调用
+  `POST /network/verify` 并展示 `NetworkConnectionAcceptanceReport` 摘要，同时复用
+  report results 刷新 check 列表；现有 `Verify` 保留为 browser-side quickstart
+  replay，用于区分前端可达性和 daemon-side 一键验收。
 - CLI 已新增 `python -m cbn network connect-package` 只读入口，输出同一份
   `NetworkConnectPackage`。外部程序无需先接 daemon/WebUI，也能一次性读取
   AgentCliCard/RunReceipt contract、daemon endpoint catalog、protocol facade 和

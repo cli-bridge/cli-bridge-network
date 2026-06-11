@@ -306,7 +306,7 @@ canvas {
 
 .studio-link-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto auto minmax(0, 1fr);
   align-items: center;
   gap: 7px;
   margin-bottom: 8px;
@@ -573,9 +573,17 @@ canvas {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.daemon-verify-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+  margin-bottom: 8px;
+}
+
 .request-summary div,
 .connect-summary div,
-.acceptance-summary div {
+.acceptance-summary div,
+.daemon-verify-summary div {
   display: grid;
   min-width: 0;
   gap: 2px;
@@ -587,7 +595,8 @@ canvas {
 
 .request-summary span,
 .connect-summary span,
-.acceptance-summary span {
+.acceptance-summary span,
+.daemon-verify-summary span {
   overflow: hidden;
   color: #647160;
   font-size: 10px;
@@ -598,7 +607,8 @@ canvas {
 
 .request-summary strong,
 .connect-summary strong,
-.acceptance-summary strong {
+.acceptance-summary strong,
+.daemon-verify-summary strong {
   overflow: hidden;
   color: #243026;
   font-size: 12px;

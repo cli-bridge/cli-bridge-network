@@ -237,6 +237,25 @@ export interface AcceptanceExecutionResult {
   error?: string;
 }
 
+export interface NetworkConnectionAcceptanceReport {
+  ok?: boolean;
+  kind?: "NetworkConnectionAcceptanceReport";
+  status?: string;
+  workflow_path?: string;
+  base_url?: string;
+  summary?: {
+    connect_package_ok?: boolean;
+    request_count?: number;
+    check_count?: number;
+    passed?: number;
+    failed?: number;
+    skipped?: number;
+  };
+  acceptance?: NetworkConnectionAcceptance;
+  results?: AcceptanceExecutionResult[];
+  next_commands?: string[];
+}
+
 export interface NetworkConnectPackage {
   ok?: boolean;
   kind?: "NetworkConnectPackage";
