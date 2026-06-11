@@ -278,7 +278,9 @@ Killer Demo slice 已新增可运行证据束：
   card 摘要，作为“其他程序一次性接入网络”的产品化展示入口。该面板也会直接
   展示 one-shot package 内的结构化 internal bus contract sections，让 demo 现场
   能看到外部程序接入后会进入 ToolManifest、BridgeMessage、ArtifactRecord、
-  WorkflowSelector 哪些内部对象边界。
+  WorkflowSelector 哪些内部对象边界；同时展示 one-shot package 内的 AgentSession、
+  AgentCard、AgentHarness、AgentTask 和 AgentBridgeMessage 摘要，便于说明
+  harness agent 如何作为 workflow node 进入总线。
 - Connect Package 面板已把 `NetworkConnectPackage.workflow_studio` 提升为一等
   展示：可直接打开预配置 Workflow Studio demo link，并显示 session token 是否
   已包含、dry-run/live 模式和原始 `WorkflowStudioDemoLink` payload，便于外部程序

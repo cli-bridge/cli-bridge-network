@@ -735,12 +735,19 @@ canvas {
 
 .agent-summary {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
   color: #53624e;
   font-size: 12px;
+}
+
+.agent-summary span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .agent-card-list {

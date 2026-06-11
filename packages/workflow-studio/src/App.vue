@@ -89,6 +89,10 @@ const bridgeContractSummary = computed<BridgeContractSummary>(() => summarizeBri
 const workflowRequestSummary = computed<WorkflowRequestSummary>(() => summarizeWorkflowRequestPlan(workflowRequestPlan.value));
 const connectSummary = computed<ConnectSummary>(() => summarizeConnectPackage(connectPackage.value));
 const connectContractSummary = computed<BridgeContractSummary>(() => summarizeConnectContracts(connectPackage.value));
+const connectAgentBundle = computed(() => connectPackage.value?.agent_node_bundle ?? {});
+const connectAgentCards = computed(() => (Array.isArray(connectAgentBundle.value.cards) ? connectAgentBundle.value.cards : []));
+const connectAgentHarnesses = computed(() => (Array.isArray(connectAgentBundle.value.harnesses) ? connectAgentBundle.value.harnesses : []));
+const connectAgentTasks = computed(() => (Array.isArray(connectAgentBundle.value.tasks) ? connectAgentBundle.value.tasks : []));
 const connectEndpoints = computed(() => (Array.isArray(connectPackage.value?.daemon_endpoints) ? connectPackage.value.daemon_endpoints : []));
 const quickstartRequests = computed<QuickstartRequest[]>(() =>
   Array.isArray(connectPackage.value?.consumer_quickstart?.requests)
@@ -841,6 +845,38 @@ onMounted(async () => {
             <em>{{ section.required }}</em>
           </div>
         </div>
+        <div class="agent-summary">
+          <span :class="['pill-inline', connectAgentBundle.ok ? 'ok' : 'blocked']">{{ connectAgentBundle.status || "agent nodes not loaded" }}</span>
+          <span>{{ connectAgentCards.length }} cards</span>
+          <span>{{ connectAgentHarnesses.length }} harnesses</span>
+          <span>{{ connectAgentTasks.length }} tasks</span>
+        </div>
+        <div class="quickstart-grid">
+          <div>
+            <span>Agent session</span>
+            <code>{{ connectAgentBundle.session?.agent_id || "not loaded" }}</code>
+          </div>
+          <div>
+            <span>Agent bridge</span>
+            <code>{{ connectAgentBundle.bridge_message?.channel || connectAgentBundle.bridge_message_channel || "not loaded" }}</code>
+          </div>
+        </div>
+        <div class="agent-card-list">
+          <div v-for="card in connectAgentCards.slice(0, 4)" :key="card.id || card.title" class="agent-card">
+            <strong>{{ card.title || card.id || "AgentCard" }}</strong>
+            <span>{{ card.status || card.risk || "unknown" }}</span>
+            <code>{{ card.role || card.id || "agent" }} · {{ (card.capabilities || []).slice(0, 3).join(", ") || "BridgeMessage" }}</code>
+          </div>
+          <span v-if="!connectAgentCards.length">No agent cards loaded</span>
+        </div>
+        <div class="agent-card-list">
+          <div v-for="harness in connectAgentHarnesses.slice(0, 4)" :key="harness.id || harness.agent_id" class="agent-card">
+            <strong>{{ harness.id || "AgentHarness" }}</strong>
+            <span>{{ harness.kind || "AgentHarness" }}</span>
+            <code>{{ (harness.accepts || []).join(", ") || "BridgeMessage" }} -> {{ (harness.emits || []).join(", ") || "BridgeMessage" }}</code>
+          </div>
+          <span v-if="!connectAgentHarnesses.length">No agent harnesses loaded</span>
+        </div>
         <div class="artifact-strip">
           <code v-for="capabilityId in connectSummary.generatedCapabilities" :key="capabilityId">{{ capabilityId }}</code>
           <span v-if="!connectSummary.generatedCapabilities.length">No external capabilities loaded</span>
@@ -899,7 +935,7 @@ onMounted(async () => {
             <span>{{ endpoint.path }}</span>
           </div>
         </div>
-        <pre>{{ pretty({ daemon_verify: networkVerifyReport, workflow_studio: connectPackage?.workflow_studio, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
+        <pre>{{ pretty({ daemon_verify: networkVerifyReport, workflow_studio: connectPackage?.workflow_studio, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
       </section>
       <section>
         <div class="section-title"><Rocket :size="15" /> Killer Demo</div>
