@@ -51,6 +51,7 @@ def network_connect_package(
         confirmed=False,
     )
     external_contract = _external_agent_cli_contract()
+    internal_contract = _internal_bridge_contract(bridge_contract)
     protocol_summary = _protocol_summary(protocol_exports)
     endpoint_catalog = _endpoint_catalog(base_url=base_url, workflow_path=workflow_path)
     studio_link = workflow_studio_demo_link(
@@ -97,9 +98,14 @@ def network_connect_package(
                 "bridge_message": "bridge.dev/v1alpha1 BridgeMessage",
                 "artifact": "CBN Artifact records",
                 "workflow_selector": "argsFrom selector records",
+                "protocol": internal_contract.get("protocol_name"),
+                "api_version": internal_contract.get("apiVersion"),
+                "contract_sections": sorted((internal_contract.get("contracts") or {}).keys()),
+                "contracts": internal_contract.get("contracts", {}),
                 "bridge_contract": {
                     "ok": bridge_contract.get("ok"),
                     "summary": bridge_contract.get("summary", {}),
+                    "contract": internal_contract,
                 },
             },
             "external": external_contract,
@@ -114,6 +120,13 @@ def network_connect_package(
         "consumer_quickstart": quickstart,
         "next_commands": _next_commands(workflow_path),
     }
+
+
+def _internal_bridge_contract(bridge_contract: dict[str, Any]) -> dict[str, Any]:
+    contract = bridge_contract.get("contract")
+    if not isinstance(contract, dict):
+        return {}
+    return contract
 
 
 def workflow_studio_demo_link(

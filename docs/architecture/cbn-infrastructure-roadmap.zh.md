@@ -257,6 +257,11 @@ Killer Demo slice 已新增可运行证据束：
   `NetworkConnectPackage`：汇总 AgentCliCard/RunReceipt 外部 contract、
   ToolManifest/BridgeMessage/Artifact/selector 内部 contract、daemon endpoint
   catalog、workflow 摘要、MCP/A2A/ACP protocol export 摘要和 Agent node 摘要。
+  其中 `contracts.internal.contracts` 直接复用
+  `workflow_bridge_contract_report(...).contract.contracts` 的结构化段落，外部程序
+  可一次性读取 ToolManifest、BridgeMessage、ArtifactRecord 和 WorkflowSelector
+  的 kind、owner、scope、required fields 与 routing/validation 规则；旧的
+  `contracts.internal.tool_manifest` 等字符串键保留为兼容摘要。
   daemon 已暴露 `GET /network/connect-package`，供外部程序一次性读取“如何接入
   CBN 网络”的最小包，不执行 workflow、不写入状态。
 - Workflow Studio 已消费 `GET /network/connect-package`：左侧新增 `Connect`

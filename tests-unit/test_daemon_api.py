@@ -126,6 +126,13 @@ class DaemonApiTests(unittest.TestCase):
             self.assertEqual(payload["contracts"]["external"]["protocol"], "agent-cli-contract")
             self.assertEqual(payload["contracts"]["external"]["accepted_kinds"], ["AgentCliCard", "RunReceipt"])
             self.assertEqual(payload["contracts"]["external"]["receipt_mapping"]["message_kind"], "BridgeMessage")
+            internal = payload["contracts"]["internal"]
+            self.assertEqual(internal["protocol"], "CBN BridgeMessage CLI-to-CLI Protocol")
+            self.assertEqual(internal["api_version"], "bridge.dev/v1alpha1")
+            self.assertEqual(internal["contracts"]["tool_manifest"]["kind"], "ToolManifest")
+            self.assertEqual(internal["contracts"]["bridge_message"]["kind"], "BridgeMessage")
+            self.assertEqual(internal["contracts"]["artifact"]["kind"], "ArtifactRecord")
+            self.assertEqual(internal["contracts"]["workflow_selector"]["kind"], "WorkflowSelector")
             self.assertGreaterEqual(payload["summary"]["bridge_route_count"], 1)
             self.assertIn("mcp", payload["protocols"]["targets"])
             self.assertEqual(payload["protocols"]["a2a"]["skill_count"], 1)

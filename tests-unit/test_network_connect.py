@@ -23,6 +23,21 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(payload["contracts"]["external"]["protocol"], "agent-cli-contract")
         self.assertEqual(payload["contracts"]["external"]["accepted_kinds"], ["AgentCliCard", "RunReceipt"])
         self.assertEqual(payload["contracts"]["external"]["receipt_mapping"]["message_channel"], "agent-cli.run.receipt")
+        internal = payload["contracts"]["internal"]
+        self.assertEqual(internal["protocol"], "CBN BridgeMessage CLI-to-CLI Protocol")
+        self.assertEqual(internal["api_version"], "bridge.dev/v1alpha1")
+        self.assertEqual(
+            internal["contract_sections"],
+            ["artifact", "bridge_message", "tool_manifest", "workflow_selector"],
+        )
+        self.assertEqual(internal["contracts"]["tool_manifest"]["kind"], "ToolManifest")
+        self.assertEqual(internal["contracts"]["bridge_message"]["kind"], "BridgeMessage")
+        self.assertEqual(internal["contracts"]["artifact"]["kind"], "ArtifactRecord")
+        self.assertEqual(internal["contracts"]["workflow_selector"]["kind"], "WorkflowSelector")
+        self.assertEqual(
+            internal["bridge_contract"]["contract"]["contracts"]["bridge_message"]["kind"],
+            "BridgeMessage",
+        )
         self.assertGreaterEqual(payload["summary"]["bridge_route_count"], 1)
         self.assertTrue(payload["summary"]["agent_workflow_request_ready"])
         self.assertEqual(payload["protocols"]["mcp"]["workflow_tool_count"], 1)
@@ -129,6 +144,7 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["summary"]["recommended_next_action"], "call_daemon_endpoints")
         self.assertEqual(payload["contracts"]["external"]["generated_capability_ids"], ["example.macrocli.backends"])
+        self.assertEqual(payload["contracts"]["internal"]["contracts"]["artifact"]["kind"], "ArtifactRecord")
         self.assertEqual(payload["agent_workflow_request"]["run"]["http"]["url"], "http://127.0.0.1:8787/workflows/run")
         self.assertEqual(payload["workflow_studio"]["daemon_url"], "http://127.0.0.1:8787")
         self.assertEqual(payload["consumer_quickstart"]["entrypoints"]["run_workflow"]["url"], "http://127.0.0.1:8787/workflows/run")
