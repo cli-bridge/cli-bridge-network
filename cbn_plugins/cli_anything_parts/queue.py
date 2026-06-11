@@ -4,6 +4,18 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
+from cbn_plugins.cli_anything_parts.lifecycle import (
+    attach_candidate_readiness,
+    refresh_candidate_lifecycle,
+)
+from cbn_plugins.cli_anything_parts.market import (
+    mark_candidate_collisions,
+    market_records_from_result,
+)
+
+
+PLUGIN_ID = "cli-anything"
+
 
 class CommandResultLike(Protocol):
     argv: tuple[str, ...]
@@ -14,6 +26,239 @@ class CommandResultLike(Protocol):
 
     def as_dict(self) -> dict[str, Any]:
         ...
+
+
+def candidate_harnesses(
+    hub: Any,
+    query: str | None = None,
+    limit: int = 50,
+    with_probes: bool = False,
+    compact: bool = False,
+) -> dict[str, Any]:
+    result = hub.search_market(query) if query else hub.list_market()
+    records = market_records_from_result(result.parsed_json)
+    if result.exit_code != 0:
+        return {
+            "ok": False,
+            "plugin_id": PLUGIN_ID,
+            "query": query,
+            "limit": max(0, min(limit, 500)),
+            "with_probes": with_probes,
+            "compact": compact,
+            "error": "CLI-Anything market command failed",
+            "market": market_command_payload(result, compact=compact),
+            "selected_count": 0,
+            "install_candidate_count": 0,
+            "blocked_count": 0,
+            "candidates": [],
+            "candidate_summary": [],
+        }
+    if records is None:
+        return {
+            "ok": False,
+            "plugin_id": PLUGIN_ID,
+            "query": query,
+            "limit": max(0, min(limit, 500)),
+            "with_probes": with_probes,
+            "compact": compact,
+            "error": "CLI-Anything market command did not return a supported JSON list shape",
+            "market": market_command_payload(result, compact=compact),
+            "selected_count": 0,
+            "install_candidate_count": 0,
+            "blocked_count": 0,
+            "candidates": [],
+            "candidate_summary": [],
+        }
+    bounded_limit = max(0, min(limit, 500))
+    candidates = [
+        hub._candidate_from_market_record(record, market_index=index)
+        for index, record in enumerate(records)
+    ]
+    mark_candidate_collisions(candidates)
+    for item in candidates:
+        refresh_candidate_lifecycle(item)
+        if with_probes:
+            attach_candidate_readiness(item)
+    candidates.sort(
+        key=lambda item: (
+            not bool(item.get("install_candidate")),
+            len(item.get("blockers", [])),
+            item.get("harness_name") or "",
+            item.get("market_index", 0),
+        )
+    )
+    selected = candidates[:bounded_limit]
+    for rank, item in enumerate(selected, start=1):
+        item["rank"] = rank
+    install_candidate_count = sum(1 for item in selected if item.get("install_candidate"))
+    blocked_count = sum(1 for item in selected if not item.get("install_candidate"))
+    probe_ready_count = sum(
+        1
+        for item in selected
+        if isinstance(item.get("readiness"), dict) and item["readiness"].get("ready")
+    )
+    probe_blocked_count = sum(
+        1
+        for item in selected
+        if isinstance(item.get("readiness"), dict) and item["readiness"].get("probe_blocker_count", 0) > 0
+    )
+    return {
+        "ok": True,
+        "plugin_id": PLUGIN_ID,
+        "query": query,
+        "limit": bounded_limit,
+        "with_probes": with_probes,
+        "compact": compact,
+        "market_count": len(records),
+        "evaluated_count": len(candidates),
+        "selected_count": len(selected),
+        "install_candidate_count": install_candidate_count,
+        "blocked_count": blocked_count,
+        "probe_ready_count": probe_ready_count if with_probes else None,
+        "probe_blocked_count": probe_blocked_count if with_probes else None,
+        "market": market_command_payload(result, compact=compact),
+        "candidates": selected,
+        "candidate_summary": candidate_summary(selected),
+        "next_commands": [
+            "python -m cbn plugin candidates cli-anything --query <query> --limit 20 --compact",
+            "python -m cbn plugin candidates cli-anything --query <query> --limit 20 --with-probes --compact",
+            "python -m cbn plugin evaluate-harness cli-anything <harness>",
+            "python -m cbn plugin adapt-harness cli-anything <harness> --from-market --write",
+            "python -m cbn plugin harness cli-anything install <harness> --yes",
+        ],
+    }
+
+
+def market_install_queue(
+    hub: Any,
+    query: str | None = None,
+    limit: int = 50,
+    max_installs: int = 10,
+    include_blocked: bool = True,
+) -> dict[str, Any]:
+    candidate_scan = hub.candidate_harnesses(
+        query=query,
+        limit=limit,
+        with_probes=True,
+        compact=True,
+    )
+    bounded_max_installs = max(0, min(max_installs, 100))
+    if not candidate_scan.get("ok"):
+        return {
+            "ok": False,
+            "plugin_id": PLUGIN_ID,
+            "kind": "CliAnythingMarketInstallQueue",
+            "query": query,
+            "limit": max(0, min(limit, 500)),
+            "max_installs": bounded_max_installs,
+            "include_blocked": include_blocked,
+            "error": candidate_scan.get("error", "CLI-Anything candidate scan failed"),
+            "summary": {
+                "candidate_count": 0,
+                "queued_count": 0,
+                "blocked_count": 0,
+                "skipped_count": 0,
+            },
+            "queue": [],
+            "blocked": [],
+            "skipped": [],
+            "candidate_scan": candidate_scan,
+        }
+
+    queue = []
+    blocked = []
+    skipped = []
+    candidates = candidate_scan.get("candidates", [])
+    if not isinstance(candidates, list):
+        candidates = []
+
+    for item in candidates:
+        if not isinstance(item, dict):
+            continue
+        harness_name = item.get("harness_name")
+        if not isinstance(harness_name, str) or not harness_name:
+            blocked.append(install_queue_blocked_entry(item, "market record is missing harness_name"))
+            continue
+        gates = item.get("gates") if isinstance(item.get("gates"), dict) else {}
+        if bool(item.get("install_candidate")) and not bool(gates.get("launch_ready")):
+            evaluation = hub.evaluate_harness(harness_name, from_market=True)
+            if not evaluation.get("ok"):
+                blocked.append(
+                    install_queue_blocked_entry(
+                        item,
+                        "harness evaluation failed before queueing",
+                        evaluation=evaluation,
+                    )
+                )
+                continue
+            eval_gates = evaluation.get("gates") if isinstance(evaluation.get("gates"), dict) else {}
+            if bool(eval_gates.get("launch_ready")):
+                skipped.append(
+                    install_queue_skipped_entry(
+                        item,
+                        "harness is already launch-ready",
+                        evaluation=evaluation,
+                    )
+                )
+                continue
+            if not bool(evaluation.get("install_candidate")):
+                blocked.append(
+                    install_queue_blocked_entry(
+                        item,
+                        "harness evaluation blockers must be resolved first",
+                        evaluation=evaluation,
+                    )
+                )
+                continue
+            if len(queue) >= bounded_max_installs:
+                skipped.append(
+                    install_queue_skipped_entry(
+                        item,
+                        "max_installs limit reached",
+                        evaluation=evaluation,
+                    )
+                )
+                continue
+            queue.append(
+                install_queue_entry(
+                    item,
+                    install_plan=hub.harness_plan("install", harness_name).as_dict(),
+                    evaluation=evaluation,
+                )
+            )
+        elif bool(item.get("install_candidate")) and bool(gates.get("launch_ready")):
+            skipped.append(install_queue_skipped_entry(item, "harness is already launch-ready"))
+        elif include_blocked:
+            blocked.append(install_queue_blocked_entry(item, "candidate blockers must be resolved first"))
+
+    return {
+        "ok": True,
+        "plugin_id": PLUGIN_ID,
+        "kind": "CliAnythingMarketInstallQueue",
+        "query": query,
+        "limit": candidate_scan.get("limit"),
+        "max_installs": bounded_max_installs,
+        "include_blocked": include_blocked,
+        "summary": {
+            "candidate_count": len(candidates),
+            "install_candidate_count": candidate_scan.get("install_candidate_count"),
+            "probe_ready_count": candidate_scan.get("probe_ready_count"),
+            "probe_blocked_count": candidate_scan.get("probe_blocked_count"),
+            "queued_count": len(queue),
+            "blocked_count": len(blocked),
+            "skipped_count": len(skipped),
+        },
+        "queue": queue,
+        "blocked": blocked,
+        "skipped": skipped,
+        "candidate_summary": candidate_scan.get("candidate_summary", []),
+        "candidate_scan": candidate_scan,
+        "next_commands": [
+            "python -m cbn plugin install-queue cli-anything --query <query> --limit 20",
+            "python -m cbn plugin onboard-harness cli-anything <harness> --from-market --write --install --yes --smoke-suite --smoke-extra-arg=--help --no-workflows",
+            "python -m cbn plugin harness cli-anything install <harness> --yes",
+        ],
+    }
 
 
 def market_command_payload(result: CommandResultLike, compact: bool) -> dict[str, Any]:

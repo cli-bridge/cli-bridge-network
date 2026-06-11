@@ -20,8 +20,6 @@ from cbn_audit.log import AuditLog
 from cbn_artifacts.store import ArtifactStore
 from cbn_core.manifest import ManifestRegistry, validate_manifest_dict
 from cbn_events.bus import EventBus
-from cbn_parsers.fixtures import run_parser_fixtures
-from cbn_parsers.registry import ParserRegistry
 from cbn_plugins.manager import (
     PluginCommand,
     PluginManager,
@@ -52,13 +50,10 @@ from cbn_plugins.cli_anything_parts.manifest_factory import (
 )
 from cbn_plugins.cli_anything_parts.market import (
     is_installed_status as _is_installed_status,
-    mark_candidate_collisions as _mark_candidate_collisions,
-    market_records_from_result as _market_records_from_result,
     matches_sanitized_name as _matches_sanitized_name,
     parse_info_fields as _parse_info_fields,
 )
 from cbn_plugins.cli_anything_parts.lifecycle import (
-    attach_candidate_readiness as _attach_candidate_readiness,
     declared_requires as _declared_requires,
     dependency_probes as _dependency_probes,
     external_app_requirement_signals as _external_app_requirement_signals,
@@ -73,7 +68,6 @@ from cbn_plugins.cli_anything_parts.lifecycle import (
     platform_assessment as _platform_assessment,
     readiness_from_evaluation as _readiness_from_evaluation,
     readiness_summary as _readiness_summary,
-    refresh_candidate_lifecycle as _refresh_candidate_lifecycle,
     requirement_assessment as _requirement_assessment,
     requirement_commands as _requirement_commands,
     requirement_env_vars as _requirement_env_vars,
@@ -82,10 +76,7 @@ from cbn_plugins.cli_anything_parts.lifecycle import (
     transport_assessment as _transport_assessment,
 )
 from cbn_plugins.cli_anything_parts.live import (
-    candidate_live_summary as _candidate_live_summary,
-    harness_live_summary as _harness_live_summary,
-    live_verification_summary as _live_verification_summary,
-    workflow_live_summary as _workflow_live_summary,
+    live_verification as _live_parts_live_verification,
 )
 from cbn_plugins.cli_anything_parts.onboarding import (
     onboard_harness as _onboarding_parts_onboard_harness,
@@ -97,15 +88,11 @@ from cbn_plugins.cli_anything_parts.planning import (
 from cbn_plugins.cli_anything_parts.queue import (
     blocked_entry_from_evaluation as _blocked_entry_from_evaluation,
     blocked_harness_decision as _blocked_harness_decision,
-    candidate_summary as _candidate_summary,
-    install_queue_blocked_entry as _install_queue_blocked_entry,
-    install_queue_entry as _install_queue_entry,
-    install_queue_skipped_entry as _install_queue_skipped_entry,
-    market_command_payload as _market_command_payload,
+    candidate_harnesses as _queue_parts_candidate_harnesses,
+    market_install_queue as _queue_parts_market_install_queue,
 )
 from cbn_plugins.cli_anything_parts.promotion import (
-    promotion_blockers as _promotion_blockers,
-    promotion_requirements as _promotion_requirements,
+    promotion_gate as _promotion_parts_promotion_gate,
 )
 from cbn_plugins.cli_anything_parts.repair import (
     distribution_report as _distribution_report,
@@ -126,16 +113,12 @@ from cbn_plugins.cli_anything_parts.sync import (
     workflow_readiness as _sync_workflow_readiness,
 )
 from cbn_plugins.cli_anything_parts.verification import (
-    effective_manifest_dict as _effective_manifest_dict,
     known_parser_refs as _known_parser_refs,
     load_manifest_registry as _load_manifest_registry,
     manifest_dict_from_path as _manifest_dict_from_path,
     mark_repaired_manifest_verified_from_fixtures as _mark_repaired_manifest_verified_from_fixtures,
-    parser_contract_report_from_registry as _parser_contract_report,
-    parser_fixture_gate as _parser_fixture_gate,
     verify_harness as _verification_parts_verify_harness,
 )
-from cbn_protocol.readiness import protocol_readiness_report
 
 
 PLUGIN_ID = "cli-anything"
@@ -730,115 +713,15 @@ class CliAnythingHub:
         run_smoke_suite: bool = False,
         smoke_extra_args: tuple[str, ...] = (),
     ) -> dict[str, Any]:
-        verification = self.verify_harness(
-            harness_name,
+        return _promotion_parts_promotion_gate(
+            self,
+            harness_name=harness_name,
             title=title,
             from_market=from_market,
             include_workflows=include_workflows,
             run_smoke_suite=run_smoke_suite,
             smoke_extra_args=smoke_extra_args,
         )
-        if not verification.get("ok"):
-            return {
-                "ok": False,
-                "plugin_id": PLUGIN_ID,
-                "kind": "CliAnythingOverlayPromotionGate",
-                "harness_name": harness_name,
-                "from_market": from_market,
-                "include_workflows": include_workflows,
-                "run_smoke_suite": run_smoke_suite,
-                "error": verification.get("error", "harness verification failed"),
-                "verification": verification,
-            }
-
-        capability_id = str(verification["capability_id"])
-        registry = ManifestRegistry()
-        registry.load_dir(self.paths.manifests)
-        registry.load_dir(self.paths.local_manifests, replace=True)
-        imported_manifest = registry.get(capability_id)
-        effective_manifest = _effective_manifest_dict(
-            imported_manifest,
-            verification.get("evaluation", {}).get("adaptation", {}).get("manifest", {}),
-        )
-        parser_contract = _parser_contract_report(effective_manifest)
-        parser_fixture_report = run_parser_fixtures(
-            parser_ref=parser_contract["parser_ref"],
-            registry=ParserRegistry.builtins(),
-        )
-        parser_fixture_gate = _parser_fixture_gate(parser_fixture_report, capability_id)
-        readiness = protocol_readiness_report(registry, include_workflows=include_workflows)
-        registry_status = verification.get("registry") if isinstance(verification.get("registry"), dict) else {}
-        smoke_suite = verification.get("protocol_smoke_suite") if isinstance(verification.get("protocol_smoke_suite"), dict) else {}
-        source = registry_status.get("protocol_check_source")
-        entrypoint_repair_active = bool(registry_status.get("entrypoint_repair_active"))
-        blockers = _promotion_blockers(
-            verification=verification,
-            source=source,
-            entrypoint_repair_active=entrypoint_repair_active,
-            parser_contract=parser_contract,
-            parser_fixture_gate=parser_fixture_gate,
-            smoke_suite=smoke_suite,
-            run_smoke_suite=run_smoke_suite,
-            readiness=readiness,
-        )
-        if source == "current_registry":
-            status = "already_portable"
-        elif blockers:
-            status = "blocked"
-        else:
-            status = "ready_for_promotion"
-        return {
-            "ok": True,
-            "plugin_id": PLUGIN_ID,
-            "kind": "CliAnythingOverlayPromotionGate",
-            "harness_name": harness_name,
-            "from_market": from_market,
-            "include_workflows": include_workflows,
-            "run_smoke_suite": run_smoke_suite,
-            "capability_id": capability_id,
-            "status": status,
-            "ready_for_promotion": status == "ready_for_promotion",
-            "promotion_blockers": blockers,
-            "source": {
-                "kind": source,
-                "manifest_path": registry_status.get("manifest_path"),
-                "entrypoint_repair_active": entrypoint_repair_active,
-                "portable_manifest_path": str(self.paths.manifests / f"{capability_id}.json"),
-                "runtime_overlay_path": str(self.paths.local_manifests / f"{capability_id}.json"),
-            },
-            "requirements": _promotion_requirements(
-                source=source,
-                entrypoint_repair_active=entrypoint_repair_active,
-                parser_contract=parser_contract,
-                parser_fixture_gate=parser_fixture_gate,
-                smoke_suite=smoke_suite,
-                run_smoke_suite=run_smoke_suite,
-                readiness=readiness,
-                verification=verification,
-            ),
-            "parser_contract": parser_contract,
-            "parser_fixtures": parser_fixture_gate,
-            "protocol_smoke_suite": smoke_suite,
-            "protocol_readiness": {
-                "ok": readiness.get("ok"),
-                "summary": readiness.get("summary"),
-                "readiness": readiness.get("readiness"),
-                "manifest_sources": readiness.get("manifest_sources"),
-                "protocol_gaps": readiness.get("protocol_gaps"),
-            },
-            "verification": verification,
-            "next_commands": [
-                f"python -m cbn plugin verify-harness cli-anything {harness_name} --from-market",
-                f"python -m cbn parser fixtures --parser-ref {parser_contract['parser_ref']}",
-                (
-                    f"python -m cbn plugin promotion-gate cli-anything {harness_name} "
-                    f"--from-market --smoke-suite --smoke-extra-arg=--help"
-                ),
-                "python -m cbn registry validate runtime/manifests",
-                "python -m cbn registry validate manifests",
-                f"python -m cbn protocol smoke-suite --capability-id {capability_id} --extra-arg=--help",
-            ],
-        }
 
     def onboard_harness(
         self,
@@ -876,98 +759,13 @@ class CliAnythingHub:
         with_probes: bool = False,
         compact: bool = False,
     ) -> dict[str, Any]:
-        result = self.search_market(query) if query else self.list_market()
-        records = _market_records_from_result(result.parsed_json)
-        if result.exit_code != 0:
-            return {
-                "ok": False,
-                "plugin_id": PLUGIN_ID,
-                "query": query,
-                "limit": max(0, min(limit, 500)),
-                "with_probes": with_probes,
-                "compact": compact,
-                "error": "CLI-Anything market command failed",
-                "market": _market_command_payload(result, compact=compact),
-                "selected_count": 0,
-                "install_candidate_count": 0,
-                "blocked_count": 0,
-                "candidates": [],
-                "candidate_summary": [],
-            }
-        if records is None:
-            return {
-                "ok": False,
-                "plugin_id": PLUGIN_ID,
-                "query": query,
-                "limit": max(0, min(limit, 500)),
-                "with_probes": with_probes,
-                "compact": compact,
-                "error": "CLI-Anything market command did not return a supported JSON list shape",
-                "market": _market_command_payload(result, compact=compact),
-                "selected_count": 0,
-                "install_candidate_count": 0,
-                "blocked_count": 0,
-                "candidates": [],
-                "candidate_summary": [],
-            }
-        bounded_limit = max(0, min(limit, 500))
-        candidates = [
-            self._candidate_from_market_record(record, market_index=index)
-            for index, record in enumerate(records)
-        ]
-        _mark_candidate_collisions(candidates)
-        for item in candidates:
-            _refresh_candidate_lifecycle(item)
-            if with_probes:
-                _attach_candidate_readiness(item)
-        candidates.sort(
-            key=lambda item: (
-                not bool(item.get("install_candidate")),
-                len(item.get("blockers", [])),
-                item.get("harness_name") or "",
-                item.get("market_index", 0),
-            )
+        return _queue_parts_candidate_harnesses(
+            self,
+            query=query,
+            limit=limit,
+            with_probes=with_probes,
+            compact=compact,
         )
-        selected = candidates[:bounded_limit]
-        for rank, item in enumerate(selected, start=1):
-            item["rank"] = rank
-        install_candidate_count = sum(1 for item in selected if item.get("install_candidate"))
-        blocked_count = sum(1 for item in selected if not item.get("install_candidate"))
-        probe_ready_count = sum(
-            1
-            for item in selected
-            if isinstance(item.get("readiness"), dict) and item["readiness"].get("ready")
-        )
-        probe_blocked_count = sum(
-            1
-            for item in selected
-            if isinstance(item.get("readiness"), dict) and item["readiness"].get("probe_blocker_count", 0) > 0
-        )
-        return {
-            "ok": True,
-            "plugin_id": PLUGIN_ID,
-            "query": query,
-            "limit": bounded_limit,
-            "with_probes": with_probes,
-            "compact": compact,
-            "market_count": len(records),
-            "evaluated_count": len(candidates),
-            "selected_count": len(selected),
-            "install_candidate_count": install_candidate_count,
-            "blocked_count": blocked_count,
-            "probe_ready_count": probe_ready_count if with_probes else None,
-            "probe_blocked_count": probe_blocked_count if with_probes else None,
-            "market": _market_command_payload(result, compact=compact),
-            "candidates": selected,
-            "candidate_summary": _candidate_summary(selected),
-            "next_commands": [
-                "python -m cbn plugin candidates cli-anything --query <query> --limit 20 --compact",
-                "python -m cbn plugin candidates cli-anything --query <query> --limit 20 --with-probes --compact",
-                "python -m cbn plugin evaluate-harness cli-anything <harness>",
-                "python -m cbn plugin adapt-harness cli-anything <harness> --from-market --write",
-                "python -m cbn plugin harness cli-anything install <harness> --yes",
-            ],
-        }
 
     def market_install_queue(
         self,
@@ -976,129 +774,13 @@ class CliAnythingHub:
         max_installs: int = 10,
         include_blocked: bool = True,
     ) -> dict[str, Any]:
-        candidate_scan = self.candidate_harnesses(
+        return _queue_parts_market_install_queue(
+            self,
             query=query,
             limit=limit,
-            with_probes=True,
-            compact=True,
+            max_installs=max_installs,
+            include_blocked=include_blocked,
         )
-        bounded_max_installs = max(0, min(max_installs, 100))
-        if not candidate_scan.get("ok"):
-            return {
-                "ok": False,
-                "plugin_id": PLUGIN_ID,
-                "kind": "CliAnythingMarketInstallQueue",
-                "query": query,
-                "limit": max(0, min(limit, 500)),
-                "max_installs": bounded_max_installs,
-                "include_blocked": include_blocked,
-                "error": candidate_scan.get("error", "CLI-Anything candidate scan failed"),
-                "summary": {
-                    "candidate_count": 0,
-                    "queued_count": 0,
-                    "blocked_count": 0,
-                    "skipped_count": 0,
-                },
-                "queue": [],
-                "blocked": [],
-                "skipped": [],
-                "candidate_scan": candidate_scan,
-            }
-
-        queue = []
-        blocked = []
-        skipped = []
-        candidates = candidate_scan.get("candidates", [])
-        if not isinstance(candidates, list):
-            candidates = []
-
-        for item in candidates:
-            if not isinstance(item, dict):
-                continue
-            harness_name = item.get("harness_name")
-            if not isinstance(harness_name, str) or not harness_name:
-                blocked.append(_install_queue_blocked_entry(item, "market record is missing harness_name"))
-                continue
-            gates = item.get("gates") if isinstance(item.get("gates"), dict) else {}
-            if bool(item.get("install_candidate")) and not bool(gates.get("launch_ready")):
-                evaluation = self.evaluate_harness(harness_name, from_market=True)
-                if not evaluation.get("ok"):
-                    blocked.append(
-                        _install_queue_blocked_entry(
-                            item,
-                            "harness evaluation failed before queueing",
-                            evaluation=evaluation,
-                        )
-                    )
-                    continue
-                eval_gates = evaluation.get("gates") if isinstance(evaluation.get("gates"), dict) else {}
-                if bool(eval_gates.get("launch_ready")):
-                    skipped.append(
-                        _install_queue_skipped_entry(
-                            item,
-                            "harness is already launch-ready",
-                            evaluation=evaluation,
-                        )
-                    )
-                    continue
-                if not bool(evaluation.get("install_candidate")):
-                    blocked.append(
-                        _install_queue_blocked_entry(
-                            item,
-                            "harness evaluation blockers must be resolved first",
-                            evaluation=evaluation,
-                        )
-                    )
-                    continue
-                if len(queue) >= bounded_max_installs:
-                    skipped.append(
-                        _install_queue_skipped_entry(
-                            item,
-                            "max_installs limit reached",
-                            evaluation=evaluation,
-                        )
-                    )
-                    continue
-                queue.append(
-                    _install_queue_entry(
-                        item,
-                        install_plan=self.harness_plan("install", harness_name).as_dict(),
-                        evaluation=evaluation,
-                    )
-                )
-            elif bool(item.get("install_candidate")) and bool(gates.get("launch_ready")):
-                skipped.append(_install_queue_skipped_entry(item, "harness is already launch-ready"))
-            elif include_blocked:
-                blocked.append(_install_queue_blocked_entry(item, "candidate blockers must be resolved first"))
-
-        return {
-            "ok": True,
-            "plugin_id": PLUGIN_ID,
-            "kind": "CliAnythingMarketInstallQueue",
-            "query": query,
-            "limit": candidate_scan.get("limit"),
-            "max_installs": bounded_max_installs,
-            "include_blocked": include_blocked,
-            "summary": {
-                "candidate_count": len(candidates),
-                "install_candidate_count": candidate_scan.get("install_candidate_count"),
-                "probe_ready_count": candidate_scan.get("probe_ready_count"),
-                "probe_blocked_count": candidate_scan.get("probe_blocked_count"),
-                "queued_count": len(queue),
-                "blocked_count": len(blocked),
-                "skipped_count": len(skipped),
-            },
-            "queue": queue,
-            "blocked": blocked,
-            "skipped": skipped,
-            "candidate_summary": candidate_scan.get("candidate_summary", []),
-            "candidate_scan": candidate_scan,
-            "next_commands": [
-                "python -m cbn plugin install-queue cli-anything --query <query> --limit 20",
-                "python -m cbn plugin onboard-harness cli-anything <harness> --from-market --write --install --yes --smoke-suite --smoke-extra-arg=--help --no-workflows",
-                "python -m cbn plugin harness cli-anything install <harness> --yes",
-            ],
-        }
 
     def blocked_harness_plan(
         self,
@@ -1670,70 +1352,16 @@ class CliAnythingHub:
     ) -> dict[str, Any]:
         """Return a repeatable read-only verification snapshot for CLI-Anything."""
 
-        status = self.status()
-        environment = self._environment_verification()
-        harness_reports = [
-            self.verify_harness(
-                harness,
-                from_market=True,
-                include_workflows=include_workflows,
-                run_smoke_suite=run_smoke_suite,
-                smoke_extra_args=smoke_extra_args,
-            )
-            for harness in harnesses
-        ]
-        harness_summary = [_harness_live_summary(report) for report in harness_reports]
-        candidates = (
-            self.candidate_harnesses(
-                query=candidate_query,
-                limit=candidate_limit,
-                with_probes=True,
-                compact=True,
-            )
-            if include_candidates
-            else None
+        return _live_parts_live_verification(
+            self,
+            harnesses=harnesses,
+            candidate_query=candidate_query,
+            candidate_limit=candidate_limit,
+            include_candidates=include_candidates,
+            include_workflows=include_workflows,
+            run_smoke_suite=run_smoke_suite,
+            smoke_extra_args=smoke_extra_args,
         )
-        workflow_readiness = (
-            self._workflow_readiness("workflows/cli-anything-macrocli-mermaid-routing.example.json")
-            if include_workflows
-            else None
-        )
-        summary = _live_verification_summary(
-            status=status,
-            environment=environment,
-            harness_summary=harness_summary,
-            candidates=candidates,
-            workflow_readiness=workflow_readiness,
-        )
-        return {
-            "ok": summary["entrypoint_available"]
-            and summary["verified_harness_count"] == len(harness_summary)
-            and summary["workflow_internal_bridge_ready"] is not False,
-            "plugin_id": PLUGIN_ID,
-            "kind": "CliAnythingLiveVerification",
-            "run_smoke_suite": run_smoke_suite,
-            "status": status,
-            "environment": environment,
-            "harnesses": harness_summary,
-            "candidate_scan": _candidate_live_summary(candidates) if candidates else None,
-            "workflow_readiness": _workflow_live_summary(workflow_readiness) if workflow_readiness else None,
-            "summary": summary,
-            "reports": {
-                "harness_verifications": harness_reports,
-                "candidates": candidates,
-                "workflow_readiness": workflow_readiness,
-            },
-            "next_commands": [
-                "python -m cbn plugin live-verification cli-anything",
-                "python -m cbn plugin candidates cli-anything --query image --limit 10 --with-probes --compact",
-                "python -m cbn plugin verify-harness cli-anything mermaid",
-                "python -m cbn plugin verify-harness cli-anything macrocli",
-                "python -m cbn plugin verify-harness cli-anything 3mf --smoke-suite --smoke-extra-arg=--help --no-workflows",
-                "python -m cbn call cli-anything.macrocli.backends",
-                "python -m cbn workflow run workflows/cli-anything-macrocli-mermaid-routing.example.json",
-                "python -m cbn protocol readiness --workflow-path workflows/cli-anything-macrocli-mermaid-routing.example.json",
-            ],
-        }
 
     def mvp_plan(
         self,

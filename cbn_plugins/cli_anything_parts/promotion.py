@@ -4,6 +4,140 @@ from __future__ import annotations
 
 from typing import Any
 
+from cbn_core.manifest import ManifestRegistry
+from cbn_parsers.fixtures import run_parser_fixtures
+from cbn_parsers.registry import ParserRegistry
+from cbn_protocol.readiness import protocol_readiness_report
+
+from cbn_plugins.cli_anything_parts.verification import (
+    effective_manifest_dict,
+    parser_contract_report_from_registry,
+    parser_fixture_gate,
+)
+
+
+PLUGIN_ID = "cli-anything"
+
+
+def promotion_gate(
+    hub: Any,
+    harness_name: str,
+    title: str | None = None,
+    from_market: bool = True,
+    include_workflows: bool = True,
+    run_smoke_suite: bool = False,
+    smoke_extra_args: tuple[str, ...] = (),
+) -> dict[str, Any]:
+    verification = hub.verify_harness(
+        harness_name,
+        title=title,
+        from_market=from_market,
+        include_workflows=include_workflows,
+        run_smoke_suite=run_smoke_suite,
+        smoke_extra_args=smoke_extra_args,
+    )
+    if not verification.get("ok"):
+        return {
+            "ok": False,
+            "plugin_id": PLUGIN_ID,
+            "kind": "CliAnythingOverlayPromotionGate",
+            "harness_name": harness_name,
+            "from_market": from_market,
+            "include_workflows": include_workflows,
+            "run_smoke_suite": run_smoke_suite,
+            "error": verification.get("error", "harness verification failed"),
+            "verification": verification,
+        }
+
+    capability_id = str(verification["capability_id"])
+    registry = ManifestRegistry()
+    registry.load_dir(hub.paths.manifests)
+    registry.load_dir(hub.paths.local_manifests, replace=True)
+    imported_manifest = registry.get(capability_id)
+    effective_manifest = effective_manifest_dict(
+        imported_manifest,
+        verification.get("evaluation", {}).get("adaptation", {}).get("manifest", {}),
+    )
+    parser_contract = parser_contract_report_from_registry(effective_manifest)
+    parser_fixture_report = run_parser_fixtures(
+        parser_ref=parser_contract["parser_ref"],
+        registry=ParserRegistry.builtins(),
+    )
+    parser_fixture_status = parser_fixture_gate(parser_fixture_report, capability_id)
+    readiness = protocol_readiness_report(registry, include_workflows=include_workflows)
+    registry_status = verification.get("registry") if isinstance(verification.get("registry"), dict) else {}
+    smoke_suite = verification.get("protocol_smoke_suite") if isinstance(verification.get("protocol_smoke_suite"), dict) else {}
+    source = registry_status.get("protocol_check_source")
+    entrypoint_repair_active = bool(registry_status.get("entrypoint_repair_active"))
+    blockers = promotion_blockers(
+        verification=verification,
+        source=source,
+        entrypoint_repair_active=entrypoint_repair_active,
+        parser_contract=parser_contract,
+        parser_fixture_gate=parser_fixture_status,
+        smoke_suite=smoke_suite,
+        run_smoke_suite=run_smoke_suite,
+        readiness=readiness,
+    )
+    if source == "current_registry":
+        status = "already_portable"
+    elif blockers:
+        status = "blocked"
+    else:
+        status = "ready_for_promotion"
+    return {
+        "ok": True,
+        "plugin_id": PLUGIN_ID,
+        "kind": "CliAnythingOverlayPromotionGate",
+        "harness_name": harness_name,
+        "from_market": from_market,
+        "include_workflows": include_workflows,
+        "run_smoke_suite": run_smoke_suite,
+        "capability_id": capability_id,
+        "status": status,
+        "ready_for_promotion": status == "ready_for_promotion",
+        "promotion_blockers": blockers,
+        "source": {
+            "kind": source,
+            "manifest_path": registry_status.get("manifest_path"),
+            "entrypoint_repair_active": entrypoint_repair_active,
+            "portable_manifest_path": str(hub.paths.manifests / f"{capability_id}.json"),
+            "runtime_overlay_path": str(hub.paths.local_manifests / f"{capability_id}.json"),
+        },
+        "requirements": promotion_requirements(
+            source=source,
+            entrypoint_repair_active=entrypoint_repair_active,
+            parser_contract=parser_contract,
+            parser_fixture_gate=parser_fixture_status,
+            smoke_suite=smoke_suite,
+            run_smoke_suite=run_smoke_suite,
+            readiness=readiness,
+            verification=verification,
+        ),
+        "parser_contract": parser_contract,
+        "parser_fixtures": parser_fixture_status,
+        "protocol_smoke_suite": smoke_suite,
+        "protocol_readiness": {
+            "ok": readiness.get("ok"),
+            "summary": readiness.get("summary"),
+            "readiness": readiness.get("readiness"),
+            "manifest_sources": readiness.get("manifest_sources"),
+            "protocol_gaps": readiness.get("protocol_gaps"),
+        },
+        "verification": verification,
+        "next_commands": [
+            f"python -m cbn plugin verify-harness cli-anything {harness_name} --from-market",
+            f"python -m cbn parser fixtures --parser-ref {parser_contract['parser_ref']}",
+            (
+                f"python -m cbn plugin promotion-gate cli-anything {harness_name} "
+                f"--from-market --smoke-suite --smoke-extra-arg=--help"
+            ),
+            "python -m cbn registry validate runtime/manifests",
+            "python -m cbn registry validate manifests",
+            f"python -m cbn protocol smoke-suite --capability-id {capability_id} --extra-arg=--help",
+        ],
+    }
+
 
 def promotion_blockers(
     verification: dict[str, Any],

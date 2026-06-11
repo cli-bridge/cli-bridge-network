@@ -5,6 +5,85 @@ from __future__ import annotations
 from typing import Any
 
 
+PLUGIN_ID = "cli-anything"
+
+
+def live_verification(
+    hub: Any,
+    harnesses: tuple[str, ...] = ("mermaid", "macrocli"),
+    candidate_query: str | None = "image",
+    candidate_limit: int = 10,
+    include_candidates: bool = True,
+    include_workflows: bool = True,
+    run_smoke_suite: bool = False,
+    smoke_extra_args: tuple[str, ...] = (),
+) -> dict[str, Any]:
+    status = hub.status()
+    environment = hub._environment_verification()
+    harness_reports = [
+        hub.verify_harness(
+            harness,
+            from_market=True,
+            include_workflows=include_workflows,
+            run_smoke_suite=run_smoke_suite,
+            smoke_extra_args=smoke_extra_args,
+        )
+        for harness in harnesses
+    ]
+    harness_summary = [harness_live_summary(report) for report in harness_reports]
+    candidates = (
+        hub.candidate_harnesses(
+            query=candidate_query,
+            limit=candidate_limit,
+            with_probes=True,
+            compact=True,
+        )
+        if include_candidates
+        else None
+    )
+    workflow_readiness = (
+        hub._workflow_readiness("workflows/cli-anything-macrocli-mermaid-routing.example.json")
+        if include_workflows
+        else None
+    )
+    summary = live_verification_summary(
+        status=status,
+        environment=environment,
+        harness_summary=harness_summary,
+        candidates=candidates,
+        workflow_readiness=workflow_readiness,
+    )
+    return {
+        "ok": summary["entrypoint_available"]
+        and summary["verified_harness_count"] == len(harness_summary)
+        and summary["workflow_internal_bridge_ready"] is not False,
+        "plugin_id": PLUGIN_ID,
+        "kind": "CliAnythingLiveVerification",
+        "run_smoke_suite": run_smoke_suite,
+        "status": status,
+        "environment": environment,
+        "harnesses": harness_summary,
+        "candidate_scan": candidate_live_summary(candidates) if candidates else None,
+        "workflow_readiness": workflow_live_summary(workflow_readiness) if workflow_readiness else None,
+        "summary": summary,
+        "reports": {
+            "harness_verifications": harness_reports,
+            "candidates": candidates,
+            "workflow_readiness": workflow_readiness,
+        },
+        "next_commands": [
+            "python -m cbn plugin live-verification cli-anything",
+            "python -m cbn plugin candidates cli-anything --query image --limit 10 --with-probes --compact",
+            "python -m cbn plugin verify-harness cli-anything mermaid",
+            "python -m cbn plugin verify-harness cli-anything macrocli",
+            "python -m cbn plugin verify-harness cli-anything 3mf --smoke-suite --smoke-extra-arg=--help --no-workflows",
+            "python -m cbn call cli-anything.macrocli.backends",
+            "python -m cbn workflow run workflows/cli-anything-macrocli-mermaid-routing.example.json",
+            "python -m cbn protocol readiness --workflow-path workflows/cli-anything-macrocli-mermaid-routing.example.json",
+        ],
+    }
+
+
 def harness_live_summary(report: dict[str, Any]) -> dict[str, Any]:
     evaluation = report.get("evaluation") if isinstance(report.get("evaluation"), dict) else {}
     gates = evaluation.get("gates") if isinstance(evaluation.get("gates"), dict) else {}
