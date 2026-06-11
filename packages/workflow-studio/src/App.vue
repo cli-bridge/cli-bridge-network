@@ -1599,7 +1599,7 @@ onMounted(async () => {
         </div>
         <div class="section-title"><FileJson :size="15" /> Raw Quickstart Requests</div>
         <div class="request-sequence">
-          <div v-for="request in quickstartRequests.slice(0, 11)" :key="request.id || request.url">
+          <div v-for="request in quickstartRequests.slice(0, 12)" :key="request.id || request.url">
             <code>{{ request.method || "GET" }}</code>
             <span>{{ request.id || "request" }}</span>
             <small>{{ request.url || "not loaded" }}</small>

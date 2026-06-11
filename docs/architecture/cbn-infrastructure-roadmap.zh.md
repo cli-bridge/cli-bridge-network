@@ -450,7 +450,9 @@ Killer Demo slice 已新增可运行证据束：
   verify command，只保留 token 是否需要/是否已配置的布尔状态，避免把 secret 值
   当作稳定外部合同字段传播。daemon 已新增只读 `GET /network/launch-contract`，
   CLI 已新增 `python -m cbn network quickstart --output launch-contract`，外部程序
-  可以直接读取小合同而不必解析完整 `NetworkConnectPackage`。
+  可以直接读取小合同而不必解析完整 `NetworkConnectPackage`。`consumer_quickstart`
+  的 first-call requests、sequence steps、SDK snippets 和 acceptance checklist 已同步
+  纳入 `launch_contract`，`network verify` 会真实回放并验收该最小入口。
 - `NetworkConnectPackage.mvp_readiness` 已新增为 killer MVP 产品验收矩阵：用
   12 个机器可读 checks 覆盖 external AgentCli contract、internal BridgeMessage
   bus、Workflow Studio、killer workflow DAG、natural-language harness agent、
