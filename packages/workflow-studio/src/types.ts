@@ -870,6 +870,7 @@ export interface KillerMvpPresenterBrief {
   narrative?: string[];
   proof_points?: PresenterProofPoint[];
   live_demo_flow?: PresenterFlowStep[];
+  command_deck?: PresenterCommandDeckItem[];
   integration_handoff?: {
     connect_package_url?: string;
     connect_package_command?: string;
@@ -917,6 +918,14 @@ export interface PresenterFlowStep {
   title?: string;
   target?: unknown;
   success_signal?: string;
+}
+
+export interface PresenterCommandDeckItem {
+  id?: string;
+  title?: string;
+  command?: string;
+  proves?: string;
+  copy_label?: string;
 }
 
 export interface NetworkEntryProfile {

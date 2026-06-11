@@ -208,6 +208,14 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertIn("--output readiness", presenter["integration_handoff"]["readiness_command"])
         self.assertIn("--output sdk-bootstrap", presenter["integration_handoff"]["sdk_bootstrap_command"])
         self.assertIn("--session-token test-token", presenter["integration_handoff"]["verify_command"])
+        command_deck = {item["id"]: item for item in presenter["command_deck"]}
+        self.assertEqual(list(command_deck)[:3], ["connect_package", "plan_harness", "run_demo"])
+        self.assertIn("network connect-package", command_deck["connect_package"]["command"])
+        self.assertIn("cbn_adapter_agent", command_deck["plan_harness"]["command"])
+        self.assertIn("demo killer", command_deck["run_demo"]["command"])
+        self.assertIn("protocol export-workflows all", command_deck["export_protocols"]["command"])
+        self.assertIn("--output sdk-bootstrap", command_deck["sdk_bootstrap"]["command"])
+        self.assertIn("cbn import command", command_deck["register_next_cli"]["command"])
         proof_points = {point["id"]: point for point in presenter["proof_points"]}
         self.assertEqual(proof_points["protocol_boundary"]["value"], "AgentCliCard + RunReceipt")
         self.assertEqual(proof_points["bridge_message_bus"]["value"], "2 BridgeMessage routes")

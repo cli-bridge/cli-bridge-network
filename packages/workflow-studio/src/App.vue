@@ -154,6 +154,9 @@ const connectPresenterProofPoints = computed(() =>
 const connectPresenterFlow = computed(() =>
   Array.isArray(connectPresenterBrief.value.live_demo_flow) ? connectPresenterBrief.value.live_demo_flow : [],
 );
+const connectPresenterCommandDeck = computed(() =>
+  Array.isArray(connectPresenterBrief.value.command_deck) ? connectPresenterBrief.value.command_deck : [],
+);
 const connectLaunchContract = computed<ConsumerLaunchContract>(() => connectPackage.value?.consumer_launch_contract ?? {});
 const directLaunchContract = computed<ConsumerLaunchContract>(() => launchContract.value ?? {});
 const launchContractParity = computed(() => summarizeLaunchContractParity(connectLaunchContract.value, directLaunchContract.value));
@@ -1975,6 +1978,18 @@ onMounted(async () => {
             <span>SDK command</span>
             <code>{{ connectSummary.presenterSdkBootstrapCommand }}</code>
           </div>
+        </div>
+        <div class="request-sequence">
+          <div v-for="item in connectPresenterCommandDeck" :key="item.id || item.command" class="passed">
+            <code>{{ item.id || "command" }}</code>
+            <span>{{ item.title || "Presenter command" }}</span>
+            <small>{{ item.proves || "demo handoff command" }}</small>
+            <em>{{ item.command || "not loaded" }}</em>
+            <button title="Copy presenter command" :disabled="!item.command" @click="copyText(`presenter-${item.id || item.title}`, item.command || '')">
+              <Copy :size="14" /> {{ copiedScript === `presenter-${item.id || item.title}` ? "Copied" : (item.copy_label || "Copy") }}
+            </button>
+          </div>
+          <span v-if="!connectPresenterCommandDeck.length">No presenter command deck loaded</span>
         </div>
         <div class="request-sequence">
           <div v-for="point in connectPresenterProofPoints" :key="point.id || point.title" class="passed">

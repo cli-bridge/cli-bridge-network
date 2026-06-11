@@ -283,6 +283,11 @@ Killer Demo slice 已新增可运行证据束：
   `mcp_import_command`、`skill_import_command` 和 `parser_fixture_command`。
   Workflow Studio 同步展示 next CLI/CLI-Anything/MCP/skill/parser fixture 注册入口，
   并提供 Copy CLI 入口，让“下一个 CLI 如何进网络”不依赖 raw JSON。
+- `KillerMvpPresenterBrief.command_deck` 已新增 presenter command deck，把
+  connect package、natural-language harness plan、killer demo run、MCP/A2A/ACP
+  export、SDK bootstrap 和 next CLI registration 聚合为有序可复制命令卡片。
+  Workflow Studio 直接渲染该 deck，现场演示可以按一组命令完成“接入 -> 规划 ->
+  运行 -> 导出 -> SDK -> 下一个 CLI”的闭环。
 - Killer demo report 已新增 `communication_trace`：从真实 workflow run result 中提取
   `BridgeMessage argsFrom` handoff，展示 producer task、consumer task、selector、
   BridgeMessage valid 状态、selected value preview、resolved arg preview 和 artifact

@@ -1334,6 +1334,31 @@ def _mvp_presenter_brief(
     protocol_smoke_command = _protocol_smoke_suite_command(workflow_path)
     demo_run_command = _demo_killer_command(workflow_path, smoke_suite=False)
     demo_smoke_command = _demo_killer_command(workflow_path, smoke_suite=True)
+    next_cli_command = _registration_command(
+        registration_surface,
+        "command",
+        fallback="python -m cbn import command --help",
+    )
+    cli_anything_import_command = _registration_command(
+        registration_surface,
+        "cli-anything",
+        fallback="python -m cbn import cli-anything --help",
+    )
+    mcp_import_command = _registration_command(
+        registration_surface,
+        "mcp",
+        fallback="python -m cbn import mcp --help",
+    )
+    skill_import_command = _registration_command(
+        registration_surface,
+        "skill",
+        fallback="python -m cbn import skill --help",
+    )
+    parser_fixture_command = _registration_command(
+        registration_surface,
+        "parser-fixture",
+        fallback="python -m cbn record-parser-fixture --help",
+    )
     verify_command = _network_verify_command(workflow_path, base_url=base_url, session_token=session_token)
     brief_ready = bool(
         mvp_readiness.get("status") == "ready"
@@ -1440,31 +1465,11 @@ def _mvp_presenter_brief(
             "registration_catalog_command": registration_next_commands[0]
             if registration_next_commands
             else "python -m cbn import catalog",
-            "next_cli_command": _registration_command(
-                registration_surface,
-                "command",
-                fallback="python -m cbn import command --help",
-            ),
-            "cli_anything_import_command": _registration_command(
-                registration_surface,
-                "cli-anything",
-                fallback="python -m cbn import cli-anything --help",
-            ),
-            "mcp_import_command": _registration_command(
-                registration_surface,
-                "mcp",
-                fallback="python -m cbn import mcp --help",
-            ),
-            "skill_import_command": _registration_command(
-                registration_surface,
-                "skill",
-                fallback="python -m cbn import skill --help",
-            ),
-            "parser_fixture_command": _registration_command(
-                registration_surface,
-                "parser-fixture",
-                fallback="python -m cbn record-parser-fixture --help",
-            ),
+            "next_cli_command": next_cli_command,
+            "cli_anything_import_command": cli_anything_import_command,
+            "mcp_import_command": mcp_import_command,
+            "skill_import_command": skill_import_command,
+            "parser_fixture_command": parser_fixture_command,
             "sdk_bootstrap_url": entrypoints.get("sdk_bootstrap"),
             "readiness_url": readiness_url,
             "studio_url": studio_link.get("url"),
@@ -1473,6 +1478,50 @@ def _mvp_presenter_brief(
             "readiness_command": readiness_command,
             "sdk_bootstrap_command": sdk_bootstrap_command,
         },
+        "command_deck": [
+            _presenter_command(
+                "connect_package",
+                "Read one-shot connect package",
+                connect_package_command,
+                "External programs can discover every CBN network entrypoint in one read.",
+                "Copy Package",
+            ),
+            _presenter_command(
+                "plan_harness",
+                "Plan natural-language harness request",
+                agent_plan_command,
+                "A reusable harness agent can bind a natural-language request to the CLI-CLI workflow.",
+                "Copy Harness",
+            ),
+            _presenter_command(
+                "run_demo",
+                "Run killer demo with evidence",
+                demo_run_command,
+                "The macrocli -> transform -> mermaid chain produces artifacts, events, and audit records.",
+                "Copy Demo",
+            ),
+            _presenter_command(
+                "export_protocols",
+                "Export MCP/A2A/ACP facades",
+                protocol_export_command,
+                "The same workflow exports to MCP, A2A, and ACP descriptors.",
+                "Copy Protocols",
+            ),
+            _presenter_command(
+                "sdk_bootstrap",
+                "Read SDK bootstrap contract",
+                sdk_bootstrap_command,
+                "External SDKs can initialize from the focused typed bootstrap contract.",
+                "Copy SDK",
+            ),
+            _presenter_command(
+                "register_next_cli",
+                "Register the next CLI",
+                next_cli_command,
+                "New CLIs enter through dry-run-first importers before writing manifests.",
+                "Copy CLI",
+            ),
+        ],
         "decision_gates": {
             "ready_goal_count": ready_goal_count,
             "goal_count": goal_count,
@@ -2979,6 +3028,16 @@ def _registration_command(registration_surface: dict[str, Any], importer_id: str
             if isinstance(command, str) and command:
                 return command
     return fallback
+
+
+def _presenter_command(command_id: str, title: str, command: str, proves: str, copy_label: str) -> dict[str, str]:
+    return {
+        "id": command_id,
+        "title": title,
+        "command": command,
+        "proves": proves,
+        "copy_label": copy_label,
+    }
 
 
 def _network_quickstart_command(
