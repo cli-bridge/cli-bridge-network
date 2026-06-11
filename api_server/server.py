@@ -101,6 +101,7 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/network/connect-package"},
     {"method": "GET", "path": "/network/quickstart"},
     {"method": "GET", "path": "/network/launch-contract"},
+    {"method": "GET", "path": "/network/entry-profile"},
     {"method": "GET", "path": "/network/readiness"},
     {"method": "POST", "path": "/network/verify"},
     {"method": "POST", "path": "/protocols/accept-workflow"},
@@ -607,7 +608,13 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             )
             self._send(200 if result["ok"] else 422, result)
             return
-        if parsed.path in {"/network/connect-package", "/network/quickstart", "/network/launch-contract", "/network/readiness"}:
+        if parsed.path in {
+            "/network/connect-package",
+            "/network/quickstart",
+            "/network/launch-contract",
+            "/network/entry-profile",
+            "/network/readiness",
+        }:
             result = _network_connect_package_from_query(self, runtime, query)
             if parsed.path == "/network/quickstart":
                 quickstart = result.get("consumer_quickstart", {})
@@ -621,6 +628,13 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 self._send(
                     200 if result["ok"] and launch_contract.get("kind") == "ConsumerLaunchContract" else 422,
                     launch_contract,
+                )
+                return
+            if parsed.path == "/network/entry-profile":
+                profile = result.get("network_entry_profile", {})
+                self._send(
+                    200 if result["ok"] and profile.get("kind") == "NetworkEntryProfile" else 422,
+                    profile,
                 )
                 return
             if parsed.path == "/network/readiness":

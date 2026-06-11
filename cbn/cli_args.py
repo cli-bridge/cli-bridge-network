@@ -295,6 +295,35 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_AGENT_CONNECT_MESSAGE,
         help="Agent prompt used to shape the Adapter Agent node bundle.",
     )
+    network_entry_profile = network_subcommands.add_parser(
+        "entry-profile",
+        help="Print only the stable external integration profile from the one-shot package.",
+    )
+    network_entry_profile.add_argument(
+        "--workflow-path",
+        default="workflows/cli-anything-macrocli-mermaid-routing.example.json",
+        help="Workflow JSON path to expose in the entry profile.",
+    )
+    network_entry_profile.add_argument("--base-url", help="Daemon base URL to embed in endpoint URLs.")
+    network_entry_profile.add_argument(
+        "--studio-url",
+        default="http://127.0.0.1:5177",
+        help="Workflow Studio base URL to embed as a preconfigured demo link.",
+    )
+    network_entry_profile.add_argument(
+        "--dashboard-url",
+        default="http://127.0.0.1:5173",
+        help="Maintainer dashboard URL to embed in the Workflow Studio demo link.",
+    )
+    network_entry_profile.add_argument(
+        "--session-token",
+        help="Optional daemon session token to include in auth metadata.",
+    )
+    network_entry_profile.add_argument(
+        "--message",
+        default=DEFAULT_AGENT_CONNECT_MESSAGE,
+        help="Agent prompt used to shape the reusable workflow request.",
+    )
     network_quickstart = network_subcommands.add_parser(
         "quickstart",
         help="Print only the machine-readable first-call quickstart for external CBN consumers.",
@@ -326,11 +355,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     network_quickstart.add_argument(
         "--output",
-        choices=["json", "curl", "powershell", "acceptance", "readiness", "launch-contract"],
+        choices=["json", "curl", "powershell", "acceptance", "readiness", "launch-contract", "entry-profile"],
         default="json",
         help=(
             "Output JSON quickstart, a cURL script, a PowerShell script, the acceptance checklist, "
-            "MVP readiness, or the small consumer launch contract."
+            "MVP readiness, the small consumer launch contract, or the stable entry profile."
         ),
     )
     network_verify = network_subcommands.add_parser(

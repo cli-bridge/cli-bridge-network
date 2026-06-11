@@ -636,6 +636,19 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0 if result["ok"] else 7
+        if args.network_command == "entry-profile":
+            result = network_connect_package(
+                runtime.registry,
+                workflow_path=args.workflow_path,
+                base_url=args.base_url,
+                studio_url=args.studio_url,
+                dashboard_url=args.dashboard_url,
+                session_token=args.session_token,
+                agent_message=args.message,
+            )
+            profile = result.get("network_entry_profile", {})
+            print(json.dumps(profile, ensure_ascii=False, indent=2))
+            return 0 if result["ok"] and profile.get("kind") == "NetworkEntryProfile" else 7
         if args.network_command == "quickstart":
             result = network_connect_package(
                 runtime.registry,
@@ -657,6 +670,8 @@ def main(argv: list[str] | None = None) -> int:
                 print(json.dumps(result.get("mvp_readiness", {}), ensure_ascii=False, indent=2))
             elif args.output == "launch-contract":
                 print(json.dumps(result.get("consumer_launch_contract", {}), ensure_ascii=False, indent=2))
+            elif args.output == "entry-profile":
+                print(json.dumps(result.get("network_entry_profile", {}), ensure_ascii=False, indent=2))
             else:
                 print(json.dumps(quickstart, ensure_ascii=False, indent=2))
             return 0 if result["ok"] and quickstart.get("kind") == "NetworkConnectQuickstart" else 7

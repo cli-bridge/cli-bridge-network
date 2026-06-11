@@ -48,6 +48,7 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("GET", "/network/connect-package"), routes)
         self.assertIn(("GET", "/network/quickstart"), routes)
         self.assertIn(("GET", "/network/launch-contract"), routes)
+        self.assertIn(("GET", "/network/entry-profile"), routes)
         self.assertIn(("GET", "/network/readiness"), routes)
         self.assertIn(("POST", "/network/verify"), routes)
         self.assertIn(("POST", "/demo/killer"), routes)
@@ -260,6 +261,7 @@ class DaemonApiTests(unittest.TestCase):
             self.assertEqual(payload["consumer_quickstart"]["sdk_snippets"][0]["language"], "python")
             self.assertIn("urllib.request", payload["consumer_quickstart"]["sdk_snippets"][0]["code"])
             endpoint_paths = {endpoint["path"].split("?", 1)[0] for endpoint in payload["daemon_endpoints"]}
+            self.assertIn("/network/entry-profile", endpoint_paths)
             self.assertIn("/network/readiness", endpoint_paths)
             self.assertIn("/imports/catalog", endpoint_paths)
             self.assertIn("/workflows/run", endpoint_paths)
@@ -335,6 +337,30 @@ class DaemonApiTests(unittest.TestCase):
             self.assertIn("--session-token REDACTED", payload["entrypoints"]["verify_network"])
             self.assertIn("sessionToken=REDACTED", payload["entrypoints"]["open_studio"])
             self.assertNotIn("header-token", json.dumps(payload, ensure_ascii=False))
+            self.assertNotIn("contracts", payload)
+
+    def test_network_entry_profile_route_returns_stable_profile(self):
+        with daemon_url() as base_url:
+            url = (
+                f"{base_url}/network/entry-profile"
+                "?workflow_path=workflows/cli-anything-macrocli-mermaid-routing.example.json"
+                "&studio_url=http://127.0.0.1:5177"
+                "&session_token=header-token"
+            )
+            request = urllib.request.Request(url, headers={"X-CBN-Session": "header-token"})
+            with urllib.request.urlopen(request, timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+
+            self.assertEqual(response.status, 200)
+            self.assertEqual(payload["kind"], "NetworkEntryProfile")
+            self.assertEqual(payload["status"], "ready")
+            self.assertEqual(payload["profile_id"], "cbn.network.entry.cli-cli-harness.v1")
+            self.assertEqual(payload["base_url"], base_url)
+            self.assertEqual(payload["primary_entrypoints"]["run_workflow"]["url"], f"{base_url}/workflows/run")
+            self.assertEqual(payload["compatibility"]["external_protocol"], "agent-cli-contract")
+            self.assertEqual(payload["compatibility"]["internal_bus"], "CBN BridgeMessage")
+            self.assertTrue(payload["auth"]["session_token_required"])
+            self.assertTrue(payload["auth"]["session_token_included"])
             self.assertNotIn("contracts", payload)
 
     def test_network_readiness_route_returns_mvp_matrix(self):

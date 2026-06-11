@@ -495,6 +495,13 @@ Killer Demo slice 已新增可运行证据束：
   调用 daemon `GET /imports/catalog`，Connect 面板会展示 direct catalog importers、
   next commands，并与 one-shot `NetworkConnectPackage.registration_surface` 做数量一致性
   对比，避免 UI 只依赖 connect package 的嵌套副本。
+- `NetworkEntryProfile` 已新增独立读取面：CLI 可通过
+  `python -m cbn network entry-profile` 或
+  `python -m cbn network quickstart --output entry-profile` 输出，daemon 可通过
+  `GET /network/entry-profile` 输出。它只暴露 integration mode、auth metadata、
+  stable fields、外部 `agent-cli-contract` 与内部 `CBN BridgeMessage` 兼容关系、
+  primary entrypoints 和 bridge route 摘要，让外部程序无需解析完整
+  `NetworkConnectPackage` 也能先判断自己如何进入 CBN 网络。
 - `consumer_quickstart.entrypoints`、`requests[]`、SDK snippets 与 acceptance
   checklist 已纳入 `import_catalog` 首呼叫路径。第三方程序读取一次
   `network connect-package` 或 `network quickstart` 后，不仅能调用 workflow，也能在

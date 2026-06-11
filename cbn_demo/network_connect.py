@@ -1214,6 +1214,7 @@ def _endpoint_catalog(*, base_url: str | None, workflow_path: str) -> list[dict[
         ("GET", "/network/connect-package", "read the full one-shot network connection package"),
         ("GET", "/network/quickstart", "read only the first-call quickstart payload"),
         ("GET", "/network/launch-contract", "read only the redacted launch contract for external programs"),
+        ("GET", "/network/entry-profile", "read only the stable external integration profile"),
         ("GET", "/network/readiness", "read only the killer MVP readiness matrix"),
         ("POST", "/network/verify", "run the live network acceptance checklist"),
         ("GET", "/imports/catalog", "read the dry-run-first CLI importer catalog"),
