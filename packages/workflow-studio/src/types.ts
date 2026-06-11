@@ -31,6 +31,57 @@ export interface WorkflowInspect {
   errors?: string[];
 }
 
+export interface BridgeContractSection {
+  kind?: string;
+  owner?: string;
+  scope?: string;
+  required_metadata?: string[];
+  required_payload?: string[];
+  required_fields?: string[];
+  required_spec?: string[];
+  valid_roots?: string[];
+}
+
+export interface BridgeContractReport {
+  ok?: boolean;
+  apiVersion?: string;
+  workflow_path?: string;
+  contract?: {
+    protocol_name?: string;
+    contracts?: {
+      tool_manifest?: BridgeContractSection;
+      bridge_message?: BridgeContractSection;
+      artifact?: BridgeContractSection;
+      workflow_selector?: BridgeContractSection;
+    };
+  };
+  summary?: {
+    workflow_count?: number;
+    route_count?: number;
+    route_ready_count?: number;
+    blocked_route_count?: number;
+    payload_route_count?: number;
+    artifact_route_count?: number;
+    metadata_route_count?: number;
+  };
+  workflows?: Array<Record<string, unknown>>;
+}
+
+export interface BridgeContractSummary {
+  status: string;
+  protocolName: string;
+  routeReady: string;
+  blockedRoutes: number;
+  sections: Array<{
+    id: string;
+    title: string;
+    kind: string;
+    owner: string;
+    scope: string;
+    required: string;
+  }>;
+}
+
 export interface DockState {
   events: unknown[];
   audit: unknown[];

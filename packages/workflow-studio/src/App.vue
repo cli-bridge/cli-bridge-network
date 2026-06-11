@@ -25,6 +25,9 @@ import type {
   AcceptanceRunSummary,
   AdapterAgentNodeBundle,
   AgentWorkflowRequestPlan,
+  BridgeContractReport,
+  BridgeContractSection,
+  BridgeContractSummary,
   ConnectionAcceptanceCheck,
   ConnectSummary,
   DockState,
@@ -57,7 +60,7 @@ const canvasRef = ref<HTMLCanvasElement | null>(null);
 const graphRef = ref<StudioGraph | null>(null);
 const workflow = ref<WorkflowInspect | null>(null);
 const workflowList = ref<unknown>(null);
-const contract = ref<unknown>(null);
+const contract = ref<BridgeContractReport | null>(null);
 const runResult = ref<unknown>(null);
 const demoReport = ref<KillerDemoReport | null>(null);
 const agentBundle = ref<AdapterAgentNodeBundle | null>(null);
@@ -81,6 +84,7 @@ const agentTasks = computed(() => (Array.isArray(agentBundle.value?.tasks) ? age
 const agentHandoffs = computed(() => agentBundle.value?.source_coordination_plan?.handoffs ?? []);
 const evidenceSummary = computed<EvidenceSummary>(() => summarizeEvidence(demoReport.value, dock));
 const protocolSummary = computed<ProtocolSummary>(() => summarizeProtocols(demoReport.value));
+const bridgeContractSummary = computed<BridgeContractSummary>(() => summarizeBridgeContract(contract.value));
 const workflowRequestSummary = computed<WorkflowRequestSummary>(() => summarizeWorkflowRequestPlan(workflowRequestPlan.value));
 const connectSummary = computed<ConnectSummary>(() => summarizeConnectPackage(connectPackage.value));
 const connectEndpoints = computed(() => (Array.isArray(connectPackage.value?.daemon_endpoints) ? connectPackage.value.daemon_endpoints : []));
@@ -128,7 +132,7 @@ async function inspectWorkflow() {
 }
 
 async function inspectContract() {
-  contract.value = await call("contract", () => api.value.contract(config.workflowPath));
+  contract.value = (await call("contract", () => api.value.contract(config.workflowPath))) as BridgeContractReport;
 }
 
 async function inspectAgentBundle() {
@@ -322,6 +326,41 @@ function summarizeProtocols(report: KillerDemoReport | null): ProtocolSummary {
       a2a: wireText(exports.a2a?.wire_compatible),
       acp: wireText(exports.acp?.wire_compatible),
     },
+  };
+}
+
+function summarizeBridgeContract(payload: BridgeContractReport | null): BridgeContractSummary {
+  const contracts = payload?.contract?.contracts ?? {};
+  const summary = payload?.summary ?? {};
+  const routeCount = numberValue(summary.route_count) ?? 0;
+  const readyCount = numberValue(summary.route_ready_count) ?? 0;
+  return {
+    status: payload?.ok ? "ready" : payload ? "blocked" : "not loaded",
+    protocolName: payload?.contract?.protocol_name ?? "CBN Bridge Contract",
+    routeReady: `${readyCount}/${routeCount}`,
+    blockedRoutes: numberValue(summary.blocked_route_count) ?? 0,
+    sections: [
+      contractSectionSummary("tool_manifest", "ToolManifest", contracts.tool_manifest),
+      contractSectionSummary("bridge_message", "BridgeMessage", contracts.bridge_message),
+      contractSectionSummary("artifact", "Artifact", contracts.artifact),
+      contractSectionSummary("workflow_selector", "Workflow Selector", contracts.workflow_selector),
+    ],
+  };
+}
+
+function contractSectionSummary(
+  id: string,
+  title: string,
+  section: BridgeContractSection | undefined,
+): BridgeContractSummary["sections"][number] {
+  const required = section?.required_spec ?? section?.required_metadata ?? section?.required_payload ?? section?.required_fields ?? section?.valid_roots ?? [];
+  return {
+    id,
+    title,
+    kind: section?.kind ?? "not loaded",
+    owner: section?.owner ?? "not loaded",
+    scope: section?.scope ?? "not loaded",
+    required: required.length ? required.join(", ") : "not loaded",
   };
 }
 
@@ -577,6 +616,33 @@ onMounted(async () => {
       <section>
         <div class="section-title"><Braces :size="15" /> Selectors</div>
         <pre>{{ pretty(selectedRoutes) }}</pre>
+      </section>
+      <section>
+        <div class="section-title"><ShieldCheck :size="15" /> Bridge Contract</div>
+        <div class="contract-status-grid">
+          <div>
+            <span>Status</span>
+            <strong>{{ bridgeContractSummary.status }}</strong>
+          </div>
+          <div>
+            <span>Routes</span>
+            <strong>{{ bridgeContractSummary.routeReady }}</strong>
+          </div>
+          <div>
+            <span>Blocked</span>
+            <strong>{{ bridgeContractSummary.blockedRoutes }}</strong>
+          </div>
+        </div>
+        <div class="contract-section-list">
+          <div v-for="section in bridgeContractSummary.sections" :key="section.id">
+            <strong>{{ section.title }}</strong>
+            <span>{{ section.kind }}</span>
+            <code>{{ section.owner }}</code>
+            <small>{{ section.scope }}</small>
+            <em>{{ section.required }}</em>
+          </div>
+        </div>
+        <pre>{{ pretty({ protocol: bridgeContractSummary.protocolName, summary: contract?.summary, contracts: contract?.contract?.contracts }) }}</pre>
       </section>
       <section>
         <div class="section-title"><FileJson :size="15" /> Run result</div>
