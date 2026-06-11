@@ -146,6 +146,13 @@ def network_connect_package(
         network_harness_agent=network_harness_agent,
         request_plan=request_plan,
     )
+    presenter_command_deck = _presenter_command_deck(
+        workflow_path=workflow_path,
+        base_url=base_url,
+        session_token=session_token,
+        registration_surface=registration_surface,
+        agent_message=agent_message,
+    )
     mvp_readiness = _mvp_readiness(
         workflow=workflow,
         bridge_contract=bridge_contract,
@@ -163,6 +170,7 @@ def network_connect_package(
         network_entry_profile=network_entry_profile,
         network_harness_agent=network_harness_agent,
         consumer_sdk_bootstrap=consumer_sdk_bootstrap,
+        presenter_command_deck=presenter_command_deck,
     )
     mvp_presenter_brief = _mvp_presenter_brief(
         workflow=workflow,
@@ -179,6 +187,7 @@ def network_connect_package(
         base_url=base_url,
         workflow_path=workflow_path,
         session_token=session_token,
+        command_deck=presenter_command_deck,
     )
     consumer_launch_contract = _consumer_launch_contract(
         workflow_path=workflow_path,
@@ -794,6 +803,7 @@ def _mvp_readiness(
     network_entry_profile: dict[str, Any],
     network_harness_agent: dict[str, Any],
     consumer_sdk_bootstrap: dict[str, Any],
+    presenter_command_deck: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Product-facing readiness matrix for the current killer MVP surface."""
 
@@ -804,6 +814,28 @@ def _mvp_readiness(
     direct_cli_summary = direct_cli_readiness.get("summary") if isinstance(direct_cli_readiness.get("summary"), dict) else {}
     direct_cli_parser = direct_cli_readiness.get("parser_contract") if isinstance(direct_cli_readiness.get("parser_contract"), dict) else {}
     reusable_harness = request_plan.get("reusable_harness") if isinstance(request_plan.get("reusable_harness"), dict) else {}
+    expected_presenter_command_ids = [
+        "connect_package",
+        "plan_harness",
+        "run_demo",
+        "export_protocols",
+        "sdk_bootstrap",
+        "register_next_cli",
+    ]
+    presenter_command_ids = [
+        str(command.get("id"))
+        for command in presenter_command_deck
+        if isinstance(command, dict) and command.get("id")
+    ]
+    presenter_command_deck_ready = bool(
+        len(presenter_command_ids) >= len(expected_presenter_command_ids)
+        and presenter_command_ids[:3] == expected_presenter_command_ids[:3]
+        and all(command_id in presenter_command_ids for command_id in expected_presenter_command_ids)
+        and all(
+            isinstance(command, dict) and bool(command.get("command")) and bool(command.get("copy_label"))
+            for command in presenter_command_deck
+        )
+    )
     checks = [
         _mvp_check(
             "external_agent_cli_contract",
@@ -981,6 +1013,23 @@ def _mvp_readiness(
             },
             "repair_killer_demo_playbook",
         ),
+        _mvp_check(
+            "presenter_command_deck",
+            "Presenter command deck",
+            presenter_command_deck_ready,
+            "The MVP presenter has ordered, copyable commands for connect, harness, demo, protocol export, SDK bootstrap, and next-CLI registration.",
+            {
+                "command_count": len(presenter_command_ids),
+                "command_ids": presenter_command_ids,
+                "expected_command_ids": expected_presenter_command_ids,
+                "copy_labels": [
+                    str(command.get("copy_label"))
+                    for command in presenter_command_deck
+                    if isinstance(command, dict) and command.get("copy_label")
+                ],
+            },
+            "repair_presenter_command_deck",
+        ),
     ]
     ready_count = sum(1 for check in checks if check["ready"])
     total = len(checks)
@@ -998,6 +1047,7 @@ def _mvp_readiness(
             "external_agent_cli_contract",
         ),
         "demo_in_workflow_studio": _checks_ready(checks, "workflow_studio_surface", "killer_demo_playbook"),
+        "present_mvp_from_command_deck": _checks_ready(checks, "presenter_command_deck"),
         "safe_first_run_setup": _checks_ready(checks, "setup_guidance"),
     }
     return {
@@ -1291,6 +1341,7 @@ def _mvp_presenter_brief(
     base_url: str | None,
     workflow_path: str,
     session_token: str | None,
+    command_deck: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Audience-facing brief for presenting the killer MVP without reading raw JSON first."""
 
@@ -1478,50 +1529,7 @@ def _mvp_presenter_brief(
             "readiness_command": readiness_command,
             "sdk_bootstrap_command": sdk_bootstrap_command,
         },
-        "command_deck": [
-            _presenter_command(
-                "connect_package",
-                "Read one-shot connect package",
-                connect_package_command,
-                "External programs can discover every CBN network entrypoint in one read.",
-                "Copy Package",
-            ),
-            _presenter_command(
-                "plan_harness",
-                "Plan natural-language harness request",
-                agent_plan_command,
-                "A reusable harness agent can bind a natural-language request to the CLI-CLI workflow.",
-                "Copy Harness",
-            ),
-            _presenter_command(
-                "run_demo",
-                "Run killer demo with evidence",
-                demo_run_command,
-                "The macrocli -> transform -> mermaid chain produces artifacts, events, and audit records.",
-                "Copy Demo",
-            ),
-            _presenter_command(
-                "export_protocols",
-                "Export MCP/A2A/ACP facades",
-                protocol_export_command,
-                "The same workflow exports to MCP, A2A, and ACP descriptors.",
-                "Copy Protocols",
-            ),
-            _presenter_command(
-                "sdk_bootstrap",
-                "Read SDK bootstrap contract",
-                sdk_bootstrap_command,
-                "External SDKs can initialize from the focused typed bootstrap contract.",
-                "Copy SDK",
-            ),
-            _presenter_command(
-                "register_next_cli",
-                "Register the next CLI",
-                next_cli_command,
-                "New CLIs enter through dry-run-first importers before writing manifests.",
-                "Copy CLI",
-            ),
-        ],
+        "command_deck": command_deck,
         "decision_gates": {
             "ready_goal_count": ready_goal_count,
             "goal_count": goal_count,
@@ -3038,6 +3046,79 @@ def _presenter_command(command_id: str, title: str, command: str, proves: str, c
         "proves": proves,
         "copy_label": copy_label,
     }
+
+
+def _presenter_command_deck(
+    *,
+    workflow_path: str,
+    base_url: str | None,
+    session_token: str | None,
+    registration_surface: dict[str, Any],
+    agent_message: str,
+) -> list[dict[str, str]]:
+    connect_package_command = _network_connect_package_command(
+        workflow_path,
+        base_url=base_url,
+        session_token=session_token,
+    )
+    agent_plan_command = _adapter_agent_workflow_request_command(workflow_path, message=agent_message)
+    demo_run_command = _demo_killer_command(workflow_path, smoke_suite=False)
+    protocol_export_command = _protocol_export_workflows_command(workflow_path)
+    sdk_bootstrap_command = _network_quickstart_command(
+        workflow_path,
+        base_url=base_url,
+        session_token=session_token,
+        output="sdk-bootstrap",
+    )
+    next_cli_command = _registration_command(
+        registration_surface,
+        "command",
+        fallback="python -m cbn import command --help",
+    )
+    return [
+        _presenter_command(
+            "connect_package",
+            "Read one-shot connect package",
+            connect_package_command,
+            "External programs can discover every CBN network entrypoint in one read.",
+            "Copy Package",
+        ),
+        _presenter_command(
+            "plan_harness",
+            "Plan natural-language harness request",
+            agent_plan_command,
+            "A reusable harness agent can bind a natural-language request to the CLI-CLI workflow.",
+            "Copy Harness",
+        ),
+        _presenter_command(
+            "run_demo",
+            "Run killer demo with evidence",
+            demo_run_command,
+            "The macrocli -> transform -> mermaid chain produces artifacts, events, and audit records.",
+            "Copy Demo",
+        ),
+        _presenter_command(
+            "export_protocols",
+            "Export MCP/A2A/ACP facades",
+            protocol_export_command,
+            "The same workflow exports to MCP, A2A, and ACP descriptors.",
+            "Copy Protocols",
+        ),
+        _presenter_command(
+            "sdk_bootstrap",
+            "Read SDK bootstrap contract",
+            sdk_bootstrap_command,
+            "External SDKs can initialize from the focused typed bootstrap contract.",
+            "Copy SDK",
+        ),
+        _presenter_command(
+            "register_next_cli",
+            "Register the next CLI",
+            next_cli_command,
+            "New CLIs enter through dry-run-first importers before writing manifests.",
+            "Copy CLI",
+        ),
+    ]
 
 
 def _network_quickstart_command(

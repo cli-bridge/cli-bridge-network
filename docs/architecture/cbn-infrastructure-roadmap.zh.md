@@ -287,7 +287,9 @@ Killer Demo slice 已新增可运行证据束：
   connect package、natural-language harness plan、killer demo run、MCP/A2A/ACP
   export、SDK bootstrap 和 next CLI registration 聚合为有序可复制命令卡片。
   Workflow Studio 直接渲染该 deck，现场演示可以按一组命令完成“接入 -> 规划 ->
-  运行 -> 导出 -> SDK -> 下一个 CLI”的闭环。
+  运行 -> 导出 -> SDK -> 下一个 CLI”的闭环。本轮已把该 command deck 纳入
+  `KillerMvpReadiness.presenter_command_deck` 正式检查，`KillerMvpReadiness`
+  从 15/15 扩展为 16/16，避免演示命令链只停留在 UI 字段。
 - Killer demo report 已新增 `communication_trace`：从真实 workflow run result 中提取
   `BridgeMessage argsFrom` handoff，展示 producer task、consumer task、selector、
   BridgeMessage valid 状态、selected value preview、resolved arg preview 和 artifact
