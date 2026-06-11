@@ -595,6 +595,9 @@ export interface NetworkConnectPackage {
     protocol_export_count?: number;
     agent_card_count?: number;
     registration_importer_count?: number;
+    direct_cli_profile_count?: number;
+    direct_cli_capability_count?: number;
+    direct_cli_recovery_type_count?: number;
     consumer_snippet_count?: number;
     setup_status?: string;
     setup_required?: boolean;
@@ -679,6 +682,7 @@ export interface NetworkConnectPackage {
     next_commands?: string[];
   };
   demo_playbook?: KillerMvpDemoPlaybook;
+  direct_cli_readiness?: DirectCliReadinessReport;
   network_entry_profile?: NetworkEntryProfile;
   mvp_readiness?: KillerMvpReadiness;
   mvp_presenter_brief?: KillerMvpPresenterBrief;

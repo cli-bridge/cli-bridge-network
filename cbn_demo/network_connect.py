@@ -25,6 +25,7 @@ from cbn_core.manifest import ManifestRegistry
 from cbn_demo.killer import DEFAULT_KILLER_WORKFLOW_PATH, KILLER_CAPABILITIES
 from cbn_plugins.cli_anything import CliAnythingHub
 from cbn_core.bridge_contract import workflow_bridge_contract_report
+from cbn_tools.direct_cli_readiness import direct_cli_readiness_report
 from cbn_protocol.exports import export_all_workflow_protocols
 from cbn_workflow.catalog import inspect_workflow
 
@@ -108,6 +109,7 @@ def network_connect_package(
     )
     registration_surface = _registration_surface()
     plugin_health = _plugin_health()
+    direct_cli_readiness = direct_cli_readiness_report(registry=registry)
     demo_playbook = _demo_playbook(
         workflow_path=workflow_path,
         studio_link=studio_link,
@@ -141,6 +143,7 @@ def network_connect_package(
         demo_playbook=demo_playbook,
         quickstart=quickstart,
         plugin_health=plugin_health,
+        direct_cli_readiness=direct_cli_readiness,
         studio_link=studio_link,
         network_entry_profile=network_entry_profile,
     )
@@ -182,6 +185,9 @@ def network_connect_package(
             "protocol_export_count": protocol_summary["export_count"],
             "agent_card_count": len(agent_bundle.get("cards", [])),
             "registration_importer_count": registration_surface["importer_count"],
+            "direct_cli_profile_count": direct_cli_readiness["summary"]["profile_count"],
+            "direct_cli_capability_count": direct_cli_readiness["summary"]["capability_count"],
+            "direct_cli_recovery_type_count": direct_cli_readiness["summary"]["recovery_type_count"],
             "consumer_snippet_count": len(quickstart.get("sdk_snippets", [])),
             "agent_workflow_request_ready": request_plan.get("ok"),
             "setup_status": setup_guidance.get("status"),
@@ -222,6 +228,7 @@ def network_connect_package(
         "workflow": _compact_workflow(workflow),
         "protocols": protocol_summary,
         "plugins": plugin_health,
+        "direct_cli_readiness": direct_cli_readiness,
         "workflow_studio": studio_link,
         "demo_readiness": demo_readiness,
         "demo_playbook": demo_playbook,
@@ -519,6 +526,7 @@ def _mvp_readiness(
     demo_playbook: dict[str, Any],
     quickstart: dict[str, Any],
     plugin_health: dict[str, Any],
+    direct_cli_readiness: dict[str, Any],
     studio_link: dict[str, Any],
     network_entry_profile: dict[str, Any],
 ) -> dict[str, Any]:
@@ -528,6 +536,8 @@ def _mvp_readiness(
     acceptance = quickstart.get("acceptance") if isinstance(quickstart.get("acceptance"), dict) else {}
     cli_anything = plugin_health.get("cli_anything") if isinstance(plugin_health.get("cli_anything"), dict) else {}
     module_split = cli_anything.get("module_split") if isinstance(cli_anything.get("module_split"), dict) else {}
+    direct_cli_summary = direct_cli_readiness.get("summary") if isinstance(direct_cli_readiness.get("summary"), dict) else {}
+    direct_cli_parser = direct_cli_readiness.get("parser_contract") if isinstance(direct_cli_readiness.get("parser_contract"), dict) else {}
     reusable_harness = request_plan.get("reusable_harness") if isinstance(request_plan.get("reusable_harness"), dict) else {}
     checks = [
         _mvp_check(
@@ -614,6 +624,25 @@ def _mvp_readiness(
             "repair_registration_surface",
         ),
         _mvp_check(
+            "direct_cli_readiness",
+            "Direct CLI profile readiness",
+            bool(
+                direct_cli_readiness.get("ok")
+                and direct_cli_parser.get("fixture_ok")
+                and int(direct_cli_summary.get("capability_count", 0) or 0)
+                == int(direct_cli_summary.get("verified_output_count", 0) or 0)
+            ),
+            "Feishu, Jimeng, Obsidian, and CAW direct CLI profiles have typed parser coverage and setup recovery gates.",
+            {
+                "profile_count": direct_cli_summary.get("profile_count", 0),
+                "capability_count": direct_cli_summary.get("capability_count", 0),
+                "verified_output_count": direct_cli_summary.get("verified_output_count", 0),
+                "recovery_type_count": direct_cli_summary.get("recovery_type_count", 0),
+                "fixture_failed_case_count": direct_cli_summary.get("fixture_failed_case_count", 0),
+            },
+            "repair_direct_cli_readiness",
+        ),
+        _mvp_check(
             "cli_anything_split",
             "CLI-Anything split facade",
             module_split.get("status") == "ready",
@@ -666,6 +695,7 @@ def _mvp_readiness(
         "show_cli_cli_protocol": _checks_ready(checks, "internal_bridge_contract", "killer_workflow_dag"),
         "run_reusable_harness_agent": _checks_ready(checks, "natural_language_harness_agent", "quickstart_acceptance"),
         "integrate_next_cli": _checks_ready(checks, "cli_registration_surface", "cli_anything_split"),
+        "integrate_direct_cli_profiles": _checks_ready(checks, "direct_cli_readiness"),
         "one_shot_external_network_entry": _checks_ready(checks, "network_entry_profile", "external_agent_cli_contract"),
         "demo_in_workflow_studio": _checks_ready(checks, "workflow_studio_surface", "killer_demo_playbook"),
         "safe_first_run_setup": _checks_ready(checks, "setup_guidance"),
@@ -1236,6 +1266,7 @@ def _endpoint_catalog(*, base_url: str | None, workflow_path: str) -> list[dict[
         ("GET", "/network/readiness", "read only the killer MVP readiness matrix"),
         ("POST", "/network/verify", "run the live network acceptance checklist"),
         ("GET", "/imports/catalog", "read the dry-run-first CLI importer catalog"),
+        ("GET", "/direct-cli/readiness", "read direct CLI profile parser, setup, and recovery readiness"),
         ("GET", "/health", "confirm daemon reachability"),
         ("GET", "/workflows", "discover registered workflow descriptors"),
         ("GET", f"/workflows?path={workflow_path}", "inspect one workflow DAG"),
@@ -1612,6 +1643,7 @@ def _consumer_quickstart(
         "launch_contract": _absolute_url(clean_base_url, f"/network/launch-contract?{launch_query}"),
         "entry_profile": _absolute_url(clean_base_url, f"/network/entry-profile?{launch_query}"),
         "import_catalog": _absolute_url(clean_base_url, "/imports/catalog"),
+        "direct_cli_readiness": _absolute_url(clean_base_url, "/direct-cli/readiness"),
         "inspect_workflow": _absolute_url(clean_base_url, f"/workflows?{workflow_query}"),
         "inspect_bridge_contract": _absolute_url(clean_base_url, f"/messages/contract?{contract_query}"),
         "inspect_agent_nodes": _absolute_url(clean_base_url, f"/adapter-agent/node-bundle?{agent_query}"),
@@ -1635,6 +1667,7 @@ def _consumer_quickstart(
         _quickstart_request("launch_contract", "GET", entrypoints["launch_contract"], headers=headers),
         _quickstart_request("entry_profile", "GET", entrypoints["entry_profile"], headers=headers),
         _quickstart_request("import_catalog", "GET", entrypoints["import_catalog"], headers=headers),
+        _quickstart_request("direct_cli_readiness", "GET", entrypoints["direct_cli_readiness"], headers=headers),
         _quickstart_request("inspect_workflow", "GET", entrypoints["inspect_workflow"], headers=headers),
         _quickstart_request(
             "inspect_bridge_contract",
@@ -1691,6 +1724,7 @@ def _consumer_quickstart(
             "launch_contract",
             "entry_profile",
             "import_catalog",
+            "direct_cli_readiness",
             "inspect_workflow",
             "inspect_bridge_contract",
             "inspect_agent_nodes",
@@ -1762,48 +1796,55 @@ def _quickstart_sequence_steps(*, requests: list[dict[str, Any]], studio_url: st
         ),
         request_step(
             5,
+            "direct_cli_readiness",
+            "Inspect direct CLI readiness",
+            "Confirm typed parser coverage and setup recovery for direct external CLI profiles.",
+            "DirectCliReadinessReport.ok == true and recovery_type_count >= 1.",
+        ),
+        request_step(
+            6,
             "inspect_workflow",
             "Inspect workflow DAG",
             "Confirm the selected workflow is valid and has CLI tasks before execution.",
             "workflow.valid == true and task_count >= 1.",
         ),
         request_step(
-            6,
+            7,
             "inspect_bridge_contract",
             "Inspect Bridge Contract",
             "Understand ToolManifest, BridgeMessage, Artifact, and selector boundaries.",
             "bridge contract ok and route_count >= 1.",
         ),
         request_step(
-            7,
+            8,
             "inspect_agent_nodes",
             "Inspect harness agent nodes",
             "Read reusable AgentCard, AgentHarness, AgentTask, and BridgeMessage node bindings.",
             "AdapterAgentNodeBundle includes cards, harnesses, and BridgeMessage.",
         ),
         request_step(
-            8,
+            9,
             "export_protocols",
             "Export protocol facades",
             "Expose MCP, A2A, and ACP workflow descriptors from the same internal bus contract.",
             "protocol exports include mcp, a2a, and acp.",
         ),
         request_step(
-            9,
+            10,
             "plan_agent_request",
             "Plan natural-language run",
             "Bind a natural-language request to the reusable CLI-CLI harness run contract.",
             "AdapterAgentWorkflowRequestPlan.reusable_harness.kind == NaturalLanguageWorkflowHarness.",
         ),
         request_step(
-            10,
+            11,
             "run_workflow",
             "Run workflow",
             "Execute the CLI-CLI chain through the daemon with dry-run/confirmation gates.",
             "workflow run receipt status == completed.",
         ),
         {
-            "order": 11,
+            "order": 12,
             "id": "read_evidence",
             "kind": "evidence",
             "title": "Read evidence",
@@ -1826,6 +1867,7 @@ def _quickstart_sdk_snippets(
         "launch_contract",
         "entry_profile",
         "import_catalog",
+        "direct_cli_readiness",
         "plan_agent_request",
         "run_workflow",
         "events",
@@ -1888,6 +1930,7 @@ def _python_consumer_snippet(requests_by_id: dict[str, dict[str, Any]], *, heade
             "launch_contract",
             "entry_profile",
             "import_catalog",
+            "direct_cli_readiness",
             "plan_agent_request",
             "run_workflow",
             "events",
@@ -1921,10 +1964,11 @@ def _python_consumer_snippet(requests_by_id: dict[str, dict[str, Any]], *, heade
             "launch_contract = call('launch_contract')",
             "entry_profile = call('entry_profile')",
             "catalog = call('import_catalog')",
+            "direct_cli = call('direct_cli_readiness')",
             "plan = call('plan_agent_request')",
             "receipt = call('run_workflow')",
             "evidence = {key: call(key) for key in ('events', 'audit', 'artifacts')}",
-            "print(json.dumps({'launch_contract': launch_contract.get('status'), 'entry_profile': entry_profile.get('status'), 'importers': catalog.get('importer_count'), 'plan': plan.get('kind'), 'workflow_status': receipt.get('status'), 'evidence': {k: len(v) for k, v in evidence.items()}}, indent=2))",
+            "print(json.dumps({'launch_contract': launch_contract.get('status'), 'entry_profile': entry_profile.get('status'), 'importers': catalog.get('importer_count'), 'direct_cli': direct_cli.get('summary', {}).get('capability_count'), 'plan': plan.get('kind'), 'workflow_status': receipt.get('status'), 'evidence': {k: len(v) for k, v in evidence.items()}}, indent=2))",
         ]
     )
 
@@ -1937,7 +1981,7 @@ def _typescript_consumer_snippet(requests_by_id: dict[str, dict[str, Any]], *, h
             "json": request.get("json") if isinstance(request.get("json"), dict) else None,
         }
         for request_id, request in requests_by_id.items()
-        if request_id in {"health", "launch_contract", "entry_profile", "import_catalog", "plan_agent_request", "run_workflow", "events", "audit", "artifacts"}
+        if request_id in {"health", "launch_contract", "entry_profile", "import_catalog", "direct_cli_readiness", "plan_agent_request", "run_workflow", "events", "audit", "artifacts"}
     }
     return "\n".join(
         [
@@ -1959,10 +2003,11 @@ def _typescript_consumer_snippet(requests_by_id: dict[str, dict[str, Any]], *, h
             "const launchContract = await call('launch_contract');",
             "const entryProfile = await call('entry_profile');",
             "const catalog = await call('import_catalog');",
+            "const directCli = await call('direct_cli_readiness');",
             "const plan = await call('plan_agent_request');",
             "const receipt = await call('run_workflow');",
             "const [events, audit, artifacts] = await Promise.all([call('events'), call('audit'), call('artifacts')]);",
-            "console.log({ launchContract: launchContract.status, entryProfile: entryProfile.status, importers: catalog.importer_count, plan: plan.kind, workflowStatus: receipt.status, evidence: { events: events.length, audit: audit.length, artifacts: artifacts.length } });",
+            "console.log({ launchContract: launchContract.status, entryProfile: entryProfile.status, importers: catalog.importer_count, directCli: directCli.summary?.capability_count, plan: plan.kind, workflowStatus: receipt.status, evidence: { events: events.length, audit: audit.length, artifacts: artifacts.length } });",
         ]
     )
 
@@ -2009,6 +2054,19 @@ def _network_connection_acceptance(*, workflow_path: str, requests: list[dict[st
                 "json.kind": "CliRegistrationSurface",
                 "json.status": "ready",
                 "json.importer_count_min": 1,
+            },
+        ),
+        _acceptance_check(
+            "direct_cli_readiness_readable",
+            "direct_cli_readiness",
+            "External consumers can inspect direct CLI typed parser coverage and first-run recovery gates.",
+            {
+                "http_status": 200,
+                "json.kind": "DirectCliReadinessReport",
+                "json.ok": True,
+                "json.summary.profile_count_min": 1,
+                "json.summary.capability_count_min": 1,
+                "json.summary.recovery_type_count_min": 1,
             },
         ),
         _acceptance_check(
@@ -2095,6 +2153,7 @@ def _network_connection_acceptance(*, workflow_path: str, requests: list[dict[st
             "consumer_launch_contract.status == ready",
             "network_entry_profile.status == ready",
             "import_catalog.importer_count >= 1",
+            "direct_cli_readiness.ok == true",
             "workflow.valid == true",
             "bridge_contract.summary.route_count >= 1",
             "agent_node_bundle.kind == AdapterAgentNodeBundle",
@@ -2108,6 +2167,7 @@ def _network_connection_acceptance(*, workflow_path: str, requests: list[dict[st
             "If launch_contract fails, verify the daemon exposes /network/launch-contract from the current CBN build.",
             "If entry_profile fails, verify the daemon exposes /network/entry-profile and redacts session tokens.",
             "If import_catalog fails, verify the daemon exposes /imports/catalog from the current CBN build.",
+            "If direct_cli_readiness fails, verify the daemon exposes /direct-cli/readiness and parser fixtures are available.",
             "If workflow inspection fails, verify workflow_path and required manifests.",
             "If run_workflow fails, rerun plan_agent_request and inspect bridge routes before retrying.",
         ],

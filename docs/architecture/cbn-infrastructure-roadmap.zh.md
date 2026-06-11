@@ -223,6 +223,12 @@ Killer Demo slice 已新增可运行证据束：
   recovery taxonomy。Workflow Studio Connect 面板同步展示 direct CLI readiness，
   让 Feishu、Jimeng、Obsidian、CAW 这类需要登录/API key/本地服务的 CLI 在 MVP
   中有可扫读的 profile 覆盖、typed parser 覆盖和首次设置引导证据。
+- `NetworkConnectPackage.direct_cli_readiness` 已把同一份 direct CLI readiness 纳入
+  one-shot package；`consumer_quickstart` 同步新增 `direct_cli_readiness` 请求，
+  acceptance checklist 从 13 项扩展为 14 项，`KillerMvpReadiness` 从 12/12
+  扩展为 13/13。外部程序读取一次 package 后，不只知道如何跑当前 workflow，
+  也能判断 Feishu/Jimeng/Obsidian/CAW 这类 direct CLI profile 是否有 typed parser、
+  fixture 和首次设置恢复路径。
 - Killer demo report 已新增 `communication_trace`：从真实 workflow run result 中提取
   `BridgeMessage argsFrom` handoff，展示 producer task、consumer task、selector、
   BridgeMessage valid 状态、selected value preview、resolved arg preview 和 artifact

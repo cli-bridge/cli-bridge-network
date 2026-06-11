@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from cbn_parsers.fixtures import run_parser_fixtures
+from cbn_parsers.registry import ParserRegistry
+from cbn_core.manifest import ManifestRegistry
 from cbn_runtime.context import RuntimeContext
 from cbn_tools.external_cli import list_actions
 
@@ -15,17 +17,26 @@ DIRECT_CLI_PARSER_REF = "direct-cli.typed"
 
 
 def direct_cli_readiness_report(
-    runtime: RuntimeContext,
+    runtime: RuntimeContext | None = None,
     *,
+    registry: ManifestRegistry | None = None,
+    parser_registry: ParserRegistry | None = None,
     fixture_path: Path = Path("parser_fixtures"),
 ) -> dict[str, Any]:
     """Summarize direct CLI manifests, parser fixtures, and setup recovery gates."""
 
-    parser_present = _parser_present(runtime)
-    fixture_report = run_parser_fixtures(fixture_path, parser_ref=DIRECT_CLI_PARSER_REF, registry=runtime.parser_registry)
+    if runtime is not None:
+        registry = runtime.registry
+        parser_registry = runtime.parser_registry
+    if registry is None:
+        raise ValueError("registry is required when runtime is not supplied")
+    parser_registry = parser_registry or ParserRegistry.builtins()
+
+    parser_present = _parser_present(parser_registry)
+    fixture_report = run_parser_fixtures(fixture_path, parser_ref=DIRECT_CLI_PARSER_REF, registry=parser_registry)
     direct_manifests = [
         manifest
-        for manifest in runtime.registry.list()
+        for manifest in registry.list()
         if manifest.labels.get("adapter") == "direct-cli" or manifest.annotations.get("cbn.adapter.profile")
     ]
     manifest_lookup = {
@@ -87,9 +98,9 @@ def direct_cli_readiness_report(
     }
 
 
-def _parser_present(runtime: RuntimeContext) -> bool:
+def _parser_present(parser_registry: ParserRegistry) -> bool:
     try:
-        runtime.parser_registry.inspect(DIRECT_CLI_PARSER_REF)
+        parser_registry.inspect(DIRECT_CLI_PARSER_REF)
     except KeyError:
         return False
     return True

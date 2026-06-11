@@ -206,7 +206,9 @@ const directImportCatalogImporters = computed(() =>
 const importCatalogNextCommands = computed<string[]>(() =>
   Array.isArray(importCatalog.value?.next_commands) ? importCatalog.value.next_commands : [],
 );
-const directCliSummary = computed(() => summarizeDirectCliReadiness(directCliReadiness.value));
+const connectDirectCliReadiness = computed<DirectCliReadinessReport>(() => connectPackage.value?.direct_cli_readiness ?? {});
+const directCliSummary = computed(() => summarizeDirectCliReadiness(directCliReadiness.value ?? connectDirectCliReadiness.value ?? null));
+const directCliParity = computed(() => summarizeDirectCliParity(connectDirectCliReadiness.value, directCliReadiness.value ?? {}));
 const importCatalogParity = computed(() => {
   if (!importCatalog.value || !connectPackage.value?.registration_surface) return "not compared";
   return importCatalog.value.importer_count === connectPackage.value.registration_surface.importer_count
@@ -625,6 +627,30 @@ function summarizeDirectCliReadiness(report: DirectCliReadinessReport | null): {
       cases: (item.fixture_case_ids || []).join(", ") || "no fixture",
       nextAction: item.next_action || "inspect setup guide",
     })),
+  };
+}
+
+function summarizeDirectCliParity(nested: DirectCliReadinessReport, direct: DirectCliReadinessReport): { status: string; detail: string } {
+  if (!direct.kind) {
+    return { status: "direct CLI one-shot", detail: "Using the direct CLI readiness copy embedded in the one-shot package." };
+  }
+  if (!nested.kind) {
+    return { status: "direct CLI direct only", detail: "Direct endpoint is loaded; connect package is not loaded yet." };
+  }
+  const nestedSummary = nested.summary ?? {};
+  const directSummary = direct.summary ?? {};
+  const matched =
+    nested.ok === direct.ok &&
+    nestedSummary.profile_count === directSummary.profile_count &&
+    nestedSummary.capability_count === directSummary.capability_count &&
+    nestedSummary.verified_output_count === directSummary.verified_output_count &&
+    nestedSummary.recovery_type_count === directSummary.recovery_type_count &&
+    nestedSummary.fixture_failed_case_count === directSummary.fixture_failed_case_count;
+  return {
+    status: matched ? "direct CLI parity" : "direct CLI drift",
+    detail: matched
+      ? "Direct CLI readiness endpoint matches the one-shot package copy."
+      : "Direct CLI readiness endpoint differs from the one-shot package copy.",
   };
 }
 
@@ -1987,6 +2013,12 @@ onMounted(async () => {
           </div>
           <span v-if="!directCliSummary.rows.length">No direct CLI readiness loaded</span>
         </div>
+        <div class="evidence-row">
+          <span :class="['pill-inline', directCliParity.status.includes('parity') || directCliParity.status.includes('one-shot') ? 'ok' : 'blocked']">
+            {{ directCliParity.status }}
+          </span>
+          <span>{{ directCliParity.detail }}</span>
+        </div>
         <div class="request-sequence">
           <div v-for="item in directCliSummary.recoveryRows" :key="item.errorType">
             <code>{{ item.status }}</code>
@@ -2167,7 +2199,7 @@ onMounted(async () => {
             <span>{{ endpoint.path }}</span>
           </div>
         </div>
-        <pre>{{ pretty({ daemon_verify: networkVerifyReport, import_catalog: importCatalog, direct_cli_readiness: directCliReadiness, direct_quickstart: directQuickstart, quickstart_parity: quickstartParity, direct_entry_profile: entryProfile, entry_profile_parity: entryProfileParity, direct_launch_contract: launchContract, launch_contract_parity: launchContractParity, direct_acceptance: directAcceptance, acceptance_parity: acceptanceParity, direct_readiness: directReadiness, readiness_parity: readinessParity, network_entry_profile: connectPackage?.network_entry_profile, consumer_launch_contract: connectPackage?.consumer_launch_contract, mvp_readiness: connectPackage?.mvp_readiness, mvp_presenter_brief: connectPackage?.mvp_presenter_brief, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, demo_playbook: connectPackage?.demo_playbook, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, plugins: connectPackage?.plugins, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
+        <pre>{{ pretty({ daemon_verify: networkVerifyReport, import_catalog: importCatalog, direct_cli_readiness: directCliReadiness, one_shot_direct_cli_readiness: connectPackage?.direct_cli_readiness, direct_cli_parity: directCliParity, direct_quickstart: directQuickstart, quickstart_parity: quickstartParity, direct_entry_profile: entryProfile, entry_profile_parity: entryProfileParity, direct_launch_contract: launchContract, launch_contract_parity: launchContractParity, direct_acceptance: directAcceptance, acceptance_parity: acceptanceParity, direct_readiness: directReadiness, readiness_parity: readinessParity, network_entry_profile: connectPackage?.network_entry_profile, consumer_launch_contract: connectPackage?.consumer_launch_contract, mvp_readiness: connectPackage?.mvp_readiness, mvp_presenter_brief: connectPackage?.mvp_presenter_brief, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, demo_playbook: connectPackage?.demo_playbook, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, plugins: connectPackage?.plugins, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
       </section>
       <section>
         <div class="section-title"><Rocket :size="15" /> Killer Demo</div>
