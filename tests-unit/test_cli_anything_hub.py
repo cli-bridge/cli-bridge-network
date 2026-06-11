@@ -697,7 +697,7 @@ class CliAnythingHubTests(unittest.TestCase):
             hub = FakeHub(root=Path(tmp))
             hub.write_harness_manifest("mermaid", market_record=SAMPLE_MERMAID_RECORD)
             with patch(
-                "cbn_plugins.cli_anything.pty_backend_status",
+                "cbn_plugins.cli_anything_parts.lifecycle.pty_backend_status",
                 return_value={
                     "kind": "pty",
                     "platform": sys.platform,
@@ -770,7 +770,7 @@ class CliAnythingHubTests(unittest.TestCase):
             hub = FakeHub(root=Path(tmp))
             hub.write_harness_manifest("mermaid", market_record=SAMPLE_MERMAID_RECORD)
             with patch(
-                "cbn_plugins.cli_anything.pty_backend_status",
+                "cbn_plugins.cli_anything_parts.lifecycle.pty_backend_status",
                 return_value={
                     "kind": "pty",
                     "platform": sys.platform,
@@ -822,7 +822,7 @@ class CliAnythingHubTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             with patch(
-                "cbn_plugins.cli_anything.pty_backend_status",
+                "cbn_plugins.cli_anything_parts.lifecycle.pty_backend_status",
                 return_value={
                     "kind": "pty",
                     "platform": sys.platform,
@@ -972,7 +972,7 @@ class CliAnythingHubTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             with patch(
-                "cbn_plugins.cli_anything.pty_backend_status",
+                "cbn_plugins.cli_anything_parts.lifecycle.pty_backend_status",
                 return_value={
                     "kind": "pty",
                     "platform": sys.platform,
@@ -1139,7 +1139,7 @@ class CliAnythingHubTests(unittest.TestCase):
             hub = FakeHub(root=Path(tmp))
             hub.write_harness_manifest("mermaid", market_record=SAMPLE_MERMAID_RECORD)
             with patch(
-                "cbn_plugins.cli_anything.pty_backend_status",
+                "cbn_plugins.cli_anything_parts.lifecycle.pty_backend_status",
                 return_value={
                     "kind": "pty",
                     "platform": sys.platform,
@@ -1255,7 +1255,7 @@ class CliAnythingHubTests(unittest.TestCase):
             hub = FakeHub(root=Path(tmp))
             hub.write_harness_manifest("mermaid", market_record=SAMPLE_MERMAID_RECORD)
             with patch(
-                "cbn_plugins.cli_anything.pty_backend_status",
+                "cbn_plugins.cli_anything_parts.lifecycle.pty_backend_status",
                 return_value={
                     "kind": "pty",
                     "platform": sys.platform,

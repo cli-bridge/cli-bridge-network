@@ -18,6 +18,7 @@ EXPECTED_PART_MODULES = (
     "adaptation",
     "planning",
     "adapter_targets",
+    "live",
 )
 
 
