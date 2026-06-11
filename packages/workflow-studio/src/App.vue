@@ -87,6 +87,7 @@ const protocolSummary = computed<ProtocolSummary>(() => summarizeProtocols(demoR
 const bridgeContractSummary = computed<BridgeContractSummary>(() => summarizeBridgeContract(contract.value));
 const workflowRequestSummary = computed<WorkflowRequestSummary>(() => summarizeWorkflowRequestPlan(workflowRequestPlan.value));
 const connectSummary = computed<ConnectSummary>(() => summarizeConnectPackage(connectPackage.value));
+const connectContractSummary = computed<BridgeContractSummary>(() => summarizeConnectContracts(connectPackage.value));
 const connectEndpoints = computed(() => (Array.isArray(connectPackage.value?.daemon_endpoints) ? connectPackage.value.daemon_endpoints : []));
 const quickstartRequests = computed<QuickstartRequest[]>(() =>
   Array.isArray(connectPackage.value?.consumer_quickstart?.requests)
@@ -407,6 +408,26 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
     acceptanceCheckCount: numberValue(acceptance.check_count) ?? (Array.isArray(acceptance.checks) ? acceptance.checks.length : 0),
     curlScript: stringValue(quickstart.curl_script) ?? "",
     powershellScript: stringValue(quickstart.powershell_script) ?? "",
+  };
+}
+
+function summarizeConnectContracts(payload: NetworkConnectPackage | null): BridgeContractSummary {
+  const internal = payload?.contracts?.internal ?? {};
+  const contracts = internal.contracts ?? {};
+  const bridgeSummary = internal.bridge_contract?.summary ?? {};
+  const routeCount = numberValue(bridgeSummary.route_count) ?? numberValue(payload?.summary?.bridge_route_count) ?? 0;
+  const readyCount = numberValue(bridgeSummary.route_ready_count) ?? routeCount;
+  return {
+    status: payload?.ok ? "ready" : payload ? "needs attention" : "not loaded",
+    protocolName: internal.protocol ?? "CBN Bridge Contract",
+    routeReady: `${readyCount}/${routeCount}`,
+    blockedRoutes: numberValue(bridgeSummary.blocked_route_count) ?? 0,
+    sections: [
+      contractSectionSummary("tool_manifest", "ToolManifest", contracts.tool_manifest),
+      contractSectionSummary("bridge_message", "BridgeMessage", contracts.bridge_message),
+      contractSectionSummary("artifact", "Artifact", contracts.artifact),
+      contractSectionSummary("workflow_selector", "Workflow Selector", contracts.workflow_selector),
+    ],
   };
 }
 
@@ -790,6 +811,29 @@ onMounted(async () => {
           <div>
             <span>Base URL</span>
             <strong>{{ networkVerifyReport?.base_url || "daemon" }}</strong>
+          </div>
+        </div>
+        <div class="contract-status-grid">
+          <div>
+            <span>Internal contract</span>
+            <strong>{{ connectContractSummary.protocolName }}</strong>
+          </div>
+          <div>
+            <span>Route ready</span>
+            <strong>{{ connectContractSummary.routeReady }}</strong>
+          </div>
+          <div>
+            <span>Blocked</span>
+            <strong>{{ connectContractSummary.blockedRoutes }}</strong>
+          </div>
+        </div>
+        <div class="contract-section-list">
+          <div v-for="section in connectContractSummary.sections" :key="`connect-${section.id}`">
+            <strong>{{ section.title }}</strong>
+            <span>{{ section.kind }}</span>
+            <small>{{ section.owner }}</small>
+            <code>{{ section.scope }}</code>
+            <em>{{ section.required }}</em>
           </div>
         </div>
         <div class="artifact-strip">

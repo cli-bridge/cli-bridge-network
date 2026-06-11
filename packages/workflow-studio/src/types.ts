@@ -320,6 +320,22 @@ export interface NetworkConnectPackage {
     recommended_next_action?: string;
   };
   contracts?: {
+    internal?: {
+      protocol?: string;
+      api_version?: string;
+      contract_sections?: string[];
+      contracts?: {
+        tool_manifest?: BridgeContractSection;
+        bridge_message?: BridgeContractSection;
+        artifact?: BridgeContractSection;
+        workflow_selector?: BridgeContractSection;
+      };
+      bridge_contract?: {
+        ok?: boolean;
+        summary?: BridgeContractReport["summary"];
+        contract?: BridgeContractReport["contract"];
+      };
+    };
     external?: {
       protocol?: string;
       accepted_kinds?: string[];
