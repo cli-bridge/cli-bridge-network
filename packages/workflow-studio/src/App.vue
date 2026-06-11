@@ -105,6 +105,10 @@ const setupCheckpoints = computed(() =>
 );
 const connectSummary = computed<ConnectSummary>(() => summarizeConnectPackage(connectPackage.value));
 const connectEntryProfile = computed(() => connectPackage.value?.network_entry_profile ?? {});
+const connectMvpReadiness = computed(() => connectPackage.value?.mvp_readiness ?? {});
+const connectMvpChecks = computed(() =>
+  Array.isArray(connectMvpReadiness.value.checks) ? connectMvpReadiness.value.checks : [],
+);
 const connectContractSummary = computed<BridgeContractSummary>(() => summarizeConnectContracts(connectPackage.value));
 const connectExternalPackageHealth = computed<AgentCliContractPackageHealth>(() => connectPackage.value?.contracts?.external?.package_health ?? {});
 const connectExternalPackageFiles = computed(() =>
@@ -502,6 +506,7 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
   const playbook = payload?.demo_playbook ?? {};
   const quickstart = payload?.consumer_quickstart ?? {};
   const entryProfile = payload?.network_entry_profile ?? {};
+  const mvp = payload?.mvp_readiness ?? {};
   const acceptance = payload?.acceptance ?? quickstart.acceptance ?? {};
   const setup = payload?.setup_guidance ?? {};
   const harness = payload?.agent_workflow_request ?? {};
@@ -527,6 +532,9 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
         ? "session token required"
         : "no session header",
     entryProfileEvidence: `${numberValue(entryProfile.evidence?.acceptance_check_count) ?? 0} checks · ${numberValue(entryProfile.evidence?.demo_stage_count) ?? 0} stages`,
+    mvpReadinessStatus: stringValue(mvp.status) ?? stringValue(summary.mvp_readiness_status) ?? "not loaded",
+    mvpReadinessScore: stringValue(mvp.score) ?? stringValue(summary.mvp_readiness_score) ?? "0/0",
+    mvpReadinessGoals: Object.entries(mvp.product_goals ?? {}).filter(([, ready]) => ready).length + "/" + Object.keys(mvp.product_goals ?? {}).length,
     externalProtocol: external.protocol ?? "unknown",
     acceptedKinds: Array.isArray(external.accepted_kinds) ? external.accepted_kinds.join(" + ") : "unknown",
     externalPackageStatus: packageHealth.ok ? "package clean" : packageHealth.kind ? "package attention" : "package not loaded",
@@ -990,6 +998,10 @@ onMounted(async () => {
             <strong>{{ connectSummary.entryProfileStatus }}</strong>
           </div>
           <div>
+            <span>MVP</span>
+            <strong>{{ connectSummary.mvpReadinessScore }}</strong>
+          </div>
+          <div>
             <span>External</span>
             <strong>{{ connectSummary.externalProtocol }}</strong>
           </div>
@@ -1066,6 +1078,10 @@ onMounted(async () => {
           <span :class="['pill-inline', connectSummary.entryProfileStatus === 'ready' ? 'ok' : 'blocked']">
             entry {{ connectSummary.entryProfileStatus }}
           </span>
+          <span :class="['pill-inline', connectSummary.mvpReadinessStatus === 'ready' ? 'ok' : 'blocked']">
+            mvp {{ connectSummary.mvpReadinessStatus }}
+          </span>
+          <span class="pill-inline">goals {{ connectSummary.mvpReadinessGoals }}</span>
           <span class="pill-inline">{{ connectSummary.entryProfileMode }}</span>
           <span :class="['pill-inline', connectSetupGuidance.setup_required ? 'blocked' : 'ok']">{{ connectSummary.setupRequired }}</span>
           <span class="pill-inline">{{ connectSummary.setupUserGates }} user gates</span>
@@ -1108,6 +1124,29 @@ onMounted(async () => {
             <span>Verify</span>
             <code>{{ connectEntryProfile.primary_entrypoints?.verify_network || "not loaded" }}</code>
           </div>
+        </div>
+        <div class="contract-status-grid">
+          <div>
+            <span>Killer MVP</span>
+            <strong>{{ connectSummary.mvpReadinessScore }}</strong>
+          </div>
+          <div>
+            <span>Goals</span>
+            <strong>{{ connectSummary.mvpReadinessGoals }}</strong>
+          </div>
+          <div>
+            <span>Next</span>
+            <strong>{{ connectMvpReadiness.recommended_next_action || "not loaded" }}</strong>
+          </div>
+        </div>
+        <div class="request-sequence">
+          <div v-for="check in connectMvpChecks" :key="check.id || check.title" :class="check.ready ? 'passed' : 'failed'">
+            <code>{{ check.ready ? "ready" : "todo" }}</code>
+            <span>{{ check.title || check.id || "MVP check" }}</span>
+            <small>{{ check.proves || "readiness evidence" }}</small>
+            <em>{{ pretty(check.evidence || { next_action: check.next_action }) }}</em>
+          </div>
+          <span v-if="!connectMvpChecks.length">No MVP readiness checks loaded</span>
         </div>
         <div class="agent-card-list">
           <div v-for="call in connectSetupCalls.slice(0, 6)" :key="call.call_id || call.tool_use_id" class="agent-card">
@@ -1449,7 +1488,7 @@ onMounted(async () => {
             <span>{{ endpoint.path }}</span>
           </div>
         </div>
-        <pre>{{ pretty({ daemon_verify: networkVerifyReport, import_catalog: importCatalog, network_entry_profile: connectPackage?.network_entry_profile, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, demo_playbook: connectPackage?.demo_playbook, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, plugins: connectPackage?.plugins, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
+        <pre>{{ pretty({ daemon_verify: networkVerifyReport, import_catalog: importCatalog, network_entry_profile: connectPackage?.network_entry_profile, mvp_readiness: connectPackage?.mvp_readiness, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, demo_playbook: connectPackage?.demo_playbook, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, plugins: connectPackage?.plugins, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
       </section>
       <section>
         <div class="section-title"><Rocket :size="15" /> Killer Demo</div>

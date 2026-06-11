@@ -472,6 +472,8 @@ export interface NetworkConnectPackage {
     demo_playbook_step_count?: number;
     cli_anything_split_status?: string;
     external_contract_ready?: boolean;
+    mvp_readiness_status?: string;
+    mvp_readiness_score?: string;
     recommended_next_action?: string;
   };
   contracts?: {
@@ -544,6 +546,7 @@ export interface NetworkConnectPackage {
   };
   demo_playbook?: KillerMvpDemoPlaybook;
   network_entry_profile?: NetworkEntryProfile;
+  mvp_readiness?: KillerMvpReadiness;
   agent_node_bundle?: {
     kind?: "AdapterAgentNodeBundle";
     ok?: boolean;
@@ -597,6 +600,27 @@ export interface NetworkConnectPackage {
     sequence_steps?: QuickstartSequenceStep[];
   };
   next_commands?: string[];
+}
+
+export interface KillerMvpReadiness {
+  kind?: "KillerMvpReadiness";
+  status?: string;
+  score?: string;
+  ready_count?: number;
+  check_count?: number;
+  checks?: KillerMvpReadinessCheck[];
+  product_goals?: Record<string, boolean>;
+  recommended_next_action?: string;
+}
+
+export interface KillerMvpReadinessCheck {
+  id?: string;
+  title?: string;
+  status?: string;
+  ready?: boolean;
+  proves?: string;
+  evidence?: Record<string, unknown>;
+  next_action?: string | null;
 }
 
 export interface NetworkEntryProfile {
@@ -773,6 +797,9 @@ export interface ConnectSummary {
   entryProfileStableFields: string;
   entryProfileAuth: string;
   entryProfileEvidence: string;
+  mvpReadinessStatus: string;
+  mvpReadinessScore: string;
+  mvpReadinessGoals: string;
   externalProtocol: string;
   acceptedKinds: string;
   externalPackageStatus: string;

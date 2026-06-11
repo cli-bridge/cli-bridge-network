@@ -428,6 +428,14 @@ Killer Demo slice 已新增可运行证据束：
   对象。它不替代 `consumer_quickstart` 或 `agent_workflow_request`，而是给第三方程序
   一个低门槛的稳定入口视图；Workflow Studio Connect 面板同步展示 entry status、
   profile id、兼容层、稳定字段、鉴权与证据摘要。
+- `NetworkConnectPackage.mvp_readiness` 已新增为 killer MVP 产品验收矩阵：用
+  12 个机器可读 checks 覆盖 external AgentCli contract、internal BridgeMessage
+  bus、Workflow Studio、killer workflow DAG、natural-language harness agent、
+  one-shot network entry、first-call acceptance、CLI registration、CLI-Anything
+  split、setup guidance、MCP/A2A/ACP facade 和 demo playbook。它同时输出
+  product goals（展示 CLI-CLI 协议、复用 harness agent、集成下一个 CLI、
+  一次性外部接入、Studio demo、首跑安全设置）和 recommended next action；
+  Workflow Studio Connect 面板同步显示 readiness score、goal count 和 checklist。
 - `cbn network connect-package|quickstart|verify`、daemon `/network/*` 和 Python API
   已统一默认 agent prompt，默认语义同时包含 run、reusable CLI-CLI harness agent 和
   external program connect，避免 CLI 与 HTTP 入口生成不同 intent。

@@ -128,6 +128,21 @@ def network_connect_package(
         external_contract=external_contract,
         setup_guidance=setup_guidance,
     )
+    mvp_readiness = _mvp_readiness(
+        workflow=workflow,
+        bridge_contract=bridge_contract,
+        external_contract=external_contract,
+        protocol_summary=protocol_summary,
+        request_plan=request_plan,
+        setup_guidance=setup_guidance,
+        registration_surface=registration_surface,
+        demo_readiness=demo_readiness,
+        demo_playbook=demo_playbook,
+        quickstart=quickstart,
+        plugin_health=plugin_health,
+        studio_link=studio_link,
+        network_entry_profile=network_entry_profile,
+    )
     return {
         "apiVersion": CONNECT_API_VERSION,
         "kind": "NetworkConnectPackage",
@@ -154,6 +169,8 @@ def network_connect_package(
             .get("module_split", {})
             .get("status"),
             "external_contract_ready": external_contract.get("ok"),
+            "mvp_readiness_status": mvp_readiness["status"],
+            "mvp_readiness_score": mvp_readiness["score"],
             "recommended_next_action": "call_daemon_endpoints" if ok else "fix_connect_package_inputs",
         },
         "contracts": {
@@ -182,6 +199,7 @@ def network_connect_package(
         "demo_readiness": demo_readiness,
         "demo_playbook": demo_playbook,
         "network_entry_profile": network_entry_profile,
+        "mvp_readiness": mvp_readiness,
         "agent_node_bundle": _compact_agent_bundle(agent_bundle),
         "agent_workflow_request": _compact_workflow_request_plan(request_plan),
         "setup_guidance": setup_guidance,
@@ -312,6 +330,214 @@ def _network_entry_profile(
             "export_count": protocol_summary.get("export_count", 0),
         },
     }
+
+
+def _mvp_readiness(
+    *,
+    workflow: dict[str, Any],
+    bridge_contract: dict[str, Any],
+    external_contract: dict[str, Any],
+    protocol_summary: dict[str, Any],
+    request_plan: dict[str, Any],
+    setup_guidance: dict[str, Any],
+    registration_surface: dict[str, Any],
+    demo_readiness: dict[str, Any],
+    demo_playbook: dict[str, Any],
+    quickstart: dict[str, Any],
+    plugin_health: dict[str, Any],
+    studio_link: dict[str, Any],
+    network_entry_profile: dict[str, Any],
+) -> dict[str, Any]:
+    """Product-facing readiness matrix for the current killer MVP surface."""
+
+    bridge_summary = bridge_contract.get("summary") if isinstance(bridge_contract.get("summary"), dict) else {}
+    acceptance = quickstart.get("acceptance") if isinstance(quickstart.get("acceptance"), dict) else {}
+    cli_anything = plugin_health.get("cli_anything") if isinstance(plugin_health.get("cli_anything"), dict) else {}
+    module_split = cli_anything.get("module_split") if isinstance(cli_anything.get("module_split"), dict) else {}
+    reusable_harness = request_plan.get("reusable_harness") if isinstance(request_plan.get("reusable_harness"), dict) else {}
+    checks = [
+        _mvp_check(
+            "external_agent_cli_contract",
+            "External Agent CLI contract",
+            bool(external_contract.get("ok")),
+            "AgentCliCard/RunReceipt package boundary is standalone and consumable.",
+            {
+                "protocol": external_contract.get("protocol"),
+                "accepted_kinds": external_contract.get("accepted_kinds", []),
+            },
+            "repair_agent_cli_contract_package",
+        ),
+        _mvp_check(
+            "internal_bridge_contract",
+            "Internal BridgeMessage bus",
+            bool(bridge_contract.get("ok") and int(bridge_summary.get("route_count", 0) or 0) >= 1),
+            "ToolManifest, BridgeMessage, Artifact, and Workflow selector contracts are ready.",
+            {
+                "route_count": bridge_summary.get("route_count", 0),
+                "route_ready_count": bridge_summary.get("route_ready_count", 0),
+            },
+            "repair_bridge_message_routes",
+        ),
+        _mvp_check(
+            "workflow_studio_surface",
+            "Workflow Studio surface",
+            bool(studio_link.get("ok") and studio_link.get("url")),
+            "User-facing Studio link is preconfigured for daemon, workflow, token, and demo mode.",
+            {"url": studio_link.get("url"), "session_token_included": studio_link.get("session_token_included")},
+            "start_workflow_studio",
+        ),
+        _mvp_check(
+            "killer_workflow_dag",
+            "Killer workflow DAG",
+            bool(workflow.get("valid") and int(workflow.get("task_count", 0) or 0) >= 1),
+            "The macrocli -> transform -> mermaid DAG can be inspected before running.",
+            {"workflow_id": workflow.get("workflow_id"), "task_count": workflow.get("task_count", 0)},
+            "fix_workflow_manifest_or_tasks",
+        ),
+        _mvp_check(
+            "natural_language_harness_agent",
+            "Natural-language harness agent",
+            bool(request_plan.get("ok") and reusable_harness.get("kind") == "NaturalLanguageWorkflowHarness"),
+            "A reusable harness agent can bind natural language to the CLI-CLI workflow run contract.",
+            {
+                "kind": reusable_harness.get("kind"),
+                "bridge_route_count": request_plan.get("bridge_route_count", 0),
+            },
+            "repair_adapter_agent_workflow_request_plan",
+        ),
+        _mvp_check(
+            "network_entry_profile",
+            "One-shot network entry",
+            network_entry_profile.get("status") == "ready",
+            "External programs can read one profile to discover auth, endpoints, harness, evidence, and registration.",
+            {
+                "profile_id": network_entry_profile.get("profile_id"),
+                "integration_mode": network_entry_profile.get("integration_mode"),
+            },
+            "repair_network_entry_profile",
+        ),
+        _mvp_check(
+            "quickstart_acceptance",
+            "First-call acceptance",
+            bool(quickstart.get("status") in {"ready", "ready_without_daemon_url"} and int(acceptance.get("check_count", 0) or 0) >= 1),
+            "The first-call sequence and acceptance checklist are available for replay.",
+            {
+                "quickstart_status": quickstart.get("status"),
+                "check_count": acceptance.get("check_count", 0),
+                "request_count": len(quickstart.get("requests", [])) if isinstance(quickstart.get("requests"), list) else 0,
+            },
+            "repair_network_quickstart",
+        ),
+        _mvp_check(
+            "cli_registration_surface",
+            "Low-cost CLI registration",
+            bool(registration_surface.get("status") == "ready" and int(registration_surface.get("importer_count", 0) or 0) >= 5),
+            "Next CLIs can enter through dry-run-first import command, CLI-Anything, MCP, skill, card, or parser fixture routes.",
+            {
+                "importer_count": registration_surface.get("importer_count", 0),
+                "dry_run_by_default": (registration_surface.get("default_policy") or {}).get("dry_run_by_default"),
+            },
+            "repair_registration_surface",
+        ),
+        _mvp_check(
+            "cli_anything_split",
+            "CLI-Anything split facade",
+            module_split.get("status") == "ready",
+            "CLI-Anything remains compatible while market/probe/manifest/repair/verification/onboarding parts exist.",
+            {
+                "status": module_split.get("status"),
+                "present_part_count": module_split.get("present_part_count", 0),
+                "expected_part_count": module_split.get("expected_part_count", 0),
+            },
+            "continue_cli_anything_split",
+        ),
+        _mvp_check(
+            "setup_guidance",
+            "First-run setup guidance",
+            bool(setup_guidance.get("status") and setup_guidance.get("safety", {}).get("secret_values_included") is False),
+            "API key, login, and user-gated setup can be surfaced without leaking secret values.",
+            {
+                "status": setup_guidance.get("status"),
+                "setup_required": setup_guidance.get("setup_required"),
+                "requires_user_count": setup_guidance.get("requires_user_count", 0),
+                "secret_count": setup_guidance.get("secret_count", 0),
+            },
+            "repair_setup_guidance",
+        ),
+        _mvp_check(
+            "protocol_facades",
+            "MCP/A2A/ACP facades",
+            int(protocol_summary.get("export_count", 0) or 0) >= 3,
+            "The same workflow can be exported to MCP, A2A, and ACP descriptors.",
+            {"targets": protocol_summary.get("targets", []), "export_count": protocol_summary.get("export_count", 0)},
+            "repair_protocol_exports",
+        ),
+        _mvp_check(
+            "killer_demo_playbook",
+            "Killer demo playbook",
+            bool(demo_readiness.get("status") == "ready" and demo_playbook.get("status") == "ready"),
+            "The product demo has ordered stages and success criteria for Studio presentation.",
+            {
+                "demo_status": demo_readiness.get("status"),
+                "stage_count": demo_readiness.get("stage_count", 0),
+                "playbook_step_count": demo_playbook.get("step_count", 0),
+            },
+            "repair_killer_demo_playbook",
+        ),
+    ]
+    ready_count = sum(1 for check in checks if check["ready"])
+    total = len(checks)
+    status = "ready" if ready_count == total else "needs_attention"
+    product_goals = {
+        "show_cli_cli_protocol": _checks_ready(checks, "internal_bridge_contract", "killer_workflow_dag"),
+        "run_reusable_harness_agent": _checks_ready(checks, "natural_language_harness_agent", "quickstart_acceptance"),
+        "integrate_next_cli": _checks_ready(checks, "cli_registration_surface", "cli_anything_split"),
+        "one_shot_external_network_entry": _checks_ready(checks, "network_entry_profile", "external_agent_cli_contract"),
+        "demo_in_workflow_studio": _checks_ready(checks, "workflow_studio_surface", "killer_demo_playbook"),
+        "safe_first_run_setup": _checks_ready(checks, "setup_guidance"),
+    }
+    return {
+        "apiVersion": CONNECT_API_VERSION,
+        "kind": "KillerMvpReadiness",
+        "status": status,
+        "score": f"{ready_count}/{total}",
+        "ready_count": ready_count,
+        "check_count": total,
+        "checks": checks,
+        "product_goals": product_goals,
+        "recommended_next_action": "open_workflow_studio_demo" if status == "ready" else _first_unready_action(checks),
+    }
+
+
+def _mvp_check(
+    check_id: str,
+    title: str,
+    ready: bool,
+    proves: str,
+    evidence: dict[str, Any],
+    next_action: str,
+) -> dict[str, Any]:
+    return {
+        "id": check_id,
+        "title": title,
+        "status": "ready" if ready else "needs_attention",
+        "ready": ready,
+        "proves": proves,
+        "evidence": evidence,
+        "next_action": None if ready else next_action,
+    }
+
+
+def _checks_ready(checks: list[dict[str, Any]], *check_ids: str) -> bool:
+    by_id = {check["id"]: check for check in checks}
+    return all(bool(by_id.get(check_id, {}).get("ready")) for check_id in check_ids)
+
+
+def _first_unready_action(checks: list[dict[str, Any]]) -> str:
+    for check in checks:
+        if not check.get("ready"):
+            return str(check.get("next_action") or "inspect_mvp_readiness")
+    return "open_workflow_studio_demo"
 
 
 def _plugin_health() -> dict[str, Any]:

@@ -221,6 +221,13 @@ class DaemonApiTests(unittest.TestCase):
             self.assertEqual(entry_profile["harness_agent"]["bridge_route_count"], 2)
             self.assertEqual(entry_profile["evidence"]["acceptance_check_count"], 11)
             self.assertIn("cli-anything", entry_profile["registration"]["importer_ids"])
+            mvp = payload["mvp_readiness"]
+            self.assertEqual(mvp["kind"], "KillerMvpReadiness")
+            self.assertEqual(mvp["status"], "ready")
+            self.assertEqual(mvp["score"], "12/12")
+            self.assertTrue(mvp["product_goals"]["demo_in_workflow_studio"])
+            self.assertTrue(mvp["product_goals"]["one_shot_external_network_entry"])
+            self.assertEqual(mvp["recommended_next_action"], "open_workflow_studio_demo")
             self.assertEqual(payload["acceptance"]["kind"], "NetworkConnectionAcceptance")
             self.assertEqual(payload["acceptance"]["check_count"], 11)
             self.assertEqual(payload["acceptance"]["checks"][1]["request_id"], "import_catalog")
