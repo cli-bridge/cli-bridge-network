@@ -19,6 +19,7 @@ EXPECTED_PART_MODULES = (
     "planning",
     "adapter_targets",
     "live",
+    "queue",
 )
 
 
