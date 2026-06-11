@@ -453,6 +453,10 @@ Killer Demo slice 已新增可运行证据束：
   可以直接读取小合同而不必解析完整 `NetworkConnectPackage`。`consumer_quickstart`
   的 first-call requests、sequence steps、SDK snippets 和 acceptance checklist 已同步
   纳入 `launch_contract`，`network verify` 会真实回放并验收该最小入口。
+  Workflow Studio 已新增 `Launch` 操作，会直接调用 `/network/launch-contract`，
+  并把 direct launch contract 与 `NetworkConnectPackage.consumer_launch_contract`
+  做 contract id、status、run endpoint 和 required request ids 的 parity 对比，
+  让演示现场能证明小入口不是大包里的静态副本。
 - `NetworkConnectPackage.mvp_readiness` 已新增为 killer MVP 产品验收矩阵：用
   12 个机器可读 checks 覆盖 external AgentCli contract、internal BridgeMessage
   bus、Workflow Studio、killer workflow DAG、natural-language harness agent、

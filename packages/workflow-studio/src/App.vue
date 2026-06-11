@@ -34,6 +34,7 @@ import type {
   ConnectDemoStage,
   ConnectionAcceptanceCheck,
   ConnectSummary,
+  ConsumerLaunchContract,
   DockState,
   EvidenceSummary,
   KillerDemoReport,
@@ -74,6 +75,7 @@ const agentBundle = ref<AdapterAgentNodeBundle | null>(null);
 const workflowRequestPlan = ref<AgentWorkflowRequestPlan | null>(null);
 const toolCallPlan = ref<AdapterAgentToolCallPlan | null>(null);
 const connectPackage = ref<NetworkConnectPackage | null>(null);
+const launchContract = ref<ConsumerLaunchContract | null>(null);
 const importCatalog = ref<CliRegistrationSurface | null>(null);
 const networkVerifyReport = ref<NetworkConnectionAcceptanceReport | null>(null);
 const health = ref<unknown>(null);
@@ -117,9 +119,14 @@ const connectPresenterProofPoints = computed(() =>
 const connectPresenterFlow = computed(() =>
   Array.isArray(connectPresenterBrief.value.live_demo_flow) ? connectPresenterBrief.value.live_demo_flow : [],
 );
-const connectLaunchContract = computed(() => connectPackage.value?.consumer_launch_contract ?? {});
+const connectLaunchContract = computed<ConsumerLaunchContract>(() => connectPackage.value?.consumer_launch_contract ?? {});
+const directLaunchContract = computed<ConsumerLaunchContract>(() => launchContract.value ?? {});
+const launchContractParity = computed(() => summarizeLaunchContractParity(connectLaunchContract.value, directLaunchContract.value));
 const connectLaunchSequence = computed(() =>
   Array.isArray(connectLaunchContract.value.launch_sequence) ? connectLaunchContract.value.launch_sequence : [],
+);
+const directLaunchSequence = computed(() =>
+  Array.isArray(directLaunchContract.value.launch_sequence) ? directLaunchContract.value.launch_sequence : [],
 );
 const connectContractSummary = computed<BridgeContractSummary>(() => summarizeConnectContracts(connectPackage.value));
 const connectExternalPackageHealth = computed<AgentCliContractPackageHealth>(() => connectPackage.value?.contracts?.external?.package_health ?? {});
@@ -266,6 +273,10 @@ async function inspectConnectPackage() {
   connectPackage.value = (await call("connect", () => api.value.networkConnectPackage())) as NetworkConnectPackage;
 }
 
+async function inspectLaunchContract() {
+  launchContract.value = (await call("launch", () => api.value.networkLaunchContract())) as ConsumerLaunchContract;
+}
+
 async function inspectImportCatalog() {
   importCatalog.value = (await call("imports", () => api.value.importCatalog())) as CliRegistrationSurface;
 }
@@ -400,6 +411,7 @@ async function loadAll() {
     inspectAgentBundle(),
     inspectWorkflowRequestPlan(),
     inspectConnectPackage(),
+    inspectLaunchContract(),
     inspectImportCatalog(),
     refreshEvidence(),
   ]);
@@ -672,6 +684,30 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
   };
 }
 
+function summarizeLaunchContractParity(nested: ConsumerLaunchContract, direct: ConsumerLaunchContract): { status: string; detail: string } {
+  if (!direct.kind) {
+    return { status: "launch not loaded", detail: "Direct /network/launch-contract has not been fetched." };
+  }
+  if (!nested.kind) {
+    return { status: "launch direct only", detail: "Direct endpoint is loaded; connect package is not loaded yet." };
+  }
+  const sameContract = nested.contract_id === direct.contract_id;
+  const sameStatus = nested.status === direct.status;
+  const nestedRun = nested.harness_agent?.run_endpoint ?? nested.entrypoints?.run_workflow?.url;
+  const directRun = direct.harness_agent?.run_endpoint ?? direct.entrypoints?.run_workflow?.url;
+  const sameRunEndpoint = nestedRun === directRun;
+  const nestedRequired = Array.isArray(nested.required_request_ids) ? nested.required_request_ids.join("|") : "";
+  const directRequired = Array.isArray(direct.required_request_ids) ? direct.required_request_ids.join("|") : "";
+  const sameRequired = nestedRequired === directRequired;
+  const matched = sameContract && sameStatus && sameRunEndpoint && sameRequired;
+  return {
+    status: matched ? "launch parity" : "launch drift",
+    detail: matched
+      ? "Direct launch contract matches the one-shot package copy."
+      : "Direct launch contract differs from the one-shot package copy.",
+  };
+}
+
 function summarizeConnectContracts(payload: NetworkConnectPackage | null): BridgeContractSummary {
   const internal = payload?.contracts?.internal ?? {};
   const contracts = internal.contracts ?? {};
@@ -903,6 +939,9 @@ onMounted(async () => {
         </button>
         <button title="Load one-shot network connection package" @click="inspectConnectPackage">
           <Network :size="16" /> Connect
+        </button>
+        <button title="Load direct consumer launch contract" @click="inspectLaunchContract">
+          <ClipboardList :size="16" /> Launch
         </button>
         <button title="Load direct CLI import catalog from daemon" @click="inspectImportCatalog">
           <FileJson :size="16" /> Imports
@@ -1221,8 +1260,12 @@ onMounted(async () => {
             <strong>{{ connectSummary.launchContractStatus }}</strong>
           </div>
           <div>
-            <span>Sequence</span>
-            <strong>{{ connectSummary.launchSequenceSteps }}</strong>
+            <span>Direct launch</span>
+            <strong>{{ directLaunchContract.status || "not loaded" }}</strong>
+          </div>
+          <div>
+            <span>Parity</span>
+            <strong>{{ launchContractParity.status }}</strong>
           </div>
           <div>
             <span>Secret policy</span>
@@ -1247,6 +1290,24 @@ onMounted(async () => {
             <code>{{ connectSummary.launchRequiredRequests }}</code>
           </div>
         </div>
+        <div class="quickstart-grid">
+          <div>
+            <span>Direct ID</span>
+            <code>{{ directLaunchContract.contract_id || "not loaded" }}</code>
+          </div>
+          <div>
+            <span>Direct run</span>
+            <code>{{ directLaunchContract.harness_agent?.run_endpoint || "not loaded" }}</code>
+          </div>
+          <div>
+            <span>Direct verify</span>
+            <code>{{ directLaunchContract.entrypoints?.verify_network || "not loaded" }}</code>
+          </div>
+          <div>
+            <span>Parity detail</span>
+            <code>{{ launchContractParity.detail }}</code>
+          </div>
+        </div>
         <div class="request-sequence">
           <div v-for="step in connectLaunchSequence" :key="step.id || step.request_id || step.order" class="passed">
             <code>{{ step.request_id || step.id || "launch" }}</code>
@@ -1254,6 +1315,14 @@ onMounted(async () => {
             <small>{{ step.success_signal || "success signal not loaded" }}</small>
           </div>
           <span v-if="!connectLaunchSequence.length">No launch contract loaded</span>
+        </div>
+        <div class="request-sequence">
+          <div v-for="step in directLaunchSequence" :key="`direct-${step.id || step.request_id || step.order}`" class="passed">
+            <code>{{ step.request_id || step.id || "direct" }}</code>
+            <span>{{ step.intent || "Direct launch sequence step" }}</span>
+            <small>{{ step.success_signal || "success signal not loaded" }}</small>
+          </div>
+          <span v-if="!directLaunchSequence.length">No direct launch contract loaded</span>
         </div>
         <div class="contract-status-grid">
           <div>
@@ -1666,7 +1735,7 @@ onMounted(async () => {
             <span>{{ endpoint.path }}</span>
           </div>
         </div>
-        <pre>{{ pretty({ daemon_verify: networkVerifyReport, import_catalog: importCatalog, network_entry_profile: connectPackage?.network_entry_profile, consumer_launch_contract: connectPackage?.consumer_launch_contract, mvp_readiness: connectPackage?.mvp_readiness, mvp_presenter_brief: connectPackage?.mvp_presenter_brief, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, demo_playbook: connectPackage?.demo_playbook, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, plugins: connectPackage?.plugins, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
+        <pre>{{ pretty({ daemon_verify: networkVerifyReport, import_catalog: importCatalog, direct_launch_contract: launchContract, launch_contract_parity: launchContractParity, network_entry_profile: connectPackage?.network_entry_profile, consumer_launch_contract: connectPackage?.consumer_launch_contract, mvp_readiness: connectPackage?.mvp_readiness, mvp_presenter_brief: connectPackage?.mvp_presenter_brief, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, demo_playbook: connectPackage?.demo_playbook, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, plugins: connectPackage?.plugins, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
       </section>
       <section>
         <div class="section-title"><Rocket :size="15" /> Killer Demo</div>
