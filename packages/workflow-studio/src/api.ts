@@ -124,6 +124,14 @@ export class StudioApi {
     return this.get("/imports/catalog");
   }
 
+  async protocolWireConformance(): Promise<unknown> {
+    const query = new URLSearchParams({
+      target: "all",
+      capability_id: "git.version",
+    });
+    return this.get(`/protocols/wire-conformance?${query.toString()}`);
+  }
+
   async networkVerify(): Promise<unknown> {
     return this.post("/network/verify", {
       workflow_path: this.config.workflowPath,

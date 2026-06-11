@@ -204,6 +204,36 @@ export interface ProtocolSmokeSuite {
   };
 }
 
+export interface ProtocolWireConformanceReport {
+  ok?: boolean;
+  kind?: "ProtocolWireConformanceReport";
+  target?: string;
+  capability_id?: string;
+  wire_compatible?: boolean;
+  external_protocol_boundary?: string;
+  summary?: {
+    protocol_count?: number;
+    wire_compatible_protocol_count?: number;
+    check_count?: number;
+    passed_count?: number;
+    failed_count?: number;
+  };
+  protocols?: Record<
+    string,
+    {
+      protocol?: string;
+      wire_compatible?: boolean;
+      summary?: {
+        check_count?: number;
+        passed_count?: number;
+        failed_count?: number;
+      };
+      checks?: Array<{ id?: string; ok?: boolean; status?: string; name?: string }>;
+    }
+  >;
+  next_steps?: string[];
+}
+
 export interface ProtocolSummary {
   mcpWorkflowTools: number;
   a2aSkills: number;

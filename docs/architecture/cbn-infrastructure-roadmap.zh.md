@@ -213,6 +213,11 @@ Killer Demo slice 已新增可运行证据束：
 - Workflow Studio 新增 Protocol Export 摘要，将 demo report 内的 MCP workflow
   tools、A2A skills、ACP workflows、各协议 smoke pass/fail 和 wire facade 状态
   提升到可扫读区块，用于说明同一条 CLI-CLI workflow 可被外部协议 facade 接入。
+- Workflow Studio 新增 direct Wire 操作，会调用
+  `/protocols/wire-conformance?target=all&capability_id=git.version`，展示
+  `ProtocolWireConformanceReport` 的 wire-compatible protocol 数、check 数、
+  failed 数、各协议 wire 状态和 protocol boundary 说明；这让 MVP 现场能直接证明
+  MCP/A2A/ACP 官方 wire shape 本地 conformance，而不是只看 demo report 内嵌摘要。
 - Killer demo report 已新增 `communication_trace`：从真实 workflow run result 中提取
   `BridgeMessage argsFrom` handoff，展示 producer task、consumer task、selector、
   BridgeMessage valid 状态、selected value preview、resolved arg preview 和 artifact

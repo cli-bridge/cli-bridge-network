@@ -45,6 +45,7 @@ import type {
   NetworkConnectPackage,
   NetworkConnectQuickstart,
   ProtocolSummary,
+  ProtocolWireConformanceReport,
   QuickstartSdkSnippet,
   QuickstartRequest,
   QuickstartSequenceStep,
@@ -85,6 +86,7 @@ const entryProfile = ref<NetworkEntryProfile | null>(null);
 const directAcceptance = ref<NetworkConnectionAcceptance | null>(null);
 const directReadiness = ref<KillerMvpReadiness | null>(null);
 const importCatalog = ref<CliRegistrationSurface | null>(null);
+const protocolWireReport = ref<ProtocolWireConformanceReport | null>(null);
 const networkVerifyReport = ref<NetworkConnectionAcceptanceReport | null>(null);
 const health = ref<unknown>(null);
 const selectedTaskId = ref("");
@@ -107,6 +109,7 @@ const demoCommunicationHandoffs = computed(() =>
   Array.isArray(demoReport.value?.communication_trace?.handoffs) ? demoReport.value.communication_trace.handoffs : [],
 );
 const protocolSummary = computed<ProtocolSummary>(() => summarizeProtocols(demoReport.value));
+const protocolWireSummary = computed(() => summarizeProtocolWireConformance(protocolWireReport.value));
 const bridgeContractSummary = computed<BridgeContractSummary>(() => summarizeBridgeContract(contract.value));
 const workflowRequestSummary = computed<WorkflowRequestSummary>(() => summarizeWorkflowRequestPlan(workflowRequestPlan.value));
 const setupToolCalls = computed(() => (Array.isArray(toolCallPlan.value?.tool_calls) ? toolCallPlan.value.tool_calls : []));
@@ -321,6 +324,10 @@ async function inspectImportCatalog() {
   importCatalog.value = (await call("imports", () => api.value.importCatalog())) as CliRegistrationSurface;
 }
 
+async function inspectProtocolWireConformance() {
+  protocolWireReport.value = (await call("wire conformance", () => api.value.protocolWireConformance())) as ProtocolWireConformanceReport;
+}
+
 function openStudioLink() {
   const url = connectSummary.value.studioLink;
   if (url) {
@@ -457,6 +464,7 @@ async function loadAll() {
     inspectAcceptance(),
     inspectReadiness(),
     inspectImportCatalog(),
+    inspectProtocolWireConformance(),
     refreshEvidence(),
   ]);
 }
@@ -542,6 +550,34 @@ function summarizeProtocols(report: KillerDemoReport | null): ProtocolSummary {
       a2a: wireText(exports.a2a?.wire_compatible),
       acp: wireText(exports.acp?.wire_compatible),
     },
+  };
+}
+
+function summarizeProtocolWireConformance(report: ProtocolWireConformanceReport | null): {
+  status: string;
+  detail: string;
+  wireCount: string;
+  checks: string;
+  failures: number;
+  protocols: Array<{ id: string; status: string; checks: string }>;
+} {
+  const summary = report?.summary ?? {};
+  const protocolEntries = Object.entries(report?.protocols ?? {});
+  const protocolCount = numberValue(summary.protocol_count) ?? protocolEntries.length;
+  const wireCount = numberValue(summary.wire_compatible_protocol_count) ?? 0;
+  const checkCount = numberValue(summary.check_count) ?? 0;
+  const passedCount = numberValue(summary.passed_count) ?? 0;
+  return {
+    status: report?.wire_compatible ? "wire compatible" : report ? "wire gaps" : "not loaded",
+    detail: report?.external_protocol_boundary ?? "Direct /protocols/wire-conformance has not been fetched.",
+    wireCount: `${wireCount}/${protocolCount}`,
+    checks: `${passedCount}/${checkCount}`,
+    failures: numberValue(summary.failed_count) ?? 0,
+    protocols: protocolEntries.map(([id, value]) => ({
+      id: id.toUpperCase(),
+      status: value?.wire_compatible ? "wire compatible" : "wire gaps",
+      checks: `${numberValue(value?.summary?.passed_count) ?? 0}/${numberValue(value?.summary?.check_count) ?? 0}`,
+    })),
   };
 }
 
@@ -1112,6 +1148,9 @@ onMounted(async () => {
         </button>
         <button title="Load direct CLI import catalog from daemon" @click="inspectImportCatalog">
           <FileJson :size="16" /> Imports
+        </button>
+        <button title="Load direct MCP/A2A/ACP wire conformance report" @click="inspectProtocolWireConformance">
+          <Network :size="16" /> Wire
         </button>
         <button title="Open maintainer console" @click="openDashboardConsole">
           <Wrench :size="16" /> Console
@@ -2120,6 +2159,50 @@ onMounted(async () => {
             protocol smoke {{ protocolSummary.smokeChecks - protocolSummary.smokeFailures }}/{{ protocolSummary.smokeChecks }}
           </span>
         </div>
+        <div class="contract-status-grid">
+          <div>
+            <span>Direct wire</span>
+            <strong>{{ protocolWireSummary.status }}</strong>
+          </div>
+          <div>
+            <span>Wire protocols</span>
+            <strong>{{ protocolWireSummary.wireCount }}</strong>
+          </div>
+          <div>
+            <span>Wire checks</span>
+            <strong>{{ protocolWireSummary.checks }}</strong>
+          </div>
+          <div>
+            <span>Wire failures</span>
+            <strong>{{ protocolWireSummary.failures }}</strong>
+          </div>
+        </div>
+        <div class="protocol-grid">
+          <div v-for="protocol in protocolWireSummary.protocols" :key="`wire-${protocol.id}`">
+            <strong>{{ protocol.id }}</strong>
+            <span>{{ protocol.status }}</span>
+            <code>{{ protocol.checks }} checks</code>
+          </div>
+          <span v-if="!protocolWireSummary.protocols.length">No direct wire conformance report loaded</span>
+        </div>
+        <div class="quickstart-grid">
+          <div>
+            <span>Boundary</span>
+            <code>{{ protocolWireSummary.detail }}</code>
+          </div>
+          <div>
+            <span>Target</span>
+            <code>{{ protocolWireReport?.target || "not loaded" }}</code>
+          </div>
+          <div>
+            <span>Capability</span>
+            <code>{{ protocolWireReport?.capability_id || "not loaded" }}</code>
+          </div>
+          <div>
+            <span>Next</span>
+            <code>{{ (protocolWireReport?.next_steps || []).slice(0, 1).join(" ") || "not loaded" }}</code>
+          </div>
+        </div>
         <div class="stage-list">
           <div v-for="stage in demoReport?.stages || []" :key="stage.id" class="stage-row">
             <span :class="['dot', stage.status]"></span>
@@ -2127,7 +2210,7 @@ onMounted(async () => {
             <code>{{ stage.status }}</code>
           </div>
         </div>
-        <pre>{{ pretty(demoReport?.summary || demoReport) }}</pre>
+        <pre>{{ pretty({ demo_summary: demoReport?.summary || demoReport, direct_wire_conformance: protocolWireReport }) }}</pre>
       </section>
     </aside>
 
