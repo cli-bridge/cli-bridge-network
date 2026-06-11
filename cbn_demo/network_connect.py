@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
@@ -149,6 +151,68 @@ def workflow_studio_demo_link(
         "session_token_included": bool(session_token),
         "url": f"{clean_studio_url}/?{urlencode(query)}",
         "query": query,
+    }
+
+
+def network_acceptance_report(
+    registry: ManifestRegistry,
+    *,
+    workflow_path: str = DEFAULT_KILLER_WORKFLOW_PATH,
+    base_url: str = "http://127.0.0.1:8787",
+    studio_url: str = "http://127.0.0.1:5177",
+    session_token: str | None = None,
+    agent_message: str = "Connect an external program to this CBN workflow.",
+    timeout_seconds: float = 8.0,
+) -> dict[str, Any]:
+    """Run the one-shot network acceptance checklist against a live daemon."""
+
+    package = network_connect_package(
+        registry,
+        workflow_path=workflow_path,
+        base_url=base_url,
+        studio_url=studio_url,
+        session_token=session_token,
+        agent_message=agent_message,
+    )
+    quickstart = package.get("consumer_quickstart") if isinstance(package.get("consumer_quickstart"), dict) else {}
+    acceptance = quickstart.get("acceptance") if isinstance(quickstart.get("acceptance"), dict) else {}
+    requests = quickstart.get("requests") if isinstance(quickstart.get("requests"), list) else []
+    requests_by_id = {
+        str(request.get("id")): request
+        for request in requests
+        if isinstance(request, dict) and request.get("id")
+    }
+    results = [
+        _run_acceptance_check(check, requests_by_id, timeout_seconds=timeout_seconds)
+        for check in acceptance.get("checks", [])
+        if isinstance(check, dict)
+    ]
+    passed = sum(1 for result in results if result["status"] == "passed")
+    failed = sum(1 for result in results if result["status"] == "failed")
+    skipped = sum(1 for result in results if result["status"] == "skipped")
+    total = len(results)
+    ok = bool(package.get("ok") and total > 0 and failed == 0 and skipped == 0)
+    return {
+        "apiVersion": CONNECT_API_VERSION,
+        "kind": "NetworkConnectionAcceptanceReport",
+        "ok": ok,
+        "status": "passed" if ok else "failed" if failed else "skipped" if skipped else "not_run",
+        "workflow_path": workflow_path,
+        "base_url": base_url.rstrip("/"),
+        "summary": {
+            "connect_package_ok": bool(package.get("ok")),
+            "request_count": len(requests),
+            "check_count": total,
+            "passed": passed,
+            "failed": failed,
+            "skipped": skipped,
+        },
+        "acceptance": acceptance,
+        "results": results,
+        "next_commands": [
+            f"python -m cbn network quickstart --workflow-path {workflow_path} --base-url {base_url}",
+            f"python -m cbn network quickstart --workflow-path {workflow_path} --base-url {base_url} --output acceptance",
+        ],
     }
 
 
@@ -497,6 +561,166 @@ def _acceptance_check(
     }
 
 
+def _run_acceptance_check(
+    check: dict[str, Any],
+    requests_by_id: dict[str, dict[str, Any]],
+    *,
+    timeout_seconds: float,
+) -> dict[str, Any]:
+    check_id = str(check.get("id") or check.get("request_id") or "acceptance_check")
+    request_id = str(check.get("request_id") or "")
+    request = requests_by_id.get(request_id)
+    if request is None:
+        return {
+            "check_id": check_id,
+            "request_id": request_id or "unknown",
+            "status": "skipped",
+            "proves": check.get("proves"),
+            "expect": check.get("expect", {}),
+            "error": "matching quickstart request not found",
+        }
+    response = _execute_quickstart_request(request, timeout_seconds=timeout_seconds)
+    if response.get("error"):
+        return {
+            "check_id": check_id,
+            "request_id": request_id,
+            "status": "failed",
+            "http_status": response.get("http_status", 0),
+            "proves": check.get("proves"),
+            "expect": check.get("expect", {}),
+            "error": response.get("error"),
+        }
+    evaluation = _evaluate_acceptance_expectation(
+        check.get("expect", {}) if isinstance(check.get("expect"), dict) else {},
+        response.get("payload"),
+        int(response.get("http_status", 0)),
+    )
+    return {
+        "check_id": check_id,
+        "request_id": request_id,
+        "status": "passed" if evaluation["passed"] else "failed",
+        "http_status": response.get("http_status", 0),
+        "proves": check.get("proves"),
+        "expect": check.get("expect", {}),
+        "evidence": evaluation["evidence"],
+        "error": evaluation.get("error"),
+    }
+
+
+def _execute_quickstart_request(request: dict[str, Any], *, timeout_seconds: float) -> dict[str, Any]:
+    method = str(request.get("method") or "GET")
+    url = str(request.get("url") or "")
+    headers = {
+        str(key): str(value)
+        for key, value in (request.get("headers") if isinstance(request.get("headers"), dict) else {}).items()
+    }
+    data = None
+    if isinstance(request.get("json"), dict):
+        headers["Content-Type"] = "application/json"
+        data = json.dumps(request["json"], ensure_ascii=False).encode("utf-8")
+    try:
+        http_request = urllib.request.Request(url, data=data, headers=headers, method=method)
+        with urllib.request.urlopen(http_request, timeout=timeout_seconds) as response:
+            return {
+                "http_status": response.status,
+                "payload": _decode_json_body(response.read()),
+            }
+    except urllib.error.HTTPError as exc:
+        return {
+            "http_status": exc.code,
+            "payload": _decode_json_body(exc.read()),
+        }
+    except urllib.error.URLError as exc:
+        return {
+            "http_status": 0,
+            "payload": None,
+            "error": str(exc.reason),
+        }
+    except TimeoutError as exc:
+        return {
+            "http_status": 0,
+            "payload": None,
+            "error": str(exc),
+        }
+
+
+def _decode_json_body(body: bytes) -> Any:
+    if not body:
+        return None
+    text = body.decode("utf-8")
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return {"raw": text}
+
+
+def _evaluate_acceptance_expectation(
+    expect: dict[str, Any],
+    payload: Any,
+    http_status: int,
+) -> dict[str, Any]:
+    evidence = {}
+    failures = []
+    for key, expected in expect.items():
+        actual = _acceptance_actual_value(str(key), payload, http_status)
+        ok = _acceptance_value_matches(str(key), actual, expected)
+        evidence[str(key)] = {"expected": expected, "actual": actual, "ok": ok}
+        if not ok:
+            failures.append(f"{key} expected {expected!r} but got {actual!r}")
+    return {
+        "passed": not failures,
+        "evidence": evidence,
+        "error": "; ".join(failures) if failures else None,
+    }
+
+
+def _acceptance_actual_value(key: str, payload: Any, http_status: int) -> Any:
+    if key == "http_status":
+        return http_status
+    if not key.startswith("json."):
+        return None
+    json_key = key.removeprefix("json.")
+    if json_key == "type":
+        return _json_type_name(payload)
+    if json_key.endswith("_min"):
+        return _json_path(payload, json_key.removesuffix("_min"))
+    if json_key.endswith("_type"):
+        return _json_type_name(_json_path(payload, json_key.removesuffix("_type")))
+    return _json_path(payload, json_key)
+
+
+def _acceptance_value_matches(key: str, actual: Any, expected: Any) -> bool:
+    if key.endswith("_min") and isinstance(actual, (int, float)) and isinstance(expected, (int, float)):
+        return actual >= expected
+    return actual == expected
+
+
+def _json_path(payload: Any, path: str) -> Any:
+    current = payload
+    for part in path.split("."):
+        if isinstance(current, dict) and part in current:
+            current = current[part]
+        else:
+            return None
+    return current
+
+
+def _json_type_name(value: Any) -> str:
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, (int, float)):
+        return "number"
+    if isinstance(value, list):
+        return "array"
+    if isinstance(value, dict):
+        return "object"
+    if value is None:
+        return "null"
+    return type(value).__name__
+
+
 def _quickstart_request(
     request_id: str,
     method: str,
@@ -581,6 +805,7 @@ def _absolute_url(base_url: str | None, path: str) -> str:
 
 def _next_commands(workflow_path: str) -> list[str]:
     return [
+        f"python -m cbn network verify --workflow-path {workflow_path} --base-url http://127.0.0.1:8787",
         f"python -m cbn_adapter_agent --workflow-request-plan --workflow-path {workflow_path}",
         f"python -m cbn workflow inspect {workflow_path}",
         f"python -m cbn protocol export-workflows all --path {workflow_path}",

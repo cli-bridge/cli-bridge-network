@@ -11,7 +11,7 @@ from cbn.cli_args import build_parser
 from cbn.paths import resolve_project_paths
 from cbn.version import __version__
 from cbn_demo.killer import killer_demo_report
-from cbn_demo.network_connect import network_connect_package, workflow_studio_demo_link
+from cbn_demo.network_connect import network_acceptance_report, network_connect_package, workflow_studio_demo_link
 from cbn_core.agent_cli_importer import agent_cli_card_import_report
 from cbn_core.command_importer import command_import_report, parse_key_values
 from cbn_core.manifest import validate_manifest_path
@@ -650,6 +650,18 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 print(json.dumps(quickstart, ensure_ascii=False, indent=2))
             return 0 if result["ok"] and quickstart.get("kind") == "NetworkConnectQuickstart" else 7
+        if args.network_command == "verify":
+            result = network_acceptance_report(
+                runtime.registry,
+                workflow_path=args.workflow_path,
+                base_url=args.base_url,
+                studio_url=args.studio_url,
+                session_token=args.session_token,
+                agent_message=args.message,
+                timeout_seconds=args.timeout_seconds,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["ok"] else 8
         if args.network_command == "studio-link":
             result = workflow_studio_demo_link(
                 workflow_path=args.workflow_path,

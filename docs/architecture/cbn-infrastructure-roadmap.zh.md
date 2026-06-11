@@ -293,6 +293,10 @@ Killer Demo slice 已新增可运行证据束：
   sequence 真实调用 daemon 并用 `NetworkConnectionAcceptance` 的 expect 字段判定
   pass/fail/skipped；这让 demo 现场可以直接证明外部程序一键接入 CBN 网络后的
   最小验收结果，而不是只展示静态 checklist。
+- CLI 已新增 `python -m cbn network verify`，复用同一份 quickstart + acceptance
+  contract 对 live daemon 发起 HTTP 调用并输出 `NetworkConnectionAcceptanceReport`；
+  该报告包含每个 check 的 http status、expect/actual evidence 和 pass/fail/skipped
+  汇总，供第三方程序或 CI smoke 直接复用。
 - CLI 已新增 `python -m cbn network connect-package` 只读入口，输出同一份
   `NetworkConnectPackage`。外部程序无需先接 daemon/WebUI，也能一次性读取
   AgentCliCard/RunReceipt contract、daemon endpoint catalog、protocol facade 和

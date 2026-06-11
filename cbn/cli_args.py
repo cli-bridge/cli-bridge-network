@@ -318,6 +318,35 @@ def build_parser() -> argparse.ArgumentParser:
         default="json",
         help="Output JSON quickstart, a cURL script, a PowerShell script, or the acceptance checklist.",
     )
+    network_verify = network_subcommands.add_parser(
+        "verify",
+        help="Run the quickstart acceptance checklist against a live CBN daemon.",
+    )
+    network_verify.add_argument(
+        "--workflow-path",
+        default="workflows/cli-anything-macrocli-mermaid-routing.example.json",
+        help="Workflow JSON path to verify through the daemon.",
+    )
+    network_verify.add_argument(
+        "--base-url",
+        default="http://127.0.0.1:8787",
+        help="Daemon base URL to call during verification.",
+    )
+    network_verify.add_argument(
+        "--studio-url",
+        default="http://127.0.0.1:5177",
+        help="Workflow Studio base URL to embed in the generated connect package.",
+    )
+    network_verify.add_argument(
+        "--session-token",
+        help="Optional daemon session token to include in verification requests.",
+    )
+    network_verify.add_argument(
+        "--message",
+        default="Connect an external program to this CBN workflow.",
+        help="Agent prompt used to shape the reusable workflow request.",
+    )
+    network_verify.add_argument("--timeout-seconds", type=float, default=8.0)
     network_studio_link = network_subcommands.add_parser(
         "studio-link",
         help="Print a preconfigured Workflow Studio URL for a CBN workflow.",

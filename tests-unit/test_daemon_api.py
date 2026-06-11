@@ -1,4 +1,6 @@
 import json
+import subprocess
+import sys
 import threading
 import unittest
 import urllib.error
@@ -174,6 +176,40 @@ class DaemonApiTests(unittest.TestCase):
             self.assertIn("Invoke-RestMethod -Method 'POST'", payload["powershell_script"])
             self.assertIn("sessionToken=header-token", payload["entrypoints"]["open_studio"])
             self.assertNotIn("contracts", payload)
+
+    def test_network_verify_cli_runs_acceptance_against_daemon(self):
+        with daemon_url(session_token="verify-token") as base_url:
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "cbn",
+                    "network",
+                    "verify",
+                    "--workflow-path",
+                    "workflows/cli-anything-macrocli-mermaid-routing.example.json",
+                    "--base-url",
+                    base_url,
+                    "--session-token",
+                    "verify-token",
+                    "--timeout-seconds",
+                    "5",
+                ],
+                text=True,
+                encoding="utf-8",
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+            )
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["kind"], "NetworkConnectionAcceptanceReport")
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["status"], "passed")
+        self.assertEqual(payload["summary"]["passed"], 8)
+        self.assertEqual(payload["summary"]["failed"], 0)
+        self.assertEqual(payload["summary"]["skipped"], 0)
+        self.assertEqual(payload["results"][4]["request_id"], "run_workflow")
+        self.assertEqual(payload["results"][4]["evidence"]["json.workflow_id_type"]["actual"], "string")
 
     def test_adapter_agent_orchestrate_route_returns_auth_fallback(self):
         with daemon_url() as base_url:
