@@ -6,6 +6,7 @@ import {
   Boxes,
   Braces,
   ClipboardList,
+  Copy,
   ExternalLink,
   FileJson,
   Gauge,
@@ -62,6 +63,7 @@ const health = ref<unknown>(null);
 const selectedTaskId = ref("");
 const loading = ref("");
 const error = ref("");
+const copiedScript = ref("");
 const dock = reactive<DockState>({ events: [], audit: [], artifacts: [] });
 
 const api = computed(() => new StudioApi(config));
@@ -133,6 +135,19 @@ function openStudioLink() {
   const url = connectSummary.value.studioLink;
   if (url) {
     window.open(url, "_blank", "noopener,noreferrer");
+  }
+}
+
+async function copyText(label: string, text: string) {
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    copiedScript.value = label;
+    window.setTimeout(() => {
+      if (copiedScript.value === label) copiedScript.value = "";
+    }, 1600);
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
   }
 }
 
@@ -524,11 +539,21 @@ onMounted(async () => {
           <span v-if="!quickstartRequests.length">No quickstart requests loaded</span>
         </div>
         <div class="curl-script-preview">
-          <span>cURL script</span>
+          <div>
+            <span>cURL script</span>
+            <button title="Copy cURL script" :disabled="!connectSummary.curlScript" @click="copyText('curl', connectSummary.curlScript)">
+              <Copy :size="14" /> {{ copiedScript === "curl" ? "Copied" : "Copy" }}
+            </button>
+          </div>
           <code>{{ connectSummary.curlScript || "not loaded" }}</code>
         </div>
         <div class="curl-script-preview">
-          <span>PowerShell script</span>
+          <div>
+            <span>PowerShell script</span>
+            <button title="Copy PowerShell script" :disabled="!connectSummary.powershellScript" @click="copyText('powershell', connectSummary.powershellScript)">
+              <Copy :size="14" /> {{ copiedScript === "powershell" ? "Copied" : "Copy" }}
+            </button>
+          </div>
           <code>{{ connectSummary.powershellScript || "not loaded" }}</code>
         </div>
         <div class="endpoint-list">

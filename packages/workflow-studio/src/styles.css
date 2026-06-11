@@ -437,11 +437,24 @@ canvas {
   margin-bottom: 8px;
 }
 
+.curl-script-preview div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .curl-script-preview span {
   color: #647160;
   font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
+}
+
+.curl-script-preview button {
+  min-height: 26px;
+  padding: 3px 7px;
+  font-size: 11px;
 }
 
 .curl-script-preview code {

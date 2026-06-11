@@ -280,6 +280,8 @@ Killer Demo slice 已新增可运行证据束：
 - `consumer_quickstart.powershell_script` 已提供同一组 first-call 的 Windows/
   PowerShell `Invoke-RestMethod` 脚本，包含统一 headers 和 POST JSON body；Studio
   Connect 面板同步预览，便于在当前 Windows 开发环境直接 smoke。
+- Workflow Studio Connect 面板已为 cURL 与 PowerShell 脚本提供复制按钮，降低
+  demo 或第三方接入时从可视化界面拷贝 first-call smoke 脚本的操作成本。
 - CLI 已新增 `python -m cbn network connect-package` 只读入口，输出同一份
   `NetworkConnectPackage`。外部程序无需先接 daemon/WebUI，也能一次性读取
   AgentCliCard/RunReceipt contract、daemon endpoint catalog、protocol facade 和
