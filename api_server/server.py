@@ -60,6 +60,7 @@ from cbn_adapter_agent.tool_call_plan import build_agent_tool_call_plan
 from cbn_adapter_agent.workflow_request import build_agent_workflow_request_plan
 from cbn_plugins.cli_anything import CliAnythingHub
 from cbn_plugins.manager import PluginManager
+from cbn_tools.direct_cli_readiness import direct_cli_readiness_report
 
 
 ALLOWED_ORIGIN_HOSTS = {"127.0.0.1", "localhost", "::1"}
@@ -85,6 +86,7 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/artifacts"},
     {"method": "GET", "path": "/parsers"},
     {"method": "GET", "path": "/parsers/fixtures"},
+    {"method": "GET", "path": "/direct-cli/readiness"},
     {"method": "GET", "path": "/.well-known/agent-card.json"},
     {"method": "GET", "path": "/protocols"},
     {"method": "GET", "path": "/protocols/workflows"},
@@ -178,7 +180,10 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type, X-CBN-Session")
         self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+            return
 
     def _send_stream_headers(self) -> None:
         self.send_response(200)
@@ -476,6 +481,11 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             path = Path(query.get("path", ["parser_fixtures"])[0])
             parser_ref = query.get("parser_ref", [None])[0]
             result = run_parser_fixtures(path, parser_ref=parser_ref, registry=runtime.parser_registry)
+            self._send(200 if result["ok"] else 422, result)
+            return
+        if parsed.path == "/direct-cli/readiness":
+            path = Path(query.get("path", ["parser_fixtures"])[0])
+            result = direct_cli_readiness_report(runtime, fixture_path=path)
             self._send(200 if result["ok"] else 422, result)
             return
         if parsed.path == "/protocols":

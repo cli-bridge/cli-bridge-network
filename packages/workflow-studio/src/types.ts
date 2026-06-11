@@ -234,6 +234,71 @@ export interface ProtocolWireConformanceReport {
   next_steps?: string[];
 }
 
+export interface DirectCliReadinessReport {
+  ok?: boolean;
+  kind?: "DirectCliReadinessReport";
+  adapter?: string;
+  parser_ref?: string;
+  summary?: {
+    profile_count?: number;
+    action_count?: number;
+    setup_action_count?: number;
+    capability_count?: number;
+    verified_output_count?: number;
+    gated_capability_count?: number;
+    typed_parser_present?: boolean;
+    fixture_count?: number;
+    fixture_case_count?: number;
+    fixture_failed_case_count?: number;
+    recovery_type_count?: number;
+    missing_runtime_capability_count?: number;
+  };
+  parser_contract?: {
+    parser_ref?: string;
+    present?: boolean;
+    fixture_ok?: boolean;
+    fixture_path?: string;
+    fixture_count?: number;
+    case_count?: number;
+    failed_case_count?: number;
+    verified_capabilities?: string[];
+  };
+  profiles?: Array<{
+    profile?: string;
+    action_count?: number;
+    capability_count?: number;
+    setup_action_count?: number;
+    verified_capability_count?: number;
+    fixture_verified_capability_count?: number;
+    gated_capability_count?: number;
+    status?: string;
+    capabilities?: Array<{
+      capability_id?: string | null;
+      action?: string;
+      title?: string;
+      manifest_present?: boolean;
+      parser_ref?: string | null;
+      verified?: boolean;
+      fixture_verified?: boolean;
+      requires_confirmation?: boolean;
+      network?: string | null;
+      risk?: string | null;
+      auth_gate?: string | null;
+      output_contract?: string | null;
+    }>;
+    setup_actions?: Array<{ action?: string; title?: string; argv?: string[] }>;
+  }>;
+  error_recovery?: Array<{
+    error_type?: string;
+    covered?: boolean;
+    fixture_case_ids?: string[];
+    setup_required?: boolean;
+    next_action?: string;
+  }>;
+  missing_runtime_capabilities?: string[];
+  next_steps?: string[];
+}
+
 export interface ProtocolSummary {
   mcpWorkflowTools: number;
   a2aSkills: number;

@@ -124,6 +124,10 @@ export class StudioApi {
     return this.get("/imports/catalog");
   }
 
+  async directCliReadiness(): Promise<unknown> {
+    return this.get("/direct-cli/readiness");
+  }
+
   async protocolWireConformance(): Promise<unknown> {
     const query = new URLSearchParams({
       target: "all",

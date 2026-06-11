@@ -218,6 +218,11 @@ Killer Demo slice 已新增可运行证据束：
   `ProtocolWireConformanceReport` 的 wire-compatible protocol 数、check 数、
   failed 数、各协议 wire 状态和 protocol boundary 说明；这让 MVP 现场能直接证明
   MCP/A2A/ACP 官方 wire shape 本地 conformance，而不是只看 demo report 内嵌摘要。
+- daemon 新增 `GET /direct-cli/readiness`，聚合 direct CLI profile/action、manifest
+  映射、`direct-cli.typed` parser fixture、live confirmation gate 和 setup/error
+  recovery taxonomy。Workflow Studio Connect 面板同步展示 direct CLI readiness，
+  让 Feishu、Jimeng、Obsidian、CAW 这类需要登录/API key/本地服务的 CLI 在 MVP
+  中有可扫读的 profile 覆盖、typed parser 覆盖和首次设置引导证据。
 - Killer demo report 已新增 `communication_trace`：从真实 workflow run result 中提取
   `BridgeMessage argsFrom` handoff，展示 producer task、consumer task、selector、
   BridgeMessage valid 状态、selected value preview、resolved arg preview 和 artifact

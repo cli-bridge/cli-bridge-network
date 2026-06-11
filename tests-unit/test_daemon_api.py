@@ -1061,6 +1061,17 @@ class DaemonApiTests(unittest.TestCase):
                     payload["reports"][0]["verified_capabilities"],
                 )
 
+    def test_direct_cli_readiness_route_returns_profiles_and_recovery(self):
+        with daemon_url() as base_url:
+            with urllib.request.urlopen(f"{base_url}/direct-cli/readiness", timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(response.status, 200)
+                self.assertTrue(payload["ok"])
+                self.assertEqual(payload["kind"], "DirectCliReadinessReport")
+                self.assertEqual(payload["summary"]["profile_count"], 4)
+                self.assertEqual(payload["summary"]["fixture_failed_case_count"], 0)
+                self.assertTrue(any(item["error_type"] == "auth_required" for item in payload["error_recovery"]))
+
     def test_workflows_route_returns_catalog(self):
         with daemon_url() as base_url:
             with urllib.request.urlopen(f"{base_url}/workflows", timeout=5) as response:

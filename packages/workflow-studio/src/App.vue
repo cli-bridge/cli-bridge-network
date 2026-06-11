@@ -35,6 +35,7 @@ import type {
   ConnectionAcceptanceCheck,
   ConnectSummary,
   ConsumerLaunchContract,
+  DirectCliReadinessReport,
   DockState,
   EvidenceSummary,
   KillerDemoReport,
@@ -86,6 +87,7 @@ const entryProfile = ref<NetworkEntryProfile | null>(null);
 const directAcceptance = ref<NetworkConnectionAcceptance | null>(null);
 const directReadiness = ref<KillerMvpReadiness | null>(null);
 const importCatalog = ref<CliRegistrationSurface | null>(null);
+const directCliReadiness = ref<DirectCliReadinessReport | null>(null);
 const protocolWireReport = ref<ProtocolWireConformanceReport | null>(null);
 const networkVerifyReport = ref<NetworkConnectionAcceptanceReport | null>(null);
 const health = ref<unknown>(null);
@@ -204,6 +206,7 @@ const directImportCatalogImporters = computed(() =>
 const importCatalogNextCommands = computed<string[]>(() =>
   Array.isArray(importCatalog.value?.next_commands) ? importCatalog.value.next_commands : [],
 );
+const directCliSummary = computed(() => summarizeDirectCliReadiness(directCliReadiness.value));
 const importCatalogParity = computed(() => {
   if (!importCatalog.value || !connectPackage.value?.registration_surface) return "not compared";
   return importCatalog.value.importer_count === connectPackage.value.registration_surface.importer_count
@@ -322,6 +325,10 @@ async function inspectReadiness() {
 
 async function inspectImportCatalog() {
   importCatalog.value = (await call("imports", () => api.value.importCatalog())) as CliRegistrationSurface;
+}
+
+async function inspectDirectCliReadiness() {
+  directCliReadiness.value = (await call("direct CLI", () => api.value.directCliReadiness())) as DirectCliReadinessReport;
 }
 
 async function inspectProtocolWireConformance() {
@@ -464,6 +471,7 @@ async function loadAll() {
     inspectAcceptance(),
     inspectReadiness(),
     inspectImportCatalog(),
+    inspectDirectCliReadiness(),
     inspectProtocolWireConformance(),
     refreshEvidence(),
   ]);
@@ -577,6 +585,45 @@ function summarizeProtocolWireConformance(report: ProtocolWireConformanceReport 
       id: id.toUpperCase(),
       status: value?.wire_compatible ? "wire compatible" : "wire gaps",
       checks: `${numberValue(value?.summary?.passed_count) ?? 0}/${numberValue(value?.summary?.check_count) ?? 0}`,
+    })),
+  };
+}
+
+function summarizeDirectCliReadiness(report: DirectCliReadinessReport | null): {
+  status: string;
+  profiles: string;
+  capabilities: string;
+  parser: string;
+  fixtures: string;
+  recovery: string;
+  gated: number;
+  rows: Array<{ profile: string; status: string; capabilities: string; setup: number; gated: number }>;
+  recoveryRows: Array<{ errorType: string; status: string; cases: string; nextAction: string }>;
+} {
+  const summary = report?.summary ?? {};
+  const parser = report?.parser_contract ?? {};
+  const profiles = Array.isArray(report?.profiles) ? report.profiles : [];
+  const recovery = Array.isArray(report?.error_recovery) ? report.error_recovery : [];
+  return {
+    status: report?.ok ? "ready" : report ? "needs attention" : "not loaded",
+    profiles: `${numberValue(summary.profile_count) ?? profiles.length}/${numberValue(summary.action_count) ?? 0}`,
+    capabilities: `${numberValue(summary.verified_output_count) ?? 0}/${numberValue(summary.capability_count) ?? 0}`,
+    parser: parser.present ? parser.parser_ref || report?.parser_ref || "direct-cli.typed" : "not loaded",
+    fixtures: `${numberValue(summary.fixture_case_count) ?? numberValue(parser.case_count) ?? 0}/${numberValue(summary.fixture_failed_case_count) ?? numberValue(parser.failed_case_count) ?? 0} failed`,
+    recovery: `${recovery.filter((item) => item.covered).length}/${numberValue(summary.recovery_type_count) ?? recovery.length}`,
+    gated: numberValue(summary.gated_capability_count) ?? 0,
+    rows: profiles.map((profile) => ({
+      profile: profile.profile || "profile",
+      status: profile.status || "unknown",
+      capabilities: `${numberValue(profile.verified_capability_count) ?? 0}/${numberValue(profile.capability_count) ?? 0}`,
+      setup: numberValue(profile.setup_action_count) ?? 0,
+      gated: numberValue(profile.gated_capability_count) ?? 0,
+    })),
+    recoveryRows: recovery.map((item) => ({
+      errorType: item.error_type || "error",
+      status: item.covered ? "covered" : "missing",
+      cases: (item.fixture_case_ids || []).join(", ") || "no fixture",
+      nextAction: item.next_action || "inspect setup guide",
     })),
   };
 }
@@ -1148,6 +1195,9 @@ onMounted(async () => {
         </button>
         <button title="Load direct CLI import catalog from daemon" @click="inspectImportCatalog">
           <FileJson :size="16" /> Imports
+        </button>
+        <button title="Load direct CLI profile parser and recovery readiness" @click="inspectDirectCliReadiness">
+          <Braces :size="16" /> Direct
         </button>
         <button title="Load direct MCP/A2A/ACP wire conformance report" @click="inspectProtocolWireConformance">
           <Network :size="16" /> Wire
@@ -1897,6 +1947,55 @@ onMounted(async () => {
           <span>{{ connectAgentHarnesses.length }} harnesses</span>
           <span>{{ connectAgentTasks.length }} tasks</span>
         </div>
+        <div class="section-title"><Braces :size="15" /> Direct CLI Readiness</div>
+        <div class="contract-status-grid">
+          <div>
+            <span>Status</span>
+            <strong>{{ directCliSummary.status }}</strong>
+          </div>
+          <div>
+            <span>Profiles/actions</span>
+            <strong>{{ directCliSummary.profiles }}</strong>
+          </div>
+          <div>
+            <span>Capabilities</span>
+            <strong>{{ directCliSummary.capabilities }}</strong>
+          </div>
+          <div>
+            <span>Parser</span>
+            <strong>{{ directCliSummary.parser }}</strong>
+          </div>
+          <div>
+            <span>Fixture cases</span>
+            <strong>{{ directCliSummary.fixtures }}</strong>
+          </div>
+          <div>
+            <span>Recovery</span>
+            <strong>{{ directCliSummary.recovery }}</strong>
+          </div>
+          <div>
+            <span>Live gates</span>
+            <strong>{{ directCliSummary.gated }}</strong>
+          </div>
+        </div>
+        <div class="protocol-grid">
+          <div v-for="profile in directCliSummary.rows" :key="`direct-${profile.profile}`">
+            <strong>{{ profile.profile }}</strong>
+            <span>{{ profile.status }}</span>
+            <code>{{ profile.capabilities }} verified</code>
+            <small>{{ profile.setup }} setup · {{ profile.gated }} gated</small>
+          </div>
+          <span v-if="!directCliSummary.rows.length">No direct CLI readiness loaded</span>
+        </div>
+        <div class="request-sequence">
+          <div v-for="item in directCliSummary.recoveryRows" :key="item.errorType">
+            <code>{{ item.status }}</code>
+            <span>{{ item.errorType }}</span>
+            <small>{{ item.cases }}</small>
+            <em>{{ item.nextAction }}</em>
+          </div>
+          <span v-if="!directCliSummary.recoveryRows.length">No direct CLI recovery matrix loaded</span>
+        </div>
         <div class="quickstart-grid">
           <div>
             <span>Agent session</span>
@@ -2068,7 +2167,7 @@ onMounted(async () => {
             <span>{{ endpoint.path }}</span>
           </div>
         </div>
-        <pre>{{ pretty({ daemon_verify: networkVerifyReport, import_catalog: importCatalog, direct_quickstart: directQuickstart, quickstart_parity: quickstartParity, direct_entry_profile: entryProfile, entry_profile_parity: entryProfileParity, direct_launch_contract: launchContract, launch_contract_parity: launchContractParity, direct_acceptance: directAcceptance, acceptance_parity: acceptanceParity, direct_readiness: directReadiness, readiness_parity: readinessParity, network_entry_profile: connectPackage?.network_entry_profile, consumer_launch_contract: connectPackage?.consumer_launch_contract, mvp_readiness: connectPackage?.mvp_readiness, mvp_presenter_brief: connectPackage?.mvp_presenter_brief, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, demo_playbook: connectPackage?.demo_playbook, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, plugins: connectPackage?.plugins, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
+        <pre>{{ pretty({ daemon_verify: networkVerifyReport, import_catalog: importCatalog, direct_cli_readiness: directCliReadiness, direct_quickstart: directQuickstart, quickstart_parity: quickstartParity, direct_entry_profile: entryProfile, entry_profile_parity: entryProfileParity, direct_launch_contract: launchContract, launch_contract_parity: launchContractParity, direct_acceptance: directAcceptance, acceptance_parity: acceptanceParity, direct_readiness: directReadiness, readiness_parity: readinessParity, network_entry_profile: connectPackage?.network_entry_profile, consumer_launch_contract: connectPackage?.consumer_launch_contract, mvp_readiness: connectPackage?.mvp_readiness, mvp_presenter_brief: connectPackage?.mvp_presenter_brief, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, demo_playbook: connectPackage?.demo_playbook, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, plugins: connectPackage?.plugins, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
       </section>
       <section>
         <div class="section-title"><Rocket :size="15" /> Killer Demo</div>

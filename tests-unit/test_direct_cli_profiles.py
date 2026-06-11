@@ -5,6 +5,7 @@ import unittest
 
 from cbn_core.manifest import validate_manifest_path
 from cbn_runtime.context import build_runtime
+from cbn_tools.direct_cli_readiness import direct_cli_readiness_report
 from cbn_tools.external_cli import list_actions, require_action
 
 
@@ -99,6 +100,23 @@ class DirectCliProfileTests(unittest.TestCase):
         self.assertEqual(parsed["data"]["profile"], "jimeng")
         self.assertTrue(parsed["data"]["setup_required"])
         self.assertEqual(parsed["data"]["error_type"], "auth_required")
+
+    def test_direct_cli_readiness_report_covers_profiles_and_recovery(self):
+        payload = direct_cli_readiness_report(build_runtime())
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["kind"], "DirectCliReadinessReport")
+        self.assertEqual(payload["parser_ref"], "direct-cli.typed")
+        self.assertEqual(payload["summary"]["profile_count"], 4)
+        self.assertEqual(payload["summary"]["missing_runtime_capability_count"], 0)
+        self.assertEqual(payload["parser_contract"]["failed_case_count"], 0)
+        self.assertEqual(payload["summary"]["recovery_type_count"], 5)
+        profiles = {item["profile"]: item for item in payload["profiles"]}
+        self.assertGreaterEqual(profiles["jimeng"]["setup_action_count"], 3)
+        self.assertGreaterEqual(profiles["obsidian-cli"]["capability_count"], 4)
+        recovery = {item["error_type"]: item for item in payload["error_recovery"]}
+        self.assertTrue(recovery["auth_required"]["covered"])
+        self.assertTrue(recovery["local_rest_unavailable"]["covered"])
+        self.assertTrue(recovery["launcher_failure"]["covered"])
 
 
 if __name__ == "__main__":
