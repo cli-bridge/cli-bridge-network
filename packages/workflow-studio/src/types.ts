@@ -606,6 +606,11 @@ export interface ConnectSummary {
   status: string;
   externalProtocol: string;
   acceptedKinds: string;
+  externalPackageStatus: string;
+  externalPackageFiles: number;
+  externalPackageSourceFiles: number;
+  externalPackageNpm: string;
+  externalPackagePython: string;
   generatedCapabilities: string[];
   bridgeRoutes: number;
   endpointCount: number;

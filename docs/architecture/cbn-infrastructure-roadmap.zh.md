@@ -46,7 +46,9 @@ CBN 侧 `cbn_core.agent_cli_contract` 已在映射前消费该外置 validator�
 validator、static check 和 conformance smoke 是否齐备，并扫描 Python/TS/scripts
 源码确认不 import CBN runtime/protocol 模块。`NetworkConnectPackage.contracts.external`
 同步携带 `package_health`，让第三方程序第一次读取 one-shot package 时即可判断
-`agent-cli-contract` 是否仍是可拆包、可独立发包的干净边界。
+`agent-cli-contract` 是否仍是可拆包、可独立发包的干净边界。Workflow Studio
+Connect 面板同步展示 package clean/attention、npm/Python 包名、source scan
+数量、必需文件 present/missing 和 forbidden import offenders。
 
 ### 2. CBN 内部总线 Contract
 
@@ -291,7 +293,10 @@ Killer Demo slice 已新增可运行证据束：
   能看到外部程序接入后会进入 ToolManifest、BridgeMessage、ArtifactRecord、
   WorkflowSelector 哪些内部对象边界；同时展示 one-shot package 内的 AgentSession、
   AgentCard、AgentHarness、AgentTask 和 AgentBridgeMessage 摘要，便于说明
-  harness agent 如何作为 workflow node 进入总线。
+  harness agent 如何作为 workflow node 进入总线。该面板也已消费
+  `contracts.external.package_health`，把 `agent-cli-contract` 的独立包文件清单、
+  package metadata 和 forbidden import scan 结果直接渲染出来，避免 demo 中只能
+  口头说明外置协议边界。
 - Connect Package 面板已把 `NetworkConnectPackage.workflow_studio` 提升为一等
   展示：可直接打开预配置 Workflow Studio demo link，并显示 session token 是否
   已包含、dry-run/live 模式和原始 `WorkflowStudioDemoLink` payload，便于外部程序

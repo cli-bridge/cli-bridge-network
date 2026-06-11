@@ -749,6 +749,72 @@ canvas {
   margin-bottom: 8px;
 }
 
+.package-health-list {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.package-health-list div {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(120px, 0.9fr) 72px minmax(0, 1fr);
+  align-items: center;
+  gap: 5px 8px;
+  border: 1px solid #d1dacd;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 6px 7px;
+}
+
+.package-health-list div.ok {
+  border-color: #9fbea0;
+  background: #f6fbf5;
+}
+
+.package-health-list div.blocked {
+  border-color: #cf9f9a;
+  background: #fff8f7;
+}
+
+.package-health-list strong,
+.package-health-list span,
+.package-health-list small,
+.package-health-list code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.package-health-list strong {
+  color: #243026;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.package-health-list span,
+.package-health-list small {
+  color: #647160;
+  font-size: 11px;
+}
+
+.package-health-list code {
+  grid-column: 1 / -1;
+  color: #4c5949;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+}
+
+.package-health-list > span {
+  border: 1px solid #d1dacd;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 6px;
+  color: #647160;
+  font-size: 12px;
+}
+
 .contract-section-list div {
   display: grid;
   min-width: 0;

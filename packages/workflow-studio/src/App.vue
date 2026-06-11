@@ -23,6 +23,7 @@ import { mountWorkflowGraph, type StudioGraph } from "./graph";
 import type {
   AcceptanceExecutionResult,
   AcceptanceRunSummary,
+  AgentCliContractPackageHealth,
   AdapterAgentNodeBundle,
   AdapterAgentToolCallPlan,
   AgentWorkflowRequestPlan,
@@ -98,6 +99,15 @@ const setupCheckpoints = computed(() =>
 );
 const connectSummary = computed<ConnectSummary>(() => summarizeConnectPackage(connectPackage.value));
 const connectContractSummary = computed<BridgeContractSummary>(() => summarizeConnectContracts(connectPackage.value));
+const connectExternalPackageHealth = computed<AgentCliContractPackageHealth>(() => connectPackage.value?.contracts?.external?.package_health ?? {});
+const connectExternalPackageFiles = computed(() =>
+  Array.isArray(connectExternalPackageHealth.value.files) ? connectExternalPackageHealth.value.files : [],
+);
+const connectExternalPackageOffenders = computed(() =>
+  Array.isArray(connectExternalPackageHealth.value.independence?.offenders)
+    ? connectExternalPackageHealth.value.independence.offenders
+    : [],
+);
 const connectAgentBundle = computed(() => connectPackage.value?.agent_node_bundle ?? {});
 const connectAgentCards = computed(() => (Array.isArray(connectAgentBundle.value.cards) ? connectAgentBundle.value.cards : []));
 const connectAgentHarnesses = computed(() => (Array.isArray(connectAgentBundle.value.harnesses) ? connectAgentBundle.value.harnesses : []));
@@ -435,6 +445,9 @@ function summarizeWorkflowRequestPlan(payload: AgentWorkflowRequestPlan | null):
 
 function summarizeConnectPackage(payload: NetworkConnectPackage | null): ConnectSummary {
   const external = payload?.contracts?.external ?? {};
+  const packageHealth = external.package_health ?? {};
+  const packageMetadata = packageHealth.metadata ?? {};
+  const packageIndependence = packageHealth.independence ?? {};
   const summary = payload?.summary ?? {};
   const studio = payload?.workflow_studio ?? {};
   const demo = payload?.demo_readiness ?? {};
@@ -453,6 +466,11 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
     status: payload?.ok ? "ready" : payload ? "needs attention" : "not loaded",
     externalProtocol: external.protocol ?? "unknown",
     acceptedKinds: Array.isArray(external.accepted_kinds) ? external.accepted_kinds.join(" + ") : "unknown",
+    externalPackageStatus: packageHealth.ok ? "package clean" : packageHealth.kind ? "package attention" : "package not loaded",
+    externalPackageFiles: numberValue(packageHealth.file_count) ?? (Array.isArray(packageHealth.files) ? packageHealth.files.length : 0),
+    externalPackageSourceFiles: numberValue(packageIndependence.source_file_count) ?? 0,
+    externalPackageNpm: stringValue(packageMetadata.npm_name) ?? stringValue(external.package_boundary?.npm_name) ?? "npm not loaded",
+    externalPackagePython: stringValue(packageMetadata.python_name) ?? stringValue(external.package_boundary?.python_name) ?? "python not loaded",
     generatedCapabilities: Array.isArray(external.generated_capability_ids) ? external.generated_capability_ids.slice(0, 4) : [],
     bridgeRoutes: numberValue(summary.bridge_route_count) ?? 0,
     endpointCount: Array.isArray(payload?.daemon_endpoints) ? payload.daemon_endpoints.length : 0,
@@ -902,6 +920,10 @@ onMounted(async () => {
             <strong>{{ connectSummary.externalProtocol }}</strong>
           </div>
           <div>
+            <span>Package</span>
+            <strong>{{ connectSummary.externalPackageFiles }}</strong>
+          </div>
+          <div>
             <span>Endpoints</span>
             <strong>{{ connectSummary.endpointCount }}</strong>
           </div>
@@ -944,6 +966,7 @@ onMounted(async () => {
         </div>
         <div class="evidence-row">
           <span :class="['pill-inline', connectPackage?.ok ? 'ok' : 'blocked']">{{ connectSummary.acceptedKinds }}</span>
+          <span :class="['pill-inline', connectExternalPackageHealth.ok ? 'ok' : 'blocked']">{{ connectSummary.externalPackageStatus }}</span>
           <span class="pill-inline">{{ connectSummary.nextAction }}</span>
           <span class="pill-inline">{{ connectSummary.studioToken }}</span>
           <span class="pill-inline">{{ connectSummary.studioMode }}</span>
@@ -1021,6 +1044,35 @@ onMounted(async () => {
             <span>Base URL</span>
             <strong>{{ networkVerifyReport?.base_url || "daemon" }}</strong>
           </div>
+        </div>
+        <div class="contract-status-grid">
+          <div>
+            <span>External package</span>
+            <strong>{{ connectSummary.externalPackageNpm }}</strong>
+          </div>
+          <div>
+            <span>Python package</span>
+            <strong>{{ connectSummary.externalPackagePython }}</strong>
+          </div>
+          <div>
+            <span>Source scan</span>
+            <strong>{{ connectSummary.externalPackageSourceFiles }}</strong>
+          </div>
+        </div>
+        <div class="package-health-list">
+          <div v-for="file in connectExternalPackageFiles.slice(0, 6)" :key="file.id || file.relative_path" :class="file.exists ? 'ok' : 'blocked'">
+            <strong>{{ file.id || "contract file" }}</strong>
+            <span>{{ file.exists ? "present" : "missing" }}</span>
+            <small>{{ file.role || "package boundary" }}</small>
+            <code>{{ file.relative_path || file.path || "path not loaded" }}</code>
+          </div>
+          <div v-for="offender in connectExternalPackageOffenders.slice(0, 3)" :key="`${offender.path}:${offender.module}`" class="blocked">
+            <strong>{{ offender.module || "forbidden module" }}</strong>
+            <span>offender</span>
+            <small>external package must not import CBN runtime</small>
+            <code>{{ offender.path || "path not loaded" }}</code>
+          </div>
+          <span v-if="!connectExternalPackageFiles.length && !connectExternalPackageOffenders.length">No external package health loaded</span>
         </div>
         <div class="contract-status-grid">
           <div>
