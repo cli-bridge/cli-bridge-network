@@ -47,6 +47,7 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("GET", "/demo/killer"), routes)
         self.assertIn(("GET", "/network/connect-package"), routes)
         self.assertIn(("GET", "/network/quickstart"), routes)
+        self.assertIn(("GET", "/network/launch-contract"), routes)
         self.assertIn(("GET", "/network/readiness"), routes)
         self.assertIn(("POST", "/network/verify"), routes)
         self.assertIn(("POST", "/demo/killer"), routes)
@@ -305,6 +306,33 @@ class DaemonApiTests(unittest.TestCase):
             self.assertEqual(payload["sdk_snippets"][1]["language"], "typescript")
             self.assertIn("await call('run_workflow')", payload["sdk_snippets"][1]["code"])
             self.assertIn("sessionToken=header-token", payload["entrypoints"]["open_studio"])
+            self.assertNotIn("contracts", payload)
+
+    def test_network_launch_contract_route_returns_redacted_contract(self):
+        with daemon_url() as base_url:
+            url = (
+                f"{base_url}/network/launch-contract"
+                "?workflow_path=workflows/cli-anything-macrocli-mermaid-routing.example.json"
+                "&studio_url=http://127.0.0.1:5177"
+                "&session_token=header-token"
+            )
+            request = urllib.request.Request(url, headers={"X-CBN-Session": "header-token"})
+            with urllib.request.urlopen(request, timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+
+            self.assertEqual(response.status, 200)
+            self.assertEqual(payload["kind"], "ConsumerLaunchContract")
+            self.assertEqual(payload["status"], "ready")
+            self.assertEqual(payload["contract_id"], "cbn.consumer.launch.cli-cli-harness.v1")
+            self.assertEqual(payload["stable_inputs"]["base_url"], base_url)
+            self.assertFalse(payload["auth"]["secret_values_echoed"])
+            self.assertTrue(payload["auth"]["session_token_required"])
+            self.assertTrue(payload["auth"]["session_token_included"])
+            self.assertEqual(payload["harness_agent"]["run_endpoint"], f"{base_url}/workflows/run")
+            self.assertIn("run_workflow", payload["required_request_ids"])
+            self.assertIn("--session-token REDACTED", payload["entrypoints"]["verify_network"])
+            self.assertIn("sessionToken=REDACTED", payload["entrypoints"]["open_studio"])
+            self.assertNotIn("header-token", json.dumps(payload, ensure_ascii=False))
             self.assertNotIn("contracts", payload)
 
     def test_network_readiness_route_returns_mvp_matrix(self):

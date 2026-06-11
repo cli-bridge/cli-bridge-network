@@ -326,9 +326,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     network_quickstart.add_argument(
         "--output",
-        choices=["json", "curl", "powershell", "acceptance", "readiness"],
+        choices=["json", "curl", "powershell", "acceptance", "readiness", "launch-contract"],
         default="json",
-        help="Output JSON quickstart, a cURL script, a PowerShell script, the acceptance checklist, or MVP readiness.",
+        help=(
+            "Output JSON quickstart, a cURL script, a PowerShell script, the acceptance checklist, "
+            "MVP readiness, or the small consumer launch contract."
+        ),
     )
     network_verify = network_subcommands.add_parser(
         "verify",

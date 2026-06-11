@@ -655,6 +655,8 @@ def main(argv: list[str] | None = None) -> int:
                 print(json.dumps(quickstart.get("acceptance", {}), ensure_ascii=False, indent=2))
             elif args.output == "readiness":
                 print(json.dumps(result.get("mvp_readiness", {}), ensure_ascii=False, indent=2))
+            elif args.output == "launch-contract":
+                print(json.dumps(result.get("consumer_launch_contract", {}), ensure_ascii=False, indent=2))
             else:
                 print(json.dumps(quickstart, ensure_ascii=False, indent=2))
             return 0 if result["ok"] and quickstart.get("kind") == "NetworkConnectQuickstart" else 7

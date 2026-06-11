@@ -422,6 +422,7 @@ def _network_entry_profile(
             "stable_fields": [
                 "network_entry_profile",
                 "consumer_quickstart",
+                "consumer_launch_contract",
                 "agent_workflow_request",
                 "acceptance",
                 "contracts.external",
@@ -1212,6 +1213,7 @@ def _endpoint_catalog(*, base_url: str | None, workflow_path: str) -> list[dict[
     rows = [
         ("GET", "/network/connect-package", "read the full one-shot network connection package"),
         ("GET", "/network/quickstart", "read only the first-call quickstart payload"),
+        ("GET", "/network/launch-contract", "read only the redacted launch contract for external programs"),
         ("GET", "/network/readiness", "read only the killer MVP readiness matrix"),
         ("POST", "/network/verify", "run the live network acceptance checklist"),
         ("GET", "/imports/catalog", "read the dry-run-first CLI importer catalog"),

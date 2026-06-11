@@ -108,6 +108,7 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(entry_profile["compatibility"]["external_protocol"], "agent-cli-contract")
         self.assertEqual(entry_profile["compatibility"]["internal_bus"], "CBN BridgeMessage")
         self.assertIn("consumer_quickstart", entry_profile["compatibility"]["stable_fields"])
+        self.assertIn("consumer_launch_contract", entry_profile["compatibility"]["stable_fields"])
         self.assertTrue(entry_profile["auth"]["session_token_included"])
         self.assertEqual(entry_profile["auth"]["required_headers"]["X-CBN-Session"], "test-token")
         self.assertEqual(entry_profile["primary_entrypoints"]["run_workflow"]["url"], "http://127.0.0.1:8787/workflows/run")
@@ -337,6 +338,7 @@ class NetworkConnectPackageTests(unittest.TestCase):
         endpoint_paths = {endpoint["path"] for endpoint in payload["daemon_endpoints"]}
         self.assertIn("/imports/catalog", endpoint_paths)
         self.assertIn("/network/quickstart", endpoint_paths)
+        self.assertIn("/network/launch-contract", endpoint_paths)
         self.assertIn("/network/readiness", endpoint_paths)
         self.assertIn("/network/verify", endpoint_paths)
         self.assertIn("/adapter-agent/workflow-request-plan", endpoint_paths)
@@ -571,6 +573,40 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(payload["status"], "ready")
         self.assertEqual(payload["score"], "12/12")
         self.assertEqual(payload["recommended_next_action"], "open_workflow_studio_demo")
+
+    def test_network_quickstart_cli_outputs_launch_contract(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "network",
+                "quickstart",
+                "--workflow-path",
+                "workflows/cli-anything-macrocli-mermaid-routing.example.json",
+                "--base-url",
+                "http://127.0.0.1:8787",
+                "--session-token",
+                "test-token",
+                "--output",
+                "launch-contract",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["kind"], "ConsumerLaunchContract")
+        self.assertEqual(payload["status"], "ready")
+        self.assertEqual(payload["contract_id"], "cbn.consumer.launch.cli-cli-harness.v1")
+        self.assertEqual(payload["harness_agent"]["run_endpoint"], "http://127.0.0.1:8787/workflows/run")
+        self.assertIn("run_workflow", payload["required_request_ids"])
+        self.assertIn("--session-token REDACTED", payload["entrypoints"]["verify_network"])
+        self.assertIn("sessionToken=REDACTED", payload["entrypoints"]["open_studio"])
+        self.assertNotIn("test-token", json.dumps(payload, ensure_ascii=False))
+        self.assertNotIn("consumer_quickstart", payload)
 
     def test_network_quickstart_cli_outputs_shell_scripts(self):
         base_args = [
