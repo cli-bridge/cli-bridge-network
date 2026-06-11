@@ -301,7 +301,7 @@ Killer Demo slice 已新增可运行证据束：
   health、workflow、contract、agent bundle 和 evidence，再优先加载
   one-shot `NetworkConnectPackage`，最后补齐 quickstart、launch、SDK、
   readiness、imports、direct CLI 和 wire conformance 等辅助面板。
-  这样 demo 首屏无需手动点击 Connect，即可展示 `MVP 17/17`、demo script
+  这样 demo 首屏无需手动点击 Connect，即可展示 `MVP 18/18`、demo script
   和 5 个产品演示阶段；请求超时同步上调到 15 秒以覆盖 Windows 本地 daemon
   启动和协议聚合的冷启动波动。
 - `NetworkConsumerManifest` 已新增为外部程序可持久化的最小接入文件：从
@@ -318,6 +318,12 @@ Killer Demo slice 已新增可运行证据束：
   对比，并展示 manifest URL、request count、typed responses readiness、auth header
   和 Copy Manifest 按钮。这样 demo 现场能直接从 UI 解释“其它程序保存这一份
   manifest 即可接入网络”，不需要打开 raw JSON 才能看到接入文件。
+- `NetworkConsumerManifest` 已纳入正式 quickstart/SDK/acceptance/readiness gate：
+  quickstart request sequence 和 Python/TypeScript SDK snippets 现在都会先读取
+  `consumer_manifest`，`NetworkConnectionAcceptance` 从 16 项扩展为 17 项并检查
+  manifest kind、ready status、typed response 和 secret redaction；`KillerMvpReadiness`
+  从 17/17 扩展为 18/18，把“其它程序一次性接入网络”从 UI 展示提升为可验证
+  MVP 准入标准。
 - Killer demo report 已新增 `communication_trace`：从真实 workflow run result 中提取
   `BridgeMessage argsFrom` handoff，展示 producer task、consumer task、selector、
   BridgeMessage valid 状态、selected value preview、resolved arg preview 和 artifact
