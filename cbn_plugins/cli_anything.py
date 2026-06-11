@@ -18,7 +18,7 @@ from typing import Any
 from cbn.paths import resolve_project_paths
 from cbn_audit.log import AuditLog
 from cbn_artifacts.store import ArtifactStore
-from cbn_core.manifest import CapabilityManifest, ManifestRegistry, validate_manifest_dict
+from cbn_core.manifest import ManifestRegistry, validate_manifest_dict
 from cbn_events.bus import EventBus
 from cbn_parsers.fixtures import run_parser_fixtures
 from cbn_parsers.registry import ParserRegistry
@@ -127,21 +127,14 @@ from cbn_plugins.cli_anything_parts.sync import (
 )
 from cbn_plugins.cli_anything_parts.verification import (
     effective_manifest_dict as _effective_manifest_dict,
-    harness_protocol_smoke_suite as _harness_protocol_smoke_suite,
     known_parser_refs as _known_parser_refs,
     load_manifest_registry as _load_manifest_registry,
-    manifest_has_entrypoint_repair as _manifest_has_entrypoint_repair,
     manifest_dict_from_path as _manifest_dict_from_path,
     mark_repaired_manifest_verified_from_fixtures as _mark_repaired_manifest_verified_from_fixtures,
     parser_contract_report_from_registry as _parser_contract_report,
     parser_fixture_gate as _parser_fixture_gate,
-    protocol_verification_summary as _protocol_verification_summary,
-    registry_source_for_manifest as _registry_source_for_manifest,
-    verification_blockers as _verification_blockers,
-    verification_stages as _verification_stages,
-    workflow_matches_for_capability as _workflow_matches_for_capability,
+    verify_harness as _verification_parts_verify_harness,
 )
-from cbn_protocol.compatibility import check_all_protocols
 from cbn_protocol.readiness import protocol_readiness_report
 
 
@@ -718,121 +711,15 @@ class CliAnythingHub:
         run_smoke_suite: bool = False,
         smoke_extra_args: tuple[str, ...] = (),
     ) -> dict[str, Any]:
-        probe = self.probe_harness(
-            harness_name,
+        return _verification_parts_verify_harness(
+            self,
             title=title,
+            harness_name=harness_name,
             from_market=from_market,
-        )
-        if not probe["ok"]:
-            return {
-                "ok": False,
-                "plugin_id": PLUGIN_ID,
-                "harness_name": harness_name,
-                "from_market": from_market,
-                "include_workflows": include_workflows,
-                "run_smoke_suite": run_smoke_suite,
-                "error": probe["error"],
-                "probe": probe,
-            }
-
-        evaluation = probe["evaluation"]
-        adaptation = evaluation["adaptation"]
-        manifest = adaptation["manifest"]
-        capability_id = evaluation["capability_id"]
-        registry = ManifestRegistry()
-        registry.load_dir(self.paths.manifests)
-        registry.load_dir(self.paths.local_manifests, replace=True)
-        imported_manifest = registry.get(capability_id)
-        effective_manifest = _effective_manifest_dict(imported_manifest, manifest)
-        protocol_registry = registry if imported_manifest else ManifestRegistry()
-        if imported_manifest is None:
-            protocol_registry.register(
-                CapabilityManifest.from_dict(
-                    manifest,
-                    source_path=Path(adaptation["manifest_path"]),
-                )
-            )
-        protocol_checks = check_all_protocols(
-            protocol_registry,
-            capability_id=capability_id,
-        )["checks"]
-        readiness = {
-            "ready": probe["ready"],
-            "probe_blocker_count": probe["probe_blocker_count"],
-            "probes": probe["probes"],
-        }
-        registry_status = {
-            "manifest_imported": imported_manifest is not None,
-            "manifest_path": str(imported_manifest.source_path) if imported_manifest else adaptation["manifest_path"],
-            "protocol_check_source": _registry_source_for_manifest(
-                imported_manifest,
-                local_manifest_dir=self.paths.local_manifests,
-            )
-            if imported_manifest
-            else "generated_preview",
-            "entrypoint_repair_active": _manifest_has_entrypoint_repair(effective_manifest),
-        }
-        parser_contract = _parser_contract_report(effective_manifest)
-        verification_blockers = _verification_blockers(evaluation, readiness, registry_status)
-        workflow_matches = (
-            _workflow_matches_for_capability(registry, capability_id)
-            if include_workflows
-            else []
-        )
-        smoke_suite = _harness_protocol_smoke_suite(
-            registry=registry,
-            capability_id=capability_id,
             include_workflows=include_workflows,
-            extra_args=smoke_extra_args,
-            run=run_smoke_suite,
+            run_smoke_suite=run_smoke_suite,
+            smoke_extra_args=smoke_extra_args,
         )
-        if smoke_suite.get("run") and not smoke_suite.get("ok"):
-            verification_blockers = sorted(
-                set([*verification_blockers, "protocol smoke suite failed"])
-            )
-        return {
-            "ok": True,
-            "plugin_id": PLUGIN_ID,
-            "harness_name": harness_name,
-            "from_market": from_market,
-            "include_workflows": include_workflows,
-            "run_smoke_suite": run_smoke_suite,
-            "capability_id": capability_id,
-            "ready_for_manifest_write": bool(evaluation["gates"]["manifest_valid"] and not evaluation["blockers"]),
-            "ready_for_runtime_verification": len(verification_blockers) == 0,
-            "verification_blockers": verification_blockers,
-            "readiness": readiness,
-            "registry": registry_status,
-            "parser_contract": parser_contract,
-            "protocols": _protocol_verification_summary(protocol_checks),
-            "protocol_smoke_suite": smoke_suite,
-            "workflow_matches": workflow_matches,
-            "verification_stages": _verification_stages(
-                harness_name=harness_name,
-                capability_id=capability_id,
-                evaluation=evaluation,
-                readiness=readiness,
-                registry_status=registry_status,
-                parser_contract=parser_contract,
-                protocol_checks=protocol_checks,
-                smoke_suite=smoke_suite,
-            ),
-            "probe": probe,
-            "evaluation": evaluation,
-            "next_commands": [
-                f"python -m cbn plugin evaluate-harness cli-anything {harness_name}",
-                f"python -m cbn plugin probe-harness cli-anything {harness_name}",
-                f"python -m cbn plugin adapt-harness cli-anything {harness_name} --from-market --write",
-                "python -m cbn registry validate manifests",
-                f"python -m cbn plugin harness cli-anything install {harness_name} --yes",
-                f"python -m cbn call {capability_id} --dry-run",
-                f"python -m cbn protocol check all --capability-id {capability_id}",
-                smoke_suite["command"],
-                f"python -m cbn mcp smoke --capability-id {capability_id}",
-                f"python -m cbn a2a smoke --capability-id {capability_id}",
-                f"python -m cbn acp smoke --capability-id {capability_id}",
-            ],
-        }
 
     def promotion_gate(
         self,
