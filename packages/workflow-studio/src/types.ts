@@ -500,6 +500,7 @@ export interface NetworkConnectQuickstart {
     open_studio?: string;
     connect_package?: string;
     quickstart?: string;
+    consumer_manifest?: string;
     sdk_bootstrap?: string;
     health?: string;
     acceptance?: string;
@@ -699,6 +700,7 @@ export interface NetworkConnectPackage {
   mvp_demo_script?: KillerMvpDemoScript;
   consumer_launch_contract?: ConsumerLaunchContract;
   consumer_sdk_bootstrap?: ConsumerSdkBootstrap;
+  consumer_manifest?: NetworkConsumerManifest;
   agent_node_bundle?: {
     kind?: "AdapterAgentNodeBundle";
     ok?: boolean;
@@ -744,6 +746,7 @@ export interface ConsumerSdkBootstrap {
   entrypoints?: {
     connect_package?: string;
     quickstart?: string;
+    consumer_manifest?: string;
     launch_contract?: string;
     entry_profile?: string;
     harness_agent?: string;
@@ -777,6 +780,90 @@ export interface ConsumerSdkBootstrap {
     confirmed_default?: boolean;
     secret_values_included?: boolean;
     writes_require_explicit_confirmation?: boolean;
+  };
+  next_commands?: string[];
+}
+
+export interface NetworkConsumerManifest {
+  kind?: "NetworkConsumerManifest";
+  status?: string;
+  manifest_id?: string;
+  audience?: string;
+  workflow_path?: string;
+  base_url?: string | null;
+  contracts?: {
+    external_protocol?: string;
+    internal_bus?: string;
+    launch_contract?: string;
+    sdk_bootstrap?: string;
+    harness_agent?: string;
+  };
+  auth?: {
+    required_headers?: Record<string, string>;
+    session_token_header?: string | null;
+    session_token_required?: boolean;
+    secret_values_echoed?: boolean;
+  };
+  entrypoints?: {
+    open_studio?: string;
+    connect_package?: string;
+    quickstart?: string;
+    consumer_manifest?: string;
+    launch_contract?: string;
+    entry_profile?: string;
+    harness_agent?: string;
+    run_workflow?: {
+      method?: string;
+      url?: string;
+      json?: Record<string, unknown>;
+    };
+    evidence?: {
+      events?: string;
+      audit?: string;
+      artifacts?: string;
+    };
+  };
+  harness_agent?: {
+    kind?: string;
+    bridge_message_channel?: string;
+    bridge_route_count?: number;
+    run_endpoint?: string;
+  };
+  request_sequence?: string[];
+  request_count?: number;
+  requests?: Array<{
+    id?: string;
+    method?: string;
+    url?: string;
+    json?: Record<string, unknown> | null;
+    response_kind?: string;
+    required?: boolean;
+  }>;
+  typed_responses?: Record<string, string>;
+  registration?: {
+    importer_count?: number;
+    dry_run_by_default?: boolean;
+    writes_require_explicit_flag?: boolean;
+    importers?: Array<{
+      id?: string;
+      entrypoint?: string;
+      write_gate?: string | null;
+      default_side_effects?: string;
+    }>;
+  };
+  readiness?: {
+    mvp_score?: string;
+    mvp_status?: string;
+    direct_cli_profile_count?: number;
+    direct_cli_capability_count?: number;
+    direct_cli_recovery_type_count?: number;
+  };
+  safety?: {
+    dry_run_default?: boolean;
+    confirmed_default?: boolean;
+    secret_values_included?: boolean;
+    writes_require_explicit_confirmation?: boolean;
+    side_effects_require_confirmation?: boolean;
   };
   next_commands?: string[];
 }
@@ -1259,6 +1346,14 @@ export interface ConnectSummary {
   sdkBootstrapRequiredSequence: number;
   sdkBootstrapSecretPolicy: string;
   sdkBootstrapRunEndpoint: string;
+  consumerManifestStatus: string;
+  consumerManifestId: string;
+  consumerManifestRequests: number;
+  consumerManifestSequence: number;
+  consumerManifestRunEndpoint: string;
+  consumerManifestSelfUrl: string;
+  consumerManifestSecretPolicy: string;
+  consumerManifestReadiness: string;
   externalProtocol: string;
   acceptedKinds: string;
   externalPackageStatus: string;

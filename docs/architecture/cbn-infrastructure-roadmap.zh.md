@@ -312,6 +312,12 @@ Killer Demo slice 已新增可运行证据束：
   `python -m cbn network quickstart --output consumer-manifest`，daemon 同步暴露
   `/network/consumer-manifest`；该 manifest 明确不回显 session token，适合让
   外部 SDK/程序保存为“一次性接入 CBN 网络”的本地配置。
+- Workflow Studio 已把 `NetworkConsumerManifest` 提升为 Connect 面板的一等入口：
+  首屏加载 direct `/network/consumer-manifest`，与 one-shot package 内嵌 manifest
+  做 manifest id、status、request sequence、run endpoint 和 secret policy parity
+  对比，并展示 manifest URL、request count、typed responses readiness、auth header
+  和 Copy Manifest 按钮。这样 demo 现场能直接从 UI 解释“其它程序保存这一份
+  manifest 即可接入网络”，不需要打开 raw JSON 才能看到接入文件。
 - Killer demo report 已新增 `communication_trace`：从真实 workflow run result 中提取
   `BridgeMessage argsFrom` handoff，展示 producer task、consumer task、selector、
   BridgeMessage valid 状态、selected value preview、resolved arg preview 和 artifact

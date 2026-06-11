@@ -35,6 +35,7 @@ import type {
   ConnectionAcceptanceCheck,
   ConnectSummary,
   ConsumerLaunchContract,
+  NetworkConsumerManifest,
   ConsumerSdkBootstrap,
   DirectCliReadinessReport,
   DockState,
@@ -89,6 +90,7 @@ const launchContract = ref<ConsumerLaunchContract | null>(null);
 const entryProfile = ref<NetworkEntryProfile | null>(null);
 const networkHarnessAgent = ref<NetworkHarnessAgent | null>(null);
 const sdkBootstrap = ref<ConsumerSdkBootstrap | null>(null);
+const consumerManifest = ref<NetworkConsumerManifest | null>(null);
 const directAcceptance = ref<NetworkConnectionAcceptance | null>(null);
 const directReadiness = ref<KillerMvpReadiness | null>(null);
 const importCatalog = ref<CliRegistrationSurface | null>(null);
@@ -168,6 +170,11 @@ const launchContractParity = computed(() => summarizeLaunchContractParity(connec
 const connectSdkBootstrap = computed<ConsumerSdkBootstrap>(() => connectPackage.value?.consumer_sdk_bootstrap ?? {});
 const directSdkBootstrap = computed<ConsumerSdkBootstrap>(() => sdkBootstrap.value ?? {});
 const sdkBootstrapParity = computed(() => summarizeSdkBootstrapParity(connectSdkBootstrap.value, directSdkBootstrap.value));
+const connectConsumerManifest = computed<NetworkConsumerManifest>(() => connectPackage.value?.consumer_manifest ?? {});
+const directConsumerManifest = computed<NetworkConsumerManifest>(() => consumerManifest.value ?? {});
+const consumerManifestParity = computed(() =>
+  summarizeConsumerManifestParity(connectConsumerManifest.value, directConsumerManifest.value),
+);
 const connectAcceptance = computed<NetworkConnectionAcceptance>(
   () => connectPackage.value?.acceptance ?? connectPackage.value?.consumer_quickstart?.acceptance ?? {},
 );
@@ -238,6 +245,7 @@ const importCatalogParity = computed(() => {
 const connectNextCommands = computed<string[]>(() => {
   const commands = [
     ...(Array.isArray(connectPackage.value?.next_commands) ? connectPackage.value.next_commands : []),
+    ...(Array.isArray(connectPackage.value?.consumer_manifest?.next_commands) ? connectPackage.value.consumer_manifest.next_commands : []),
     ...(Array.isArray(connectPackage.value?.demo_readiness?.next_commands) ? connectPackage.value.demo_readiness.next_commands : []),
     ...(Array.isArray(connectPackage.value?.demo_playbook?.next_commands) ? connectPackage.value.demo_playbook.next_commands : []),
     ...(Array.isArray(connectPackage.value?.mvp_presenter_brief?.next_commands) ? connectPackage.value.mvp_presenter_brief.next_commands : []),
@@ -343,6 +351,10 @@ async function inspectNetworkHarnessAgent() {
 
 async function inspectSdkBootstrap() {
   sdkBootstrap.value = (await call("sdk bootstrap", () => api.value.networkSdkBootstrap())) as ConsumerSdkBootstrap;
+}
+
+async function inspectConsumerManifest() {
+  consumerManifest.value = (await call("consumer manifest", () => api.value.networkConsumerManifest())) as NetworkConsumerManifest;
 }
 
 async function inspectAcceptance() {
@@ -503,6 +515,7 @@ async function loadAll() {
     inspectEntryProfile(),
     inspectNetworkHarnessAgent(),
     inspectSdkBootstrap(),
+    inspectConsumerManifest(),
     inspectAcceptance(),
     inspectReadiness(),
     inspectImportCatalog(),
@@ -783,6 +796,7 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
   const demoScript = payload?.mvp_demo_script ?? {};
   const launchContract = payload?.consumer_launch_contract ?? {};
   const sdkBootstrap = payload?.consumer_sdk_bootstrap ?? {};
+  const consumerManifest = payload?.consumer_manifest ?? {};
   const acceptance = payload?.acceptance ?? quickstart.acceptance ?? {};
   const setup = payload?.setup_guidance ?? {};
   const harness = payload?.agent_workflow_request ?? {};
@@ -855,6 +869,16 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
     sdkBootstrapRequiredSequence: Array.isArray(sdkBootstrap.required_sequence) ? sdkBootstrap.required_sequence.length : 0,
     sdkBootstrapSecretPolicy: sdkBootstrap.auth?.secret_values_echoed === false ? "no secret echo" : "check secret policy",
     sdkBootstrapRunEndpoint: stringValue(sdkBootstrap.harness?.run_endpoint) ?? "not loaded",
+    consumerManifestStatus: stringValue(consumerManifest.status) ?? "not loaded",
+    consumerManifestId: stringValue(consumerManifest.manifest_id) ?? "not loaded",
+    consumerManifestRequests: numberValue(consumerManifest.request_count) ?? (Array.isArray(consumerManifest.requests) ? consumerManifest.requests.length : 0),
+    consumerManifestSequence: Array.isArray(consumerManifest.request_sequence) ? consumerManifest.request_sequence.length : 0,
+    consumerManifestRunEndpoint: stringValue(consumerManifest.harness_agent?.run_endpoint) ?? stringValue(consumerManifest.entrypoints?.run_workflow?.url) ?? "not loaded",
+    consumerManifestSelfUrl: stringValue(consumerManifest.entrypoints?.consumer_manifest) ?? stringValue(quickstart.entrypoints?.consumer_manifest) ?? "not loaded",
+    consumerManifestSecretPolicy: consumerManifest.auth?.secret_values_echoed === false && consumerManifest.safety?.secret_values_included === false
+      ? "no secret echo"
+      : "check secret policy",
+    consumerManifestReadiness: `${stringValue(consumerManifest.readiness?.mvp_score) ?? "0/0"} · ${stringValue(consumerManifest.readiness?.mvp_status) ?? "not loaded"}`,
     externalProtocol: external.protocol ?? "unknown",
     acceptedKinds: Array.isArray(external.accepted_kinds) ? external.accepted_kinds.join(" + ") : "unknown",
     externalPackageStatus: packageHealth.ok ? "package clean" : packageHealth.kind ? "package attention" : "package not loaded",
@@ -951,6 +975,32 @@ function summarizeSdkBootstrapParity(nested: ConsumerSdkBootstrap, direct: Consu
     detail: matched
       ? "Direct SDK bootstrap matches the one-shot package copy."
       : "Direct SDK bootstrap differs from the one-shot package copy.",
+  };
+}
+
+function summarizeConsumerManifestParity(nested: NetworkConsumerManifest, direct: NetworkConsumerManifest): { status: string; detail: string } {
+  if (!direct.kind) {
+    return { status: "manifest not loaded", detail: "Direct /network/consumer-manifest has not been fetched." };
+  }
+  if (!nested.kind) {
+    return { status: "manifest direct only", detail: "Direct consumer manifest is loaded; connect package is not loaded yet." };
+  }
+  const sameManifest = nested.manifest_id === direct.manifest_id;
+  const sameStatus = nested.status === direct.status;
+  const sameRequests = (nested.request_count ?? nested.requests?.length ?? 0) === (direct.request_count ?? direct.requests?.length ?? 0);
+  const sameSequence = (nested.request_sequence ?? []).join("|") === (direct.request_sequence ?? []).join("|");
+  const nestedRun = nested.harness_agent?.run_endpoint ?? nested.entrypoints?.run_workflow?.url;
+  const directRun = direct.harness_agent?.run_endpoint ?? direct.entrypoints?.run_workflow?.url;
+  const sameRunEndpoint = nestedRun === directRun;
+  const sameSecretPolicy =
+    nested.auth?.secret_values_echoed === direct.auth?.secret_values_echoed
+    && nested.safety?.secret_values_included === direct.safety?.secret_values_included;
+  const matched = sameManifest && sameStatus && sameRequests && sameSequence && sameRunEndpoint && sameSecretPolicy;
+  return {
+    status: matched ? "manifest parity" : "manifest drift",
+    detail: matched
+      ? "Direct consumer manifest matches the one-shot package copy."
+      : "Direct consumer manifest differs from the one-shot package copy.",
   };
 }
 
@@ -1329,6 +1379,9 @@ onMounted(async () => {
         </button>
         <button title="Load direct consumer SDK bootstrap contract" @click="inspectSdkBootstrap">
           <Boxes :size="16" /> SDK
+        </button>
+        <button title="Load direct external consumer manifest" @click="inspectConsumerManifest">
+          <FileJson :size="16" /> Manifest
         </button>
         <button title="Load direct consumer launch contract" @click="inspectLaunchContract">
           <ClipboardList :size="16" /> Launch
@@ -1766,6 +1819,58 @@ onMounted(async () => {
         </div>
         <div class="contract-status-grid">
           <div>
+            <span>Consumer manifest</span>
+            <strong>{{ connectSummary.consumerManifestStatus }}</strong>
+          </div>
+          <div>
+            <span>Direct manifest</span>
+            <strong>{{ directConsumerManifest.status || "not loaded" }}</strong>
+          </div>
+          <div>
+            <span>Parity</span>
+            <strong>{{ consumerManifestParity.status }}</strong>
+          </div>
+          <div>
+            <span>Secret policy</span>
+            <strong>{{ connectSummary.consumerManifestSecretPolicy }}</strong>
+          </div>
+        </div>
+        <div class="quickstart-grid">
+          <div>
+            <span>Manifest ID</span>
+            <code>{{ connectSummary.consumerManifestId }}</code>
+          </div>
+          <div>
+            <span>Manifest URL</span>
+            <code>{{ directConsumerManifest.entrypoints?.consumer_manifest || connectSummary.consumerManifestSelfUrl }}</code>
+          </div>
+          <div>
+            <span>Manifest run</span>
+            <code>{{ directConsumerManifest.harness_agent?.run_endpoint || connectSummary.consumerManifestRunEndpoint }}</code>
+          </div>
+          <div>
+            <span>Readiness</span>
+            <code>{{ directConsumerManifest.readiness?.mvp_score || connectSummary.consumerManifestReadiness }}</code>
+          </div>
+          <div>
+            <span>Requests</span>
+            <code>{{ directConsumerManifest.request_count ?? connectSummary.consumerManifestRequests }} requests</code>
+          </div>
+          <div>
+            <span>Sequence</span>
+            <code>{{ directConsumerManifest.request_sequence?.length ?? connectSummary.consumerManifestSequence }} calls</code>
+          </div>
+          <div>
+            <span>Auth</span>
+            <code>{{ directConsumerManifest.auth?.session_token_header || connectConsumerManifest.auth?.session_token_header || "not loaded" }}</code>
+          </div>
+          <div>
+            <span>Parity detail</span>
+            <code>{{ consumerManifestParity.detail }}</code>
+          </div>
+        </div>
+        <div class="contract-status-grid">
+          <div>
             <span>Launch contract</span>
             <strong>{{ connectSummary.launchContractStatus }}</strong>
           </div>
@@ -2098,6 +2203,9 @@ onMounted(async () => {
           </button>
           <button title="Copy SDK bootstrap command" :disabled="!connectSummary.presenterSdkBootstrapCommand || connectSummary.presenterSdkBootstrapCommand === 'not loaded'" @click="copyText('sdk-bootstrap-command', connectSummary.presenterSdkBootstrapCommand)">
             <Copy :size="14" /> {{ copiedScript === "sdk-bootstrap-command" ? "Copied" : "Copy SDK" }}
+          </button>
+          <button title="Copy consumer manifest URL" :disabled="!connectSummary.consumerManifestSelfUrl || connectSummary.consumerManifestSelfUrl === 'not loaded'" @click="copyText('consumer-manifest-url', connectSummary.consumerManifestSelfUrl)">
+            <Copy :size="14" /> {{ copiedScript === "consumer-manifest-url" ? "Copied" : "Copy Manifest" }}
           </button>
           <code v-if="connectSummary.studioLink">{{ connectSummary.studioLink }}</code>
           <span v-else>No Workflow Studio link loaded</span>
@@ -2546,7 +2654,7 @@ onMounted(async () => {
             <span>{{ endpoint.path }}</span>
           </div>
         </div>
-        <pre>{{ pretty({ daemon_verify: networkVerifyReport, import_catalog: importCatalog, direct_cli_readiness: directCliReadiness, one_shot_direct_cli_readiness: connectPackage?.direct_cli_readiness, direct_cli_parity: directCliParity, direct_quickstart: directQuickstart, quickstart_parity: quickstartParity, direct_entry_profile: entryProfile, entry_profile_parity: entryProfileParity, direct_network_harness_agent: directNetworkHarnessAgent, network_harness_parity: networkHarnessParity, direct_sdk_bootstrap: directSdkBootstrap, sdk_bootstrap_parity: sdkBootstrapParity, direct_launch_contract: launchContract, launch_contract_parity: launchContractParity, direct_acceptance: directAcceptance, acceptance_parity: acceptanceParity, direct_readiness: directReadiness, readiness_parity: readinessParity, network_entry_profile: connectPackage?.network_entry_profile, network_harness_agent: connectNetworkHarnessAgent, consumer_sdk_bootstrap: connectPackage?.consumer_sdk_bootstrap, consumer_launch_contract: connectPackage?.consumer_launch_contract, mvp_readiness: connectPackage?.mvp_readiness, mvp_presenter_brief: connectPackage?.mvp_presenter_brief, mvp_demo_script: connectPackage?.mvp_demo_script, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, demo_playbook: connectPackage?.demo_playbook, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, plugins: connectPackage?.plugins, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
+        <pre>{{ pretty({ daemon_verify: networkVerifyReport, import_catalog: importCatalog, direct_cli_readiness: directCliReadiness, one_shot_direct_cli_readiness: connectPackage?.direct_cli_readiness, direct_cli_parity: directCliParity, direct_quickstart: directQuickstart, quickstart_parity: quickstartParity, direct_entry_profile: entryProfile, entry_profile_parity: entryProfileParity, direct_network_harness_agent: directNetworkHarnessAgent, network_harness_parity: networkHarnessParity, direct_sdk_bootstrap: directSdkBootstrap, sdk_bootstrap_parity: sdkBootstrapParity, direct_consumer_manifest: directConsumerManifest, one_shot_consumer_manifest: connectPackage?.consumer_manifest, consumer_manifest_parity: consumerManifestParity, direct_launch_contract: launchContract, launch_contract_parity: launchContractParity, direct_acceptance: directAcceptance, acceptance_parity: acceptanceParity, direct_readiness: directReadiness, readiness_parity: readinessParity, network_entry_profile: connectPackage?.network_entry_profile, network_harness_agent: connectNetworkHarnessAgent, consumer_sdk_bootstrap: connectPackage?.consumer_sdk_bootstrap, consumer_launch_contract: connectPackage?.consumer_launch_contract, mvp_readiness: connectPackage?.mvp_readiness, mvp_presenter_brief: connectPackage?.mvp_presenter_brief, mvp_demo_script: connectPackage?.mvp_demo_script, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, demo_playbook: connectPackage?.demo_playbook, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, plugins: connectPackage?.plugins, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
       </section>
       <section>
         <div class="section-title"><Rocket :size="15" /> Killer Demo</div>
