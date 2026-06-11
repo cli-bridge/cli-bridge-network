@@ -54,6 +54,9 @@ BridgeMessage 和 selector 已归位到 `cbn_core.message` 与 `cbn_core.selecto
 Bridge Contract 报告已归位到 `cbn_core.bridge_contract`，负责内部 ToolManifest、
 BridgeMessage、Artifact 和 Workflow selector route readiness。`cbn_protocol.envelope`
 与 `cbn_protocol.bridge_contract` 只保留兼容 re-export，避免打断现有调用。
+`workflow_bridge_contract_report(...).contract.contracts` 已结构化暴露
+`tool_manifest`、`bridge_message`、`artifact`、`workflow_selector` 四个内部总线
+contract，旧的 rules 字段继续保留以兼容既有消费者。
 
 ### 3. 外部协议 Facade
 

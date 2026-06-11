@@ -9,7 +9,12 @@ from cbn_parsers.registry import ParserRegistry
 from cbn_core.manifest import CapabilityManifest, ManifestRegistry
 from cbn_runtime.context import build_runtime
 from cbn_protocol.acceptance import cli_to_cli_acceptance_report
-from cbn_core.bridge_contract import workflow_bridge_contract_report
+from cbn_core.bridge_contract import (
+    artifact_contract,
+    tool_manifest_contract,
+    workflow_bridge_contract_report,
+    workflow_selector_contract,
+)
 from cbn_core.message import (
     BridgeMessage,
     bridge_args_from_selectors,
@@ -22,9 +27,24 @@ from cbn_core.selector import (
 
 class ParserProtocolTests(unittest.TestCase):
     def test_protocol_bridge_contract_reexports_core_owner(self):
+        from cbn_protocol.bridge_contract import tool_manifest_contract as compat_manifest_contract
         from cbn_protocol.bridge_contract import workflow_bridge_contract_report as compat_report
 
         self.assertIs(compat_report, workflow_bridge_contract_report)
+        self.assertIs(compat_manifest_contract, tool_manifest_contract)
+
+    def test_bridge_contract_exposes_internal_bus_contracts(self):
+        tool_manifest = tool_manifest_contract()
+        artifact = artifact_contract()
+        selector = workflow_selector_contract()
+
+        self.assertEqual(tool_manifest["kind"], "ToolManifest")
+        self.assertIn("transport", tool_manifest["required_spec"])
+        self.assertIn("verified", tool_manifest["output_contract"])
+        self.assertEqual(artifact["kind"], "ArtifactRecord")
+        self.assertEqual(artifact["required_fields"], ["artifact_id", "kind"])
+        self.assertEqual(selector["kind"], "WorkflowSelector")
+        self.assertEqual(selector["valid_roots"], ["payload", "artifacts", "metadata"])
 
     def test_git_status_parser_returns_entries(self):
         parsed = ParserRegistry.builtins().parse(
@@ -196,6 +216,11 @@ class ParserProtocolTests(unittest.TestCase):
         self.assertEqual(report["summary"]["route_ready_count"], 2)
         self.assertEqual(report["summary"]["blocked_route_count"], 0)
         self.assertEqual(report["summary"]["argv_mapping_ready_count"], 2)
+        contracts = report["contract"]["contracts"]
+        self.assertEqual(contracts["tool_manifest"]["kind"], "ToolManifest")
+        self.assertEqual(contracts["bridge_message"]["kind"], "BridgeMessage")
+        self.assertEqual(contracts["artifact"]["kind"], "ArtifactRecord")
+        self.assertEqual(contracts["workflow_selector"]["kind"], "WorkflowSelector")
 
     def test_cli_to_cli_acceptance_static_and_runtime_evidence(self):
         runtime = build_runtime()

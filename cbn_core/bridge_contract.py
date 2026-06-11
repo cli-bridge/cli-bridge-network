@@ -5,13 +5,17 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from cbn_core.manifest import ManifestRegistry
+from cbn_core.manifest import MANIFEST_API_VERSION, ManifestRegistry
 from cbn_core.message import BRIDGE_MESSAGE_API_VERSION
 from cbn_core.selector import validate_selector_syntax
 from cbn_workflow.catalog import inspect_workflow, list_workflows
 
 
 def bridge_message_contract() -> dict[str, Any]:
+    tool_manifest = tool_manifest_contract()
+    bridge_message = _bridge_message_envelope_contract()
+    artifact = artifact_contract()
+    workflow_selector = workflow_selector_contract()
     return {
         "apiVersion": BRIDGE_MESSAGE_API_VERSION,
         "message_kind": "BridgeMessage",
@@ -21,19 +25,70 @@ def bridge_message_contract() -> dict[str, Any]:
             "artifact id routing",
             "MCP/A2A/ACP facade metadata handoff",
         ],
-        "required_metadata": ["id", "createdAt", "producer", "channel", "correlationId"],
-        "required_payload": ["parser_ref", "ok"],
-        "payload_rules": [
-            "payload.parser_ref is the parser id used for downstream routing.",
-            "payload.ok is the parser success flag and must be boolean.",
-            "payload.data is an object when structured parser data is available.",
-            "payload.error or payload.data is required when payload.ok=false.",
-        ],
-        "artifact_rules": [
+        "contracts": {
+            "tool_manifest": tool_manifest,
+            "bridge_message": bridge_message,
+            "artifact": artifact,
+            "workflow_selector": workflow_selector,
+        },
+        "required_metadata": bridge_message["required_metadata"],
+        "required_payload": bridge_message["required_payload"],
+        "payload_rules": bridge_message["payload_rules"],
+        "artifact_rules": artifact["rules"],
+        "selector_rules": workflow_selector["selector_rules"],
+        "arg_mapping_rules": workflow_selector["arg_mapping_rules"],
+        "route_readiness_rules": workflow_selector["route_readiness_rules"],
+    }
+
+
+def tool_manifest_contract() -> dict[str, Any]:
+    return {
+        "apiVersion": MANIFEST_API_VERSION,
+        "kind": "ToolManifest",
+        "owner": "cbn_core.manifest",
+        "scope": "capability registration, execution template, risk policy, and parser contract",
+        "required_metadata": ["id", "title"],
+        "required_spec": ["transport", "policy", "output"],
+        "transport_contract": {
+            "required_fields": ["kind", "command"],
+            "optional_fields": ["argsTemplate", "cwdPolicy", "timeoutSeconds"],
+            "supported_kinds": ["stdio", "pty"],
+        },
+        "policy_contract": {
+            "risk_values": ["read", "write-workspace", "privileged"],
+            "network_values": ["allow", "deny"],
+            "requires_confirmation": "boolean",
+        },
+        "output_contract": {
+            "parserRef": "parser id used by BridgeMessage payload.parser_ref",
+            "verified": "boolean gate for payload selector routing readiness",
+        },
+    }
+
+
+def artifact_contract() -> dict[str, Any]:
+    return {
+        "apiVersion": BRIDGE_MESSAGE_API_VERSION,
+        "kind": "ArtifactRecord",
+        "owner": "cbn_core.message",
+        "scope": "routable references to stdout, stderr, parsed payloads, files, or generated outputs",
+        "required_fields": ["artifact_id", "kind"],
+        "optional_fields": ["path", "media_type", "size_bytes", "truncated"],
+        "rules": [
             "artifact entries must be objects.",
             "routable artifact references require artifact_id and kind.",
             "full local artifact records may include path, media_type, size_bytes, and truncated.",
         ],
+    }
+
+
+def workflow_selector_contract() -> dict[str, Any]:
+    return {
+        "apiVersion": BRIDGE_MESSAGE_API_VERSION,
+        "kind": "WorkflowSelector",
+        "owner": "cbn_core.selector",
+        "scope": "deterministic argsFrom routing from upstream BridgeMessage values to downstream argv",
+        "valid_roots": ["payload", "artifacts", "metadata"],
         "selector_rules": [
             "selectors use dot paths with optional list indexes, such as payload.data.stdout",
             "selectors are deterministic routing addresses, not a query language",
@@ -52,6 +107,23 @@ def bridge_message_contract() -> dict[str, Any]:
             "the selector must be syntactically valid and must target payload, artifacts, or metadata",
             "payload routes require a verified source parser/output contract",
             "artifact and metadata routes do not require parser verification but still require a valid BridgeMessage source",
+        ],
+    }
+
+
+def _bridge_message_envelope_contract() -> dict[str, Any]:
+    return {
+        "apiVersion": BRIDGE_MESSAGE_API_VERSION,
+        "kind": "BridgeMessage",
+        "owner": "cbn_core.message",
+        "scope": "runtime capability output envelope for CLI-to-CLI handoff",
+        "required_metadata": ["id", "createdAt", "producer", "channel", "correlationId"],
+        "required_payload": ["parser_ref", "ok"],
+        "payload_rules": [
+            "payload.parser_ref is the parser id used for downstream routing.",
+            "payload.ok is the parser success flag and must be boolean.",
+            "payload.data is an object when structured parser data is available.",
+            "payload.error or payload.data is required when payload.ok=false.",
         ],
     }
 
