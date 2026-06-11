@@ -33,6 +33,10 @@ CBN 主仓只消费该协议，并负责映射：
 它包含 schema、TypeScript types、Python validator、fixtures 和 conformance smoke，
 并通过独立 smoke 保证不 import CBN 模块。未来拿到独立仓库 URL 后可迁移为
 submodule 或独立 npm/PyPI 包。
+该边界已补 `pyproject.toml` 和 `agent-cli-contract` Python console script，
+支持 `agent-cli-contract validate card <file>` 与
+`agent-cli-contract validate receipt <file>`；source-tree 模式也可通过
+`python -m agent_cli_contract validate ...` 验证，不依赖 CBN runtime。
 
 ### 2. CBN 内部总线 Contract
 

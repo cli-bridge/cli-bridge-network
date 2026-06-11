@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 import unittest
@@ -38,6 +39,67 @@ class AgentCliContractTests(unittest.TestCase):
         payload = json.loads(proc.stdout)
         self.assertTrue(payload["ok"])
         self.assertTrue(payload["independent_boundary"]["ok"])
+
+    def test_standalone_cli_validates_card_and_receipt(self):
+        env = {**os.environ, "PYTHONPATH": str(CONTRACT_ROOT / "python")}
+        card_proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "agent_cli_contract",
+                "validate",
+                "card",
+                str(CONTRACT_ROOT / "fixtures/agent-cli-card.valid.json"),
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+            env=env,
+        )
+        receipt_proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "agent_cli_contract",
+                "validate",
+                "receipt",
+                str(CONTRACT_ROOT / "fixtures/run-receipt.valid.json"),
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+            env=env,
+        )
+        self.assertTrue(json.loads(card_proc.stdout)["ok"])
+        self.assertEqual(json.loads(card_proc.stdout)["target"], "card")
+        self.assertTrue(json.loads(receipt_proc.stdout)["ok"])
+        self.assertEqual(json.loads(receipt_proc.stdout)["target"], "receipt")
+
+    def test_standalone_cli_returns_json_error_for_missing_file(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "agent_cli_contract",
+                "validate",
+                "card",
+                "external_protocols/agent-cli-contract/fixtures/missing.json",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env={**os.environ, "PYTHONPATH": str(CONTRACT_ROOT / "python")},
+        )
+        payload = json.loads(proc.stdout)
+        self.assertEqual(proc.returncode, 1)
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["target"], "card")
+        self.assertIn("file not found", payload["errors"][0])
 
     def test_agent_cli_card_maps_to_cbn_tool_manifest(self):
         card = json.loads((CONTRACT_ROOT / "fixtures/agent-cli-card.valid.json").read_text(encoding="utf-8"))
