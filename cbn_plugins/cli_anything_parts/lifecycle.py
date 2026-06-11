@@ -147,6 +147,67 @@ def lifecycle_report(
     }
 
 
+def refresh_candidate_lifecycle(item: dict[str, Any]) -> None:
+    harness_name = item.get("harness_name")
+    if not isinstance(harness_name, str) or not harness_name:
+        return
+    blockers = item.get("blockers")
+    if not isinstance(blockers, list):
+        blockers = []
+    gates = item.get("gates")
+    if not isinstance(gates, dict):
+        gates = {}
+    item["lifecycle"] = lifecycle_report(
+        harness_name=harness_name,
+        capability_id=item.get("capability_id") if isinstance(item.get("capability_id"), str) else None,
+        recommended_next_action=str(item.get("recommended_next_action") or "resolve_blockers"),
+        gates=gates,
+        blockers=blockers,
+        install_candidate=bool(item.get("install_candidate")),
+    )
+
+
+def attach_candidate_readiness(item: dict[str, Any]) -> None:
+    record = item.get("market_record") if isinstance(item.get("market_record"), dict) else {}
+    readiness = readiness_summary(
+        probes=dependency_probes(
+            requires=declared_requires(record, {}),
+            entry_point=record.get("entry_point"),
+        ),
+        install_candidate=bool(item.get("install_candidate")),
+    )
+    item["readiness"] = readiness
+    blocker_probes = readiness_blocker_probes(readiness)
+    if blocker_probes:
+        blockers = item.setdefault("blockers", [])
+        if not isinstance(blockers, list):
+            blockers = []
+            item["blockers"] = blockers
+        for probe in blocker_probes:
+            probe_id = probe.get("id") or probe.get("kind") or "unknown"
+            blocker = f"dependency probe failed: {probe_id}"
+            if blocker not in blockers:
+                blockers.append(blocker)
+        gates = item.get("gates")
+        if isinstance(gates, dict):
+            gates["external_dependency_free"] = False
+        item["install_candidate"] = False
+        item["recommended_next_action"] = "resolve_blockers"
+        refresh_candidate_lifecycle(item)
+
+
+def readiness_from_evaluation(evaluation: dict[str, Any]) -> dict[str, Any]:
+    status = evaluation.get("status") if isinstance(evaluation.get("status"), dict) else {}
+    market_record = status.get("market_record") if isinstance(status.get("market_record"), dict) else None
+    return readiness_summary(
+        probes=dependency_probes(
+            requires=declared_requires(market_record, status),
+            entry_point=status.get("entry_point"),
+        ),
+        install_candidate=bool(evaluation.get("install_candidate")),
+    )
+
+
 def stage_status(done: bool, ready: bool, blocked: bool) -> str:
     if done:
         return "completed"

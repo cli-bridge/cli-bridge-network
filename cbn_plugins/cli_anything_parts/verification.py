@@ -8,6 +8,7 @@ from typing import Any
 from cbn_parsers.fixtures import run_parser_fixtures
 from cbn_parsers.registry import ParserRegistry
 from cbn_protocol.smoke_suite import protocol_smoke_suite
+from cbn_workflow.catalog import list_workflows
 
 
 def parser_contract_report(
@@ -107,6 +108,36 @@ def registry_source_for_manifest(
         return "runtime_local_overlay"
     except ValueError:
         return "current_registry"
+
+
+def workflow_matches_for_capability(
+    registry: Any,
+    capability_id: str,
+) -> list[dict[str, Any]]:
+    matches: list[dict[str, Any]] = []
+    for workflow in list_workflows(registry=registry):
+        tasks = workflow.get("tasks") if isinstance(workflow.get("tasks"), list) else []
+        matched_tasks = [
+            {
+                "id": task.get("id"),
+                "uses": task.get("uses"),
+                "capability": task.get("capability"),
+            }
+            for task in tasks
+            if isinstance(task, dict) and task.get("uses") == capability_id
+        ]
+        if not matched_tasks:
+            continue
+        matches.append(
+            {
+                "workflow_id": workflow.get("workflow_id"),
+                "title": workflow.get("title"),
+                "path": workflow.get("path"),
+                "valid": workflow.get("valid"),
+                "matched_tasks": matched_tasks,
+            }
+        )
+    return matches
 
 
 def verification_stages(

@@ -57,6 +57,7 @@ from cbn_plugins.cli_anything_parts.market import (
     market_records_from_result as _market_records_from_result,
 )
 from cbn_plugins.cli_anything_parts.lifecycle import (
+    attach_candidate_readiness as _attach_candidate_readiness,
     declared_requires as _declared_requires,
     dependency_probes as _dependency_probes,
     external_app_requirement_signals as _external_app_requirement_signals,
@@ -69,8 +70,9 @@ from cbn_plugins.cli_anything_parts.lifecycle import (
     market_record_identity as _market_record_identity,
     market_runtime_text as _market_runtime_text,
     platform_assessment as _platform_assessment,
-    readiness_blocker_probes as _readiness_blocker_probes,
+    readiness_from_evaluation as _readiness_from_evaluation,
     readiness_summary as _readiness_summary,
+    refresh_candidate_lifecycle as _refresh_candidate_lifecycle,
     requirement_assessment as _requirement_assessment,
     requirement_commands as _requirement_commands,
     requirement_env_vars as _requirement_env_vars,
@@ -132,12 +134,12 @@ from cbn_plugins.cli_anything_parts.verification import (
     registry_source_for_manifest as _registry_source_for_manifest,
     verification_blockers as _verification_blockers,
     verification_stages as _verification_stages,
+    workflow_matches_for_capability as _workflow_matches_for_capability,
 )
 from cbn_protocol.acceptance_queue import cli_to_cli_acceptance_queue
 from cbn_protocol.compatibility import check_all_protocols
 from cbn_protocol.lifecycle_suite import protocol_lifecycle_suite
 from cbn_protocol.readiness import protocol_readiness_report
-from cbn_workflow.catalog import list_workflows
 
 
 PLUGIN_ID = "cli-anything"
@@ -2528,67 +2530,6 @@ def infer_market_policy(
     return _manifest_factory_infer_market_policy(market_record, requested_risk=requested_risk)
 
 
-def _refresh_candidate_lifecycle(item: dict[str, Any]) -> None:
-    harness_name = item.get("harness_name")
-    if not isinstance(harness_name, str) or not harness_name:
-        return
-    blockers = item.get("blockers")
-    if not isinstance(blockers, list):
-        blockers = []
-    gates = item.get("gates")
-    if not isinstance(gates, dict):
-        gates = {}
-    item["lifecycle"] = _lifecycle_report(
-        harness_name=harness_name,
-        capability_id=item.get("capability_id") if isinstance(item.get("capability_id"), str) else None,
-        recommended_next_action=str(item.get("recommended_next_action") or "resolve_blockers"),
-        gates=gates,
-        blockers=blockers,
-        install_candidate=bool(item.get("install_candidate")),
-    )
-
-
-def _attach_candidate_readiness(item: dict[str, Any]) -> None:
-    record = item.get("market_record") if isinstance(item.get("market_record"), dict) else {}
-    readiness = _readiness_summary(
-        probes=_dependency_probes(
-            requires=_declared_requires(record, {}),
-            entry_point=record.get("entry_point"),
-        ),
-        install_candidate=bool(item.get("install_candidate")),
-    )
-    item["readiness"] = readiness
-    blocker_probes = _readiness_blocker_probes(readiness)
-    if blocker_probes:
-        blockers = item.setdefault("blockers", [])
-        if not isinstance(blockers, list):
-            blockers = []
-            item["blockers"] = blockers
-        for probe in blocker_probes:
-            probe_id = probe.get("id") or probe.get("kind") or "unknown"
-            blocker = f"dependency probe failed: {probe_id}"
-            if blocker not in blockers:
-                blockers.append(blocker)
-        gates = item.get("gates")
-        if isinstance(gates, dict):
-            gates["external_dependency_free"] = False
-        item["install_candidate"] = False
-        item["recommended_next_action"] = "resolve_blockers"
-        _refresh_candidate_lifecycle(item)
-
-
-def _readiness_from_evaluation(evaluation: dict[str, Any]) -> dict[str, Any]:
-    status = evaluation.get("status") if isinstance(evaluation.get("status"), dict) else {}
-    market_record = status.get("market_record") if isinstance(status.get("market_record"), dict) else None
-    return _readiness_summary(
-        probes=_dependency_probes(
-            requires=_declared_requires(market_record, status),
-            entry_point=status.get("entry_point"),
-        ),
-        install_candidate=bool(evaluation.get("install_candidate")),
-    )
-
-
 def _parser_contract_report(manifest: dict[str, Any]) -> dict[str, Any]:
     return _verification_parts_parser_contract_report(manifest, _known_parser_refs())
 
@@ -2607,36 +2548,6 @@ def _manifest_dict_from_path(path: Path, fallback: dict[str, Any]) -> dict[str, 
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return fallback
-
-
-def _workflow_matches_for_capability(
-    registry: ManifestRegistry,
-    capability_id: str,
-) -> list[dict[str, Any]]:
-    matches: list[dict[str, Any]] = []
-    for workflow in list_workflows(registry=registry):
-        tasks = workflow.get("tasks") if isinstance(workflow.get("tasks"), list) else []
-        matched_tasks = [
-            {
-                "id": task.get("id"),
-                "uses": task.get("uses"),
-                "capability": task.get("capability"),
-            }
-            for task in tasks
-            if isinstance(task, dict) and task.get("uses") == capability_id
-        ]
-        if not matched_tasks:
-            continue
-        matches.append(
-            {
-                "workflow_id": workflow.get("workflow_id"),
-                "title": workflow.get("title"),
-                "path": workflow.get("path"),
-                "valid": workflow.get("valid"),
-                "matched_tasks": matched_tasks,
-            }
-        )
-    return matches
 
 
 def _entrypoint_wrapper_path(external_plugins: Path, harness_name: str) -> Path:
