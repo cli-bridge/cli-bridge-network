@@ -438,6 +438,17 @@ Killer Demo slice 已新增可运行证据束：
   对象。它不替代 `consumer_quickstart` 或 `agent_workflow_request`，而是给第三方程序
   一个低门槛的稳定入口视图；Workflow Studio Connect 面板同步展示 entry status、
   profile id、兼容层、稳定字段、鉴权与证据摘要。
+- `NetworkConnectPackage.consumer_launch_contract` 已新增为第三方程序的最小启动合同：
+  从 quickstart、network entry profile、MVP readiness、setup guidance 和 presenter
+  brief 派生，不引入新副作用；它把 `discover -> inspect_contract ->
+  plan_harness_agent -> run_workflow -> collect_evidence` 固化为稳定 launch sequence，
+  同时暴露 auth policy、required request ids、run/verify/readiness 入口、
+  `NaturalLanguageWorkflowHarness` 摘要、success gates 和 `do_not` 约束。Workflow
+  Studio Connect 面板同步展示 launch contract status、contract id、run endpoint、
+  verify command、secret policy 和每个启动步骤，方便外部程序作者不用阅读完整大
+  payload 也能接入 killer MVP 路径。该合同内会 redact 带 token 的 Studio URL /
+  verify command，只保留 token 是否需要/是否已配置的布尔状态，避免把 secret 值
+  当作稳定外部合同字段传播。
 - `NetworkConnectPackage.mvp_readiness` 已新增为 killer MVP 产品验收矩阵：用
   12 个机器可读 checks 覆盖 external AgentCli contract、internal BridgeMessage
   bus、Workflow Studio、killer workflow DAG、natural-language harness agent、

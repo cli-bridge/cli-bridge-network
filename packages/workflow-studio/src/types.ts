@@ -549,6 +549,7 @@ export interface NetworkConnectPackage {
   network_entry_profile?: NetworkEntryProfile;
   mvp_readiness?: KillerMvpReadiness;
   mvp_presenter_brief?: KillerMvpPresenterBrief;
+  consumer_launch_contract?: ConsumerLaunchContract;
   agent_node_bundle?: {
     kind?: "AdapterAgentNodeBundle";
     ok?: boolean;
@@ -602,6 +603,61 @@ export interface NetworkConnectPackage {
     sequence_steps?: QuickstartSequenceStep[];
   };
   next_commands?: string[];
+}
+
+export interface ConsumerLaunchContract {
+  kind?: "ConsumerLaunchContract";
+  status?: string;
+  contract_id?: string;
+  audience?: string;
+  workflow_path?: string;
+  profile_id?: string;
+  stable_inputs?: {
+    base_url?: string | null;
+    workflow_path?: string;
+    agent_message?: string;
+    dry_run?: boolean;
+    confirmed?: boolean;
+  };
+  auth?: {
+    header?: string | null;
+    session_token_required?: boolean;
+    session_token_included?: boolean;
+    secret_values_echoed?: boolean;
+  };
+  launch_sequence?: Array<{
+    order?: number;
+    id?: string;
+    request_id?: string;
+    intent?: string;
+    success_signal?: string;
+  }>;
+  required_request_ids?: string[];
+  available_request_ids?: string[];
+  entrypoints?: {
+    open_studio?: string;
+    plan_agent_request?: {
+      method?: string;
+      url?: string;
+      json?: Record<string, unknown>;
+    };
+    run_workflow?: {
+      method?: string;
+      url?: string;
+      json?: Record<string, unknown>;
+    };
+    verify_network?: string;
+    readiness?: string;
+  };
+  harness_agent?: {
+    kind?: string;
+    accepts?: string[];
+    emits?: string[];
+    bridge_route_count?: number;
+    run_endpoint?: string;
+  };
+  success_gates?: Record<string, unknown>;
+  do_not?: string[];
 }
 
 export interface KillerMvpReadiness {
@@ -846,6 +902,11 @@ export interface ConnectSummary {
   presenterHeadline: string;
   presenterProofPoints: number;
   presenterFlowSteps: number;
+  launchContractStatus: string;
+  launchContractId: string;
+  launchSequenceSteps: number;
+  launchRequiredRequests: number;
+  launchSecretPolicy: string;
   externalProtocol: string;
   acceptedKinds: string;
   externalPackageStatus: string;

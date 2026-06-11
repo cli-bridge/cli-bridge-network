@@ -117,6 +117,10 @@ const connectPresenterProofPoints = computed(() =>
 const connectPresenterFlow = computed(() =>
   Array.isArray(connectPresenterBrief.value.live_demo_flow) ? connectPresenterBrief.value.live_demo_flow : [],
 );
+const connectLaunchContract = computed(() => connectPackage.value?.consumer_launch_contract ?? {});
+const connectLaunchSequence = computed(() =>
+  Array.isArray(connectLaunchContract.value.launch_sequence) ? connectLaunchContract.value.launch_sequence : [],
+);
 const connectContractSummary = computed<BridgeContractSummary>(() => summarizeConnectContracts(connectPackage.value));
 const connectExternalPackageHealth = computed<AgentCliContractPackageHealth>(() => connectPackage.value?.contracts?.external?.package_health ?? {});
 const connectExternalPackageFiles = computed(() =>
@@ -577,6 +581,7 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
   const entryProfile = payload?.network_entry_profile ?? {};
   const mvp = payload?.mvp_readiness ?? {};
   const presenter = payload?.mvp_presenter_brief ?? {};
+  const launchContract = payload?.consumer_launch_contract ?? {};
   const acceptance = payload?.acceptance ?? quickstart.acceptance ?? {};
   const setup = payload?.setup_guidance ?? {};
   const harness = payload?.agent_workflow_request ?? {};
@@ -609,6 +614,11 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
     presenterHeadline: stringValue(presenter.headline) ?? "Presenter brief not loaded",
     presenterProofPoints: Array.isArray(presenter.proof_points) ? presenter.proof_points.length : 0,
     presenterFlowSteps: Array.isArray(presenter.live_demo_flow) ? presenter.live_demo_flow.length : 0,
+    launchContractStatus: stringValue(launchContract.status) ?? "not loaded",
+    launchContractId: stringValue(launchContract.contract_id) ?? "not loaded",
+    launchSequenceSteps: Array.isArray(launchContract.launch_sequence) ? launchContract.launch_sequence.length : 0,
+    launchRequiredRequests: Array.isArray(launchContract.required_request_ids) ? launchContract.required_request_ids.length : 0,
+    launchSecretPolicy: launchContract.auth?.secret_values_echoed === false ? "no secret echo" : "check secret policy",
     externalProtocol: external.protocol ?? "unknown",
     acceptedKinds: Array.isArray(external.accepted_kinds) ? external.accepted_kinds.join(" + ") : "unknown",
     externalPackageStatus: packageHealth.ok ? "package clean" : packageHealth.kind ? "package attention" : "package not loaded",
@@ -1207,6 +1217,46 @@ onMounted(async () => {
         </div>
         <div class="contract-status-grid">
           <div>
+            <span>Launch contract</span>
+            <strong>{{ connectSummary.launchContractStatus }}</strong>
+          </div>
+          <div>
+            <span>Sequence</span>
+            <strong>{{ connectSummary.launchSequenceSteps }}</strong>
+          </div>
+          <div>
+            <span>Secret policy</span>
+            <strong>{{ connectSummary.launchSecretPolicy }}</strong>
+          </div>
+        </div>
+        <div class="quickstart-grid">
+          <div>
+            <span>Contract ID</span>
+            <code>{{ connectSummary.launchContractId }}</code>
+          </div>
+          <div>
+            <span>Run endpoint</span>
+            <code>{{ connectLaunchContract.harness_agent?.run_endpoint || connectSummary.runEndpoint || "not loaded" }}</code>
+          </div>
+          <div>
+            <span>Verify</span>
+            <code>{{ connectLaunchContract.entrypoints?.verify_network || "not loaded" }}</code>
+          </div>
+          <div>
+            <span>Required requests</span>
+            <code>{{ connectSummary.launchRequiredRequests }}</code>
+          </div>
+        </div>
+        <div class="request-sequence">
+          <div v-for="step in connectLaunchSequence" :key="step.id || step.request_id || step.order" class="passed">
+            <code>{{ step.request_id || step.id || "launch" }}</code>
+            <span>{{ step.intent || "Launch sequence step" }}</span>
+            <small>{{ step.success_signal || "success signal not loaded" }}</small>
+          </div>
+          <span v-if="!connectLaunchSequence.length">No launch contract loaded</span>
+        </div>
+        <div class="contract-status-grid">
+          <div>
             <span>Killer MVP</span>
             <strong>{{ connectSummary.mvpReadinessScore }}</strong>
           </div>
@@ -1616,7 +1666,7 @@ onMounted(async () => {
             <span>{{ endpoint.path }}</span>
           </div>
         </div>
-        <pre>{{ pretty({ daemon_verify: networkVerifyReport, import_catalog: importCatalog, network_entry_profile: connectPackage?.network_entry_profile, mvp_readiness: connectPackage?.mvp_readiness, mvp_presenter_brief: connectPackage?.mvp_presenter_brief, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, demo_playbook: connectPackage?.demo_playbook, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, plugins: connectPackage?.plugins, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
+        <pre>{{ pretty({ daemon_verify: networkVerifyReport, import_catalog: importCatalog, network_entry_profile: connectPackage?.network_entry_profile, consumer_launch_contract: connectPackage?.consumer_launch_contract, mvp_readiness: connectPackage?.mvp_readiness, mvp_presenter_brief: connectPackage?.mvp_presenter_brief, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, demo_playbook: connectPackage?.demo_playbook, setup_guidance: connectPackage?.setup_guidance, registration_surface: connectPackage?.registration_surface, agent_workflow_request: connectPackage?.agent_workflow_request, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, plugins: connectPackage?.plugins, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
       </section>
       <section>
         <div class="section-title"><Rocket :size="15" /> Killer Demo</div>
