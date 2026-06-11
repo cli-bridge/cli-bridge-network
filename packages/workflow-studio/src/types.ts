@@ -359,6 +359,8 @@ export interface NetworkConnectPackage {
     bridge_route_count?: number;
     protocol_export_count?: number;
     agent_card_count?: number;
+    demo_ready?: boolean;
+    demo_stage_count?: number;
     external_contract_ready?: boolean;
     recommended_next_action?: string;
   };
@@ -409,6 +411,29 @@ export interface NetworkConnectPackage {
     session_token_included?: boolean;
     url?: string;
     query?: Record<string, string>;
+  };
+  demo_readiness?: {
+    kind?: "KillerDemoReadiness";
+    status?: string;
+    workflow_path?: string;
+    workflow_id?: string;
+    stage_count?: number;
+    stages?: Array<{
+      id?: string;
+      title?: string;
+      proves?: string;
+      capability_ids?: string[];
+      endpoint?: ConnectEndpoint;
+      endpoints?: ConnectEndpoint[];
+      bridge_route_count?: number;
+    }>;
+    required_capability_ids?: string[];
+    evidence_contracts?: string[];
+    protocol_targets?: string[];
+    studio_url?: string;
+    demo_endpoint?: ConnectEndpoint;
+    acceptance_request_ids?: string[];
+    next_commands?: string[];
   };
   agent_node_bundle?: {
     kind?: "AdapterAgentNodeBundle";
@@ -468,6 +493,9 @@ export interface ConnectSummary {
   endpointCount: number;
   protocolExports: number;
   agentCards: number;
+  demoReadinessStatus: string;
+  demoStageCount: number;
+  demoEndpoint: string;
   nextAction: string;
   studioLink: string;
   studioToken: string;

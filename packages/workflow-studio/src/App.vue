@@ -392,6 +392,7 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
   const external = payload?.contracts?.external ?? {};
   const summary = payload?.summary ?? {};
   const studio = payload?.workflow_studio ?? {};
+  const demo = payload?.demo_readiness ?? {};
   const quickstart = payload?.consumer_quickstart ?? {};
   const acceptance = payload?.acceptance ?? quickstart.acceptance ?? {};
   const headers = quickstart.required_headers ?? {};
@@ -404,6 +405,9 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
     endpointCount: Array.isArray(payload?.daemon_endpoints) ? payload.daemon_endpoints.length : 0,
     protocolExports: numberValue(summary.protocol_export_count) ?? 0,
     agentCards: numberValue(summary.agent_card_count) ?? 0,
+    demoReadinessStatus: stringValue(demo.status) ?? "not loaded",
+    demoStageCount: numberValue(demo.stage_count) ?? 0,
+    demoEndpoint: stringValue(demo.demo_endpoint?.url) ?? stringValue(demo.demo_endpoint?.path) ?? "",
     nextAction: stringValue(summary.recommended_next_action) ?? "load_connect_package",
     studioLink: stringValue(studio.url) ?? "",
     studioToken: studio.session_token_included ? "token included" : "token not included",
@@ -760,6 +764,10 @@ onMounted(async () => {
             <span>Agents</span>
             <strong>{{ connectSummary.agentCards }}</strong>
           </div>
+          <div>
+            <span>Demo</span>
+            <strong>{{ connectSummary.demoStageCount }}</strong>
+          </div>
         </div>
         <div class="evidence-row">
           <span :class="['pill-inline', connectPackage?.ok ? 'ok' : 'blocked']">{{ connectSummary.acceptedKinds }}</span>
@@ -771,6 +779,7 @@ onMounted(async () => {
           <span class="pill-inline">{{ connectSummary.quickstartRequestCount }} requests</span>
           <span class="pill-inline">{{ connectSummary.acceptanceStatus }}</span>
           <span class="pill-inline">{{ connectSummary.acceptanceCheckCount }} checks</span>
+          <span class="pill-inline">{{ connectSummary.demoReadinessStatus }}</span>
           <span :class="['pill-inline', acceptanceRunSummary.status === 'passed' ? 'ok' : acceptanceRunSummary.status === 'failed' ? 'blocked' : '']">
             {{ acceptanceRunSummary.status }}
           </span>
@@ -885,6 +894,10 @@ onMounted(async () => {
         </div>
         <div class="quickstart-grid">
           <div>
+            <span>Killer demo</span>
+            <code>{{ connectSummary.demoEndpoint || "not loaded" }}</code>
+          </div>
+          <div>
             <span>Agent nodes</span>
             <code>{{ connectSummary.agentNodesEndpoint || "not loaded" }}</code>
           </div>
@@ -945,7 +958,7 @@ onMounted(async () => {
             <span>{{ endpoint.path }}</span>
           </div>
         </div>
-        <pre>{{ pretty({ daemon_verify: networkVerifyReport, workflow_studio: connectPackage?.workflow_studio, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
+        <pre>{{ pretty({ daemon_verify: networkVerifyReport, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
       </section>
       <section>
         <div class="section-title"><Rocket :size="15" /> Killer Demo</div>

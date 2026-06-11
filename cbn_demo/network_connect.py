@@ -13,7 +13,7 @@ from cbn_adapter_agent.nodes import build_adapter_agent_node_bundle
 from cbn_adapter_agent.workflow_request import build_agent_workflow_request_plan
 from cbn_core.agent_cli_contract import agent_cli_card_to_tool_manifests, run_receipt_to_cbn_records
 from cbn_core.manifest import ManifestRegistry
-from cbn_demo.killer import DEFAULT_KILLER_WORKFLOW_PATH
+from cbn_demo.killer import DEFAULT_KILLER_WORKFLOW_PATH, KILLER_CAPABILITIES
 from cbn_core.bridge_contract import workflow_bridge_contract_report
 from cbn_protocol.exports import export_all_workflow_protocols
 from cbn_workflow.catalog import inspect_workflow
@@ -79,6 +79,14 @@ def network_connect_package(
         studio_link=studio_link,
         request_plan=request_plan,
     )
+    demo_readiness = _demo_readiness(
+        workflow_path=workflow_path,
+        workflow=workflow,
+        bridge_contract=bridge_contract,
+        protocol_summary=protocol_summary,
+        endpoint_catalog=endpoint_catalog,
+        studio_link=studio_link,
+    )
     return {
         "apiVersion": CONNECT_API_VERSION,
         "kind": "NetworkConnectPackage",
@@ -92,6 +100,8 @@ def network_connect_package(
             "protocol_export_count": protocol_summary["export_count"],
             "agent_card_count": len(agent_bundle.get("cards", [])),
             "agent_workflow_request_ready": request_plan.get("ok"),
+            "demo_ready": demo_readiness.get("status") == "ready",
+            "demo_stage_count": demo_readiness.get("stage_count", 0),
             "external_contract_ready": external_contract.get("ok"),
             "recommended_next_action": "call_daemon_endpoints" if ok else "fix_connect_package_inputs",
         },
@@ -117,11 +127,116 @@ def network_connect_package(
         "workflow": _compact_workflow(workflow),
         "protocols": protocol_summary,
         "workflow_studio": studio_link,
+        "demo_readiness": demo_readiness,
         "agent_node_bundle": _compact_agent_bundle(agent_bundle),
         "agent_workflow_request": _compact_workflow_request_plan(request_plan),
         "acceptance": quickstart["acceptance"],
         "consumer_quickstart": quickstart,
         "next_commands": _next_commands(workflow_path),
+    }
+
+
+def _demo_readiness(
+    *,
+    workflow_path: str,
+    workflow: dict[str, Any],
+    bridge_contract: dict[str, Any],
+    protocol_summary: dict[str, Any],
+    endpoint_catalog: list[dict[str, Any]],
+    studio_link: dict[str, Any],
+) -> dict[str, Any]:
+    endpoint_by_path = {
+        str(endpoint.get("path", "")).split("?", 1)[0]: endpoint
+        for endpoint in endpoint_catalog
+        if isinstance(endpoint, dict)
+    }
+    route_count = int((bridge_contract.get("summary") or {}).get("route_count", 0) or 0)
+    stages = [
+        {
+            "id": "import_cli_anything_harness",
+            "title": "Import CLI-Anything harness",
+            "proves": "CLI-Anything capabilities can enter CBN as ToolManifest records.",
+            "capability_ids": [
+                "cli-anything.macrocli.backends",
+                "cli-anything.mermaid.set-diagram",
+            ],
+        },
+        {
+            "id": "run_macrocli",
+            "title": "Run macrocli backend listing",
+            "proves": "A CLI producer can emit a BridgeMessage payload for downstream tools.",
+            "endpoint": endpoint_by_path.get("/workflows/run", {}),
+        },
+        {
+            "id": "parse_payload",
+            "title": "Parse BridgeMessage payload",
+            "proves": "CBN parser contracts make CLI stdout deterministic enough for routing.",
+            "bridge_route_count": route_count,
+        },
+        {
+            "id": "transform_to_mermaid",
+            "title": "Transform payload to Mermaid source",
+            "proves": "Workflow selectors can map one CLI output into another CLI input.",
+            "capability_ids": ["cbn.transform.macrocli-backends-to-mermaid"],
+        },
+        {
+            "id": "run_mermaid",
+            "title": "Run Mermaid consumer",
+            "proves": "A downstream CLI consumer can produce inspectable artifacts.",
+            "capability_ids": ["cli-anything.mermaid.set-diagram"],
+        },
+        {
+            "id": "show_artifact_event_audit",
+            "title": "Show artifact, event and audit evidence",
+            "proves": "Runtime evidence can be inspected after the CLI-CLI chain runs.",
+            "endpoints": [
+                endpoint_by_path.get("/artifacts", {}),
+                endpoint_by_path.get("/events", {}),
+                endpoint_by_path.get("/audit", {}),
+            ],
+        },
+        {
+            "id": "export_mcp_a2a_acp_smoke",
+            "title": "Export MCP/A2A/ACP smoke",
+            "proves": "The same workflow can be exposed through external protocol facades.",
+            "endpoint": endpoint_by_path.get("/protocols/workflows", {}),
+        },
+    ]
+    ready = bool(workflow.get("valid") and route_count > 0 and protocol_summary.get("export_count", 0) >= 3)
+    return {
+        "apiVersion": CONNECT_API_VERSION,
+        "kind": "KillerDemoReadiness",
+        "status": "ready" if ready else "needs_attention",
+        "workflow_path": workflow_path,
+        "workflow_id": workflow.get("workflow_id"),
+        "stage_count": len(stages),
+        "stages": stages,
+        "required_capability_ids": list(KILLER_CAPABILITIES),
+        "evidence_contracts": [
+            "ToolManifest",
+            "BridgeMessage",
+            "ArtifactRecord",
+            "WorkflowSelector",
+            "Event",
+            "Audit",
+        ],
+        "protocol_targets": protocol_summary.get("targets", []),
+        "studio_url": studio_link.get("url"),
+        "demo_endpoint": endpoint_by_path.get("/demo/killer", {}),
+        "acceptance_request_ids": [
+            "inspect_agent_nodes",
+            "export_protocols",
+            "plan_agent_request",
+            "run_workflow",
+            "events",
+            "audit",
+            "artifacts",
+        ],
+        "next_commands": [
+            f"python -m cbn demo killer --workflow-path {workflow_path} --run --dry-run",
+            f"python -m cbn demo killer --workflow-path {workflow_path} --run --dry-run --smoke-suite",
+            f"python -m cbn network verify --workflow-path {workflow_path}",
+        ],
     }
 
 

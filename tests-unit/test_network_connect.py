@@ -40,9 +40,21 @@ class NetworkConnectPackageTests(unittest.TestCase):
         )
         self.assertGreaterEqual(payload["summary"]["bridge_route_count"], 1)
         self.assertTrue(payload["summary"]["agent_workflow_request_ready"])
+        self.assertTrue(payload["summary"]["demo_ready"])
+        self.assertEqual(payload["summary"]["demo_stage_count"], 7)
         self.assertEqual(payload["protocols"]["mcp"]["workflow_tool_count"], 1)
         self.assertEqual(payload["protocols"]["a2a"]["skill_count"], 1)
         self.assertEqual(payload["protocols"]["acp"]["workflow_count"], 1)
+        demo = payload["demo_readiness"]
+        self.assertEqual(demo["kind"], "KillerDemoReadiness")
+        self.assertEqual(demo["status"], "ready")
+        self.assertEqual(demo["workflow_path"], "workflows/cli-anything-macrocli-mermaid-routing.example.json")
+        self.assertEqual(demo["stage_count"], 7)
+        self.assertIn("BridgeMessage", demo["evidence_contracts"])
+        self.assertEqual(set(demo["protocol_targets"]), {"a2a", "acp", "mcp"})
+        self.assertEqual(demo["demo_endpoint"]["path"], "/demo/killer")
+        self.assertIn("inspect_agent_nodes", demo["acceptance_request_ids"])
+        self.assertIn("python -m cbn demo killer", demo["next_commands"][0])
         self.assertEqual(payload["agent_workflow_request"]["kind"], "AdapterAgentWorkflowRequestPlan")
         self.assertEqual(payload["agent_workflow_request"]["reusable_harness"]["kind"], "NaturalLanguageWorkflowHarness")
         self.assertEqual(payload["agent_workflow_request"]["bridge_message_channel"], "agent.workflow.request.plan")
@@ -179,6 +191,7 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(payload["agent_node_bundle"]["cards"][0]["kind"], "AgentCard")
         self.assertEqual(payload["agent_node_bundle"]["harnesses"][0]["kind"], "AgentHarness")
         self.assertEqual(payload["consumer_quickstart"]["entrypoints"]["run_workflow"]["url"], "http://127.0.0.1:8787/workflows/run")
+        self.assertEqual(payload["demo_readiness"]["status"], "ready")
 
     def test_network_quickstart_cli_outputs_first_call_package(self):
         proc = subprocess.run(

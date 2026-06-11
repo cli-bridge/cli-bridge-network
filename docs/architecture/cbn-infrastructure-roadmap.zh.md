@@ -361,6 +361,12 @@ Killer Demo slice 已新增可运行证据束：
   connect package，就能同时获得 AgentCliCard/RunReceipt 外部协议、CBN 内部
   BridgeMessage/selector contract、MCP/A2A/ACP facade、Agent node bundle、自然语言
   workflow request plan 和可直接调用的 `/workflows/run` payload。
+- `NetworkConnectPackage.demo_readiness` 已新增只读 Killer Demo 摘要：不执行
+  workflow、不写状态，只暴露 CLI-Anything -> macrocli -> parser -> Mermaid ->
+  artifact/event/audit -> MCP/A2A/ACP smoke 的 stage 列表、required capabilities、
+  evidence contracts、`/demo/killer` endpoint、Workflow Studio link 和下一步命令。
+  Workflow Studio Connect 面板同步展示 demo readiness、stage count 和 killer demo
+  endpoint，让其他程序第一次读取 one-shot package 时就能理解最终 demo 呈现链路。
 
 ## 验证策略
 
