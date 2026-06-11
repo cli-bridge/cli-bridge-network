@@ -1297,6 +1297,8 @@ def _mvp_presenter_brief(
     entrypoints = quickstart.get("entrypoints") if isinstance(quickstart.get("entrypoints"), dict) else {}
     request_plan_run = request_plan.get("run") if isinstance(request_plan.get("run"), dict) else {}
     request_plan_http = request_plan_run.get("http") if isinstance(request_plan_run.get("http"), dict) else {}
+    request = request_plan.get("request") if isinstance(request_plan.get("request"), dict) else {}
+    agent_message = request.get("message") or DEFAULT_AGENT_CONNECT_MESSAGE
     harness = request_plan.get("reusable_harness") if isinstance(request_plan.get("reusable_harness"), dict) else {}
     product_goals = mvp_readiness.get("product_goals") if isinstance(mvp_readiness.get("product_goals"), dict) else {}
     goal_count = len(product_goals)
@@ -1324,6 +1326,7 @@ def _mvp_presenter_brief(
         session_token=session_token,
         output="sdk-bootstrap",
     )
+    agent_plan_command = _adapter_agent_workflow_request_command(workflow_path, message=agent_message)
     verify_command = _network_verify_command(workflow_path, base_url=base_url, session_token=session_token)
     brief_ready = bool(
         mvp_readiness.get("status") == "ready"
@@ -1413,6 +1416,11 @@ def _mvp_presenter_brief(
         "integration_handoff": {
             "connect_package_url": connect_package_url,
             "connect_package_command": connect_package_command,
+            "harness_agent_url": entrypoints.get("harness_agent"),
+            "agent_plan_url": entrypoints.get("plan_agent_request", {}).get("url")
+            if isinstance(entrypoints.get("plan_agent_request"), dict)
+            else None,
+            "agent_plan_command": agent_plan_command,
             "sdk_bootstrap_url": entrypoints.get("sdk_bootstrap"),
             "readiness_url": readiness_url,
             "studio_url": studio_link.get("url"),
@@ -1434,6 +1442,7 @@ def _mvp_presenter_brief(
         "recommended_next_action": mvp_readiness.get("recommended_next_action", "open_workflow_studio_demo"),
         "next_commands": [
             connect_package_command,
+            agent_plan_command,
             verify_command,
             readiness_command,
             sdk_bootstrap_command,
@@ -2849,7 +2858,7 @@ def _absolute_url(base_url: str | None, path: str) -> str:
 def _next_commands(workflow_path: str, *, base_url: str | None, session_token: str | None) -> list[str]:
     return [
         _network_verify_command(workflow_path, base_url=base_url, session_token=session_token),
-        f"python -m cbn_adapter_agent --workflow-request-plan --workflow-path {workflow_path}",
+        _adapter_agent_workflow_request_command(workflow_path, message=DEFAULT_AGENT_CONNECT_MESSAGE),
         f"python -m cbn workflow inspect {workflow_path}",
         f"python -m cbn protocol export-workflows all --path {workflow_path}",
         f"python -m cbn demo killer --workflow-path {workflow_path} --run --dry-run",
@@ -2872,6 +2881,21 @@ def _network_connect_package_command(workflow_path: str, *, base_url: str | None
     if session_token:
         args.extend(["--session-token", session_token])
     return _command(args)
+
+
+def _adapter_agent_workflow_request_command(workflow_path: str, *, message: str) -> str:
+    return _command(
+        [
+            "python",
+            "-m",
+            "cbn_adapter_agent",
+            "--workflow-request-plan",
+            "--workflow-path",
+            workflow_path,
+            "--message",
+            message,
+        ]
+    )
 
 
 def _network_quickstart_command(

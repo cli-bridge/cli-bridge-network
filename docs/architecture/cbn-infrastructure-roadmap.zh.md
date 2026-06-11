@@ -265,6 +265,10 @@ Killer Demo slice 已新增可运行证据束：
   Workflow Studio 同步展示 connect package URL/command 并提供一键复制入口。外部
   程序或集成伙伴在 demo 现场可以先复制 one-shot package 命令完成首次接入，再降级
   到 SDK bootstrap 或 quickstart focused contract。
+- `KillerMvpPresenterBrief.integration_handoff` 已补充 `harness_agent_url`、
+  `agent_plan_url` 和 `agent_plan_command`，Workflow Studio 同步展示自然语言
+  harness agent 的 focused contract 与 CLI 规划命令，并提供 Copy Harness 入口。
+  这让 demo 能直接展示“用自然语言绑定 CLI-CLI workflow”的可复用 agent 路径。
 - Killer demo report 已新增 `communication_trace`：从真实 workflow run result 中提取
   `BridgeMessage argsFrom` handoff，展示 producer task、consumer task、selector、
   BridgeMessage valid 状态、selected value preview、resolved arg preview 和 artifact

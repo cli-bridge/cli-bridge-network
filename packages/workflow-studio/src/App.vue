@@ -810,6 +810,8 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
     presenterFlowSteps: Array.isArray(presenter.live_demo_flow) ? presenter.live_demo_flow.length : 0,
     presenterConnectPackageUrl: stringValue(presenterHandoff.connect_package_url) ?? "not loaded",
     presenterConnectPackageCommand: stringValue(presenterHandoff.connect_package_command) ?? "not loaded",
+    presenterHarnessAgentUrl: stringValue(presenterHandoff.harness_agent_url) ?? "not loaded",
+    presenterAgentPlanCommand: stringValue(presenterHandoff.agent_plan_command) ?? "not loaded",
     presenterSdkBootstrapUrl: stringValue(presenterHandoff.sdk_bootstrap_url) ?? "not loaded",
     presenterSdkBootstrapCommand: stringValue(presenterHandoff.sdk_bootstrap_command) ?? "not loaded",
     launchContractStatus: stringValue(launchContract.status) ?? "not loaded",
@@ -1891,6 +1893,14 @@ onMounted(async () => {
             <code>{{ connectSummary.presenterConnectPackageCommand }}</code>
           </div>
           <div>
+            <span>Harness agent</span>
+            <code>{{ connectSummary.presenterHarnessAgentUrl }}</code>
+          </div>
+          <div>
+            <span>Agent plan command</span>
+            <code>{{ connectSummary.presenterAgentPlanCommand }}</code>
+          </div>
+          <div>
             <span>SDK bootstrap</span>
             <code>{{ connectSummary.presenterSdkBootstrapUrl }}</code>
           </div>
@@ -1939,6 +1949,9 @@ onMounted(async () => {
           </button>
           <button title="Copy one-shot connect package command" :disabled="!connectSummary.presenterConnectPackageCommand || connectSummary.presenterConnectPackageCommand === 'not loaded'" @click="copyText('connect-package-command', connectSummary.presenterConnectPackageCommand)">
             <Copy :size="14" /> {{ copiedScript === "connect-package-command" ? "Copied" : "Copy Package" }}
+          </button>
+          <button title="Copy natural-language harness plan command" :disabled="!connectSummary.presenterAgentPlanCommand || connectSummary.presenterAgentPlanCommand === 'not loaded'" @click="copyText('agent-plan-command', connectSummary.presenterAgentPlanCommand)">
+            <Copy :size="14" /> {{ copiedScript === "agent-plan-command" ? "Copied" : "Copy Harness" }}
           </button>
           <button title="Copy SDK bootstrap command" :disabled="!connectSummary.presenterSdkBootstrapCommand || connectSummary.presenterSdkBootstrapCommand === 'not loaded'" @click="copyText('sdk-bootstrap-command', connectSummary.presenterSdkBootstrapCommand)">
             <Copy :size="14" /> {{ copiedScript === "sdk-bootstrap-command" ? "Copied" : "Copy SDK" }}
