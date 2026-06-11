@@ -5,6 +5,16 @@ from __future__ import annotations
 from typing import Any
 
 
+def safe_plugin_report(builder: Any) -> dict[str, Any]:
+    try:
+        return builder()
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": str(exc),
+        }
+
+
 def mvp_plan_summary(
     environment: dict[str, Any],
     install_gate: dict[str, Any],

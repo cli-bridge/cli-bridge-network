@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
+from cbn_core.manifest import ManifestRegistry
 from cbn_parsers.fixtures import run_parser_fixtures
 from cbn_parsers.registry import ParserRegistry
 from cbn_protocol.smoke_suite import protocol_smoke_suite
@@ -38,6 +40,36 @@ def parser_contract_report(
             else "Keep parser fixtures in the release gate."
         ),
     }
+
+
+def known_parser_refs() -> set[str]:
+    return {item["parser_ref"] for item in ParserRegistry.builtins().list()}
+
+
+def parser_contract_report_from_registry(manifest: dict[str, Any]) -> dict[str, Any]:
+    return parser_contract_report(manifest, known_parser_refs())
+
+
+def manifest_dict_from_path(path: Path, fallback: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return fallback
+
+
+def effective_manifest_dict(
+    imported_manifest: Any | None,
+    preview_manifest: dict[str, Any],
+) -> dict[str, Any]:
+    if imported_manifest is None or getattr(imported_manifest, "source_path", None) is None:
+        return preview_manifest
+    return manifest_dict_from_path(imported_manifest.source_path, preview_manifest)
+
+
+def load_manifest_registry(path: Path) -> ManifestRegistry:
+    registry = ManifestRegistry()
+    registry.load_dir(path)
+    return registry
 
 
 def protocol_verification_summary(protocol_checks: dict[str, dict[str, Any]]) -> dict[str, Any]:

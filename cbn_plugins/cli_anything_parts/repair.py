@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from cbn_plugins.cli_anything_parts.lifecycle import max_risk
-from cbn_plugins.cli_anything_parts.manifest_factory import infer_market_policy
+from cbn_plugins.cli_anything_parts.manifest_factory import infer_market_policy, sanitize_harness_name
 from cbn_plugins.cli_anything_parts.verification import policy_requires_confirmation
 
 
@@ -270,7 +270,12 @@ def entrypoint_repair_strategy(plan: dict[str, Any], module: str | None) -> dict
     }
 
 
-def entrypoint_wrapper_path(external_plugins: Path, harness_name: str, safe_name: str) -> Path:
+def entrypoint_wrapper_path(
+    external_plugins: Path,
+    harness_name: str,
+    safe_name: str | None = None,
+) -> Path:
+    safe_name = safe_name or sanitize_harness_name(harness_name)
     return external_plugins / PLUGIN_ID / "entrypoints" / f"{safe_name}.py"
 
 

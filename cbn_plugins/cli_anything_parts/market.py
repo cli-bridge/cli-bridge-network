@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 
@@ -35,6 +36,35 @@ def market_record_identity(item: dict[str, Any]) -> dict[str, str | None]:
         "entry_point": str(record.get("entry_point")) if record.get("entry_point") is not None else None,
         "source": str(record.get("_source")) if record.get("_source") is not None else None,
     }
+
+
+def matches_sanitized_name(value: Any, expected: str, sanitize: Any) -> bool:
+    if value is None:
+        return False
+    try:
+        return sanitize(str(value)) == expected
+    except ValueError:
+        return False
+
+
+def parse_info_fields(stdout: str) -> dict[str, str]:
+    fields = {}
+    for line in stdout.splitlines():
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        key = re.sub(r"[^a-z0-9]+", "_", key.strip().casefold()).strip("_")
+        value = value.strip()
+        if key and value:
+            fields[key] = value
+    return fields
+
+
+def is_installed_status(status_text: str | None) -> bool:
+    if not status_text:
+        return False
+    normalized = status_text.strip().casefold()
+    return normalized == "installed" or normalized.startswith("installed ")
 
 
 def mark_capability_collisions(manifests: list[dict[str, Any]]) -> None:

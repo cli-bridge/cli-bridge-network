@@ -8,7 +8,6 @@ generates CBN manifests for installed or planned harnesses.
 from __future__ import annotations
 
 import json
-import re
 import shutil
 import subprocess
 import sys
@@ -52,9 +51,12 @@ from cbn_plugins.cli_anything_parts.manifest_factory import (
     sanitize_harness_name as _manifest_factory_sanitize_harness_name,
 )
 from cbn_plugins.cli_anything_parts.market import (
+    is_installed_status as _is_installed_status,
     mark_candidate_collisions as _mark_candidate_collisions,
     mark_capability_collisions as _mark_capability_collisions,
     market_records_from_result as _market_records_from_result,
+    matches_sanitized_name as _matches_sanitized_name,
+    parse_info_fields as _parse_info_fields,
 )
 from cbn_plugins.cli_anything_parts.lifecycle import (
     attach_candidate_readiness as _attach_candidate_readiness,
@@ -97,6 +99,7 @@ from cbn_plugins.cli_anything_parts.planning import (
     bootstrap_stages as _bootstrap_stages,
     mvp_plan_stages as _mvp_plan_stages,
     mvp_plan_summary as _mvp_plan_summary,
+    safe_plugin_report as _safe_plugin_report,
 )
 from cbn_plugins.cli_anything_parts.queue import (
     blocked_entry_from_evaluation as _blocked_entry_from_evaluation,
@@ -118,16 +121,20 @@ from cbn_plugins.cli_anything_parts.repair import (
     entrypoint_repair_manifest as _entrypoint_repair_manifest,
     entrypoint_repair_manifest_provenance as _entrypoint_repair_manifest_provenance,
     entrypoint_repair_strategy as _entrypoint_repair_strategy,
-    entrypoint_wrapper_path as _repair_parts_entrypoint_wrapper_path,
+    entrypoint_wrapper_path as _entrypoint_wrapper_path,
     module_report as _module_report,
     script_path_candidates as _script_path_candidates,
     write_repair_entrypoint_files as _write_repair_entrypoint_files,
 )
 from cbn_plugins.cli_anything_parts.verification import (
+    effective_manifest_dict as _effective_manifest_dict,
     harness_protocol_smoke_suite as _harness_protocol_smoke_suite,
+    known_parser_refs as _known_parser_refs,
+    load_manifest_registry as _load_manifest_registry,
     manifest_has_entrypoint_repair as _manifest_has_entrypoint_repair,
+    manifest_dict_from_path as _manifest_dict_from_path,
     mark_repaired_manifest_verified_from_fixtures as _mark_repaired_manifest_verified_from_fixtures,
-    parser_contract_report as _verification_parts_parser_contract_report,
+    parser_contract_report_from_registry as _parser_contract_report,
     parser_fixture_gate as _parser_fixture_gate,
     policy_requires_confirmation as _policy_requires_confirmation,
     protocol_verification_summary as _protocol_verification_summary,
@@ -252,10 +259,10 @@ class CliAnythingHub:
         safe_name = sanitize_harness_name(harness_name)
         candidates = [item for item in result.parsed_json if isinstance(item, dict)]
         for item in candidates:
-            if _matches_sanitized_name(item.get("name"), safe_name):
+            if _matches_sanitized_name(item.get("name"), safe_name, sanitize_harness_name):
                 return item
         for item in candidates:
-            if _matches_sanitized_name(item.get("display_name"), safe_name):
+            if _matches_sanitized_name(item.get("display_name"), safe_name, sanitize_harness_name):
                 return item
         return candidates[0] if candidates else None
 
@@ -2494,85 +2501,8 @@ def sanitize_harness_name(name: str) -> str:
     return _manifest_factory_sanitize_harness_name(name)
 
 
-def _matches_sanitized_name(value: Any, expected: str) -> bool:
-    if value is None:
-        return False
-    try:
-        return sanitize_harness_name(str(value)) == expected
-    except ValueError:
-        return False
-
-
-def _parse_info_fields(stdout: str) -> dict[str, str]:
-    fields = {}
-    for line in stdout.splitlines():
-        if ":" not in line:
-            continue
-        key, value = line.split(":", 1)
-        key = re.sub(r"[^a-z0-9]+", "_", key.strip().casefold()).strip("_")
-        value = value.strip()
-        if key and value:
-            fields[key] = value
-    return fields
-
-
-def _is_installed_status(status_text: str | None) -> bool:
-    if not status_text:
-        return False
-    normalized = status_text.strip().casefold()
-    return normalized == "installed" or normalized.startswith("installed ")
-
-
 def infer_market_policy(
     market_record: dict[str, Any] | None,
     requested_risk: str = "read",
 ) -> dict[str, Any]:
     return _manifest_factory_infer_market_policy(market_record, requested_risk=requested_risk)
-
-
-def _parser_contract_report(manifest: dict[str, Any]) -> dict[str, Any]:
-    return _verification_parts_parser_contract_report(manifest, _known_parser_refs())
-
-
-def _effective_manifest_dict(
-    imported_manifest: CapabilityManifest | None,
-    preview_manifest: dict[str, Any],
-) -> dict[str, Any]:
-    if imported_manifest is None or imported_manifest.source_path is None:
-        return preview_manifest
-    return _manifest_dict_from_path(imported_manifest.source_path, preview_manifest)
-
-
-def _manifest_dict_from_path(path: Path, fallback: dict[str, Any]) -> dict[str, Any]:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return fallback
-
-
-def _entrypoint_wrapper_path(external_plugins: Path, harness_name: str) -> Path:
-    return _repair_parts_entrypoint_wrapper_path(
-        external_plugins,
-        harness_name,
-        safe_name=sanitize_harness_name(harness_name),
-    )
-
-
-def _load_manifest_registry(path: Path) -> ManifestRegistry:
-    registry = ManifestRegistry()
-    registry.load_dir(path)
-    return registry
-
-
-def _safe_plugin_report(builder: Any) -> dict[str, Any]:
-    try:
-        return builder()
-    except Exception as exc:
-        return {
-            "ok": False,
-            "error": str(exc),
-        }
-
-
-def _known_parser_refs() -> set[str]:
-    return {item["parser_ref"] for item in ParserRegistry.builtins().list()}
