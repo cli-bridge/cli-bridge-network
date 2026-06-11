@@ -387,6 +387,13 @@ Killer Demo slice 已新增可运行证据束：
   Workflow Studio Connect 面板同步展示 demo readiness、stage count 和 killer demo
   endpoint，并把 7 个 demo readiness stages 渲染成可扫读链路，让其他程序第一次
   读取 one-shot package 时就能理解最终 demo 呈现链路。
+- `NetworkConnectPackage.setup_guidance` 已新增只读首跑设置摘要：复用
+  `AdapterAgentToolCallPlan`，暴露 setup-secret、setup-command、workflow-capability、
+  execution batch、loop checkpoint、user gate 和 secret count，但不执行工具、不写入
+  secret、不输出 secret value 或原始 argv。外部程序读取 one-shot package 后，不必先
+  打开 WebUI，就能判断 workflow 是否需要 API key、OAuth/login、Local REST key 或
+  其他人工 setup；Workflow Studio Connect 面板同步展示该 setup 状态、用户门槛、
+  secret 数量和安全标记。
 
 ## 验证策略
 

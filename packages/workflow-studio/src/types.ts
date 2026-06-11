@@ -350,6 +350,51 @@ export interface NetworkConnectionAcceptanceReport {
   next_commands?: string[];
 }
 
+export interface AdapterAgentSetupGuidance {
+  kind?: "AdapterAgentSetupGuidance";
+  ok?: boolean;
+  status?: string;
+  setup_required?: boolean;
+  next_action?: string;
+  workflow_path?: string;
+  summary?: AdapterAgentToolCallPlan["summary"];
+  requires_user_count?: number;
+  secret_count?: number;
+  setup_command_count?: number;
+  workflow_capability_count?: number;
+  tool_calls?: Array<
+    Pick<
+      AdapterAgentToolCall,
+      | "call_id"
+      | "tool_use_id"
+      | "kind"
+      | "agent_role"
+      | "action"
+      | "risk"
+      | "initial_status"
+      | "requires_user"
+      | "concurrency_safe"
+    > & {
+      setup_id?: string;
+      profile?: string;
+      command_id?: string;
+      secret_name?: string;
+      task_id?: string;
+      capability_id?: string;
+      permission?: string;
+      permission_reason?: string;
+    }
+  >;
+  execution_batches?: AdapterAgentExecutionBatch[];
+  checkpoints?: AdapterAgentLoopCheckpoint[];
+  safety?: {
+    read_only?: boolean;
+    executes_tools?: boolean;
+    secret_values_included?: boolean;
+    secrets_must_not_be_pasted_in_chat?: boolean;
+  };
+}
+
 export interface ConnectDemoStage {
   id?: string;
   title?: string;
@@ -369,6 +414,10 @@ export interface NetworkConnectPackage {
     bridge_route_count?: number;
     protocol_export_count?: number;
     agent_card_count?: number;
+    setup_status?: string;
+    setup_required?: boolean;
+    setup_user_gate_count?: number;
+    setup_secret_count?: number;
     demo_ready?: boolean;
     demo_stage_count?: number;
     external_contract_ready?: boolean;
@@ -451,6 +500,7 @@ export interface NetworkConnectPackage {
     bridge_message?: CompactAgentBridgeMessage;
     workflow_nodes?: AgentWorkflowNode[];
   };
+  setup_guidance?: AdapterAgentSetupGuidance;
   acceptance?: NetworkConnectionAcceptance;
   consumer_quickstart?: {
     kind?: "NetworkConnectQuickstart";
@@ -497,6 +547,12 @@ export interface ConnectSummary {
   agentCards: number;
   demoReadinessStatus: string;
   demoStageCount: number;
+  setupStatus: string;
+  setupRequired: string;
+  setupUserGates: number;
+  setupSecrets: number;
+  setupCommands: number;
+  setupSafety: string;
   demoEndpoint: string;
   nextAction: string;
   studioLink: string;

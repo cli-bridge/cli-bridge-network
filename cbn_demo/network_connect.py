@@ -11,6 +11,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 from cbn_adapter_agent.nodes import build_adapter_agent_node_bundle
+from cbn_adapter_agent.tool_call_plan import build_agent_tool_call_plan
 from cbn_adapter_agent.workflow_request import build_agent_workflow_request_plan
 from cbn_core.agent_cli_contract import agent_cli_card_to_tool_manifests, run_receipt_to_cbn_records
 from cbn_core.manifest import ManifestRegistry
@@ -52,6 +53,12 @@ def network_connect_package(
         base_url=base_url,
         dry_run=True,
         confirmed=False,
+    )
+    setup_guidance = _compact_setup_guidance(
+        build_agent_tool_call_plan(
+            workflow_path=workflow_path,
+            message=agent_message,
+        )
     )
     external_contract = _external_agent_cli_contract()
     internal_contract = _internal_bridge_contract(bridge_contract)
@@ -103,6 +110,10 @@ def network_connect_package(
             "protocol_export_count": protocol_summary["export_count"],
             "agent_card_count": len(agent_bundle.get("cards", [])),
             "agent_workflow_request_ready": request_plan.get("ok"),
+            "setup_status": setup_guidance.get("status"),
+            "setup_required": setup_guidance.get("setup_required"),
+            "setup_user_gate_count": setup_guidance.get("requires_user_count", 0),
+            "setup_secret_count": setup_guidance.get("secret_count", 0),
             "demo_ready": demo_readiness.get("status") == "ready",
             "demo_stage_count": demo_readiness.get("stage_count", 0),
             "external_contract_ready": external_contract.get("ok"),
@@ -133,6 +144,7 @@ def network_connect_package(
         "demo_readiness": demo_readiness,
         "agent_node_bundle": _compact_agent_bundle(agent_bundle),
         "agent_workflow_request": _compact_workflow_request_plan(request_plan),
+        "setup_guidance": setup_guidance,
         "acceptance": quickstart["acceptance"],
         "consumer_quickstart": quickstart,
         "next_commands": _next_commands(workflow_path, base_url=base_url, session_token=session_token),
@@ -586,6 +598,89 @@ def _compact_workflow_request_plan(plan: dict[str, Any]) -> dict[str, Any]:
             "http": run.get("http", {}),
         },
         "bridge_message_channel": (message.get("metadata") or {}).get("channel"),
+    }
+
+
+def _compact_setup_guidance(plan: dict[str, Any]) -> dict[str, Any]:
+    summary = plan.get("summary") if isinstance(plan.get("summary"), dict) else {}
+    kinds = summary.get("by_kind") if isinstance(summary.get("by_kind"), dict) else {}
+    loop = plan.get("long_running_loop") if isinstance(plan.get("long_running_loop"), dict) else {}
+    status = loop.get("status") or plan.get("status") or "unknown"
+    secret_count = int(kinds.get("setup-secret", 0) or 0)
+    setup_command_count = int(kinds.get("setup-command", 0) or 0)
+    workflow_capability_count = int(kinds.get("workflow-capability", 0) or 0)
+    requires_user_count = int(summary.get("requires_user_count", 0) or 0)
+    setup_required = bool(
+        status != "ready_to_run"
+        or requires_user_count > 0
+        or secret_count > 0
+        or setup_command_count > 0
+    )
+    return {
+        "apiVersion": CONNECT_API_VERSION,
+        "kind": "AdapterAgentSetupGuidance",
+        "source_kind": plan.get("kind"),
+        "ok": plan.get("ok"),
+        "status": status,
+        "setup_required": setup_required,
+        "next_action": "complete_user_setup" if setup_required else "ready_to_run",
+        "workflow_path": plan.get("workflow_path"),
+        "summary": summary,
+        "requires_user_count": requires_user_count,
+        "secret_count": secret_count,
+        "setup_command_count": setup_command_count,
+        "workflow_capability_count": workflow_capability_count,
+        "tool_calls": [_compact_setup_tool_call(call) for call in _list_of_dicts(plan.get("tool_calls"))[:10]],
+        "execution_batches": [
+            {
+                "batch_id": batch.get("batch_id"),
+                "mode": batch.get("mode"),
+                "concurrency_safe": batch.get("concurrency_safe"),
+                "tool_call_ids": batch.get("tool_call_ids", []),
+                "tool_use_ids": batch.get("tool_use_ids", []),
+                "reason": batch.get("reason"),
+            }
+            for batch in _list_of_dicts(plan.get("execution_batches"))[:8]
+        ],
+        "checkpoints": [
+            {
+                "id": checkpoint.get("id"),
+                "owner": checkpoint.get("owner"),
+                "status": checkpoint.get("status"),
+                "evidence": checkpoint.get("evidence"),
+            }
+            for checkpoint in _list_of_dicts(loop.get("checkpoints"))[:8]
+        ],
+        "safety": {
+            "read_only": True,
+            "executes_tools": False,
+            "secret_values_included": False,
+            "secrets_must_not_be_pasted_in_chat": True,
+        },
+    }
+
+
+def _compact_setup_tool_call(call: dict[str, Any]) -> dict[str, Any]:
+    source = call.get("source") if isinstance(call.get("source"), dict) else {}
+    permission = call.get("permission_flow") if isinstance(call.get("permission_flow"), dict) else {}
+    return {
+        "call_id": call.get("call_id"),
+        "tool_use_id": call.get("tool_use_id"),
+        "kind": call.get("kind"),
+        "agent_role": call.get("agent_role"),
+        "action": call.get("action"),
+        "risk": call.get("risk"),
+        "initial_status": call.get("initial_status"),
+        "requires_user": call.get("requires_user"),
+        "concurrency_safe": call.get("concurrency_safe"),
+        "setup_id": source.get("setup_id"),
+        "profile": source.get("profile"),
+        "command_id": source.get("command_id"),
+        "secret_name": source.get("secret_name"),
+        "task_id": source.get("task_id"),
+        "capability_id": source.get("capability_id"),
+        "permission": permission.get("default_behavior"),
+        "permission_reason": permission.get("reason"),
     }
 
 

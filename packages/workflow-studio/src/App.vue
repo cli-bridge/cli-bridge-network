@@ -105,6 +105,10 @@ const connectEndpoints = computed(() => (Array.isArray(connectPackage.value?.dae
 const connectDemoStages = computed<ConnectDemoStage[]>(() =>
   Array.isArray(connectPackage.value?.demo_readiness?.stages) ? connectPackage.value.demo_readiness.stages : [],
 );
+const connectSetupGuidance = computed(() => connectPackage.value?.setup_guidance ?? {});
+const connectSetupCalls = computed(() =>
+  Array.isArray(connectPackage.value?.setup_guidance?.tool_calls) ? connectPackage.value.setup_guidance.tool_calls : [],
+);
 const connectNextCommands = computed<string[]>(() => {
   const commands = [
     ...(Array.isArray(connectPackage.value?.next_commands) ? connectPackage.value.next_commands : []),
@@ -417,6 +421,7 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
   const demo = payload?.demo_readiness ?? {};
   const quickstart = payload?.consumer_quickstart ?? {};
   const acceptance = payload?.acceptance ?? quickstart.acceptance ?? {};
+  const setup = payload?.setup_guidance ?? {};
   const headers = quickstart.required_headers ?? {};
   return {
     status: payload?.ok ? "ready" : payload ? "needs attention" : "not loaded",
@@ -429,6 +434,12 @@ function summarizeConnectPackage(payload: NetworkConnectPackage | null): Connect
     agentCards: numberValue(summary.agent_card_count) ?? 0,
     demoReadinessStatus: stringValue(demo.status) ?? "not loaded",
     demoStageCount: numberValue(demo.stage_count) ?? 0,
+    setupStatus: stringValue(setup.status) ?? stringValue(summary.setup_status) ?? "not loaded",
+    setupRequired: setup.setup_required || summary.setup_required ? "setup required" : "ready",
+    setupUserGates: numberValue(setup.requires_user_count) ?? numberValue(summary.setup_user_gate_count) ?? 0,
+    setupSecrets: numberValue(setup.secret_count) ?? numberValue(summary.setup_secret_count) ?? 0,
+    setupCommands: numberValue(setup.setup_command_count) ?? 0,
+    setupSafety: setup.safety?.secret_values_included === false ? "no secret values" : "unknown safety",
     demoEndpoint: stringValue(demo.demo_endpoint?.url) ?? stringValue(demo.demo_endpoint?.path) ?? "",
     nextAction: stringValue(summary.recommended_next_action) ?? "load_connect_package",
     studioLink: stringValue(studio.url) ?? "",
@@ -874,6 +885,10 @@ onMounted(async () => {
             <span>Demo</span>
             <strong>{{ connectSummary.demoStageCount }}</strong>
           </div>
+          <div>
+            <span>Setup</span>
+            <strong>{{ connectSummary.setupStatus }}</strong>
+          </div>
         </div>
         <div class="evidence-row">
           <span :class="['pill-inline', connectPackage?.ok ? 'ok' : 'blocked']">{{ connectSummary.acceptedKinds }}</span>
@@ -886,9 +901,21 @@ onMounted(async () => {
           <span class="pill-inline">{{ connectSummary.acceptanceStatus }}</span>
           <span class="pill-inline">{{ connectSummary.acceptanceCheckCount }} checks</span>
           <span class="pill-inline">{{ connectSummary.demoReadinessStatus }}</span>
+          <span :class="['pill-inline', connectSetupGuidance.setup_required ? 'blocked' : 'ok']">{{ connectSummary.setupRequired }}</span>
+          <span class="pill-inline">{{ connectSummary.setupUserGates }} user gates</span>
+          <span class="pill-inline">{{ connectSummary.setupSecrets }} secrets</span>
+          <span class="pill-inline">{{ connectSummary.setupSafety }}</span>
           <span :class="['pill-inline', acceptanceRunSummary.status === 'passed' ? 'ok' : acceptanceRunSummary.status === 'failed' ? 'blocked' : '']">
             {{ acceptanceRunSummary.status }}
           </span>
+        </div>
+        <div class="agent-card-list">
+          <div v-for="call in connectSetupCalls.slice(0, 6)" :key="call.call_id || call.tool_use_id" class="agent-card">
+            <strong>{{ call.action || call.kind || "setup" }}</strong>
+            <span>{{ call.initial_status || "queued" }}</span>
+            <code>{{ call.setup_id || call.capability_id || call.secret_name || call.agent_role || "setup guidance" }}</code>
+          </div>
+          <span v-if="!connectSetupCalls.length">No setup guidance loaded</span>
         </div>
         <div class="studio-link-row">
           <button title="Open preconfigured Workflow Studio demo link" :disabled="!connectSummary.studioLink" @click="openStudioLink">
@@ -1083,7 +1110,7 @@ onMounted(async () => {
             <span>{{ endpoint.path }}</span>
           </div>
         </div>
-        <pre>{{ pretty({ daemon_verify: networkVerifyReport, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
+        <pre>{{ pretty({ daemon_verify: networkVerifyReport, workflow_studio: connectPackage?.workflow_studio, demo_readiness: connectPackage?.demo_readiness, setup_guidance: connectPackage?.setup_guidance, agent_node_bundle: connectPackage?.agent_node_bundle, consumer_quickstart: connectPackage?.consumer_quickstart, acceptance: connectPackage?.acceptance, protocols: connectPackage?.protocols, contracts: connectPackage?.contracts, next_commands: connectPackage?.next_commands }) }}</pre>
       </section>
       <section>
         <div class="section-title"><Rocket :size="15" /> Killer Demo</div>

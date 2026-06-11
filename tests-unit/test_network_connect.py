@@ -40,6 +40,10 @@ class NetworkConnectPackageTests(unittest.TestCase):
         )
         self.assertGreaterEqual(payload["summary"]["bridge_route_count"], 1)
         self.assertTrue(payload["summary"]["agent_workflow_request_ready"])
+        self.assertEqual(payload["summary"]["setup_status"], "ready_to_run")
+        self.assertFalse(payload["summary"]["setup_required"])
+        self.assertEqual(payload["summary"]["setup_user_gate_count"], 0)
+        self.assertEqual(payload["summary"]["setup_secret_count"], 0)
         self.assertTrue(payload["summary"]["demo_ready"])
         self.assertEqual(payload["summary"]["demo_stage_count"], 7)
         self.assertEqual(payload["protocols"]["mcp"]["workflow_tool_count"], 1)
@@ -60,6 +64,16 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(payload["agent_workflow_request"]["kind"], "AdapterAgentWorkflowRequestPlan")
         self.assertEqual(payload["agent_workflow_request"]["reusable_harness"]["kind"], "NaturalLanguageWorkflowHarness")
         self.assertEqual(payload["agent_workflow_request"]["bridge_message_channel"], "agent.workflow.request.plan")
+        setup = payload["setup_guidance"]
+        self.assertEqual(setup["kind"], "AdapterAgentSetupGuidance")
+        self.assertEqual(setup["status"], "ready_to_run")
+        self.assertFalse(setup["setup_required"])
+        self.assertEqual(setup["workflow_capability_count"], 3)
+        self.assertEqual(setup["requires_user_count"], 0)
+        self.assertFalse(setup["safety"]["executes_tools"])
+        self.assertFalse(setup["safety"]["secret_values_included"])
+        self.assertTrue(any(call["kind"] == "workflow-capability" for call in setup["tool_calls"]))
+        self.assertNotIn("argv", setup["tool_calls"][0])
         agent_bundle = payload["agent_node_bundle"]
         self.assertEqual(agent_bundle["kind"], "AdapterAgentNodeBundle")
         self.assertEqual(agent_bundle["session"]["kind"], "AgentSession")
@@ -147,6 +161,37 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertTrue(any(endpoint["url"].startswith("http://127.0.0.1:8787/") for endpoint in payload["daemon_endpoints"]))
         self.assertIn("--base-url http://127.0.0.1:8787", payload["next_commands"][0])
         self.assertIn("--session-token test-token", payload["next_commands"][0])
+
+    def test_network_connect_package_surfaces_auth_setup_guidance_without_secret_values(self):
+        runtime = build_runtime()
+        payload = network_connect_package(
+            runtime.registry,
+            workflow_path="workflows/auth-gated-first-run.example.json",
+            base_url="http://127.0.0.1:8787",
+        )
+
+        setup = payload["setup_guidance"]
+        self.assertEqual(setup["kind"], "AdapterAgentSetupGuidance")
+        self.assertEqual(setup["status"], "waiting_on_setup")
+        self.assertTrue(setup["setup_required"])
+        self.assertEqual(setup["next_action"], "complete_user_setup")
+        self.assertEqual(setup["secret_count"], 1)
+        self.assertEqual(setup["setup_command_count"], 5)
+        self.assertEqual(setup["workflow_capability_count"], 3)
+        self.assertGreaterEqual(setup["requires_user_count"], 1)
+        self.assertFalse(setup["safety"]["executes_tools"])
+        self.assertFalse(setup["safety"]["secret_values_included"])
+        self.assertTrue(setup["safety"]["secrets_must_not_be_pasted_in_chat"])
+        self.assertTrue(any(call["kind"] == "setup-secret" for call in setup["tool_calls"]))
+        self.assertTrue(any(call["secret_name"] == "OBSIDIAN_API_KEY" for call in setup["tool_calls"]))
+        self.assertTrue(any(call["action"] == "login" for call in setup["tool_calls"]))
+        self.assertIn("setup-execution", {checkpoint["id"] for checkpoint in setup["checkpoints"]})
+        serialized = json.dumps(setup, ensure_ascii=False)
+        self.assertNotIn("argv", serialized)
+        self.assertNotIn("test-secret", serialized)
+        self.assertEqual(payload["summary"]["setup_status"], "waiting_on_setup")
+        self.assertTrue(payload["summary"]["setup_required"])
+        self.assertEqual(payload["summary"]["setup_secret_count"], 1)
 
     def test_workflow_studio_demo_link_encodes_query_parameters(self):
         payload = workflow_studio_demo_link(
