@@ -972,7 +972,8 @@ export interface AcceptanceRunSummary {
 export interface AgentWorkflowRequestPlan {
   ok?: boolean;
   kind?: "AdapterAgentWorkflowRequestPlan";
-  status?: string;
+  status?: string | number;
+  payload?: ApiErrorPayload;
   workflow_path?: string;
   workflow_id?: string;
   workflow_title?: string;
@@ -1017,6 +1018,14 @@ export interface AgentWorkflowRequestPlan {
   bridge_message?: unknown;
   bridge_message_channel?: string;
   next_commands?: string[];
+}
+
+export interface ApiErrorPayload {
+  ok?: boolean;
+  error?: string;
+  error_type?: string;
+  status?: number;
+  payload?: ApiErrorPayload;
 }
 
 export interface AdapterAgentToolCall {
@@ -1091,4 +1100,6 @@ export interface WorkflowRequestSummary {
   nextAction: string;
   harnessKind: string;
   runCli: string;
+  errorType: string;
+  errorDetail: string;
 }

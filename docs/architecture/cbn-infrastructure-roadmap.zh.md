@@ -176,6 +176,11 @@ Workflow Studio slice 已新增 `packages/workflow-studio`：
 - Workflow Studio 支持 `daemonUrl`、`sessionToken`、`workflowPath`、
   `agentMessage` query 参数覆盖默认配置，便于在演示或多 daemon 端口并存时直接
   打开一条已配置好的 killer demo 链接。
+- Workflow Studio 已能识别 daemon POST 的 `session_denied` 响应：当
+  `/adapter-agent/workflow-request-plan` 因缺少 `X-CBN-Session` 被拒绝时，Agent
+  Workflow Plan 面板显示 `session token required`、`paste_daemon_session_token`
+  和 daemon 返回的错误详情；带 `sessionToken=...` 的 Studio URL 仍会正常展示
+  `NaturalLanguageWorkflowHarness` 与 `run_workflow_dry_run`。
 - CLI 已新增 `python -m cbn network studio-link`，用于生成预配置 Workflow Studio
   URL；`NetworkConnectPackage.workflow_studio` 同步包含同一份
   `WorkflowStudioDemoLink`，外部程序拿到 one-shot connect package 后可直接打开

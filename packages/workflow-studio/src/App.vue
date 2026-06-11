@@ -490,6 +490,26 @@ function contractSectionSummary(
 }
 
 function summarizeWorkflowRequestPlan(payload: AgentWorkflowRequestPlan | null): WorkflowRequestSummary {
+  const apiError = apiErrorPayload(payload);
+  if (apiError) {
+    const errorType = stringValue(apiError.error_type) ?? "api_error";
+    const errorDetail = stringValue(apiError.error) ?? `HTTP ${numberValue(payload?.status) ?? "error"}`;
+    const sessionDenied = errorType === "session_denied";
+    return {
+      status: sessionDenied ? "session token required" : "blocked",
+      workflowId: "unknown",
+      tasks: 0,
+      routes: 0,
+      agents: 0,
+      nextAction: sessionDenied ? "paste_daemon_session_token" : "inspect_api_error",
+      harnessKind: "not loaded",
+      runCli: sessionDenied
+        ? "Paste the daemon session token printed by `python -m cbn daemon serve`, or open a Studio URL containing sessionToken=..."
+        : "",
+      errorType,
+      errorDetail,
+    };
+  }
   const summary = payload?.summary ?? {};
   return {
     status: payload?.ok ? "ready" : payload ? "needs attention" : "not loaded",
@@ -500,7 +520,17 @@ function summarizeWorkflowRequestPlan(payload: AgentWorkflowRequestPlan | null):
     nextAction: stringValue(summary.recommended_next_action) ?? "load_request_plan",
     harnessKind: payload?.reusable_harness?.kind ?? "unknown",
     runCli: payload?.run?.cli ?? "",
+    errorType: "",
+    errorDetail: "",
   };
+}
+
+function apiErrorPayload(payload: AgentWorkflowRequestPlan | null): { error_type?: unknown; error?: unknown } | null {
+  if (!payload || payload.ok !== false) return null;
+  const nested = payload.payload;
+  if (nested?.error_type || nested?.error) return nested;
+  if (nested?.payload?.error_type || nested?.payload?.error) return nested.payload;
+  return null;
 }
 
 function summarizeConnectPackage(payload: NetworkConnectPackage | null): ConnectSummary {
@@ -948,12 +978,14 @@ onMounted(async () => {
         </div>
         <div class="evidence-row">
           <span :class="['pill-inline', workflowRequestPlan?.ok ? 'ok' : 'blocked']">{{ workflowRequestSummary.nextAction }}</span>
+          <span v-if="workflowRequestSummary.errorType" class="pill-inline blocked">{{ workflowRequestSummary.errorType }}</span>
+          <span v-if="workflowRequestSummary.errorDetail" class="pill-inline">{{ workflowRequestSummary.errorDetail }}</span>
         </div>
         <div class="artifact-strip">
           <code v-if="workflowRequestSummary.runCli">{{ workflowRequestSummary.runCli }}</code>
           <span v-else>No workflow request plan loaded</span>
         </div>
-        <pre>{{ pretty({ request: workflowRequestPlan?.request, run: workflowRequestPlan?.run, bridge_routes: workflowRequestPlan?.bridge_routes, bridge_message: workflowRequestPlan?.bridge_message }) }}</pre>
+        <pre>{{ pretty({ request: workflowRequestPlan?.request, run: workflowRequestPlan?.run, bridge_routes: workflowRequestPlan?.bridge_routes, bridge_message: workflowRequestPlan?.bridge_message, api_error: workflowRequestPlan?.payload }) }}</pre>
       </section>
       <section>
         <div class="section-title"><ShieldCheck :size="15" /> Agent Setup Plan</div>
