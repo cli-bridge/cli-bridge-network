@@ -302,6 +302,20 @@ export interface QuickstartRequest {
   curl?: string;
 }
 
+export interface QuickstartSequenceStep {
+  order?: number;
+  id?: string;
+  kind?: string;
+  title?: string;
+  intent?: string;
+  request_id?: string;
+  request_ids?: string[];
+  method?: string;
+  url?: string;
+  target?: string;
+  success_signal?: string;
+}
+
 export interface ConnectionAcceptanceCheck {
   id?: string;
   request_id?: string;
@@ -542,6 +556,7 @@ export interface NetworkConnectPackage {
     curl_script?: string;
     powershell_script?: string;
     sequence?: string[];
+    sequence_steps?: QuickstartSequenceStep[];
   };
   next_commands?: string[];
 }

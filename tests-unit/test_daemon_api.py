@@ -252,6 +252,8 @@ class DaemonApiTests(unittest.TestCase):
             self.assertEqual(payload["requests"][0]["headers"]["X-CBN-Session"], "header-token")
             self.assertIn("-H 'X-CBN-Session: header-token'", payload["requests"][0]["curl"])
             self.assertEqual(payload["requests"][1]["id"], "import_catalog")
+            self.assertEqual(payload["sequence_steps"][1]["request_id"], "import_catalog")
+            self.assertEqual(payload["sequence_steps"][7]["request_id"], "run_workflow")
             self.assertEqual(payload["requests"][4]["id"], "inspect_agent_nodes")
             self.assertEqual(payload["requests"][5]["id"], "export_protocols")
             self.assertEqual(payload["requests"][7]["id"], "run_workflow")

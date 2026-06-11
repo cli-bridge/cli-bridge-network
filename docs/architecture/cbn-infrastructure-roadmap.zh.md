@@ -318,14 +318,14 @@ Killer Demo slice 已新增可运行证据束：
   该路由复用 connect package 生成逻辑，并支持从 `X-CBN-Session` header 推导
   required headers 与预配置 Studio link，便于外部程序按标准鉴权 header 直接读取
   first-call payload。
-- `consumer_quickstart` 已新增 `requests[]` 可执行请求计划：按 health、inspect
-  workflow、inspect Bridge contract、inspect agent nodes、export MCP/A2A/ACP
-  protocols、plan agent request、run workflow、events/audit/artifacts 顺序展开
-  method、url、headers 和 POST json，外部程序无需再自行从 entrypoints 拼装首批
-  HTTP 调用。
-- Workflow Studio Connect 面板已将 `requests[]` 渲染为 first-call request
-  sequence，每行展示 method、request id 和 URL；演示时可以直接看到外部程序接入
-  CBN 网络所需的首批 HTTP 调用顺序，而不必展开原始 JSON。
+- `consumer_quickstart` 已新增 `sequence_steps[]` 与 `requests[]`：前者是面向
+  demo/外部程序作者的 first-call story，按 open Studio、import catalog、inspect
+  workflow、Bridge Contract、agent nodes、protocol exports、plan agent request、run
+  workflow、read evidence 展开；后者是可直接执行的 HTTP 请求计划，包含 method、
+  url、headers 和 POST json。外部程序无需再自行从 entrypoints 拼装首批 HTTP 调用。
+- Workflow Studio Connect 面板已优先展示 `sequence_steps[]`，每行给出 order、title、
+  intent 和目标 URL/请求；其下继续展示 raw `requests[]` replay 列表。演示时可以先
+  讲清“为什么按这个顺序接入”，再展示每个请求如何真实调用 daemon。
 - `requests[]` 每项已带 `curl` 示例，覆盖 header、method 和 POST JSON body；
   Workflow Studio 同步展示该命令，方便 demo 或外部程序作者直接复制首批调用。
 - `consumer_quickstart.curl_script` 已把全部 first-call curl 按顺序合并为一段

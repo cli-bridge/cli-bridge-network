@@ -979,7 +979,105 @@ def _consumer_quickstart(
             "run_workflow",
             "read_events_audit_artifacts",
         ],
+        "sequence_steps": _quickstart_sequence_steps(
+            requests=requests,
+            studio_url=studio_link.get("url"),
+        ),
     }
+
+
+def _quickstart_sequence_steps(*, requests: list[dict[str, Any]], studio_url: str | None) -> list[dict[str, Any]]:
+    requests_by_id = {str(request.get("id")): request for request in requests if request.get("id")}
+
+    def request_step(
+        order: int,
+        request_id: str,
+        title: str,
+        intent: str,
+        success_signal: str,
+    ) -> dict[str, Any]:
+        request = requests_by_id.get(request_id, {})
+        return {
+            "order": order,
+            "id": request_id,
+            "kind": "http",
+            "title": title,
+            "intent": intent,
+            "request_id": request_id,
+            "method": request.get("method", "GET"),
+            "url": request.get("url", ""),
+            "success_signal": success_signal,
+        }
+
+    return [
+        {
+            "order": 1,
+            "id": "open_studio",
+            "kind": "ui",
+            "title": "Open Workflow Studio",
+            "intent": "Start the visual handoff for the target CLI-CLI workflow.",
+            "target": studio_url or "",
+            "success_signal": "Studio opens with daemon URL, workflow path, and session token prefilled.",
+        },
+        request_step(
+            2,
+            "import_catalog",
+            "Discover importers",
+            "Read the dry-run-first CLI registration catalog before choosing a harness or adapter.",
+            "CliRegistrationSurface.status == ready and importer_count >= 1.",
+        ),
+        request_step(
+            3,
+            "inspect_workflow",
+            "Inspect workflow DAG",
+            "Confirm the selected workflow is valid and has CLI tasks before execution.",
+            "workflow.valid == true and task_count >= 1.",
+        ),
+        request_step(
+            4,
+            "inspect_bridge_contract",
+            "Inspect Bridge Contract",
+            "Understand ToolManifest, BridgeMessage, Artifact, and selector boundaries.",
+            "bridge contract ok and route_count >= 1.",
+        ),
+        request_step(
+            5,
+            "inspect_agent_nodes",
+            "Inspect harness agent nodes",
+            "Read reusable AgentCard, AgentHarness, AgentTask, and BridgeMessage node bindings.",
+            "AdapterAgentNodeBundle includes cards, harnesses, and BridgeMessage.",
+        ),
+        request_step(
+            6,
+            "export_protocols",
+            "Export protocol facades",
+            "Expose MCP, A2A, and ACP workflow descriptors from the same internal bus contract.",
+            "protocol exports include mcp, a2a, and acp.",
+        ),
+        request_step(
+            7,
+            "plan_agent_request",
+            "Plan natural-language run",
+            "Bind a natural-language request to the reusable CLI-CLI harness run contract.",
+            "AdapterAgentWorkflowRequestPlan.reusable_harness.kind == NaturalLanguageWorkflowHarness.",
+        ),
+        request_step(
+            8,
+            "run_workflow",
+            "Run workflow",
+            "Execute the CLI-CLI chain through the daemon with dry-run/confirmation gates.",
+            "workflow run receipt status == completed.",
+        ),
+        {
+            "order": 9,
+            "id": "read_evidence",
+            "kind": "evidence",
+            "title": "Read evidence",
+            "intent": "Collect runtime events, audit records, and artifacts after the workflow call.",
+            "request_ids": ["events", "audit", "artifacts"],
+            "success_signal": "events, audit, and artifacts endpoints return non-empty JSON arrays.",
+        },
+    ]
 
 
 def _quickstart_sdk_snippets(

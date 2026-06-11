@@ -42,6 +42,7 @@ import type {
   ProtocolSummary,
   QuickstartSdkSnippet,
   QuickstartRequest,
+  QuickstartSequenceStep,
   StudioConfig,
   WorkflowInspect,
   WorkflowRequestSummary,
@@ -164,6 +165,21 @@ const quickstartSdkSnippets = computed<QuickstartSdkSnippet[]>(() =>
     ? connectPackage.value.consumer_quickstart.sdk_snippets
     : [],
 );
+const quickstartSequenceSteps = computed<QuickstartSequenceStep[]>(() => {
+  const steps = connectPackage.value?.consumer_quickstart?.sequence_steps;
+  if (Array.isArray(steps) && steps.length) return steps;
+  return quickstartRequests.value.map((request, index) => ({
+    order: index + 1,
+    id: request.id || `request-${index + 1}`,
+    kind: "http",
+    title: request.id || "Quickstart request",
+    intent: "Replay this request as part of the consumer first-call sequence.",
+    request_id: request.id,
+    method: request.method || "GET",
+    url: request.url,
+    success_signal: "Request returns the expected JSON payload.",
+  }));
+});
 const acceptanceChecks = computed<ConnectionAcceptanceCheck[]>(() => {
   const acceptance = connectPackage.value?.acceptance ?? connectPackage.value?.consumer_quickstart?.acceptance;
   return Array.isArray(acceptance?.checks) ? acceptance.checks : [];
@@ -1251,8 +1267,19 @@ onMounted(async () => {
             <code>{{ connectSummary.runEndpoint || "not loaded" }}</code>
           </div>
         </div>
+        <div class="section-title"><ClipboardList :size="15" /> First-Call Sequence</div>
         <div class="request-sequence">
-          <div v-for="request in quickstartRequests.slice(0, 10)" :key="request.id || request.url">
+          <div v-for="step in quickstartSequenceSteps.slice(0, 10)" :key="step.id || step.request_id || step.order">
+            <code>{{ step.order ?? "step" }}</code>
+            <span>{{ step.title || step.id || step.request_id || "First call" }}</span>
+            <small>{{ step.intent || step.success_signal || "consumer handoff" }}</small>
+            <em>{{ step.method || step.kind || "step" }} {{ step.url || step.target || (step.request_ids || []).join(", ") || "not loaded" }}</em>
+          </div>
+          <span v-if="!quickstartSequenceSteps.length">No first-call sequence loaded</span>
+        </div>
+        <div class="section-title"><FileJson :size="15" /> Raw Quickstart Requests</div>
+        <div class="request-sequence">
+          <div v-for="request in quickstartRequests.slice(0, 11)" :key="request.id || request.url">
             <code>{{ request.method || "GET" }}</code>
             <span>{{ request.id || "request" }}</span>
             <small>{{ request.url || "not loaded" }}</small>
