@@ -575,6 +575,7 @@ export interface NetworkConnectPackage {
     entrypoints?: {
       open_studio?: string;
       health?: string;
+      acceptance?: string;
       launch_contract?: string;
       entry_profile?: string;
       import_catalog?: string;

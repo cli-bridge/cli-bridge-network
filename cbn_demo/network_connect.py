@@ -1230,6 +1230,7 @@ def _endpoint_catalog(*, base_url: str | None, workflow_path: str) -> list[dict[
     rows = [
         ("GET", "/network/connect-package", "read the full one-shot network connection package"),
         ("GET", "/network/quickstart", "read only the first-call quickstart payload"),
+        ("GET", "/network/acceptance", "read only the machine-readable network acceptance checklist"),
         ("GET", "/network/launch-contract", "read only the redacted launch contract for external programs"),
         ("GET", "/network/entry-profile", "read only the stable external integration profile"),
         ("GET", "/network/readiness", "read only the killer MVP readiness matrix"),
@@ -1607,6 +1608,7 @@ def _consumer_quickstart(
     entrypoints = {
         "open_studio": studio_link.get("url"),
         "health": _absolute_url(clean_base_url, "/health"),
+        "acceptance": _absolute_url(clean_base_url, f"/network/acceptance?{launch_query}"),
         "launch_contract": _absolute_url(clean_base_url, f"/network/launch-contract?{launch_query}"),
         "entry_profile": _absolute_url(clean_base_url, f"/network/entry-profile?{launch_query}"),
         "import_catalog": _absolute_url(clean_base_url, "/imports/catalog"),

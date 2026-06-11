@@ -100,6 +100,7 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/demo/killer"},
     {"method": "GET", "path": "/network/connect-package"},
     {"method": "GET", "path": "/network/quickstart"},
+    {"method": "GET", "path": "/network/acceptance"},
     {"method": "GET", "path": "/network/launch-contract"},
     {"method": "GET", "path": "/network/entry-profile"},
     {"method": "GET", "path": "/network/readiness"},
@@ -611,6 +612,7 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
         if parsed.path in {
             "/network/connect-package",
             "/network/quickstart",
+            "/network/acceptance",
             "/network/launch-contract",
             "/network/entry-profile",
             "/network/readiness",
@@ -621,6 +623,14 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 self._send(
                     200 if result["ok"] and quickstart.get("kind") == "NetworkConnectQuickstart" else 422,
                     quickstart,
+                )
+                return
+            if parsed.path == "/network/acceptance":
+                quickstart = result.get("consumer_quickstart", {})
+                acceptance = quickstart.get("acceptance") if isinstance(quickstart, dict) else {}
+                self._send(
+                    200 if result["ok"] and acceptance.get("kind") == "NetworkConnectionAcceptance" else 422,
+                    acceptance,
                 )
                 return
             if parsed.path == "/network/launch-contract":

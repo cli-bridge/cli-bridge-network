@@ -649,6 +649,20 @@ def main(argv: list[str] | None = None) -> int:
             profile = result.get("network_entry_profile", {})
             print(json.dumps(profile, ensure_ascii=False, indent=2))
             return 0 if result["ok"] and profile.get("kind") == "NetworkEntryProfile" else 7
+        if args.network_command == "acceptance":
+            result = network_connect_package(
+                runtime.registry,
+                workflow_path=args.workflow_path,
+                base_url=args.base_url,
+                studio_url=args.studio_url,
+                dashboard_url=args.dashboard_url,
+                session_token=args.session_token,
+                agent_message=args.message,
+            )
+            quickstart = result.get("consumer_quickstart", {})
+            acceptance = quickstart.get("acceptance") if isinstance(quickstart, dict) else {}
+            print(json.dumps(acceptance, ensure_ascii=False, indent=2))
+            return 0 if result["ok"] and acceptance.get("kind") == "NetworkConnectionAcceptance" else 7
         if args.network_command == "quickstart":
             result = network_connect_package(
                 runtime.registry,

@@ -324,6 +324,35 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_AGENT_CONNECT_MESSAGE,
         help="Agent prompt used to shape the reusable workflow request.",
     )
+    network_acceptance = network_subcommands.add_parser(
+        "acceptance",
+        help="Print only the machine-readable acceptance checklist for external CBN consumers.",
+    )
+    network_acceptance.add_argument(
+        "--workflow-path",
+        default="workflows/cli-anything-macrocli-mermaid-routing.example.json",
+        help="Workflow JSON path to expose in the acceptance checklist.",
+    )
+    network_acceptance.add_argument("--base-url", help="Daemon base URL to embed in endpoint URLs.")
+    network_acceptance.add_argument(
+        "--studio-url",
+        default="http://127.0.0.1:5177",
+        help="Workflow Studio base URL to embed as a preconfigured demo link.",
+    )
+    network_acceptance.add_argument(
+        "--dashboard-url",
+        default="http://127.0.0.1:5173",
+        help="Maintainer dashboard URL to embed in the Workflow Studio demo link.",
+    )
+    network_acceptance.add_argument(
+        "--session-token",
+        help="Optional daemon session token to include in generated first-call requests.",
+    )
+    network_acceptance.add_argument(
+        "--message",
+        default=DEFAULT_AGENT_CONNECT_MESSAGE,
+        help="Agent prompt used to shape the reusable workflow request.",
+    )
     network_quickstart = network_subcommands.add_parser(
         "quickstart",
         help="Print only the machine-readable first-call quickstart for external CBN consumers.",

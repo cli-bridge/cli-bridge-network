@@ -47,6 +47,7 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("GET", "/demo/killer"), routes)
         self.assertIn(("GET", "/network/connect-package"), routes)
         self.assertIn(("GET", "/network/quickstart"), routes)
+        self.assertIn(("GET", "/network/acceptance"), routes)
         self.assertIn(("GET", "/network/launch-contract"), routes)
         self.assertIn(("GET", "/network/entry-profile"), routes)
         self.assertIn(("GET", "/network/readiness"), routes)
@@ -266,6 +267,7 @@ class DaemonApiTests(unittest.TestCase):
             self.assertEqual(payload["consumer_quickstart"]["sdk_snippets"][0]["language"], "python")
             self.assertIn("urllib.request", payload["consumer_quickstart"]["sdk_snippets"][0]["code"])
             endpoint_paths = {endpoint["path"].split("?", 1)[0] for endpoint in payload["daemon_endpoints"]}
+            self.assertIn("/network/acceptance", endpoint_paths)
             self.assertIn("/network/entry-profile", endpoint_paths)
             self.assertIn("/network/readiness", endpoint_paths)
             self.assertIn("/imports/catalog", endpoint_paths)
@@ -287,6 +289,7 @@ class DaemonApiTests(unittest.TestCase):
             self.assertEqual(response.status, 200)
             self.assertEqual(payload["kind"], "NetworkConnectQuickstart")
             self.assertEqual(payload["required_headers"]["X-CBN-Session"], "header-token")
+            self.assertIn("/network/acceptance?", payload["entrypoints"]["acceptance"])
             self.assertEqual(payload["entrypoints"]["run_workflow"]["url"], f"{base_url}/workflows/run")
             self.assertEqual(payload["entrypoints"]["plan_agent_request"]["method"], "POST")
             self.assertIn("/adapter-agent/node-bundle?", payload["entrypoints"]["inspect_agent_nodes"])
@@ -318,6 +321,25 @@ class DaemonApiTests(unittest.TestCase):
             self.assertIn("await call('run_workflow')", payload["sdk_snippets"][1]["code"])
             self.assertIn("sessionToken=header-token", payload["entrypoints"]["open_studio"])
             self.assertNotIn("contracts", payload)
+
+    def test_network_acceptance_route_returns_checklist(self):
+        with daemon_url() as base_url:
+            url = (
+                f"{base_url}/network/acceptance"
+                "?workflow_path=workflows/cli-anything-macrocli-mermaid-routing.example.json"
+                "&studio_url=http://127.0.0.1:5177"
+            )
+            request = urllib.request.Request(url, headers={"X-CBN-Session": "header-token"})
+            with urllib.request.urlopen(request, timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+
+            self.assertEqual(response.status, 200)
+            self.assertEqual(payload["kind"], "NetworkConnectionAcceptance")
+            self.assertEqual(payload["check_count"], 13)
+            self.assertEqual(payload["checks"][2]["request_id"], "entry_profile")
+            self.assertEqual(payload["checks"][2]["expect"]["json.auth.secret_values_echoed"], False)
+            self.assertIn("entry_profile", payload["required_request_ids"])
+            self.assertNotIn("consumer_quickstart", payload)
 
     def test_network_launch_contract_route_returns_redacted_contract(self):
         with daemon_url() as base_url:

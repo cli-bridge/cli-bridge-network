@@ -375,6 +375,11 @@ Killer Demo slice 已新增可运行证据束：
   JSON 数组”提升为“workflow run 之后至少返回 1 条 evidence”，让 one-shot
   `network verify` 能证明 demo 链路不只完成调用，还能产生可展示的 runtime
   event、audit 和 artifact 证据。
+- `NetworkConnectionAcceptance` 已新增独立读取面：CLI 可通过
+  `python -m cbn network acceptance` 输出，daemon 可通过
+  `GET /network/acceptance` 输出。`consumer_quickstart.entrypoints.acceptance`
+  会指向同一份只读 checklist，让外部程序无需解析完整 quickstart 或 connect
+  package 也能先拿到要 replay 的验收合同。
 - Workflow Studio 的 browser-side `Verify` 已同步支持 `json.count_min` /
   `json.length_min` 和 `json.<field>_count_min`，因此前端 replay quickstart 与
   daemon-side `Daemon Verify` 对同一份 `NetworkConnectionAcceptance` 使用一致的

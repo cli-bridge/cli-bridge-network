@@ -362,6 +362,7 @@ class NetworkConnectPackageTests(unittest.TestCase):
         endpoint_paths = {endpoint["path"] for endpoint in payload["daemon_endpoints"]}
         self.assertIn("/imports/catalog", endpoint_paths)
         self.assertIn("/network/quickstart", endpoint_paths)
+        self.assertIn("/network/acceptance", endpoint_paths)
         self.assertIn("/network/launch-contract", endpoint_paths)
         self.assertIn("/network/readiness", endpoint_paths)
         self.assertIn("/network/verify", endpoint_paths)
@@ -505,6 +506,7 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertEqual(payload["kind"], "NetworkConnectQuickstart")
         self.assertEqual(payload["required_headers"]["X-CBN-Session"], "test-token")
         self.assertIn("sessionToken=test-token", payload["entrypoints"]["open_studio"])
+        self.assertIn("/network/acceptance?", payload["entrypoints"]["acceptance"])
         self.assertEqual(payload["entrypoints"]["plan_agent_request"]["method"], "POST")
         self.assertIn("/adapter-agent/node-bundle?", payload["entrypoints"]["inspect_agent_nodes"])
         self.assertIn("/protocols/workflows?", payload["entrypoints"]["export_protocols"])
@@ -545,6 +547,34 @@ class NetworkConnectPackageTests(unittest.TestCase):
         )
         self.assertIn("reusable CLI-CLI harness agent", payload["entrypoints"]["plan_agent_request"]["json"]["message"])
         self.assertNotIn("contracts", payload)
+
+    def test_network_acceptance_cli_outputs_checklist(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cbn",
+                "network",
+                "acceptance",
+                "--workflow-path",
+                "workflows/cli-anything-macrocli-mermaid-routing.example.json",
+                "--base-url",
+                "http://127.0.0.1:8787",
+            ],
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["kind"], "NetworkConnectionAcceptance")
+        self.assertEqual(payload["check_count"], 13)
+        self.assertEqual(payload["checks"][2]["request_id"], "entry_profile")
+        self.assertEqual(payload["checks"][2]["expect"]["json.kind"], "NetworkEntryProfile")
+        self.assertEqual(payload["checks"][2]["expect"]["json.auth.secret_values_echoed"], False)
+        self.assertIn("entry_profile", payload["required_request_ids"])
+        self.assertNotIn("consumer_quickstart", payload)
 
     def test_network_entry_profile_cli_outputs_stable_profile(self):
         proc = subprocess.run(
