@@ -20,6 +20,7 @@ EXPECTED_PART_MODULES = (
     "adapter_targets",
     "live",
     "queue",
+    "promotion",
 )
 
 

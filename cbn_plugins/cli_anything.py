@@ -111,6 +111,10 @@ from cbn_plugins.cli_anything_parts.queue import (
     install_queue_skipped_entry as _install_queue_skipped_entry,
     market_command_payload as _market_command_payload,
 )
+from cbn_plugins.cli_anything_parts.promotion import (
+    promotion_blockers as _promotion_blockers,
+    promotion_requirements as _promotion_requirements,
+)
 from cbn_plugins.cli_anything_parts.repair import (
     entrypoint_diagnosis as _repair_parts_entrypoint_diagnosis,
     entrypoint_package_candidates as _repair_parts_entrypoint_package_candidates,
@@ -124,7 +128,7 @@ from cbn_plugins.cli_anything_parts.repair import (
 )
 from cbn_plugins.cli_anything_parts.verification import (
     manifest_has_entrypoint_repair as _verification_parts_manifest_has_entrypoint_repair,
-    matching_parser_fixture_paths as _verification_parts_matching_parser_fixture_paths,
+    mark_repaired_manifest_verified_from_fixtures as _mark_repaired_manifest_verified_from_fixtures,
     parser_contract_report as _verification_parts_parser_contract_report,
     parser_fixture_gate as _verification_parts_parser_fixture_gate,
     policy_requires_confirmation as _verification_parts_policy_requires_confirmation,
@@ -2720,156 +2724,6 @@ def _verification_stages(
 
 def _parser_fixture_gate(report: dict[str, Any], capability_id: str) -> dict[str, Any]:
     return _verification_parts_parser_fixture_gate(report, capability_id)
-
-
-def _mark_repaired_manifest_verified_from_fixtures(
-    *,
-    manifest: dict[str, Any],
-    capability_id: str,
-    fixture_dir: Path,
-    root: Path,
-    smoke_ok: bool,
-) -> dict[str, Any]:
-    output = manifest.setdefault("spec", {}).setdefault("output", {})
-    if not isinstance(output, dict):
-        return {
-            "ok": False,
-            "parser_ref": None,
-            "capability_verified": False,
-            "marked_verified": False,
-            "error": "manifest spec.output is not an object",
-        }
-    parser_ref = str(output.get("parserRef") or "raw.text")
-    try:
-        fixture_report = run_parser_fixtures(
-            path=fixture_dir,
-            parser_ref=parser_ref,
-            registry=ParserRegistry.builtins(),
-        )
-    except Exception as exc:
-        return {
-            "ok": False,
-            "parser_ref": parser_ref,
-            "capability_verified": False,
-            "marked_verified": False,
-            "error": str(exc),
-        }
-    gate = _parser_fixture_gate(fixture_report, capability_id)
-    gate["marked_verified"] = False
-    if smoke_ok and gate.get("ok") and gate.get("capability_verified"):
-        output["verified"] = True
-        annotations = manifest.setdefault("metadata", {}).setdefault("annotations", {})
-        matching_paths = _matching_parser_fixture_paths(fixture_report, capability_id, root)
-        if matching_paths:
-            annotations["cbn.parser_fixture"] = matching_paths[0]
-        annotations["cbn.parser_fixture_verified_capability"] = capability_id
-        gate["marked_verified"] = True
-    return gate
-
-
-def _matching_parser_fixture_paths(
-    fixture_report: dict[str, Any],
-    capability_id: str,
-    root: Path,
-) -> list[str]:
-    return _verification_parts_matching_parser_fixture_paths(fixture_report, capability_id, root)
-
-
-def _promotion_blockers(
-    verification: dict[str, Any],
-    source: Any,
-    entrypoint_repair_active: bool,
-    parser_contract: dict[str, Any],
-    parser_fixture_gate: dict[str, Any],
-    smoke_suite: dict[str, Any],
-    run_smoke_suite: bool,
-    readiness: dict[str, Any],
-) -> list[str]:
-    blockers: list[str] = []
-    if source == "current_registry":
-        blockers.append("capability is already loaded from portable manifests/")
-    elif source != "runtime_local_overlay":
-        blockers.append("capability is not loaded from runtime/manifests overlay")
-    if not entrypoint_repair_active:
-        blockers.append("runtime overlay does not declare a CBN entrypoint repair")
-    for blocker in verification.get("verification_blockers", []):
-        if blocker not in blockers:
-            blockers.append(str(blocker))
-    if not parser_contract.get("known"):
-        blockers.append("parser is not known to the local parser registry")
-    if not parser_contract.get("verified"):
-        blockers.append("parser output contract is not verified in the manifest")
-    if not parser_fixture_gate.get("ok"):
-        blockers.append("parser fixtures are missing or failing")
-    if not parser_fixture_gate.get("capability_verified"):
-        blockers.append("parser fixtures do not list this capability as verified")
-    if not run_smoke_suite:
-        blockers.append("protocol smoke suite was not run for promotion")
-    elif not smoke_suite.get("ok"):
-        blockers.append("protocol smoke suite failed")
-    readiness_gates = readiness.get("readiness") if isinstance(readiness.get("readiness"), dict) else {}
-    if not readiness_gates.get("internal_bridge_ready"):
-        blockers.append("protocol readiness does not mark internal BridgeMessage routing ready")
-    return sorted(set(blockers))
-
-
-def _promotion_requirements(
-    source: Any,
-    entrypoint_repair_active: bool,
-    parser_contract: dict[str, Any],
-    parser_fixture_gate: dict[str, Any],
-    smoke_suite: dict[str, Any],
-    run_smoke_suite: bool,
-    readiness: dict[str, Any],
-    verification: dict[str, Any],
-) -> list[dict[str, Any]]:
-    readiness_gates = readiness.get("readiness") if isinstance(readiness.get("readiness"), dict) else {}
-    return [
-        {
-            "id": "runtime_overlay_source",
-            "status": "passed" if source == "runtime_local_overlay" else "blocked",
-            "evidence": source,
-        },
-        {
-            "id": "entrypoint_repair_provenance",
-            "status": "passed" if entrypoint_repair_active else "blocked",
-            "evidence": verification.get("registry", {}).get("manifest_path"),
-        },
-        {
-            "id": "runtime_verification",
-            "status": "passed" if verification.get("ready_for_runtime_verification") else "blocked",
-            "evidence": verification.get("verification_blockers", []),
-        },
-        {
-            "id": "parser_contract_verified",
-            "status": "passed" if parser_contract.get("known") and parser_contract.get("verified") else "blocked",
-            "evidence": parser_contract,
-        },
-        {
-            "id": "parser_fixture_capability_coverage",
-            "status": "passed" if parser_fixture_gate.get("ok") and parser_fixture_gate.get("capability_verified") else "blocked",
-            "evidence": {
-                "fixture_count": parser_fixture_gate.get("fixture_count"),
-                "case_count": parser_fixture_gate.get("case_count"),
-                "failed_case_count": parser_fixture_gate.get("failed_case_count"),
-                "matching_fixture_ids": parser_fixture_gate.get("matching_fixture_ids"),
-            },
-        },
-        {
-            "id": "protocol_smoke_suite",
-            "status": "passed" if run_smoke_suite and smoke_suite.get("ok") else "blocked",
-            "evidence": {
-                "run": bool(smoke_suite.get("run")),
-                "ok": smoke_suite.get("ok"),
-                "summary": smoke_suite.get("summary"),
-            },
-        },
-        {
-            "id": "internal_bridge_readiness",
-            "status": "passed" if readiness_gates.get("internal_bridge_ready") else "blocked",
-            "evidence": readiness.get("summary"),
-        },
-    ]
 
 
 def _harness_protocol_smoke_suite(

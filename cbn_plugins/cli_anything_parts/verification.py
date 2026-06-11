@@ -5,6 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from cbn_parsers.fixtures import run_parser_fixtures
+from cbn_parsers.registry import ParserRegistry
+
 
 def parser_contract_report(
     manifest: dict[str, Any],
@@ -209,6 +212,51 @@ def parser_fixture_gate(report: dict[str, Any], capability_id: str) -> dict[str,
         ),
         "report": report,
     }
+
+
+def mark_repaired_manifest_verified_from_fixtures(
+    *,
+    manifest: dict[str, Any],
+    capability_id: str,
+    fixture_dir: Path,
+    root: Path,
+    smoke_ok: bool,
+) -> dict[str, Any]:
+    output = manifest.setdefault("spec", {}).setdefault("output", {})
+    if not isinstance(output, dict):
+        return {
+            "ok": False,
+            "parser_ref": None,
+            "capability_verified": False,
+            "marked_verified": False,
+            "error": "manifest spec.output is not an object",
+        }
+    parser_ref = str(output.get("parserRef") or "raw.text")
+    try:
+        fixture_report = run_parser_fixtures(
+            path=fixture_dir,
+            parser_ref=parser_ref,
+            registry=ParserRegistry.builtins(),
+        )
+    except Exception as exc:
+        return {
+            "ok": False,
+            "parser_ref": parser_ref,
+            "capability_verified": False,
+            "marked_verified": False,
+            "error": str(exc),
+        }
+    gate = parser_fixture_gate(fixture_report, capability_id)
+    gate["marked_verified"] = False
+    if smoke_ok and gate.get("ok") and gate.get("capability_verified"):
+        output["verified"] = True
+        annotations = manifest.setdefault("metadata", {}).setdefault("annotations", {})
+        matching_paths = matching_parser_fixture_paths(fixture_report, capability_id, root)
+        if matching_paths:
+            annotations["cbn.parser_fixture"] = matching_paths[0]
+        annotations["cbn.parser_fixture_verified_capability"] = capability_id
+        gate["marked_verified"] = True
+    return gate
 
 
 def matching_parser_fixture_paths(
