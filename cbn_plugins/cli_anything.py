@@ -36,6 +36,7 @@ from cbn_plugins.manager import (
     verification_report_for_plan,
 )
 from cbn_plugins.operations import PluginOperationRunner
+from cbn_plugins.cli_anything_parts import module_split_report as _parts_module_split_report
 from cbn_plugins.cli_anything_parts.manifest_factory import (
     build_harness_manifest,
     has_external_network_signal as _manifest_factory_has_external_network_signal,
@@ -159,6 +160,7 @@ class CliAnythingHub:
             "source_repo_dir": str(repo_dir),
             "source_repo_available": repo_dir.exists(),
             "version": version,
+            "module_split": _parts_module_split_report(facade_path=Path(__file__)),
         }
 
     def list_market(self) -> CliHubCommandResult:

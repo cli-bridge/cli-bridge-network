@@ -920,6 +920,16 @@ class DaemonApiTests(unittest.TestCase):
                 self.assertEqual(payload["action"], "harness-install-gimp")
                 self.assertIn("evaluate-harness", payload["notes"][0])
 
+    def test_cli_anything_status_route_reports_module_split(self):
+        with daemon_url() as base_url:
+            with urllib.request.urlopen(f"{base_url}/plugins/cli-anything/status", timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+
+            self.assertEqual(response.status, 200)
+            self.assertEqual(payload["module_split"]["kind"], "CliAnythingModuleSplitReport")
+            self.assertEqual(payload["module_split"]["status"], "ready")
+            self.assertEqual(payload["module_split"]["present_part_count"], 6)
+
     def test_cli_anything_candidates_route_accepts_compact_payload(self):
         class FakeHub:
             def candidate_harnesses(self, query=None, limit=50, with_probes=False, compact=False):

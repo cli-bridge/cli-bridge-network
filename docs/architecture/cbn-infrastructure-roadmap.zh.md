@@ -244,7 +244,11 @@ Killer Demo slice 已新增可运行证据束：
   verification stages、parser fixture gate 和 smoke-suite command/status；拆出
   `cbn_plugins.cli_anything_parts.onboarding`，集中管理 onboarding 的 probe
   failure report、summary、stage results 和 next commands。旧
-  `cbn_plugins.cli_anything` import path 继续兼容。
+  `cbn_plugins.cli_anything` import path 继续兼容。`CliAnythingHub.status()`、
+  `python -m cbn plugin status cli-anything` 和 daemon
+  `/plugins/cli-anything/status` 现在同步返回 `module_split` 健康报告，列出
+  facade 文件、剩余 facade 行数、6 个已拆出 parts 模块、present count 和下一步
+  拆分目标，便于验证“先 facade 后拆实现”的进度而不破坏现有调用。
 - 把 `cbn_adapter_agent` 抽象为可参与 workflow 的 Agent node，承载自然语言
   调度、初次设置引导和 BridgeMessage 收发。
 - `cbn_agent` 已新增最小核心模型层：`AgentCard`、`AgentHarness`、
