@@ -92,6 +92,9 @@ const agentCards = computed(() => (Array.isArray(agentBundle.value?.cards) ? age
 const agentTasks = computed(() => (Array.isArray(agentBundle.value?.tasks) ? agentBundle.value.tasks : []));
 const agentHandoffs = computed(() => agentBundle.value?.source_coordination_plan?.handoffs ?? []);
 const evidenceSummary = computed<EvidenceSummary>(() => summarizeEvidence(demoReport.value, dock));
+const demoCommunicationHandoffs = computed(() =>
+  Array.isArray(demoReport.value?.communication_trace?.handoffs) ? demoReport.value.communication_trace.handoffs : [],
+);
 const protocolSummary = computed<ProtocolSummary>(() => summarizeProtocols(demoReport.value));
 const bridgeContractSummary = computed<BridgeContractSummary>(() => summarizeBridgeContract(contract.value));
 const workflowRequestSummary = computed<WorkflowRequestSummary>(() => summarizeWorkflowRequestPlan(workflowRequestPlan.value));
@@ -392,6 +395,7 @@ function pretty(payload: unknown): string {
 function summarizeEvidence(report: KillerDemoReport | null, evidenceDock: DockState): EvidenceSummary {
   const summary = report?.summary ?? {};
   const evidence = report?.evidence ?? {};
+  const trace = report?.communication_trace ?? {};
   const stageStatuses = Array.isArray(report?.stages) ? report.stages : [];
   const completedStages = numberValue(summary.completed_stage_count) ?? stageStatuses.filter((stage) => stage.status === "completed").length;
   const blockedStages = numberValue(summary.blocked_stage_count) ?? stageStatuses.filter((stage) => !["completed", "not_run"].includes(stage.status)).length;
@@ -406,6 +410,9 @@ function summarizeEvidence(report: KillerDemoReport | null, evidenceDock: DockSt
     completedStages,
     blockedStages,
     routeCount: numberValue(summary.route_count) ?? 0,
+    communicationTraceStatus: stringValue(trace.status) ?? stringValue(summary.communication_trace_status) ?? "not run",
+    communicationHandoffs: numberValue(trace.handoff_count) ?? numberValue(summary.communication_handoff_count) ?? 0,
+    communicationValid: `${numberValue(trace.message_valid_count) ?? 0}/${numberValue(trace.handoff_count) ?? 0}`,
     taskArtifactCount: numberValue(summary.artifact_count) ?? numberValue(evidence.task_artifact_count) ?? 0,
     eventCount: numberValue(evidence.event_count) ?? evidenceDock.events.length,
     auditCount: numberValue(evidence.audit_count) ?? evidenceDock.audit.length,
@@ -1468,6 +1475,14 @@ onMounted(async () => {
             <strong>{{ evidenceSummary.routeCount }}</strong>
           </div>
           <div>
+            <span>Handoffs</span>
+            <strong>{{ evidenceSummary.communicationHandoffs }}</strong>
+          </div>
+          <div>
+            <span>Messages</span>
+            <strong>{{ evidenceSummary.communicationValid }}</strong>
+          </div>
+          <div>
             <span>Artifacts</span>
             <strong>{{ evidenceSummary.taskArtifactCount }}</strong>
           </div>
@@ -1483,6 +1498,17 @@ onMounted(async () => {
         <div class="evidence-row">
           <span :class="['pill-inline', evidenceSummary.smokeOk === 'pass' ? 'ok' : 'blocked']">smoke {{ evidenceSummary.smokeOk }}</span>
           <span :class="['pill-inline', evidenceSummary.bridgeLabOk === 'pass' ? 'ok' : 'blocked']">bridge lab {{ evidenceSummary.bridgeLabOk }}</span>
+          <span :class="['pill-inline', evidenceSummary.communicationTraceStatus === 'ready' ? 'ok' : 'blocked']">trace {{ evidenceSummary.communicationTraceStatus }}</span>
+        </div>
+        <div class="section-title"><Braces :size="15" /> CLI-CLI Trace</div>
+        <div class="request-sequence">
+          <div v-for="handoff in demoCommunicationHandoffs" :key="`${handoff.producer_task}:${handoff.consumer_task}:${handoff.selector}`">
+            <code>{{ handoff.index ?? "route" }}</code>
+            <span>{{ handoff.producer_task || "producer" }} -> {{ handoff.consumer_task || "consumer" }}</span>
+            <small>{{ handoff.communication || "BridgeMessage argsFrom" }} · {{ handoff.message_valid ? "valid" : "invalid" }} · {{ handoff.selected_type || "value" }}</small>
+            <em>{{ handoff.selector || "selector" }} => {{ handoff.selected_preview || handoff.resolved_arg_preview || "not loaded" }}</em>
+          </div>
+          <span v-if="!demoCommunicationHandoffs.length">No CLI-CLI trace loaded</span>
         </div>
         <div class="artifact-strip">
           <code v-for="artifactId in evidenceSummary.artifactIds" :key="artifactId">{{ artifactId }}</code>

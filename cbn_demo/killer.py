@@ -5,8 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from cbn_core.message import validate_bridge_message
 from cbn_core.manifest import ManifestRegistry
 from cbn_core.bridge_contract import workflow_bridge_contract_report
+from cbn_core.selector import bridge_value_to_arg, select_bridge_value
 from cbn_protocol.bridge_lab import bridge_lab_report
 from cbn_protocol.exports import export_all_workflow_protocols
 from cbn_protocol.smoke_suite import protocol_smoke_suite
@@ -80,6 +82,7 @@ def killer_demo_report(
         audit_tail=audit_tail or [],
         artifact_list=artifact_list or [],
     )
+    communication_trace = _communication_trace(workflow=workflow, run_result=run_result)
     stages = _stages(
         manifests=manifests,
         workflow=workflow,
@@ -89,7 +92,7 @@ def killer_demo_report(
         smoke=smoke,
         lab=lab,
     )
-    summary = _summary(stages, contract, run_result, evidence, smoke, lab)
+    summary = _summary(stages, contract, run_result, evidence, smoke, lab, communication_trace)
     return {
         "ok": bool(summary["ok"]),
         "apiVersion": "demo.cbn.dev/v1alpha1",
@@ -106,6 +109,7 @@ def killer_demo_report(
         "workflow": workflow,
         "contract": contract,
         "run_result": run_result if include_payloads else _bounded_run_result(run_result),
+        "communication_trace": communication_trace,
         "evidence": evidence,
         "protocol_exports": protocol_exports,
         "protocol_smoke_suite": smoke,
@@ -195,6 +199,117 @@ def _runtime_evidence(
         "artifact_count": len(artifact_list),
         "artifacts": artifact_list[:30],
     }
+
+
+def _communication_trace(*, workflow: dict[str, Any], run_result: dict[str, Any]) -> dict[str, Any]:
+    """Build a bounded CLI-CLI handoff trace from BridgeMessage selector routes."""
+
+    tasks = workflow.get("tasks") if isinstance(workflow.get("tasks"), list) else []
+    task_results = {
+        str(task.get("task_id")): task
+        for task in run_result.get("tasks", [])
+        if isinstance(task, dict) and task.get("task_id")
+    }
+    handoffs = []
+    for task in tasks:
+        if not isinstance(task, dict):
+            continue
+        consumer_id = str(task.get("id") or task.get("task_id") or "")
+        args_from = task.get("argsFrom") if isinstance(task.get("argsFrom"), list) else []
+        consumer_result = task_results.get(consumer_id, {})
+        resolved_args = consumer_result.get("resolved_args") if isinstance(consumer_result.get("resolved_args"), list) else []
+        for route_index, route in enumerate(args_from):
+            if not isinstance(route, dict):
+                continue
+            producer_id = str(route.get("task") or "")
+            selector = str(route.get("selector") or "")
+            producer_result = task_results.get(producer_id, {})
+            producer_call = producer_result.get("result") if isinstance(producer_result.get("result"), dict) else {}
+            message = producer_call.get("message") if isinstance(producer_call.get("message"), dict) else {}
+            validation = validate_bridge_message(message) if message else {"valid": False, "errors": ["message missing"]}
+            selected = _selected_value(message, selector)
+            selected_value = selected.get("value")
+            resolved_arg = resolved_args[route_index] if route_index < len(resolved_args) else (
+                bridge_value_to_arg(selected_value) if selected.get("ok") else None
+            )
+            handoffs.append(
+                {
+                    "index": len(handoffs) + 1,
+                    "kind": "CliCliBridgeHandoff",
+                    "communication": "BridgeMessage argsFrom",
+                    "producer_task": producer_id,
+                    "producer_capability": producer_result.get("uses"),
+                    "consumer_task": consumer_id,
+                    "consumer_capability": task.get("uses"),
+                    "selector": selector,
+                    "message_kind": message.get("kind"),
+                    "message_channel": (message.get("metadata") or {}).get("channel") if isinstance(message.get("metadata"), dict) else message.get("channel"),
+                    "parser_ref": (message.get("metadata") or {}).get("parser_ref") if isinstance(message.get("metadata"), dict) else None,
+                    "message_valid": validation.get("valid"),
+                    "message_errors": validation.get("errors", [])[:3],
+                    "selected_type": _value_type(selected_value) if selected.get("ok") else None,
+                    "selected_preview": _preview_value(selected_value) if selected.get("ok") else selected.get("error"),
+                    "resolved_arg_preview": _preview_value(resolved_arg),
+                    "artifact_ids": _artifact_ids(producer_call),
+                }
+            )
+    ready = bool(handoffs) and all(item.get("message_valid") for item in handoffs)
+    return {
+        "kind": "CliCliCommunicationTrace",
+        "status": "ready" if ready else "needs_attention",
+        "workflow_id": workflow.get("workflow_id"),
+        "handoff_count": len(handoffs),
+        "message_valid_count": sum(1 for handoff in handoffs if handoff.get("message_valid")),
+        "handoffs": handoffs,
+    }
+
+
+def _selected_value(message: dict[str, Any], selector: str) -> dict[str, Any]:
+    if not message or not selector:
+        return {"ok": False, "error": "message or selector missing"}
+    try:
+        selected = select_bridge_value(message, selector)
+        return {"ok": True, "value": selected.get("value")}
+    except (KeyError, ValueError, TypeError) as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def _artifact_ids(result: dict[str, Any]) -> list[str]:
+    artifacts = result.get("artifacts") if isinstance(result.get("artifacts"), list) else []
+    return [
+        str(artifact.get("artifact_id"))
+        for artifact in artifacts
+        if isinstance(artifact, dict) and artifact.get("artifact_id")
+    ][:6]
+
+
+def _value_type(value: Any) -> str:
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, (int, float)):
+        return "number"
+    if isinstance(value, list):
+        return "array"
+    if isinstance(value, dict):
+        return "object"
+    if value is None:
+        return "null"
+    return type(value).__name__
+
+
+def _preview_value(value: Any, *, limit: int = 180) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        text = value
+    else:
+        text = str(value)
+    text = " ".join(text.split())
+    if len(text) <= limit:
+        return text
+    return f"{text[: limit - 3]}..."
 
 
 def _stages(
@@ -327,6 +442,7 @@ def _summary(
     evidence: dict[str, Any],
     smoke: dict[str, Any],
     lab: dict[str, Any],
+    communication_trace: dict[str, Any],
 ) -> dict[str, Any]:
     completed = sum(1 for stage in stages if stage["status"] == "completed")
     blocked = sum(1 for stage in stages if stage["status"] not in {"completed", "not_run"})
@@ -347,6 +463,8 @@ def _summary(
         "workflow_status": run_result.get("status"),
         "route_count": (contract.get("summary") or {}).get("route_count", 0),
         "artifact_count": evidence.get("task_artifact_count", 0),
+        "communication_handoff_count": communication_trace.get("handoff_count", 0),
+        "communication_trace_status": communication_trace.get("status"),
         "smoke_ok": smoke_ok,
         "bridge_lab_ok": lab.get("ok"),
         "recommended_next_action": "open_workflow_studio_demo" if ok else _next_action(stages),

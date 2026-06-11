@@ -101,6 +101,7 @@ export interface KillerDemoReport {
   summary?: Record<string, unknown>;
   stages?: DemoStage[];
   workflow_path?: string;
+  communication_trace?: CliCliCommunicationTrace;
   evidence?: DemoEvidence;
   protocol_exports?: ProtocolExports;
   protocol_smoke_suite?: ProtocolSmokeSuite;
@@ -128,12 +129,44 @@ export interface DemoEvidence {
   artifacts?: unknown[];
 }
 
+export interface CliCliCommunicationTrace {
+  kind?: "CliCliCommunicationTrace";
+  status?: string;
+  workflow_id?: string;
+  handoff_count?: number;
+  message_valid_count?: number;
+  handoffs?: CliCliBridgeHandoff[];
+}
+
+export interface CliCliBridgeHandoff {
+  index?: number;
+  kind?: "CliCliBridgeHandoff";
+  communication?: string;
+  producer_task?: string;
+  producer_capability?: string;
+  consumer_task?: string;
+  consumer_capability?: string;
+  selector?: string;
+  message_kind?: string;
+  message_channel?: string;
+  parser_ref?: string;
+  message_valid?: boolean;
+  message_errors?: string[];
+  selected_type?: string;
+  selected_preview?: string;
+  resolved_arg_preview?: string;
+  artifact_ids?: string[];
+}
+
 export interface EvidenceSummary {
   status: string;
   workflowStatus: string;
   completedStages: number;
   blockedStages: number;
   routeCount: number;
+  communicationTraceStatus: string;
+  communicationHandoffs: number;
+  communicationValid: string;
   taskArtifactCount: number;
   eventCount: number;
   auditCount: number;

@@ -26,7 +26,23 @@ class KillerDemoTests(unittest.TestCase):
         self.assertEqual(payload["summary"]["route_count"], 2)
         self.assertEqual(payload["summary"]["workflow_status"], "completed")
         self.assertGreaterEqual(payload["summary"]["artifact_count"], 6)
+        self.assertEqual(payload["summary"]["communication_handoff_count"], 2)
+        self.assertEqual(payload["summary"]["communication_trace_status"], "ready")
         self.assertEqual(payload["summary"]["recommended_next_action"], "open_workflow_studio_demo")
+        trace = payload["communication_trace"]
+        self.assertEqual(trace["kind"], "CliCliCommunicationTrace")
+        self.assertEqual(trace["status"], "ready")
+        self.assertEqual(trace["handoff_count"], 2)
+        self.assertEqual(trace["message_valid_count"], 2)
+        self.assertEqual(trace["handoffs"][0]["producer_task"], "macrocli-backends")
+        self.assertEqual(trace["handoffs"][0]["consumer_task"], "backend-diagram-source")
+        self.assertEqual(trace["handoffs"][0]["selector"], "payload.data")
+        self.assertEqual(trace["handoffs"][0]["message_kind"], "BridgeMessage")
+        self.assertTrue(trace["handoffs"][0]["message_valid"])
+        self.assertEqual(trace["handoffs"][1]["producer_task"], "backend-diagram-source")
+        self.assertEqual(trace["handoffs"][1]["consumer_task"], "mermaid-consumer")
+        self.assertEqual(trace["handoffs"][1]["selector"], "payload.data.stdout")
+        self.assertIn("macrocli_backends_to_mermaid", trace["handoffs"][1]["selected_preview"])
         self.assertEqual(
             [stage["id"] for stage in payload["stages"][:6]],
             [
@@ -52,6 +68,7 @@ class KillerDemoTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["kind"], "CbnKillerDemoReport")
         self.assertEqual(payload["summary"]["completed_stage_count"], 8)
+        self.assertEqual(payload["communication_trace"]["status"], "ready")
         self.assertIsNone(payload["summary"]["smoke_ok"])
 
 
