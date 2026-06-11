@@ -297,6 +297,9 @@ Killer Demo slice 已新增可运行证据束：
   contract 对 live daemon 发起 HTTP 调用并输出 `NetworkConnectionAcceptanceReport`；
   该报告包含每个 check 的 http status、expect/actual evidence 和 pass/fail/skipped
   汇总，供第三方程序或 CI smoke 直接复用。
+- daemon 已新增 `POST /network/verify`，外部程序可不依赖本地 Python CLI，直接用
+  HTTP 触发同一份 live acceptance report；`NetworkConnectPackage.daemon_endpoints`
+  也会暴露该验收入口。
 - CLI 已新增 `python -m cbn network connect-package` 只读入口，输出同一份
   `NetworkConnectPackage`。外部程序无需先接 daemon/WebUI，也能一次性读取
   AgentCliCard/RunReceipt contract、daemon endpoint catalog、protocol facade 和

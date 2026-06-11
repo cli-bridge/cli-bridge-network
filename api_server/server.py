@@ -17,7 +17,7 @@ from urllib.parse import parse_qs, urlparse
 
 from api_server.routes.health import health_payload
 from cbn_demo.killer import DEFAULT_KILLER_WORKFLOW_PATH, killer_demo_report
-from cbn_demo.network_connect import network_connect_package
+from cbn_demo.network_connect import network_acceptance_report, network_connect_package
 from cbn_core.manifest import validate_manifest_path
 from cbn_execution.graph import WorkflowGraph
 from cbn_parsers.fixtures import run_parser_fixtures
@@ -98,6 +98,7 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/demo/killer"},
     {"method": "GET", "path": "/network/connect-package"},
     {"method": "GET", "path": "/network/quickstart"},
+    {"method": "POST", "path": "/network/verify"},
     {"method": "POST", "path": "/protocols/accept-workflow"},
     {"method": "POST", "path": "/protocols/acceptance-queue"},
     {"method": "POST", "path": "/protocols/bridge-lab"},
@@ -740,6 +741,23 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 event_tail=runtime.event_bus.tail(limit=30),
                 audit_tail=runtime.audit_log.tail(limit=30),
                 artifact_list=runtime.artifact_store.list(limit=30),
+            )
+            self._send(200 if result["ok"] else 422, result)
+            return
+        if self.path == "/network/verify":
+            session_token = (
+                payload.get("session_token")
+                or payload.get("sessionToken")
+                or self.headers.get("X-CBN-Session")
+            )
+            result = network_acceptance_report(
+                runtime.registry,
+                workflow_path=payload.get("workflow_path") or payload.get("path") or DEFAULT_KILLER_WORKFLOW_PATH,
+                base_url=payload.get("base_url") or payload.get("daemon_url") or _base_url(self),
+                studio_url=payload.get("studio_url") or "http://127.0.0.1:5177",
+                session_token=str(session_token) if session_token else None,
+                agent_message=payload.get("message") or "Connect an external program to this CBN workflow.",
+                timeout_seconds=float(payload.get("timeout_seconds", 8.0)),
             )
             self._send(200 if result["ok"] else 422, result)
             return

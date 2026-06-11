@@ -83,6 +83,7 @@ class NetworkConnectPackageTests(unittest.TestCase):
         self.assertIn("Invoke-RestMethod -Method 'POST'", quickstart["powershell_script"])
         endpoint_paths = {endpoint["path"] for endpoint in payload["daemon_endpoints"]}
         self.assertIn("/network/quickstart", endpoint_paths)
+        self.assertIn("/network/verify", endpoint_paths)
         self.assertIn("/adapter-agent/workflow-request-plan", endpoint_paths)
         self.assertTrue(any(endpoint["url"].startswith("http://127.0.0.1:8787/") for endpoint in payload["daemon_endpoints"]))
 

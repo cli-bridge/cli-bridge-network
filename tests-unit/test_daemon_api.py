@@ -46,6 +46,7 @@ class DaemonApiTests(unittest.TestCase):
         self.assertIn(("GET", "/demo/killer"), routes)
         self.assertIn(("GET", "/network/connect-package"), routes)
         self.assertIn(("GET", "/network/quickstart"), routes)
+        self.assertIn(("POST", "/network/verify"), routes)
         self.assertIn(("POST", "/demo/killer"), routes)
         self.assertIn(("GET", "/protocols/workflows"), routes)
         self.assertIn(("GET", "/.well-known/agent-card.json"), routes)
@@ -210,6 +211,30 @@ class DaemonApiTests(unittest.TestCase):
         self.assertEqual(payload["summary"]["skipped"], 0)
         self.assertEqual(payload["results"][4]["request_id"], "run_workflow")
         self.assertEqual(payload["results"][4]["evidence"]["json.workflow_id_type"]["actual"], "string")
+
+    def test_network_verify_route_runs_acceptance_against_daemon(self):
+        with daemon_url(session_token="verify-token") as base_url:
+            request = urllib.request.Request(
+                f"{base_url}/network/verify",
+                data=json.dumps(
+                    {
+                        "workflow_path": "workflows/cli-anything-macrocli-mermaid-routing.example.json",
+                        "timeout_seconds": 5,
+                    }
+                ).encode("utf-8"),
+                method="POST",
+                headers={"Content-Type": "application/json", "X-CBN-Session": "verify-token"},
+            )
+            with urllib.request.urlopen(request, timeout=20) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload["kind"], "NetworkConnectionAcceptanceReport")
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["summary"]["passed"], 8)
+        self.assertEqual(payload["summary"]["failed"], 0)
+        self.assertEqual(payload["results"][3]["request_id"], "plan_agent_request")
+        self.assertEqual(payload["results"][3]["evidence"]["json.reusable_harness.kind"]["actual"], "NaturalLanguageWorkflowHarness")
 
     def test_adapter_agent_orchestrate_route_returns_auth_fallback(self):
         with daemon_url() as base_url:
