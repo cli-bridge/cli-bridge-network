@@ -327,6 +327,10 @@ Killer Demo slice 已新增可运行证据束：
   harness plan、workflow run、events/audit/artifacts 的期望证据；`python -m cbn
   network quickstart --output acceptance` 可直接输出该 checklist，Workflow Studio
   Connect 面板同步展示每个 check。
+- `NetworkConnectionAcceptance` 的 events、audit、artifacts checks 已从“端点返回
+  JSON 数组”提升为“workflow run 之后至少返回 1 条 evidence”，让 one-shot
+  `network verify` 能证明 demo 链路不只完成调用，还能产生可展示的 runtime
+  event、audit 和 artifact 证据。
 - Workflow Studio Connect 面板已新增 `Verify` 操作，会按 quickstart request
   sequence 真实调用 daemon 并用 `NetworkConnectionAcceptance` 的 expect 字段判定
   pass/fail/skipped；这让 demo 现场可以直接证明外部程序一键接入 CBN 网络后的

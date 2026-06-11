@@ -89,6 +89,12 @@ class NetworkConnectPackageTests(unittest.TestCase):
             payload["acceptance"]["checks"][5]["expect"]["json.reusable_harness.kind"],
             "NaturalLanguageWorkflowHarness",
         )
+        self.assertEqual(payload["acceptance"]["checks"][7]["request_id"], "events")
+        self.assertEqual(payload["acceptance"]["checks"][7]["expect"]["json.count_min"], 1)
+        self.assertEqual(payload["acceptance"]["checks"][8]["request_id"], "audit")
+        self.assertEqual(payload["acceptance"]["checks"][8]["expect"]["json.count_min"], 1)
+        self.assertEqual(payload["acceptance"]["checks"][9]["request_id"], "artifacts")
+        self.assertEqual(payload["acceptance"]["checks"][9]["expect"]["json.count_min"], 1)
         quickstart = payload["consumer_quickstart"]
         self.assertEqual(quickstart["kind"], "NetworkConnectQuickstart")
         self.assertEqual(quickstart["status"], "ready")

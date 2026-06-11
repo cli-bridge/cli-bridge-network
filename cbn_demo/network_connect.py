@@ -769,20 +769,20 @@ def _network_connection_acceptance(*, workflow_path: str, requests: list[dict[st
         _acceptance_check(
             "runtime_events_readable",
             "events",
-            "Runtime events are readable after the workflow call.",
-            {"http_status": 200, "json.type": "array"},
+            "Runtime events include evidence after the workflow call.",
+            {"http_status": 200, "json.type": "array", "json.count_min": 1},
         ),
         _acceptance_check(
             "audit_evidence_readable",
             "audit",
-            "Audit evidence is readable for demo and integration review.",
-            {"http_status": 200, "json.type": "array"},
+            "Audit evidence includes records for demo and integration review.",
+            {"http_status": 200, "json.type": "array", "json.count_min": 1},
         ),
         _acceptance_check(
             "artifacts_readable",
             "artifacts",
             "Produced artifacts can be listed by the consumer after workflow execution.",
-            {"http_status": 200, "json.type": "array"},
+            {"http_status": 200, "json.type": "array", "json.count_min": 1},
         ),
     ]
     return {
@@ -800,7 +800,7 @@ def _network_connection_acceptance(*, workflow_path: str, requests: list[dict[st
             "protocol_exports include mcp, a2a, acp",
             "agent_workflow_request.reusable_harness.kind == NaturalLanguageWorkflowHarness",
             "workflow_run.status == completed",
-            "events/audit/artifacts endpoints return JSON arrays",
+            "events/audit/artifacts endpoints return non-empty JSON arrays after run",
         ],
         "failure_recovery": [
             "If health fails, verify daemon URL and X-CBN-Session.",
@@ -945,6 +945,8 @@ def _acceptance_actual_value(key: str, payload: Any, http_status: int) -> Any:
     json_key = key.removeprefix("json.")
     if json_key == "type":
         return _json_type_name(payload)
+    if json_key in {"count_min", "length_min"}:
+        return len(payload) if isinstance(payload, (list, dict, str)) else None
     if json_key.endswith("_count_min"):
         value = _json_path(payload, json_key.removesuffix("_count_min"))
         if isinstance(value, (list, dict, str)):

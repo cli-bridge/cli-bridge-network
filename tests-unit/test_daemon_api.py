@@ -242,6 +242,12 @@ class DaemonApiTests(unittest.TestCase):
         self.assertEqual(payload["results"][4]["evidence"]["json.exports.mcp.protocol"]["actual"], "mcp")
         self.assertEqual(payload["results"][6]["request_id"], "run_workflow")
         self.assertEqual(payload["results"][6]["evidence"]["json.workflow_id_type"]["actual"], "string")
+        self.assertEqual(payload["results"][7]["request_id"], "events")
+        self.assertGreaterEqual(payload["results"][7]["evidence"]["json.count_min"]["actual"], 1)
+        self.assertEqual(payload["results"][8]["request_id"], "audit")
+        self.assertGreaterEqual(payload["results"][8]["evidence"]["json.count_min"]["actual"], 1)
+        self.assertEqual(payload["results"][9]["request_id"], "artifacts")
+        self.assertGreaterEqual(payload["results"][9]["evidence"]["json.count_min"]["actual"], 1)
 
     def test_network_verify_route_runs_acceptance_against_daemon(self):
         with daemon_url(session_token="verify-token") as base_url:
@@ -268,6 +274,8 @@ class DaemonApiTests(unittest.TestCase):
         self.assertEqual(payload["results"][4]["evidence"]["json.exports.acp.protocol"]["actual"], "acp")
         self.assertEqual(payload["results"][5]["request_id"], "plan_agent_request")
         self.assertEqual(payload["results"][5]["evidence"]["json.reusable_harness.kind"]["actual"], "NaturalLanguageWorkflowHarness")
+        self.assertEqual(payload["results"][9]["request_id"], "artifacts")
+        self.assertGreaterEqual(payload["results"][9]["evidence"]["json.count_min"]["actual"], 1)
 
     def test_adapter_agent_orchestrate_route_returns_auth_fallback(self):
         with daemon_url() as base_url:
