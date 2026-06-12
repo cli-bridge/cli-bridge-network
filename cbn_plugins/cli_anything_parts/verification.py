@@ -32,72 +32,183 @@ def verify_harness(
         from_market=from_market,
     )
     if not probe["ok"]:
-        return {
-            "ok": False,
-            "plugin_id": PLUGIN_ID,
-            "harness_name": harness_name,
-            "from_market": from_market,
-            "include_workflows": include_workflows,
-            "run_smoke_suite": run_smoke_suite,
-            "error": probe["error"],
-            "probe": probe,
-        }
+        return failed_verify_harness_report(
+            harness_name=harness_name,
+            from_market=from_market,
+            include_workflows=include_workflows,
+            run_smoke_suite=run_smoke_suite,
+            probe=probe,
+        )
 
     evaluation = probe["evaluation"]
     adaptation = evaluation["adaptation"]
-    manifest = adaptation["manifest"]
     capability_id = evaluation["capability_id"]
-    registry = ManifestRegistry()
-    registry.load_dir(hub.paths.manifests)
-    registry.load_dir(hub.paths.local_manifests, replace=True)
-    imported_manifest = registry.get(capability_id)
-    effective_manifest = effective_manifest_dict(imported_manifest, manifest)
-    protocol_registry = registry if imported_manifest else ManifestRegistry()
-    if imported_manifest is None:
-        protocol_registry.register(
-            CapabilityManifest.from_dict(
-                manifest,
-                source_path=Path(adaptation["manifest_path"]),
-            )
-        )
-    protocol_checks = check_all_protocols(
-        protocol_registry,
+    registry_context = verification_registry_context(
+        hub,
         capability_id=capability_id,
-    )["checks"]
-    readiness = {
-        "ready": probe["ready"],
-        "probe_blocker_count": probe["probe_blocker_count"],
-        "probes": probe["probes"],
-    }
-    registry_status = {
-        "manifest_imported": imported_manifest is not None,
-        "manifest_path": str(imported_manifest.source_path) if imported_manifest else adaptation["manifest_path"],
-        "protocol_check_source": registry_source_for_manifest(
-            imported_manifest,
-            local_manifest_dir=hub.paths.local_manifests,
-        )
-        if imported_manifest
-        else "generated_preview",
-        "entrypoint_repair_active": manifest_has_entrypoint_repair(effective_manifest),
-    }
-    parser_contract = parser_contract_report_from_registry(effective_manifest)
+        adaptation=adaptation,
+    )
+    readiness = readiness_from_probe(probe)
+    registry_status = registry_context["registry_status"]
+    parser_contract = parser_contract_report_from_registry(registry_context["effective_manifest"])
     verification_blocker_list = verification_blockers(evaluation, readiness, registry_status)
     workflow_matches = (
-        workflow_matches_for_capability(registry, capability_id)
+        workflow_matches_for_capability(registry_context["registry"], capability_id)
         if include_workflows
         else []
     )
     smoke_suite = harness_protocol_smoke_suite(
-        registry=registry,
+        registry=registry_context["registry"],
         capability_id=capability_id,
         include_workflows=include_workflows,
         extra_args=smoke_extra_args,
         run=run_smoke_suite,
     )
-    if smoke_suite.get("run") and not smoke_suite.get("ok"):
-        verification_blocker_list = sorted(
-            set([*verification_blocker_list, "protocol smoke suite failed"])
+    verification_blocker_list = verification_blockers_with_smoke(
+        verification_blocker_list,
+        smoke_suite,
+    )
+    return successful_verify_harness_report(
+        harness_name=harness_name,
+        from_market=from_market,
+        include_workflows=include_workflows,
+        run_smoke_suite=run_smoke_suite,
+        capability_id=capability_id,
+        evaluation=evaluation,
+        readiness=readiness,
+        registry_status=registry_status,
+        parser_contract=parser_contract,
+        protocol_checks=registry_context["protocol_checks"],
+        smoke_suite=smoke_suite,
+        workflow_matches=workflow_matches,
+        verification_blocker_list=verification_blocker_list,
+        probe=probe,
+    )
+
+
+def failed_verify_harness_report(
+    *,
+    harness_name: str,
+    from_market: bool,
+    include_workflows: bool,
+    run_smoke_suite: bool,
+    probe: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "ok": False,
+        "plugin_id": PLUGIN_ID,
+        "harness_name": harness_name,
+        "from_market": from_market,
+        "include_workflows": include_workflows,
+        "run_smoke_suite": run_smoke_suite,
+        "error": probe["error"],
+        "probe": probe,
+    }
+
+
+def verification_registry_context(
+    hub: Any,
+    *,
+    capability_id: str,
+    adaptation: dict[str, Any],
+) -> dict[str, Any]:
+    manifest = adaptation["manifest"]
+    registry = ManifestRegistry()
+    registry.load_dir(hub.paths.manifests)
+    registry.load_dir(hub.paths.local_manifests, replace=True)
+    imported_manifest = registry.get(capability_id)
+    effective_manifest = effective_manifest_dict(imported_manifest, manifest)
+    protocol_registry = protocol_registry_for_manifest(
+        registry=registry,
+        imported_manifest=imported_manifest,
+        manifest=manifest,
+        source_path=Path(adaptation["manifest_path"]),
+    )
+    return {
+        "registry": registry,
+        "imported_manifest": imported_manifest,
+        "effective_manifest": effective_manifest,
+        "registry_status": registry_status_for_manifest(
+            imported_manifest=imported_manifest,
+            effective_manifest=effective_manifest,
+            preview_manifest_path=adaptation["manifest_path"],
+            local_manifest_dir=hub.paths.local_manifests,
+        ),
+        "protocol_checks": check_all_protocols(
+            protocol_registry,
+            capability_id=capability_id,
+        )["checks"],
+    }
+
+
+def protocol_registry_for_manifest(
+    *,
+    registry: ManifestRegistry,
+    imported_manifest: Any | None,
+    manifest: dict[str, Any],
+    source_path: Path,
+) -> ManifestRegistry:
+    if imported_manifest:
+        return registry
+    protocol_registry = ManifestRegistry()
+    protocol_registry.register(CapabilityManifest.from_dict(manifest, source_path=source_path))
+    return protocol_registry
+
+
+def registry_status_for_manifest(
+    *,
+    imported_manifest: Any | None,
+    effective_manifest: dict[str, Any],
+    preview_manifest_path: str,
+    local_manifest_dir: Path,
+) -> dict[str, Any]:
+    return {
+        "manifest_imported": imported_manifest is not None,
+        "manifest_path": str(imported_manifest.source_path) if imported_manifest else preview_manifest_path,
+        "protocol_check_source": registry_source_for_manifest(
+            imported_manifest,
+            local_manifest_dir=local_manifest_dir,
         )
+        if imported_manifest
+        else "generated_preview",
+        "entrypoint_repair_active": manifest_has_entrypoint_repair(effective_manifest),
+    }
+
+
+def readiness_from_probe(probe: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "ready": probe["ready"],
+        "probe_blocker_count": probe["probe_blocker_count"],
+        "probes": probe["probes"],
+    }
+
+
+def verification_blockers_with_smoke(
+    verification_blocker_list: list[str],
+    smoke_suite: dict[str, Any],
+) -> list[str]:
+    if smoke_suite.get("run") and not smoke_suite.get("ok"):
+        return sorted(set([*verification_blocker_list, "protocol smoke suite failed"]))
+    return verification_blocker_list
+
+
+def successful_verify_harness_report(
+    *,
+    harness_name: str,
+    from_market: bool,
+    include_workflows: bool,
+    run_smoke_suite: bool,
+    capability_id: str,
+    evaluation: dict[str, Any],
+    readiness: dict[str, Any],
+    registry_status: dict[str, Any],
+    parser_contract: dict[str, Any],
+    protocol_checks: dict[str, dict[str, Any]],
+    smoke_suite: dict[str, Any],
+    workflow_matches: list[dict[str, Any]],
+    verification_blocker_list: list[str],
+    probe: dict[str, Any],
+) -> dict[str, Any]:
     return {
         "ok": True,
         "plugin_id": PLUGIN_ID,
@@ -315,65 +426,109 @@ def verification_stages(
     gates = evaluation.get("gates", {})
     dry_run_ready = bool(registry_status.get("manifest_imported"))
     return [
-        {
-            "id": "evaluate_market_and_policy",
-            "status": "completed" if evaluation.get("ok") else "blocked",
-            "command": f"python -m cbn plugin evaluate-harness cli-anything {harness_name}",
-        },
-        {
-            "id": "probe_dependencies",
-            "status": "completed" if readiness.get("probe_blocker_count") == 0 else "blocked",
-            "command": f"python -m cbn plugin probe-harness cli-anything {harness_name}",
-        },
-        {
-            "id": "write_manifest",
-            "status": "completed" if registry_status.get("manifest_imported") else "ready",
-            "command": f"python -m cbn plugin adapt-harness cli-anything {harness_name} --from-market --write",
-        },
-        {
-            "id": "validate_registry",
-            "status": "completed" if gates.get("manifest_valid") else "blocked",
-            "command": "python -m cbn registry validate manifests",
-        },
-        {
-            "id": "install_harness",
-            "status": "completed" if gates.get("installed") else "pending",
-            "command": f"python -m cbn plugin harness cli-anything install {harness_name} --yes",
-        },
-        {
-            "id": "dry_run_call",
-            "status": "ready" if dry_run_ready else "blocked",
-            "command": f"python -m cbn call {capability_id} --dry-run",
-        },
-        {
-            "id": "verify_parser_contract",
-            "status": "completed" if parser_contract.get("verified") else "pending",
-            "command": f"python -m cbn parser fixtures --parser-ref {parser_contract.get('parser_ref')}",
-        },
-        {
-            "id": "check_protocol_exports",
-            "status": "completed",
-            "command": f"python -m cbn protocol check all --capability-id {capability_id}",
-            "source": registry_status.get("protocol_check_source"),
-            "protocol_status_counts": {
-                protocol: report.get("status_counts", {})
-                for protocol, report in protocol_checks.items()
-            },
-        },
-        {
-            "id": "smoke_protocol_facades",
-            "status": smoke_suite_stage_status(smoke_suite, gates),
-            "command": smoke_suite.get("command"),
-            "run": bool(smoke_suite.get("run")),
-            "ok": smoke_suite.get("ok"),
-            "summary": smoke_suite.get("summary"),
-            "commands": [
-                f"python -m cbn mcp smoke --capability-id {capability_id}",
-                f"python -m cbn a2a smoke --capability-id {capability_id}",
-                f"python -m cbn acp smoke --capability-id {capability_id}",
-            ],
-        },
+        verify_stage_evaluation(harness_name, evaluation),
+        verify_stage_probe(harness_name, readiness),
+        verify_stage_write_manifest(harness_name, registry_status),
+        verify_stage_registry_validation(gates),
+        verify_stage_install(harness_name, gates),
+        verify_stage_dry_run(capability_id, dry_run_ready),
+        verify_stage_parser_contract(parser_contract),
+        verify_stage_protocol_exports(capability_id, registry_status, protocol_checks),
+        verify_stage_protocol_smoke(capability_id, smoke_suite, gates),
     ]
+
+
+def verify_stage_evaluation(harness_name: str, evaluation: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": "evaluate_market_and_policy",
+        "status": "completed" if evaluation.get("ok") else "blocked",
+        "command": f"python -m cbn plugin evaluate-harness cli-anything {harness_name}",
+    }
+
+
+def verify_stage_probe(harness_name: str, readiness: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": "probe_dependencies",
+        "status": "completed" if readiness.get("probe_blocker_count") == 0 else "blocked",
+        "command": f"python -m cbn plugin probe-harness cli-anything {harness_name}",
+    }
+
+
+def verify_stage_write_manifest(harness_name: str, registry_status: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": "write_manifest",
+        "status": "completed" if registry_status.get("manifest_imported") else "ready",
+        "command": f"python -m cbn plugin adapt-harness cli-anything {harness_name} --from-market --write",
+    }
+
+
+def verify_stage_registry_validation(gates: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": "validate_registry",
+        "status": "completed" if gates.get("manifest_valid") else "blocked",
+        "command": "python -m cbn registry validate manifests",
+    }
+
+
+def verify_stage_install(harness_name: str, gates: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": "install_harness",
+        "status": "completed" if gates.get("installed") else "pending",
+        "command": f"python -m cbn plugin harness cli-anything install {harness_name} --yes",
+    }
+
+
+def verify_stage_dry_run(capability_id: str, dry_run_ready: bool) -> dict[str, Any]:
+    return {
+        "id": "dry_run_call",
+        "status": "ready" if dry_run_ready else "blocked",
+        "command": f"python -m cbn call {capability_id} --dry-run",
+    }
+
+
+def verify_stage_parser_contract(parser_contract: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": "verify_parser_contract",
+        "status": "completed" if parser_contract.get("verified") else "pending",
+        "command": f"python -m cbn parser fixtures --parser-ref {parser_contract.get('parser_ref')}",
+    }
+
+
+def verify_stage_protocol_exports(
+    capability_id: str,
+    registry_status: dict[str, Any],
+    protocol_checks: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "id": "check_protocol_exports",
+        "status": "completed",
+        "command": f"python -m cbn protocol check all --capability-id {capability_id}",
+        "source": registry_status.get("protocol_check_source"),
+        "protocol_status_counts": {
+            protocol: report.get("status_counts", {})
+            for protocol, report in protocol_checks.items()
+        },
+    }
+
+
+def verify_stage_protocol_smoke(
+    capability_id: str,
+    smoke_suite: dict[str, Any],
+    gates: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "id": "smoke_protocol_facades",
+        "status": smoke_suite_stage_status(smoke_suite, gates),
+        "command": smoke_suite.get("command"),
+        "run": bool(smoke_suite.get("run")),
+        "ok": smoke_suite.get("ok"),
+        "summary": smoke_suite.get("summary"),
+        "commands": [
+            f"python -m cbn mcp smoke --capability-id {capability_id}",
+            f"python -m cbn a2a smoke --capability-id {capability_id}",
+            f"python -m cbn acp smoke --capability-id {capability_id}",
+        ],
+    }
 
 
 def parser_fixture_gate(report: dict[str, Any], capability_id: str) -> dict[str, Any]:
