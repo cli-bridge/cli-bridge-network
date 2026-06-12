@@ -12,10 +12,143 @@ from pathlib import Path
 from typing import Any
 
 from cbn_plugins.cli_anything_parts.manifest_factory import sanitize_harness_name
+from cbn_plugins.cli_anything_parts.repair import module_report
 from cbn_plugins.manager import PluginCommand, PluginPlan
 
 
 PLUGIN_ID = "cli-anything"
+
+
+def adapter_targets(
+    hub: Any,
+    harness_name: str,
+    from_market: bool = True,
+    package: str | None = None,
+    limit: int = 20,
+) -> dict[str, Any]:
+    plan = hub.entrypoint_repair_plan(harness_name, from_market=from_market)
+    package_candidates = [package] if package else list(plan.get("package_candidates", []))
+    package_reports = [
+        adapter_target_package_report(candidate, limit=limit)
+        for candidate in package_candidates
+    ]
+    targets = [
+        {
+            **target,
+            "package": report["package"],
+            "repair_command": (
+                f"python -m cbn plugin repair-entrypoint cli-anything {harness_name} "
+                f"--from-market --module {target['module']}"
+            ),
+        }
+        for report in package_reports
+        for target in report.get("targets", [])
+    ]
+    targets.sort(key=lambda item: (-int(item["score"]), item["module"]))
+    targets = targets[: max(0, min(limit, 100))]
+    recommended = targets[0] if targets else None
+    return {
+        "ok": True,
+        "plugin_id": PLUGIN_ID,
+        "kind": "CliAnythingAdapterTargets",
+        "harness_name": harness_name,
+        "from_market": from_market,
+        "package": package,
+        "limit": limit,
+        "plan": plan,
+        "packages": package_reports,
+        "targets": targets,
+        "summary": {
+            "package_count": len(package_reports),
+            "target_count": len(targets),
+            "recommended_module": recommended["module"] if recommended else None,
+            "recommended_score": recommended["score"] if recommended else None,
+            "recommended_next_action": (
+                "inspect_top_target_then_repair_entrypoint"
+                if recommended
+                else "write_custom_adapter_or_choose_package_api"
+            ),
+        },
+        "next_commands": [
+            f"python -m cbn plugin repair-plan cli-anything {harness_name} --from-market",
+            f"python -m cbn plugin adapter-targets cli-anything {harness_name} --from-market",
+            (
+                f"python -m cbn plugin repair-entrypoint cli-anything {harness_name} "
+                f"--from-market --module {recommended['module']}"
+                if recommended
+                else None
+            ),
+        ],
+    }
+
+
+def adapter_target_smoke(
+    hub: Any,
+    harness_name: str,
+    module: str,
+    from_market: bool = True,
+    smoke_args: tuple[str, ...] = ("--help",),
+    timeout_seconds: int = 10,
+    run: bool = False,
+    confirmed: bool = False,
+) -> dict[str, Any]:
+    targets_report = hub.adapter_targets(harness_name, from_market=from_market, limit=50)
+    selected = next(
+        (target for target in targets_report.get("targets", []) if target.get("module") == module),
+        None,
+    )
+    report = module_report(module)
+    argv = (sys.executable, "-m", module, *smoke_args)
+    execution = adapter_target_smoke_execution(
+        argv=argv,
+        cwd=hub.paths.root,
+        timeout_seconds=timeout_seconds,
+        run=run,
+        confirmed=confirmed,
+        operation_runner=hub.operation_runner,
+        plugin_dir=hub.paths.external_plugins / PLUGIN_ID,
+        harness_name=harness_name,
+        module=module,
+    )
+    return {
+        "ok": True,
+        "plugin_id": PLUGIN_ID,
+        "kind": "CliAnythingAdapterTargetSmoke",
+        "harness_name": harness_name,
+        "from_market": from_market,
+        "module": module,
+        "smoke_args": list(smoke_args),
+        "timeout_seconds": timeout_seconds,
+        "run": run,
+        "confirmed": confirmed,
+        "command": list(argv),
+        "selected_target": selected,
+        "module_report": report,
+        "targets_summary": targets_report["summary"],
+        "execution": execution,
+        "summary": {
+            "candidate_known": selected is not None,
+            "module_importable": bool(report.get("importable")),
+            "executed": execution["status"] in {"completed", "failed", "timeout", "spawn_failed"},
+            "smoke_ok": execution.get("exit_code") == 0,
+            "recommended_next_action": adapter_target_smoke_next_action(selected, report, execution),
+        },
+        "next_commands": [
+            f"python -m cbn plugin adapter-targets cli-anything {harness_name} --from-market --limit 10",
+            (
+                f"python -m cbn plugin adapter-smoke cli-anything {harness_name} "
+                f"--from-market --module {module}"
+            ),
+            (
+                f"python -m cbn plugin adapter-smoke cli-anything {harness_name} "
+                f"--from-market --module {module} --run --yes"
+            ),
+            (
+                f"python -m cbn plugin repair-entrypoint cli-anything {harness_name} "
+                f"--from-market --module {module} --write --yes"
+            ),
+        ],
+    }
 
 
 def adapter_target_package_report(package: str, limit: int = 20) -> dict[str, Any]:

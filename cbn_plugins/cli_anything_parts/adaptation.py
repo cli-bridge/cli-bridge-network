@@ -4,8 +4,182 @@ from __future__ import annotations
 
 from typing import Any
 
+from cbn_plugins.cli_anything_parts.adapter_targets import repair_entrypoint_smoke_gate
 
+
+PLUGIN_ID = "cli-anything"
 REPAIRABLE_ENTRYPOINT_BLOCKER = "installed harness entrypoint is missing from PATH"
+
+
+def adaptation_gate(
+    hub: Any,
+    harness_name: str,
+    from_market: bool = True,
+    module: str | None = None,
+    require_smoke: bool = True,
+    run_smoke: bool = False,
+    confirmed: bool = False,
+    smoke_args: tuple[str, ...] = ("--help",),
+    smoke_timeout_seconds: int = 10,
+) -> dict[str, Any]:
+    evaluation = hub.evaluate_harness(harness_name, from_market=from_market)
+    gates = evaluation.get("gates") if isinstance(evaluation.get("gates"), dict) else {}
+    native_launch_ready = bool(gates.get("launch_ready"))
+    repair_plan = None
+    adapter_targets = None
+    selected_target = None
+    selected_module = module
+    smoke_report = None
+    repair_scan = adaptation_gate_repair_scan_decision(evaluation, native_launch_ready, module)
+    if repair_scan["scan"]:
+        repair_plan = hub.entrypoint_repair_plan(harness_name, from_market=from_market)
+        diagnosis = repair_plan.get("diagnosis") if isinstance(repair_plan.get("diagnosis"), dict) else {}
+        if diagnosis.get("repair_required"):
+            adapter_targets = hub.adapter_targets(harness_name, from_market=from_market, limit=20)
+            targets = adapter_targets.get("targets", [])
+            selected_target = next(
+                (target for target in targets if target.get("module") == module),
+                None,
+            )
+            if selected_target is None and module is None and targets:
+                selected_target = targets[0]
+                selected_module = str(selected_target.get("module"))
+            if selected_module:
+                smoke_report = hub.adapter_target_smoke(
+                    harness_name,
+                    module=selected_module,
+                    from_market=from_market,
+                    smoke_args=smoke_args,
+                    timeout_seconds=smoke_timeout_seconds,
+                    run=run_smoke,
+                    confirmed=confirmed,
+                )
+    smoke_gate = repair_entrypoint_smoke_gate(require_smoke, smoke_report)
+    summary = adaptation_gate_summary(
+        evaluation=evaluation,
+        native_launch_ready=native_launch_ready,
+        repair_plan=repair_plan,
+        selected_module=selected_module,
+        smoke_gate=smoke_gate,
+        smoke_report=smoke_report,
+        require_smoke=require_smoke,
+        repair_scan=repair_scan,
+    )
+    return {
+        "ok": True,
+        "plugin_id": PLUGIN_ID,
+        "kind": "CliAnythingHarnessAdaptationGate",
+        "harness_name": harness_name,
+        "from_market": from_market,
+        "module": module,
+        "selected_module": selected_module,
+        "require_smoke": require_smoke,
+        "run_smoke": run_smoke,
+        "confirmed": confirmed,
+        "smoke_args": list(smoke_args),
+        "smoke_timeout_seconds": smoke_timeout_seconds,
+        "summary": summary,
+        "repair_scan": repair_scan,
+        "stages": adaptation_gate_stages(
+            evaluation=evaluation,
+            repair_plan=repair_plan,
+            adapter_targets=adapter_targets,
+            selected_module=selected_module,
+            smoke_gate=smoke_gate,
+            smoke_report=smoke_report,
+            summary=summary,
+            repair_scan=repair_scan,
+        ),
+        "evaluation": evaluation,
+        "repair_plan": repair_plan,
+        "adapter_targets": adapter_targets,
+        "selected_target": selected_target,
+        "smoke_report": smoke_report,
+        "next_commands": [
+            f"python -m cbn plugin adaptation-gate cli-anything {harness_name} --from-market",
+            f"python -m cbn plugin adapter-targets cli-anything {harness_name} --from-market --limit 10",
+            (
+                f"python -m cbn plugin adapter-smoke cli-anything {harness_name} "
+                f"--from-market --module {selected_module} --run --yes"
+                if selected_module
+                else None
+            ),
+            (
+                f"python -m cbn plugin repair-entrypoint cli-anything {harness_name} "
+                f"--from-market --module {selected_module} --require-smoke --write --yes"
+                if selected_module
+                else None
+            ),
+        ],
+    }
+
+
+def adaptation_queue(
+    hub: Any,
+    harnesses: tuple[str, ...] = (),
+    query: str | None = None,
+    limit: int = 20,
+    max_harnesses: int = 5,
+    include_blocked: bool = True,
+    require_smoke: bool = True,
+    run_smoke: bool = False,
+    confirmed: bool = False,
+    smoke_args: tuple[str, ...] = ("--help",),
+    smoke_timeout_seconds: int = 10,
+) -> dict[str, Any]:
+    bounded_limit = max(0, min(limit, 500))
+    bounded_max = max(0, min(max_harnesses, 50))
+    source_report = None
+    source = "explicit_harnesses"
+    selected_harnesses = unique_harnesses(harnesses)
+    if not selected_harnesses:
+        source = "market_install_queue"
+        source_report = hub.market_install_queue(
+            query=query,
+            limit=bounded_limit,
+            max_installs=bounded_max,
+            include_blocked=include_blocked,
+        )
+        selected_harnesses = harnesses_from_install_queue(source_report, include_blocked=include_blocked)
+    selected_harnesses = selected_harnesses[:bounded_max]
+    gates = [
+        hub.adaptation_gate(
+            harness,
+            from_market=True,
+            require_smoke=require_smoke,
+            run_smoke=run_smoke,
+            confirmed=confirmed,
+            smoke_args=smoke_args,
+            smoke_timeout_seconds=smoke_timeout_seconds,
+        )
+        for harness in selected_harnesses
+    ]
+    summary = adaptation_queue_summary(gates)
+    return {
+        "ok": True,
+        "plugin_id": PLUGIN_ID,
+        "kind": "CliAnythingHarnessAdaptationQueue",
+        "source": source,
+        "query": query,
+        "limit": bounded_limit,
+        "max_harnesses": bounded_max,
+        "include_blocked": include_blocked,
+        "harnesses": selected_harnesses,
+        "require_smoke": require_smoke,
+        "run_smoke": run_smoke,
+        "confirmed": confirmed,
+        "smoke_args": list(smoke_args),
+        "smoke_timeout_seconds": smoke_timeout_seconds,
+        "summary": summary,
+        "gates": gates,
+        "source_report": source_report,
+        "next_commands": [
+            "python -m cbn plugin adaptation-queue cli-anything --query file --limit 20 --max-harnesses 5",
+            "python -m cbn plugin adaptation-queue cli-anything --harness py4csr --harness 3mf",
+            "python -m cbn plugin adaptation-gate cli-anything <harness> --from-market",
+            "python -m cbn plugin adaptation-gate cli-anything <harness> --from-market --run-smoke --yes",
+        ],
+    }
 
 
 def adaptation_gate_repair_scan_decision(

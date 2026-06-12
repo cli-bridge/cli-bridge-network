@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -29,18 +28,13 @@ from cbn_plugins.manager import (
 from cbn_plugins.operations import PluginOperationRunner
 from cbn_plugins.cli_anything_parts import module_split_report as _parts_module_split_report
 from cbn_plugins.cli_anything_parts.adaptation import (
-    adaptation_gate_repair_scan_decision as _adaptation_gate_repair_scan_decision,
-    adaptation_gate_stages as _adaptation_gate_stages,
-    adaptation_gate_summary as _adaptation_gate_summary,
-    adaptation_queue_summary as _adaptation_queue_summary,
-    harnesses_from_install_queue as _harnesses_from_install_queue,
-    unique_harnesses as _unique_harnesses,
+    adaptation_gate as _adaptation_parts_adaptation_gate,
+    adaptation_queue as _adaptation_parts_adaptation_queue,
 )
 from cbn_plugins.cli_anything_parts.adapter_targets import (
     adapter_target_package_report as _adapter_target_package_report,
-    adapter_target_smoke_execution as _adapter_target_smoke_execution,
-    adapter_target_smoke_next_action as _adapter_target_smoke_next_action,
-    repair_entrypoint_smoke_gate as _repair_entrypoint_smoke_gate,
+    adapter_target_smoke as _adapter_targets_parts_adapter_target_smoke,
+    adapter_targets as _adapter_targets_parts_adapter_targets,
 )
 from cbn_plugins.cli_anything_parts.manifest_factory import (
     build_harness_manifest,
@@ -86,8 +80,7 @@ from cbn_plugins.cli_anything_parts.planning import (
     mvp_plan as _planning_mvp_plan,
 )
 from cbn_plugins.cli_anything_parts.queue import (
-    blocked_entry_from_evaluation as _blocked_entry_from_evaluation,
-    blocked_harness_decision as _blocked_harness_decision,
+    blocked_harness_plan as _queue_parts_blocked_harness_plan,
     candidate_harnesses as _queue_parts_candidate_harnesses,
     market_install_queue as _queue_parts_market_install_queue,
 )
@@ -95,16 +88,9 @@ from cbn_plugins.cli_anything_parts.promotion import (
     promotion_gate as _promotion_parts_promotion_gate,
 )
 from cbn_plugins.cli_anything_parts.repair import (
-    distribution_report as _distribution_report,
-    entrypoint_diagnosis as _entrypoint_diagnosis,
-    entrypoint_package_candidates as _entrypoint_package_candidates,
-    entrypoint_repair_manifest as _entrypoint_repair_manifest,
-    entrypoint_repair_manifest_provenance as _entrypoint_repair_manifest_provenance,
-    entrypoint_repair_strategy as _entrypoint_repair_strategy,
-    entrypoint_wrapper_path as _entrypoint_wrapper_path,
     module_report as _module_report,
-    script_path_candidates as _script_path_candidates,
-    write_repair_entrypoint_files as _write_repair_entrypoint_files,
+    entrypoint_repair_plan as _repair_parts_entrypoint_repair_plan,
+    repair_entrypoint as _repair_parts_repair_entrypoint,
 )
 from cbn_plugins.cli_anything_parts.sync import (
     candidate_from_market_record as _sync_candidate_from_market_record,
@@ -788,126 +774,23 @@ class CliAnythingHub:
         query: str | None = None,
         limit: int = 50,
     ) -> dict[str, Any]:
-        bounded_limit = max(0, min(limit, 500))
-        source = "explicit_harnesses" if harnesses else "market_install_queue"
-        source_report: dict[str, Any] | None = None
-        blocked_entries: list[dict[str, Any]] = []
-
-        if harnesses:
-            for harness_name in harnesses:
-                evaluation = self.evaluate_harness(harness_name, from_market=True)
-                blocked_entries.append(_blocked_entry_from_evaluation(harness_name, evaluation))
-        else:
-            source_report = self.market_install_queue(
-                query=query,
-                limit=bounded_limit,
-                max_installs=100,
-                include_blocked=True,
-            )
-            if not source_report.get("ok"):
-                return {
-                    "ok": False,
-                    "plugin_id": PLUGIN_ID,
-                    "kind": "CliAnythingBlockedHarnessPlan",
-                    "source": source,
-                    "query": query,
-                    "limit": bounded_limit,
-                    "error": source_report.get("error", "CLI-Anything install queue failed"),
-                    "summary": {
-                        "blocked_count": 0,
-                        "override_candidate_count": 0,
-                        "manual_resolution_count": 0,
-                        "unresolved_count": 0,
-                    },
-                    "blocked": [],
-                    "source_report": source_report,
-                }
-            blocked_raw = source_report.get("blocked", [])
-            if isinstance(blocked_raw, list):
-                blocked_entries = [item for item in blocked_raw if isinstance(item, dict)]
-
-        decisions = [_blocked_harness_decision(item) for item in blocked_entries]
-        category_counts: dict[str, int] = {}
-        for decision in decisions:
-            for category in decision.get("categories", []):
-                category_counts[category] = category_counts.get(category, 0) + 1
-        override_candidate_count = sum(1 for item in decisions if item.get("override", {}).get("available"))
-        manual_resolution_count = sum(1 for item in decisions if item.get("manual_resolution_required"))
-        unresolved_count = sum(1 for item in decisions if not item.get("decision_ready"))
-        return {
-            "ok": True,
-            "plugin_id": PLUGIN_ID,
-            "kind": "CliAnythingBlockedHarnessPlan",
-            "source": source,
-            "query": query,
-            "limit": bounded_limit,
-            "harnesses": list(harnesses),
-            "summary": {
-                "blocked_count": len(decisions),
-                "override_candidate_count": override_candidate_count,
-                "manual_resolution_count": manual_resolution_count,
-                "unresolved_count": unresolved_count,
-                "category_counts": category_counts,
-            },
-            "blocked": decisions,
-            "source_report": source_report,
-            "next_commands": [
-                "python -m cbn plugin blocked-plan cli-anything --harness <harness>",
-                "python -m cbn plugin evaluate-harness cli-anything <harness> --from-market",
-                "python -m cbn plugin probe-harness cli-anything <harness> --from-market",
-                "python -m cbn plugin onboard-harness cli-anything <harness> --from-market --write --install --yes --allow-blocked --smoke-suite --smoke-extra-arg=--help --no-workflows",
-            ],
-        }
+        return _queue_parts_blocked_harness_plan(
+            self,
+            harnesses=harnesses,
+            query=query,
+            limit=limit,
+        )
 
     def entrypoint_repair_plan(
         self,
         harness_name: str,
         from_market: bool = True,
     ) -> dict[str, Any]:
-        evaluation = self.evaluate_harness(harness_name, from_market=from_market)
-        status = evaluation.get("status") if isinstance(evaluation.get("status"), dict) else {}
-        market_record = status.get("market_record") if isinstance(status.get("market_record"), dict) else None
-        entry_point = status.get("entry_point")
-        if not isinstance(entry_point, str) or not entry_point:
-            entry_point = None
-        entrypoint_path = shutil.which(entry_point) if entry_point else None
-        package_candidates = _entrypoint_package_candidates(harness_name, market_record, status)
-        script_candidates = _script_path_candidates(entry_point)
-        distribution_reports = [_distribution_report(package) for package in package_candidates]
-        module_reports = [_module_report(package) for package in package_candidates]
-        diagnosis = _entrypoint_diagnosis(
-            entry_point=entry_point,
-            entrypoint_path=entrypoint_path,
-            script_candidates=script_candidates,
-            distribution_reports=distribution_reports,
-            module_reports=module_reports,
-            evaluation=evaluation,
+        return _repair_parts_entrypoint_repair_plan(
+            self,
+            harness_name=harness_name,
+            from_market=from_market,
         )
-        return {
-            "ok": True,
-            "plugin_id": PLUGIN_ID,
-            "kind": "CliAnythingEntrypointRepairPlan",
-            "harness_name": harness_name,
-            "from_market": from_market,
-            "capability_id": evaluation.get("capability_id"),
-            "entry_point": entry_point,
-            "entrypoint_path": entrypoint_path,
-            "entrypoint_available": bool(entrypoint_path),
-            "package_candidates": package_candidates,
-            "script_candidates": script_candidates,
-            "distributions": distribution_reports,
-            "modules": module_reports,
-            "diagnosis": diagnosis,
-            "evaluation": evaluation,
-            "commands": {
-                "status": f"python -m cbn plugin harness cli-anything status {harness_name} --from-market",
-                "evaluate": f"python -m cbn plugin evaluate-harness cli-anything {harness_name} --from-market",
-                "blocked_plan": f"python -m cbn plugin blocked-plan cli-anything --harness {harness_name}",
-                "where_entrypoint": f"where.exe {entry_point}" if entry_point else None,
-                "pip_show": f"python -m pip show {package_candidates[0]}" if package_candidates else None,
-                "cli_hub_launch_help": f"cli-hub launch {harness_name} -- --help",
-            },
-        }
 
     def repair_entrypoint(
         self,
@@ -920,126 +803,17 @@ class CliAnythingHub:
         smoke_args: tuple[str, ...] = ("--help",),
         smoke_timeout_seconds: int = 10,
     ) -> dict[str, Any]:
-        plan = self.entrypoint_repair_plan(harness_name, from_market=from_market)
-        strategy = _entrypoint_repair_strategy(plan, module=module)
-        execution: dict[str, Any] = {
-            "requested": write,
-            "confirmed": confirmed,
-            "status": "not_requested",
-            "blockers": [],
-            "written": [],
-        }
-        wrapper_path = _entrypoint_wrapper_path(self.paths.external_plugins, harness_name)
-        smoke_report = None
-        if require_smoke and strategy.get("ready") and strategy.get("module"):
-            smoke_report = self.adapter_target_smoke(
-                harness_name,
-                module=strategy["module"],
-                from_market=from_market,
-                smoke_args=smoke_args,
-                timeout_seconds=smoke_timeout_seconds,
-                run=write,
-                confirmed=confirmed,
-            )
-        smoke_gate = _repair_entrypoint_smoke_gate(require_smoke, smoke_report)
-        manifest = _entrypoint_repair_manifest(plan, strategy, wrapper_path)
-        repair_manifest_path = self.paths.local_manifests / f"{plan['capability_id']}.json"
-        if smoke_report and smoke_report.get("summary", {}).get("smoke_ok"):
-            annotations = manifest.setdefault("metadata", {}).setdefault("annotations", {})
-            annotations["cbn.repair.smoke.module"] = str(smoke_report["module"])
-            annotations["cbn.repair.smoke.args"] = json.dumps(smoke_report["smoke_args"], ensure_ascii=False)
-            annotations["cbn.repair.smoke.exit_code"] = str(smoke_report["execution"].get("exit_code"))
-        parser_fixture_gate = _mark_repaired_manifest_verified_from_fixtures(
-            manifest=manifest,
-            capability_id=str(plan["capability_id"]),
-            fixture_dir=self.paths.root / "parser_fixtures",
-            root=self.paths.root,
-            smoke_ok=bool(smoke_report and smoke_report.get("summary", {}).get("smoke_ok")),
+        return _repair_parts_repair_entrypoint(
+            self,
+            harness_name=harness_name,
+            from_market=from_market,
+            module=module,
+            write=write,
+            confirmed=confirmed,
+            require_smoke=require_smoke,
+            smoke_args=smoke_args,
+            smoke_timeout_seconds=smoke_timeout_seconds,
         )
-        validation = validate_manifest_dict(
-            manifest,
-            source_path=repair_manifest_path,
-            known_parser_refs=_known_parser_refs(),
-        )
-        if write and not confirmed:
-            execution["status"] = "requires_confirmation"
-            execution["blockers"] = ["entrypoint repair writes require --yes or confirmed=true"]
-        elif write and confirmed and not strategy["ready"]:
-            execution["status"] = "blocked"
-            execution["blockers"] = list(strategy["blockers"])
-        elif write and confirmed and not smoke_gate["ok"]:
-            execution["status"] = "blocked"
-            execution["blockers"] = list(smoke_gate["blockers"])
-        elif write and confirmed and not validation["valid"]:
-            execution["status"] = "blocked"
-            execution["blockers"] = [f"manifest validation error: {item}" for item in validation["errors"]]
-        elif write and confirmed:
-            repair_operation = self.operation_runner.execute_write(
-                PluginPlan(
-                    plugin_id=PLUGIN_ID,
-                    action=f"repair-entrypoint-{sanitize_harness_name(harness_name)}",
-                    plugin_dir=str(self.paths.external_plugins / PLUGIN_ID),
-                    commands=(),
-                    notes=(
-                        "Writes a CBN-owned CLI-Anything entrypoint wrapper and local manifest overlay.",
-                        f"Harness: {harness_name}",
-                        f"Module: {strategy['module']}",
-                    ),
-                ),
-                lambda operation_id: _write_repair_entrypoint_files(
-                    operation_id=operation_id,
-                    root=self.paths.root,
-                    wrapper_path=wrapper_path,
-                    module=strategy["module"],
-                    manifest_path=repair_manifest_path,
-                    manifest=manifest,
-                ),
-            )
-            write_result = repair_operation.get("write_result") or {}
-            execution["status"] = repair_operation.get("status", "failed")
-            execution["operation_id"] = repair_operation.get("operation_id")
-            execution["operation_status"] = repair_operation.get("status")
-            execution["artifact_ids"] = repair_operation.get("artifact_ids", [])
-            execution["write_result"] = write_result
-            execution["written"] = list(write_result.get("written", []))
-            execution["backups"] = list(write_result.get("backups", []))
-            if execution["status"] != "completed":
-                execution["blockers"] = list(repair_operation.get("blockers", []))
-                if not execution["blockers"] and write_result.get("error"):
-                    execution["blockers"] = [str(write_result["error"])]
-        return {
-            "ok": True,
-            "plugin_id": PLUGIN_ID,
-            "kind": "CliAnythingEntrypointRepair",
-            "harness_name": harness_name,
-            "from_market": from_market,
-            "module": module,
-            "write": write,
-            "confirmed": confirmed,
-            "require_smoke": require_smoke,
-            "smoke_args": list(smoke_args),
-            "smoke_timeout_seconds": smoke_timeout_seconds,
-            "plan": plan,
-            "strategy": strategy,
-            "smoke_gate": smoke_gate,
-            "smoke_report": smoke_report,
-            "wrapper_path": str(wrapper_path),
-            "manifest_path": str(repair_manifest_path),
-            "manifest": manifest,
-            "repair_provenance": _entrypoint_repair_manifest_provenance(manifest),
-            "parser_fixtures": parser_fixture_gate,
-            "validation": validation,
-            "execution": execution,
-            "next_commands": [
-                f"python -m cbn plugin repair-plan cli-anything {harness_name} --from-market",
-                f"python -m cbn plugin repair-entrypoint cli-anything {harness_name} --from-market --module <module>",
-                f"python -m cbn plugin adapter-smoke cli-anything {harness_name} --from-market --module <module> --run --yes",
-                f"python -m cbn plugin repair-entrypoint cli-anything {harness_name} --from-market --module <module> --write --yes",
-                f"python -m cbn plugin repair-entrypoint cli-anything {harness_name} --from-market --module <module> --require-smoke --write --yes",
-                "python -m cbn registry validate runtime/manifests",
-                f"python -m cbn call {plan.get('capability_id')} --dry-run",
-            ],
-        }
 
     def adapter_targets(
         self,
@@ -1048,60 +822,13 @@ class CliAnythingHub:
         package: str | None = None,
         limit: int = 20,
     ) -> dict[str, Any]:
-        plan = self.entrypoint_repair_plan(harness_name, from_market=from_market)
-        package_candidates = [package] if package else list(plan.get("package_candidates", []))
-        package_reports = [
-            _adapter_target_package_report(candidate, limit=limit)
-            for candidate in package_candidates
-        ]
-        targets = [
-            {
-                **target,
-                "package": report["package"],
-                "repair_command": (
-                    f"python -m cbn plugin repair-entrypoint cli-anything {harness_name} "
-                    f"--from-market --module {target['module']}"
-                ),
-            }
-            for report in package_reports
-            for target in report.get("targets", [])
-        ]
-        targets.sort(key=lambda item: (-int(item["score"]), item["module"]))
-        targets = targets[: max(0, min(limit, 100))]
-        recommended = targets[0] if targets else None
-        return {
-            "ok": True,
-            "plugin_id": PLUGIN_ID,
-            "kind": "CliAnythingAdapterTargets",
-            "harness_name": harness_name,
-            "from_market": from_market,
-            "package": package,
-            "limit": limit,
-            "plan": plan,
-            "packages": package_reports,
-            "targets": targets,
-            "summary": {
-                "package_count": len(package_reports),
-                "target_count": len(targets),
-                "recommended_module": recommended["module"] if recommended else None,
-                "recommended_score": recommended["score"] if recommended else None,
-                "recommended_next_action": (
-                    "inspect_top_target_then_repair_entrypoint"
-                    if recommended
-                    else "write_custom_adapter_or_choose_package_api"
-                ),
-            },
-            "next_commands": [
-                f"python -m cbn plugin repair-plan cli-anything {harness_name} --from-market",
-                f"python -m cbn plugin adapter-targets cli-anything {harness_name} --from-market",
-                (
-                    f"python -m cbn plugin repair-entrypoint cli-anything {harness_name} "
-                    f"--from-market --module {recommended['module']}"
-                    if recommended
-                    else None
-                ),
-            ],
-        }
+        return _adapter_targets_parts_adapter_targets(
+            self,
+            harness_name=harness_name,
+            from_market=from_market,
+            package=package,
+            limit=limit,
+        )
 
     def adapter_target_smoke(
         self,
@@ -1113,63 +840,16 @@ class CliAnythingHub:
         run: bool = False,
         confirmed: bool = False,
     ) -> dict[str, Any]:
-        targets_report = self.adapter_targets(harness_name, from_market=from_market, limit=50)
-        selected = next(
-            (target for target in targets_report.get("targets", []) if target.get("module") == module),
-            None,
-        )
-        module_report = _module_report(module)
-        argv = (sys.executable, "-m", module, *smoke_args)
-        execution = _adapter_target_smoke_execution(
-            argv=argv,
-            cwd=self.paths.root,
+        return _adapter_targets_parts_adapter_target_smoke(
+            self,
+            harness_name=harness_name,
+            module=module,
+            from_market=from_market,
+            smoke_args=smoke_args,
             timeout_seconds=timeout_seconds,
             run=run,
             confirmed=confirmed,
-            operation_runner=self.operation_runner,
-            plugin_dir=self.paths.external_plugins / PLUGIN_ID,
-            harness_name=harness_name,
-            module=module,
         )
-        return {
-            "ok": True,
-            "plugin_id": PLUGIN_ID,
-            "kind": "CliAnythingAdapterTargetSmoke",
-            "harness_name": harness_name,
-            "from_market": from_market,
-            "module": module,
-            "smoke_args": list(smoke_args),
-            "timeout_seconds": timeout_seconds,
-            "run": run,
-            "confirmed": confirmed,
-            "command": list(argv),
-            "selected_target": selected,
-            "module_report": module_report,
-            "targets_summary": targets_report["summary"],
-            "execution": execution,
-            "summary": {
-                "candidate_known": selected is not None,
-                "module_importable": bool(module_report.get("importable")),
-                "executed": execution["status"] in {"completed", "failed", "timeout", "spawn_failed"},
-                "smoke_ok": execution.get("exit_code") == 0,
-                "recommended_next_action": _adapter_target_smoke_next_action(selected, module_report, execution),
-            },
-            "next_commands": [
-                f"python -m cbn plugin adapter-targets cli-anything {harness_name} --from-market --limit 10",
-                (
-                    f"python -m cbn plugin adapter-smoke cli-anything {harness_name} "
-                    f"--from-market --module {module}"
-                ),
-                (
-                    f"python -m cbn plugin adapter-smoke cli-anything {harness_name} "
-                    f"--from-market --module {module} --run --yes"
-                ),
-                (
-                    f"python -m cbn plugin repair-entrypoint cli-anything {harness_name} "
-                    f"--from-market --module {module} --write --yes"
-                ),
-            ],
-        }
 
     def adaptation_gate(
         self,
@@ -1182,96 +862,17 @@ class CliAnythingHub:
         smoke_args: tuple[str, ...] = ("--help",),
         smoke_timeout_seconds: int = 10,
     ) -> dict[str, Any]:
-        evaluation = self.evaluate_harness(harness_name, from_market=from_market)
-        gates = evaluation.get("gates") if isinstance(evaluation.get("gates"), dict) else {}
-        native_launch_ready = bool(gates.get("launch_ready"))
-        repair_plan = None
-        adapter_targets = None
-        selected_target = None
-        selected_module = module
-        smoke_report = None
-        repair_scan = _adaptation_gate_repair_scan_decision(evaluation, native_launch_ready, module)
-        if repair_scan["scan"]:
-            repair_plan = self.entrypoint_repair_plan(harness_name, from_market=from_market)
-            diagnosis = repair_plan.get("diagnosis") if isinstance(repair_plan.get("diagnosis"), dict) else {}
-            if diagnosis.get("repair_required"):
-                adapter_targets = self.adapter_targets(harness_name, from_market=from_market, limit=20)
-                targets = adapter_targets.get("targets", [])
-                selected_target = next(
-                    (target for target in targets if target.get("module") == module),
-                    None,
-                )
-                if selected_target is None and module is None and targets:
-                    selected_target = targets[0]
-                    selected_module = str(selected_target.get("module"))
-                if selected_module:
-                    smoke_report = self.adapter_target_smoke(
-                        harness_name,
-                        module=selected_module,
-                        from_market=from_market,
-                        smoke_args=smoke_args,
-                        timeout_seconds=smoke_timeout_seconds,
-                        run=run_smoke,
-                        confirmed=confirmed,
-                    )
-        smoke_gate = _repair_entrypoint_smoke_gate(require_smoke, smoke_report)
-        summary = _adaptation_gate_summary(
-            evaluation=evaluation,
-            native_launch_ready=native_launch_ready,
-            repair_plan=repair_plan,
-            selected_module=selected_module,
-            smoke_gate=smoke_gate,
-            smoke_report=smoke_report,
+        return _adaptation_parts_adaptation_gate(
+            self,
+            harness_name=harness_name,
+            from_market=from_market,
+            module=module,
             require_smoke=require_smoke,
-            repair_scan=repair_scan,
+            run_smoke=run_smoke,
+            confirmed=confirmed,
+            smoke_args=smoke_args,
+            smoke_timeout_seconds=smoke_timeout_seconds,
         )
-        return {
-            "ok": True,
-            "plugin_id": PLUGIN_ID,
-            "kind": "CliAnythingHarnessAdaptationGate",
-            "harness_name": harness_name,
-            "from_market": from_market,
-            "module": module,
-            "selected_module": selected_module,
-            "require_smoke": require_smoke,
-            "run_smoke": run_smoke,
-            "confirmed": confirmed,
-            "smoke_args": list(smoke_args),
-            "smoke_timeout_seconds": smoke_timeout_seconds,
-            "summary": summary,
-            "repair_scan": repair_scan,
-            "stages": _adaptation_gate_stages(
-                evaluation=evaluation,
-                repair_plan=repair_plan,
-                adapter_targets=adapter_targets,
-                selected_module=selected_module,
-                smoke_gate=smoke_gate,
-                smoke_report=smoke_report,
-                summary=summary,
-                repair_scan=repair_scan,
-            ),
-            "evaluation": evaluation,
-            "repair_plan": repair_plan,
-            "adapter_targets": adapter_targets,
-            "selected_target": selected_target,
-            "smoke_report": smoke_report,
-            "next_commands": [
-                f"python -m cbn plugin adaptation-gate cli-anything {harness_name} --from-market",
-                f"python -m cbn plugin adapter-targets cli-anything {harness_name} --from-market --limit 10",
-                (
-                    f"python -m cbn plugin adapter-smoke cli-anything {harness_name} "
-                    f"--from-market --module {selected_module} --run --yes"
-                    if selected_module
-                    else None
-                ),
-                (
-                    f"python -m cbn plugin repair-entrypoint cli-anything {harness_name} "
-                    f"--from-market --module {selected_module} --require-smoke --write --yes"
-                    if selected_module
-                    else None
-                ),
-            ],
-        }
 
     def adaptation_queue(
         self,
@@ -1286,59 +887,19 @@ class CliAnythingHub:
         smoke_args: tuple[str, ...] = ("--help",),
         smoke_timeout_seconds: int = 10,
     ) -> dict[str, Any]:
-        bounded_limit = max(0, min(limit, 500))
-        bounded_max = max(0, min(max_harnesses, 50))
-        source_report = None
-        source = "explicit_harnesses"
-        selected_harnesses = _unique_harnesses(harnesses)
-        if not selected_harnesses:
-            source = "market_install_queue"
-            source_report = self.market_install_queue(
-                query=query,
-                limit=bounded_limit,
-                max_installs=bounded_max,
-                include_blocked=include_blocked,
-            )
-            selected_harnesses = _harnesses_from_install_queue(source_report, include_blocked=include_blocked)
-        selected_harnesses = selected_harnesses[:bounded_max]
-        gates = [
-            self.adaptation_gate(
-                harness,
-                from_market=True,
-                require_smoke=require_smoke,
-                run_smoke=run_smoke,
-                confirmed=confirmed,
-                smoke_args=smoke_args,
-                smoke_timeout_seconds=smoke_timeout_seconds,
-            )
-            for harness in selected_harnesses
-        ]
-        summary = _adaptation_queue_summary(gates)
-        return {
-            "ok": True,
-            "plugin_id": PLUGIN_ID,
-            "kind": "CliAnythingHarnessAdaptationQueue",
-            "source": source,
-            "query": query,
-            "limit": bounded_limit,
-            "max_harnesses": bounded_max,
-            "include_blocked": include_blocked,
-            "harnesses": selected_harnesses,
-            "require_smoke": require_smoke,
-            "run_smoke": run_smoke,
-            "confirmed": confirmed,
-            "smoke_args": list(smoke_args),
-            "smoke_timeout_seconds": smoke_timeout_seconds,
-            "summary": summary,
-            "gates": gates,
-            "source_report": source_report,
-            "next_commands": [
-                "python -m cbn plugin adaptation-queue cli-anything --query file --limit 20 --max-harnesses 5",
-                "python -m cbn plugin adaptation-queue cli-anything --harness py4csr --harness 3mf",
-                "python -m cbn plugin adaptation-gate cli-anything <harness> --from-market",
-                "python -m cbn plugin adaptation-gate cli-anything <harness> --from-market --run-smoke --yes",
-            ],
-        }
+        return _adaptation_parts_adaptation_queue(
+            self,
+            harnesses=harnesses,
+            query=query,
+            limit=limit,
+            max_harnesses=max_harnesses,
+            include_blocked=include_blocked,
+            require_smoke=require_smoke,
+            run_smoke=run_smoke,
+            confirmed=confirmed,
+            smoke_args=smoke_args,
+            smoke_timeout_seconds=smoke_timeout_seconds,
+        )
 
     def live_verification(
         self,

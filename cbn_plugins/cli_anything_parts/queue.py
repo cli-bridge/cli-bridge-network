@@ -261,6 +261,84 @@ def market_install_queue(
     }
 
 
+def blocked_harness_plan(
+    hub: Any,
+    harnesses: tuple[str, ...] = (),
+    query: str | None = None,
+    limit: int = 50,
+) -> dict[str, Any]:
+    bounded_limit = max(0, min(limit, 500))
+    source = "explicit_harnesses" if harnesses else "market_install_queue"
+    source_report: dict[str, Any] | None = None
+    blocked_entries: list[dict[str, Any]] = []
+
+    if harnesses:
+        for harness_name in harnesses:
+            evaluation = hub.evaluate_harness(harness_name, from_market=True)
+            blocked_entries.append(blocked_entry_from_evaluation(harness_name, evaluation))
+    else:
+        source_report = hub.market_install_queue(
+            query=query,
+            limit=bounded_limit,
+            max_installs=100,
+            include_blocked=True,
+        )
+        if not source_report.get("ok"):
+            return {
+                "ok": False,
+                "plugin_id": PLUGIN_ID,
+                "kind": "CliAnythingBlockedHarnessPlan",
+                "source": source,
+                "query": query,
+                "limit": bounded_limit,
+                "error": source_report.get("error", "CLI-Anything install queue failed"),
+                "summary": {
+                    "blocked_count": 0,
+                    "override_candidate_count": 0,
+                    "manual_resolution_count": 0,
+                    "unresolved_count": 0,
+                },
+                "blocked": [],
+                "source_report": source_report,
+            }
+        blocked_raw = source_report.get("blocked", [])
+        if isinstance(blocked_raw, list):
+            blocked_entries = [item for item in blocked_raw if isinstance(item, dict)]
+
+    decisions = [blocked_harness_decision(item) for item in blocked_entries]
+    category_counts: dict[str, int] = {}
+    for decision in decisions:
+        for category in decision.get("categories", []):
+            category_counts[category] = category_counts.get(category, 0) + 1
+    override_candidate_count = sum(1 for item in decisions if item.get("override", {}).get("available"))
+    manual_resolution_count = sum(1 for item in decisions if item.get("manual_resolution_required"))
+    unresolved_count = sum(1 for item in decisions if not item.get("decision_ready"))
+    return {
+        "ok": True,
+        "plugin_id": PLUGIN_ID,
+        "kind": "CliAnythingBlockedHarnessPlan",
+        "source": source,
+        "query": query,
+        "limit": bounded_limit,
+        "harnesses": list(harnesses),
+        "summary": {
+            "blocked_count": len(decisions),
+            "override_candidate_count": override_candidate_count,
+            "manual_resolution_count": manual_resolution_count,
+            "unresolved_count": unresolved_count,
+            "category_counts": category_counts,
+        },
+        "blocked": decisions,
+        "source_report": source_report,
+        "next_commands": [
+            "python -m cbn plugin blocked-plan cli-anything --harness <harness>",
+            "python -m cbn plugin evaluate-harness cli-anything <harness> --from-market",
+            "python -m cbn plugin probe-harness cli-anything <harness> --from-market",
+            "python -m cbn plugin onboard-harness cli-anything <harness> --from-market --write --install --yes --allow-blocked --smoke-suite --smoke-extra-arg=--help --no-workflows",
+        ],
+    }
+
+
 def market_command_payload(result: CommandResultLike, compact: bool) -> dict[str, Any]:
     if not compact:
         return result.as_dict()

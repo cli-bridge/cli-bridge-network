@@ -11,14 +11,210 @@ import shutil
 import sys
 import sysconfig
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
+from cbn_core.manifest import validate_manifest_dict
 from cbn_plugins.cli_anything_parts.lifecycle import max_risk
 from cbn_plugins.cli_anything_parts.manifest_factory import infer_market_policy, sanitize_harness_name
-from cbn_plugins.cli_anything_parts.verification import policy_requires_confirmation
+from cbn_plugins.cli_anything_parts.verification import (
+    known_parser_refs,
+    mark_repaired_manifest_verified_from_fixtures,
+    policy_requires_confirmation,
+)
+from cbn_plugins.manager import PluginPlan
 
 
 PLUGIN_ID = "cli-anything"
+
+
+def entrypoint_repair_plan(
+    hub: Any,
+    harness_name: str,
+    from_market: bool = True,
+) -> dict[str, Any]:
+    evaluation = hub.evaluate_harness(harness_name, from_market=from_market)
+    status = evaluation.get("status") if isinstance(evaluation.get("status"), dict) else {}
+    market_record = status.get("market_record") if isinstance(status.get("market_record"), dict) else None
+    entry_point = status.get("entry_point")
+    if not isinstance(entry_point, str) or not entry_point:
+        entry_point = None
+    entrypoint_path = shutil.which(entry_point) if entry_point else None
+    package_candidates = entrypoint_package_candidates(harness_name, market_record, status)
+    script_candidates = script_path_candidates(entry_point)
+    distribution_reports = [distribution_report(package) for package in package_candidates]
+    module_reports = [module_report(package) for package in package_candidates]
+    diagnosis = entrypoint_diagnosis(
+        entry_point=entry_point,
+        entrypoint_path=entrypoint_path,
+        script_candidates=script_candidates,
+        distribution_reports=distribution_reports,
+        module_reports=module_reports,
+        evaluation=evaluation,
+    )
+    return {
+        "ok": True,
+        "plugin_id": PLUGIN_ID,
+        "kind": "CliAnythingEntrypointRepairPlan",
+        "harness_name": harness_name,
+        "from_market": from_market,
+        "capability_id": evaluation.get("capability_id"),
+        "entry_point": entry_point,
+        "entrypoint_path": entrypoint_path,
+        "entrypoint_available": bool(entrypoint_path),
+        "package_candidates": package_candidates,
+        "script_candidates": script_candidates,
+        "distributions": distribution_reports,
+        "modules": module_reports,
+        "diagnosis": diagnosis,
+        "evaluation": evaluation,
+        "commands": {
+            "status": f"python -m cbn plugin harness cli-anything status {harness_name} --from-market",
+            "evaluate": f"python -m cbn plugin evaluate-harness cli-anything {harness_name} --from-market",
+            "blocked_plan": f"python -m cbn plugin blocked-plan cli-anything --harness {harness_name}",
+            "where_entrypoint": f"where.exe {entry_point}" if entry_point else None,
+            "pip_show": f"python -m pip show {package_candidates[0]}" if package_candidates else None,
+            "cli_hub_launch_help": f"cli-hub launch {harness_name} -- --help",
+        },
+    }
+
+
+def repair_entrypoint(
+    hub: Any,
+    harness_name: str,
+    from_market: bool = True,
+    module: str | None = None,
+    write: bool = False,
+    confirmed: bool = False,
+    require_smoke: bool = False,
+    smoke_args: tuple[str, ...] = ("--help",),
+    smoke_timeout_seconds: int = 10,
+    smoke_gate_fn: Callable[[bool, dict[str, Any] | None], dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    if smoke_gate_fn is None:
+        from cbn_plugins.cli_anything_parts.adapter_targets import repair_entrypoint_smoke_gate
+
+        smoke_gate_fn = repair_entrypoint_smoke_gate
+
+    plan = hub.entrypoint_repair_plan(harness_name, from_market=from_market)
+    strategy = entrypoint_repair_strategy(plan, module=module)
+    execution: dict[str, Any] = {
+        "requested": write,
+        "confirmed": confirmed,
+        "status": "not_requested",
+        "blockers": [],
+        "written": [],
+    }
+    wrapper_path = entrypoint_wrapper_path(hub.paths.external_plugins, harness_name)
+    smoke_report = None
+    if require_smoke and strategy.get("ready") and strategy.get("module"):
+        smoke_report = hub.adapter_target_smoke(
+            harness_name,
+            module=strategy["module"],
+            from_market=from_market,
+            smoke_args=smoke_args,
+            timeout_seconds=smoke_timeout_seconds,
+            run=write,
+            confirmed=confirmed,
+        )
+    smoke_gate = smoke_gate_fn(require_smoke, smoke_report)
+    manifest = entrypoint_repair_manifest(plan, strategy, wrapper_path)
+    repair_manifest_path = hub.paths.local_manifests / f"{plan['capability_id']}.json"
+    if smoke_report and smoke_report.get("summary", {}).get("smoke_ok"):
+        annotations = manifest.setdefault("metadata", {}).setdefault("annotations", {})
+        annotations["cbn.repair.smoke.module"] = str(smoke_report["module"])
+        annotations["cbn.repair.smoke.args"] = json.dumps(smoke_report["smoke_args"], ensure_ascii=False)
+        annotations["cbn.repair.smoke.exit_code"] = str(smoke_report["execution"].get("exit_code"))
+    parser_fixture_gate = mark_repaired_manifest_verified_from_fixtures(
+        manifest=manifest,
+        capability_id=str(plan["capability_id"]),
+        fixture_dir=hub.paths.root / "parser_fixtures",
+        root=hub.paths.root,
+        smoke_ok=bool(smoke_report and smoke_report.get("summary", {}).get("smoke_ok")),
+    )
+    validation = validate_manifest_dict(
+        manifest,
+        source_path=repair_manifest_path,
+        known_parser_refs=known_parser_refs(),
+    )
+    if write and not confirmed:
+        execution["status"] = "requires_confirmation"
+        execution["blockers"] = ["entrypoint repair writes require --yes or confirmed=true"]
+    elif write and confirmed and not strategy["ready"]:
+        execution["status"] = "blocked"
+        execution["blockers"] = list(strategy["blockers"])
+    elif write and confirmed and not smoke_gate["ok"]:
+        execution["status"] = "blocked"
+        execution["blockers"] = list(smoke_gate["blockers"])
+    elif write and confirmed and not validation["valid"]:
+        execution["status"] = "blocked"
+        execution["blockers"] = [f"manifest validation error: {item}" for item in validation["errors"]]
+    elif write and confirmed:
+        repair_operation = hub.operation_runner.execute_write(
+            PluginPlan(
+                plugin_id=PLUGIN_ID,
+                action=f"repair-entrypoint-{sanitize_harness_name(harness_name)}",
+                plugin_dir=str(hub.paths.external_plugins / PLUGIN_ID),
+                commands=(),
+                notes=(
+                    "Writes a CBN-owned CLI-Anything entrypoint wrapper and local manifest overlay.",
+                    f"Harness: {harness_name}",
+                    f"Module: {strategy['module']}",
+                ),
+            ),
+            lambda operation_id: write_repair_entrypoint_files(
+                operation_id=operation_id,
+                root=hub.paths.root,
+                wrapper_path=wrapper_path,
+                module=strategy["module"],
+                manifest_path=repair_manifest_path,
+                manifest=manifest,
+            ),
+        )
+        write_result = repair_operation.get("write_result") or {}
+        execution["status"] = repair_operation.get("status", "failed")
+        execution["operation_id"] = repair_operation.get("operation_id")
+        execution["operation_status"] = repair_operation.get("status")
+        execution["artifact_ids"] = repair_operation.get("artifact_ids", [])
+        execution["write_result"] = write_result
+        execution["written"] = list(write_result.get("written", []))
+        execution["backups"] = list(write_result.get("backups", []))
+        if execution["status"] != "completed":
+            execution["blockers"] = list(repair_operation.get("blockers", []))
+            if not execution["blockers"] and write_result.get("error"):
+                execution["blockers"] = [str(write_result["error"])]
+    return {
+        "ok": True,
+        "plugin_id": PLUGIN_ID,
+        "kind": "CliAnythingEntrypointRepair",
+        "harness_name": harness_name,
+        "from_market": from_market,
+        "module": module,
+        "write": write,
+        "confirmed": confirmed,
+        "require_smoke": require_smoke,
+        "smoke_args": list(smoke_args),
+        "smoke_timeout_seconds": smoke_timeout_seconds,
+        "plan": plan,
+        "strategy": strategy,
+        "smoke_gate": smoke_gate,
+        "smoke_report": smoke_report,
+        "wrapper_path": str(wrapper_path),
+        "manifest_path": str(repair_manifest_path),
+        "manifest": manifest,
+        "repair_provenance": entrypoint_repair_manifest_provenance(manifest),
+        "parser_fixtures": parser_fixture_gate,
+        "validation": validation,
+        "execution": execution,
+        "next_commands": [
+            f"python -m cbn plugin repair-plan cli-anything {harness_name} --from-market",
+            f"python -m cbn plugin repair-entrypoint cli-anything {harness_name} --from-market --module <module>",
+            f"python -m cbn plugin adapter-smoke cli-anything {harness_name} --from-market --module <module> --run --yes",
+            f"python -m cbn plugin repair-entrypoint cli-anything {harness_name} --from-market --module <module> --write --yes",
+            f"python -m cbn plugin repair-entrypoint cli-anything {harness_name} --from-market --module <module> --require-smoke --write --yes",
+            "python -m cbn registry validate runtime/manifests",
+            f"python -m cbn call {plan.get('capability_id')} --dry-run",
+        ],
+    }
 
 
 def entrypoint_package_candidates(
