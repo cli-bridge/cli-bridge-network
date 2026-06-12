@@ -144,93 +144,203 @@ def market_install_queue(
     )
     bounded_max_installs = max(0, min(max_installs, 100))
     if not candidate_scan.get("ok"):
-        return {
-            "ok": False,
-            "plugin_id": PLUGIN_ID,
-            "kind": "CliAnythingMarketInstallQueue",
-            "query": query,
-            "limit": max(0, min(limit, 500)),
-            "max_installs": bounded_max_installs,
-            "include_blocked": include_blocked,
-            "error": candidate_scan.get("error", "CLI-Anything candidate scan failed"),
-            "summary": {
-                "candidate_count": 0,
-                "queued_count": 0,
-                "blocked_count": 0,
-                "skipped_count": 0,
-            },
-            "queue": [],
-            "blocked": [],
-            "skipped": [],
-            "candidate_scan": candidate_scan,
-        }
+        return failed_market_install_queue_report(
+            query=query,
+            limit=limit,
+            bounded_max_installs=bounded_max_installs,
+            include_blocked=include_blocked,
+            candidate_scan=candidate_scan,
+        )
+    candidates = install_queue_candidates(candidate_scan)
+    queue, blocked, skipped = classify_install_queue_candidates(
+        hub,
+        candidates=candidates,
+        bounded_max_installs=bounded_max_installs,
+        include_blocked=include_blocked,
+    )
+    return successful_market_install_queue_report(
+        query=query,
+        candidate_scan=candidate_scan,
+        bounded_max_installs=bounded_max_installs,
+        include_blocked=include_blocked,
+        candidates=candidates,
+        queue=queue,
+        blocked=blocked,
+        skipped=skipped,
+    )
 
-    queue = []
-    blocked = []
-    skipped = []
+
+def failed_market_install_queue_report(
+    *,
+    query: str | None,
+    limit: int,
+    bounded_max_installs: int,
+    include_blocked: bool,
+    candidate_scan: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "ok": False,
+        "plugin_id": PLUGIN_ID,
+        "kind": "CliAnythingMarketInstallQueue",
+        "query": query,
+        "limit": max(0, min(limit, 500)),
+        "max_installs": bounded_max_installs,
+        "include_blocked": include_blocked,
+        "error": candidate_scan.get("error", "CLI-Anything candidate scan failed"),
+        "summary": {
+            "candidate_count": 0,
+            "queued_count": 0,
+            "blocked_count": 0,
+            "skipped_count": 0,
+        },
+        "queue": [],
+        "blocked": [],
+        "skipped": [],
+        "candidate_scan": candidate_scan,
+    }
+
+
+def install_queue_candidates(candidate_scan: dict[str, Any]) -> list[dict[str, Any]]:
     candidates = candidate_scan.get("candidates", [])
     if not isinstance(candidates, list):
-        candidates = []
+        return []
+    return [item for item in candidates if isinstance(item, dict)]
 
+
+def classify_install_queue_candidates(
+    hub: Any,
+    *,
+    candidates: list[dict[str, Any]],
+    bounded_max_installs: int,
+    include_blocked: bool,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    queue: list[dict[str, Any]] = []
+    blocked: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
     for item in candidates:
-        if not isinstance(item, dict):
-            continue
-        harness_name = item.get("harness_name")
-        if not isinstance(harness_name, str) or not harness_name:
-            blocked.append(install_queue_blocked_entry(item, "market record is missing harness_name"))
-            continue
-        gates = item.get("gates") if isinstance(item.get("gates"), dict) else {}
-        if bool(item.get("install_candidate")) and not bool(gates.get("launch_ready")):
-            evaluation = hub.evaluate_harness(harness_name, from_market=True)
-            if not evaluation.get("ok"):
-                blocked.append(
-                    install_queue_blocked_entry(
-                        item,
-                        "harness evaluation failed before queueing",
-                        evaluation=evaluation,
-                    )
-                )
-                continue
-            eval_gates = evaluation.get("gates") if isinstance(evaluation.get("gates"), dict) else {}
-            if bool(eval_gates.get("launch_ready")):
-                skipped.append(
-                    install_queue_skipped_entry(
-                        item,
-                        "harness is already launch-ready",
-                        evaluation=evaluation,
-                    )
-                )
-                continue
-            if not bool(evaluation.get("install_candidate")):
-                blocked.append(
-                    install_queue_blocked_entry(
-                        item,
-                        "harness evaluation blockers must be resolved first",
-                        evaluation=evaluation,
-                    )
-                )
-                continue
-            if len(queue) >= bounded_max_installs:
-                skipped.append(
-                    install_queue_skipped_entry(
-                        item,
-                        "max_installs limit reached",
-                        evaluation=evaluation,
-                    )
-                )
-                continue
-            queue.append(
-                install_queue_entry(
-                    item,
-                    install_plan=hub.harness_plan("install", harness_name).as_dict(),
-                    evaluation=evaluation,
-                )
-            )
-        elif bool(item.get("install_candidate")) and bool(gates.get("launch_ready")):
-            skipped.append(install_queue_skipped_entry(item, "harness is already launch-ready"))
-        elif include_blocked:
-            blocked.append(install_queue_blocked_entry(item, "candidate blockers must be resolved first"))
+        classification = classify_install_queue_candidate(
+            hub,
+            item=item,
+            queued_count=len(queue),
+            bounded_max_installs=bounded_max_installs,
+            include_blocked=include_blocked,
+        )
+        bucket = classification.get("bucket")
+        entry = classification.get("entry")
+        if bucket == "queue" and isinstance(entry, dict):
+            queue.append(entry)
+        elif bucket == "blocked" and isinstance(entry, dict):
+            blocked.append(entry)
+        elif bucket == "skipped" and isinstance(entry, dict):
+            skipped.append(entry)
+    return queue, blocked, skipped
 
+
+def classify_install_queue_candidate(
+    hub: Any,
+    *,
+    item: dict[str, Any],
+    queued_count: int,
+    bounded_max_installs: int,
+    include_blocked: bool,
+) -> dict[str, Any]:
+    harness_name = item.get("harness_name")
+    if not isinstance(harness_name, str) or not harness_name:
+        return {
+            "bucket": "blocked",
+            "entry": install_queue_blocked_entry(item, "market record is missing harness_name"),
+        }
+    gates = item.get("gates") if isinstance(item.get("gates"), dict) else {}
+    install_candidate = bool(item.get("install_candidate"))
+    launch_ready = bool(gates.get("launch_ready"))
+    if install_candidate and launch_ready:
+        return {
+            "bucket": "skipped",
+            "entry": install_queue_skipped_entry(item, "harness is already launch-ready"),
+        }
+    if install_candidate:
+        return classify_install_ready_candidate(
+            hub,
+            item=item,
+            harness_name=harness_name,
+            queued_count=queued_count,
+            bounded_max_installs=bounded_max_installs,
+        )
+    if include_blocked:
+        return {
+            "bucket": "blocked",
+            "entry": install_queue_blocked_entry(item, "candidate blockers must be resolved first"),
+        }
+    return {"bucket": "ignored", "entry": None}
+
+
+def classify_install_ready_candidate(
+    hub: Any,
+    *,
+    item: dict[str, Any],
+    harness_name: str,
+    queued_count: int,
+    bounded_max_installs: int,
+) -> dict[str, Any]:
+    evaluation = hub.evaluate_harness(harness_name, from_market=True)
+    if not evaluation.get("ok"):
+        return {
+            "bucket": "blocked",
+            "entry": install_queue_blocked_entry(
+                item,
+                "harness evaluation failed before queueing",
+                evaluation=evaluation,
+            ),
+        }
+    eval_gates = evaluation.get("gates") if isinstance(evaluation.get("gates"), dict) else {}
+    if bool(eval_gates.get("launch_ready")):
+        return {
+            "bucket": "skipped",
+            "entry": install_queue_skipped_entry(
+                item,
+                "harness is already launch-ready",
+                evaluation=evaluation,
+            ),
+        }
+    if not bool(evaluation.get("install_candidate")):
+        return {
+            "bucket": "blocked",
+            "entry": install_queue_blocked_entry(
+                item,
+                "harness evaluation blockers must be resolved first",
+                evaluation=evaluation,
+            ),
+        }
+    if queued_count >= bounded_max_installs:
+        return {
+            "bucket": "skipped",
+            "entry": install_queue_skipped_entry(
+                item,
+                "max_installs limit reached",
+                evaluation=evaluation,
+            ),
+        }
+    return {
+        "bucket": "queue",
+        "entry": install_queue_entry(
+            item,
+            install_plan=hub.harness_plan("install", harness_name).as_dict(),
+            evaluation=evaluation,
+        ),
+    }
+
+
+def successful_market_install_queue_report(
+    *,
+    query: str | None,
+    candidate_scan: dict[str, Any],
+    bounded_max_installs: int,
+    include_blocked: bool,
+    candidates: list[dict[str, Any]],
+    queue: list[dict[str, Any]],
+    blocked: list[dict[str, Any]],
+    skipped: list[dict[str, Any]],
+) -> dict[str, Any]:
     return {
         "ok": True,
         "plugin_id": PLUGIN_ID,
