@@ -147,7 +147,7 @@ def _obsidian_actions() -> tuple[ExternalCliAction, ...]:
             "obsidian-cli",
             "local-rest-note-read",
             "Obsidian Local REST note read",
-            lambda root: [_obsidian_rest_cli(root), "--json", "note", "get"],
+            lambda root: [_obsidian_rest_cli(root), "--json", "vault", "read"],
         ),
     )
 
