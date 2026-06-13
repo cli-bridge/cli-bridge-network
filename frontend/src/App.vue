@@ -323,6 +323,8 @@ const showDiagnostics = ref(false);
 const showArtifactsPanel = ref(false);
 const agentEvents = ref<Array<Record<string, unknown>>>([]);
 const agentRunning = ref(false);
+const conversationThreadsReal = ref<ConversationThread[]>([]);
+const currentThreadId = ref("");
 const cliAnythingCatalog = ref<{ status: Record<string, unknown>; catalog: Array<Record<string, unknown>> }>({ status: {}, catalog: [] });
 const showCliMarketPanel = ref(false);
 const cliMarketQuery = ref("");
@@ -474,32 +476,7 @@ const favoriteWorkflowCards = computed(() => [
     artifacts: artifactRows.value.slice(0, 2),
   },
 ].slice(0, 6));
-const conversationThreads = computed<ConversationThread[]>(() => [
-  {
-    id: "current",
-    title: currentWorkflowTitle.value,
-    meta: `${currentWorkflowStatus.value} · ${tasks.value.length} tasks`,
-    tone: loading.value ? "active" : workflow.value?.valid === false ? "warn" : "ok",
-  },
-  {
-    id: "setup",
-    title: "CLI 引导与初始化",
-    meta: `${connectPackage.value?.summary?.setup_status || "待加载"} · ${connectPackage.value?.summary?.setup_user_gate_count ?? 0} gates`,
-    tone: Number(connectPackage.value?.summary?.setup_user_gate_count ?? 0) > 0 ? "warn" : "idle",
-  },
-  {
-    id: "agent",
-    title: "Agent 编排计划",
-    meta: `${toolCallPlan.value?.summary?.tool_call_count ?? 0} tool calls · ${toolCallPlan.value?.summary?.batch_count ?? 0} batches`,
-    tone: toolCallPlan.value ? "active" : "idle",
-  },
-  {
-    id: "network",
-    title: "Network Connect",
-    meta: `${connectPackage.value?.summary?.registration_importer_count ?? importCatalog.value?.importer_count ?? 0} importers`,
-    tone: connectPackage.value?.ok ? "ok" : "idle",
-  },
-]);
+const conversationThreads = computed<ConversationThread[]>(() => conversationThreadsReal.value);
 const artifactRows = computed<ArtifactRow[]>(() => {
   const rows: ArtifactRow[] = [];
   const demoArtifacts = demoReport.value?.evidence?.task_artifacts ?? [];
@@ -720,16 +697,51 @@ function resetGraphView() {
   studioGraph?.resetView();
 }
 
-function selectThread(threadId: string) {
-  if (threadId === "current") {
-    selectedWorkflowId.value = "current";    void loadWorkflow(true);
-  } else if (threadId === "setup" || threadId === "network") {
-    selectedWorkflowId.value = "connect";
-    activeRibbonTab.value = "connect";
-    rightPanelTab.value = "connect";    void loadConnectPackage(true);
-  } else if (threadId === "agent") {
-    void loadToolCallPlan(true);
+async function selectThread(threadId: string) {
+  if (!threadId) return;
+  try {
+    const thread = await api.value.thread(threadId);
+    currentThreadId.value = threadId;
+    selectedWorkflowId.value = "current";
+    const messages = Array.isArray(thread.messages) ? (thread.messages as Array<Record<string, unknown>>) : [];
+    const replay: Record<string, unknown>[] = [];
+    for (const m of messages) {
+      const role = String(m.role ?? "");
+      const payload = m.payload as Record<string, unknown> | undefined;
+      if (role === "user") {
+        replay.push({ type: "user", text: String(payload?.text ?? "") });
+      } else if (payload && typeof payload === "object") {
+        replay.push(payload);
+      }
+    }
+    agentEvents.value = replay;
+  } catch (err) {
+    notify("打开线程", err instanceof Error ? err.message : String(err), "warning");
   }
+}
+
+async function loadThreads() {
+  try {
+    const { threads: rows } = await api.value.threads();
+    conversationThreadsReal.value = rows.map((r) => {
+      const tone = String(r.tone ?? "idle");
+      return {
+        id: String(r.thread_id ?? ""),
+        title: String(r.title ?? "对话"),
+        meta: `${Number(r.message_count ?? 0)} 条 · ${r.has_workflow ? "有工作流" : "对话"}`,
+        tone: (["active", "ok", "warn", "idle"].includes(tone) ? tone : "idle") as ConversationThread["tone"],
+      };
+    });
+  } catch {
+    // daemon may be down — keep the list as-is
+  }
+}
+
+function startNewThread() {
+  currentThreadId.value = "";
+  agentEvents.value = [];
+  config.agentMessage = "";
+  notify("新对话", "已开始新线程，输入任务后运行。", "info");
 }
 
 function openRightPanel(tab: PanelTarget) {
@@ -863,16 +875,23 @@ function agentEventSummary(result: unknown): string {
 async function runAgentTurn() {
   if (agentRunning.value || !config.agentMessage.trim()) return;
   const message = config.agentMessage.trim();
+  const continueId = currentThreadId.value;
   agentRunning.value = true;
-  agentEvents.value = [{ type: "user", text: message }];
+  agentEvents.value = continueId
+    ? [...agentEvents.value, { type: "user", text: message }]
+    : [{ type: "user", text: message }];
   try {
-    await api.value.runAgent(message, permissionMode.value, (event) => {
+    await api.value.runAgent(message, permissionMode.value, continueId, (event) => {
+      if (event.type === "thread" && event.thread_id) {
+        currentThreadId.value = String(event.thread_id);
+      }
       agentEvents.value = [...agentEvents.value, event];
     });
   } catch (err) {
     agentEvents.value = [...agentEvents.value, { type: "error", error: String(err) }];
   } finally {
     agentRunning.value = false;
+    void loadThreads();
   }
 }
 
@@ -1399,6 +1418,7 @@ onMounted(async () => {
     return;
   }
   await loadInitial();
+  void loadThreads();
   mountStudioGraph();
 });
 
@@ -1513,7 +1533,7 @@ onUnmounted(() => {
                 v-if="leftNavMode === 'threads'"
                 type="button"
                 title="新建线程"
-                @click="notify('新建线程', '持久化对话线程将在会话存储层接入。', 'info')"
+                @click="startNewThread()"
               >
                 <Plus :size="15" />
               </button>

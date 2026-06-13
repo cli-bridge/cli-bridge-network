@@ -15,6 +15,7 @@ from cbn_events.bus import EventBus
 from cbn_execution.executor import CapabilityExecutor
 from cbn_parsers.registry import ParserRegistry
 from cbn_plugins.operations import PluginOperationRunner
+from cbn_threads.store import ThreadStore
 from cbn_workflow.runner import WorkflowRunner
 
 
@@ -29,6 +30,7 @@ class RuntimeContext:
     executor: CapabilityExecutor
     workflow_runner: WorkflowRunner
     plugin_runner: PluginOperationRunner
+    thread_store: ThreadStore
 
 
 _EXTERNAL_PATH_ADDED = False
@@ -77,6 +79,7 @@ def build_runtime(root: Path | None = None) -> RuntimeContext:
         artifact_store=artifact_store,
         parser_registry=parser_registry,
     )
+    thread_store = ThreadStore(paths.threads)
     return RuntimeContext(
         registry=registry,
         audit_log=audit_log,
@@ -91,6 +94,7 @@ def build_runtime(root: Path | None = None) -> RuntimeContext:
             event_bus=event_bus,
             artifact_store=artifact_store,
         ),
+        thread_store=thread_store,
     )
 
 

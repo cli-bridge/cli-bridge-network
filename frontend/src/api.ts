@@ -184,16 +184,18 @@ export class StudioApi {
    * Calls onEvent for each event (start/thinking/tool_call/tool_result/final/error/done).
    * Uses its own fetch with NO short timeout — the loop is long-running.
    */
-  async runAgent(message: string, permission: string, onEvent: (event: Record<string, unknown>) => void): Promise<void> {
+  async runAgent(message: string, permission: string, threadId: string, onEvent: (event: Record<string, unknown>) => void): Promise<void> {
     const headers = new Headers({ "Content-Type": "application/json" });
     const token = this.sessionToken();
     if (token) headers.set("X-CBN-Session", token);
+    const body: Record<string, unknown> = { message, permission };
+    if (threadId) body.thread_id = threadId;
     let response: Response;
     try {
       response = await fetch(this.requestUrl("/adapter-agent/run"), {
         method: "POST",
         headers,
-        body: JSON.stringify({ message, permission }),
+        body: JSON.stringify(body),
       });
     } catch (err) {
       onEvent({ type: "error", error: `request failed: ${String(err)}` });
@@ -223,6 +225,22 @@ export class StudioApi {
         }
       }
     }
+  }
+
+  /** Conversation threads (real persisted Agent chat threads). */
+  async threads(): Promise<{ threads: Array<Record<string, unknown>> }> {
+    const payload = await this.get("/threads");
+    const data = (payload || {}) as Record<string, unknown>;
+    const list = Array.isArray(data.threads) ? (data.threads as Array<Record<string, unknown>>) : [];
+    return { threads: list };
+  }
+
+  async thread(id: string): Promise<Record<string, unknown>> {
+    return (await this.get(`/threads?thread_id=${encodeURIComponent(id)}`)) as Record<string, unknown>;
+  }
+
+  async deleteThread(id: string): Promise<unknown> {
+    return this.post("/threads/delete", { thread_id: id });
   }
 
   async killerDemo(): Promise<unknown> {

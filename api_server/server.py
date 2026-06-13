@@ -86,6 +86,7 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/imports/catalog"},
     {"method": "GET", "path": "/audit"},
     {"method": "GET", "path": "/events"},
+    {"method": "GET", "path": "/threads"},
     {"method": "GET", "path": "/artifacts"},
     {"method": "GET", "path": "/parsers"},
     {"method": "GET", "path": "/parsers/fixtures"},
@@ -137,6 +138,7 @@ ROUTE_SUMMARY = [
     {"method": "POST", "path": "/adapter-agent/tool-call-plan"},
     {"method": "POST", "path": "/adapter-agent/tool-use"},
     {"method": "POST", "path": "/adapter-agent/run"},
+    {"method": "POST", "path": "/threads/delete"},
     {"method": "POST", "path": "/runtime/transports/gate"},
     {"method": "POST", "path": "/runtime/transports/plan"},
     {"method": "POST", "path": "/runtime/transports/install"},
@@ -385,7 +387,28 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             return
         runtime = build_runtime()
         runtime.executor.session_env.update(self._adapter_agent_env())
+        thread_store = runtime.thread_store
+        thread_id = str(payload.get("thread_id") or "")
+        existing = thread_store.get(thread_id) if thread_id else None
+        if existing is None:
+            thread = thread_store.create(message, str(permission))
+        else:
+            thread = thread_store.append_user_message(thread_id, message) or existing
+        thread_id = thread["thread_id"]
+
         self._send_stream_headers()
+        self._write_stream_event({"type": "thread", "thread_id": thread_id})
+
+        def on_event(event: dict[str, Any]) -> None:
+            self._write_stream_event(event)
+            kind = str(event.get("type") or "")
+            if kind in {"thinking", "tool_call", "tool_result", "final", "error"}:
+                try:
+                    thread_store.append_event(thread_id, "assistant_event", kind, event)
+                except Exception:
+                    # thread persistence must never break the live stream
+                    pass
+
         try:
             run_agent_loop(
                 message=message,
@@ -393,7 +416,7 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 executor=runtime.executor,
                 registry=runtime.registry,
                 env_store=self._adapter_agent_env(),
-                on_event=self._write_stream_event,
+                on_event=on_event,
                 audit_log=runtime.audit_log,
                 event_bus=runtime.event_bus,
             )
@@ -655,6 +678,9 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
         if self.path == "/approvals/decide":
             self._send_approval_decision_POST(payload, runtime)
             return True
+        if self.path == "/threads/delete":
+            _post_thread_delete(self, payload)
+            return True
         return False
 
     def _send_approval_decision_POST(self, payload: dict[str, Any], runtime: Any) -> None:
@@ -891,6 +917,29 @@ def _get_direct_cli_readiness(handler: CbnRequestHandler, query: dict[str, list[
     handler._send(200 if result["ok"] else 422, result)
 
 
+def _get_threads(handler: CbnRequestHandler, query: dict[str, list[str]], runtime: Any) -> None:
+    thread_id = query.get("thread_id", [None])[0]
+    if thread_id:
+        record = runtime.thread_store.get(thread_id)
+        if record is None:
+            handler._send_error(404, "not_found", f"unknown thread: {thread_id}")
+            return
+        handler._send(200, record)
+        return
+    limit = int((query.get("limit", ["50"]) or ["50"])[0] or "50")
+    handler._send(200, {"threads": runtime.thread_store.list(limit=limit)})
+
+
+def _post_thread_delete(handler: CbnRequestHandler, payload: dict[str, Any]) -> None:
+    thread_id = str(payload.get("thread_id", ""))
+    if not thread_id:
+        handler._send_error(400, "bad_request", "thread_id is required")
+        return
+    runtime = build_runtime()
+    deleted = runtime.thread_store.delete(thread_id)
+    handler._send(200, {"deleted": deleted, "thread_id": thread_id})
+
+
 _RUNTIME_GET_ROUTES = {
     "/audit": _get_audit,
     "/events": _get_events,
@@ -898,6 +947,7 @@ _RUNTIME_GET_ROUTES = {
     "/parsers": _get_parsers,
     "/parsers/fixtures": _get_parser_fixtures,
     "/direct-cli/readiness": _get_direct_cli_readiness,
+    "/threads": _get_threads,
 }
 
 
