@@ -11,8 +11,10 @@ from typing import Any
 MANIFEST_API_VERSION = "bridge.dev/v1alpha1"
 VALID_MANIFEST_RISKS = {"read", "write-workspace", "privileged", "external-network"}
 VALID_NETWORK_POLICIES = {"deny", "localhost", "requires-confirmation", "allow"}
-KNOWN_TRANSPORT_KINDS = {"stdio", "pty"}
-CURRENT_EXECUTOR_TRANSPORTS = {"stdio", "pty"}
+# stdio/pty = local subprocess; in-process = built-in agent/runtime callable;
+# mcp = proxied tool on an ingested external MCP server.
+KNOWN_TRANSPORT_KINDS = {"stdio", "pty", "in-process", "mcp"}
+CURRENT_EXECUTOR_TRANSPORTS = {"stdio", "pty", "in-process", "mcp"}
 
 
 @dataclass(frozen=True)
@@ -22,18 +24,26 @@ class TransportSpec:
     args_template: tuple[str, ...]
     cwd_policy: str = "workspace"
     timeout_seconds: int = 30
+    # For kind="mcp": {server_id, tool_name} identifying the proxied MCP tool.
+    endpoint: dict[str, Any] | None = None
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "TransportSpec":
+        kind = raw["kind"]
+        # in-process/mcp nodes have no subprocess command/argv — allow them to omit it.
+        command = raw.get("command") if kind in {"in-process", "mcp"} else raw["command"]
         return cls(
-            kind=raw["kind"],
-            command=raw["command"],
+            kind=kind,
+            command=command or "",
             args_template=tuple(raw.get("argsTemplate", [])),
             cwd_policy=raw.get("cwdPolicy", "workspace"),
             timeout_seconds=_parse_timeout_seconds(raw.get("timeoutSeconds", 30)),
+            endpoint=raw.get("endpoint"),
         )
 
     def argv(self, extra_args: tuple[str, ...] = ()) -> tuple[str, ...]:
+        if self.kind in {"in-process", "mcp"}:
+            return tuple(extra_args)
         return (self.command, *self.args_template, *extra_args)
 
 
@@ -309,8 +319,11 @@ def _validate_transport(raw: Any, errors: list[str], warnings: list[str]) -> Non
     if not isinstance(raw, dict):
         errors.append("spec.transport must be an object")
         return
-    _validate_transport_kind(raw.get("kind"), errors, warnings)
-    _validate_transport_command(raw.get("command"), errors)
+    kind = raw.get("kind")
+    _validate_transport_kind(kind, errors, warnings)
+    # in-process/mcp nodes are non-subprocess (callable / proxied) — no command required.
+    if kind not in {"in-process", "mcp"}:
+        _validate_transport_command(raw.get("command"), errors)
     _validate_transport_args_template(raw.get("argsTemplate", []), errors)
     _validate_transport_cwd_policy(raw.get("cwdPolicy", "workspace"), errors)
     _validate_transport_timeout(raw.get("timeoutSeconds", 30), errors)

@@ -75,6 +75,11 @@ class CapabilityExecutor:
         self.stdio = StdioAdapter()
         self.pty = PtyAdapter()
         self.session_env: dict[str, str] = {}
+        # Non-subprocess node runners (Everything-is-a-node): in-process agent callables
+        # and the MCP client that proxies ingested MCP tools. Default None -> fail loud
+        # with a clear reason if such a node is invoked before its runner is wired.
+        self.in_process_runner = overrides.get("in_process_runner")
+        self.mcp_client = overrides.get("mcp_client")
 
     def call(
         self,
@@ -382,16 +387,63 @@ class CapabilityExecutor:
         )
 
     def _dispatch(self, manifest: CapabilityManifest, request: ToolCall) -> ToolResult:
-        if manifest.transport.kind == "stdio":
+        kind = manifest.transport.kind
+        if kind == "stdio":
             return self.stdio.call(request)
-        if manifest.transport.kind == "pty":
+        if kind == "pty":
             return self.pty.call(request)
+        if kind == "in-process":
+            return self._dispatch_in_process(manifest)
+        if kind == "mcp":
+            return self._dispatch_mcp(manifest, request)
         return ToolResult(
             capability_id=manifest.capability_id,
             allowed=False,
             exit_code=None,
-            reason=f"unsupported transport={manifest.transport.kind}",
+            reason=f"unsupported transport={kind}",
         )
+
+    def _dispatch_in_process(self, manifest: CapabilityManifest) -> ToolResult:
+        runner = self.in_process_runner
+        if runner is None:
+            return ToolResult(
+                capability_id=manifest.capability_id,
+                allowed=False,
+                exit_code=None,
+                reason="in-process node has no runner wired (Agent-as-node orchestration is post-MVP)",
+            )
+        try:
+            outcome = runner(manifest)
+            stdout = outcome if isinstance(outcome, str) else json.dumps(outcome, ensure_ascii=False)
+            return ToolResult(capability_id=manifest.capability_id, allowed=True, exit_code=0, stdout=stdout)
+        except Exception as exc:
+            return ToolResult(capability_id=manifest.capability_id, allowed=False, exit_code=1, stderr=f"{type(exc).__name__}: {exc}")
+
+    def _dispatch_mcp(self, manifest: CapabilityManifest, request: ToolCall) -> ToolResult:
+        client = self.mcp_client
+        if client is None:
+            return ToolResult(
+                capability_id=manifest.capability_id,
+                allowed=False,
+                exit_code=None,
+                reason="mcp node has no client wired (connect an MCP server via ingress first)",
+            )
+        endpoint = manifest.transport.endpoint or {}
+        server_id = endpoint.get("server_id")
+        tool_name = endpoint.get("tool_name")
+        if not server_id or not tool_name:
+            return ToolResult(
+                capability_id=manifest.capability_id,
+                allowed=False,
+                exit_code=None,
+                reason="mcp node missing endpoint {server_id, tool_name}",
+            )
+        try:
+            outcome = client.call_tool(server_id, tool_name, list(request.argv))
+            stdout = outcome if isinstance(outcome, str) else json.dumps(outcome, ensure_ascii=False)
+            return ToolResult(capability_id=manifest.capability_id, allowed=True, exit_code=0, stdout=stdout)
+        except Exception as exc:
+            return ToolResult(capability_id=manifest.capability_id, allowed=False, exit_code=1, stderr=f"{type(exc).__name__}: {exc}")
 
     def _record_artifacts(
         self,
