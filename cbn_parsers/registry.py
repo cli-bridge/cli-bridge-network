@@ -457,6 +457,15 @@ def _parse_jimeng_text(text: str, lower: str) -> dict[str, Any]:
             "error_type": "auth_required",
             "next_action": "run dreamina login and complete OAuth/device login before live API calls",
         }
+    if "dreamina_cli 使用权限" in text or "current account is not maestro vip" in lower:
+        return {
+            "profile": "jimeng",
+            "action": "text2image-submit",
+            "ready": False,
+            "setup_required": True,
+            "error_type": "account_permission_required",
+            "next_action": "use a Dreamina account with dreamina_cli/Maestro VIP access, then retry the generation command",
+        }
     return {}
 
 

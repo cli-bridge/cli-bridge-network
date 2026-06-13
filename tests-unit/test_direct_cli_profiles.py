@@ -6,7 +6,7 @@ import unittest
 from cbn_core.manifest import validate_manifest_path
 from cbn_runtime.context import build_runtime
 from cbn_tools.direct_cli_readiness import direct_cli_readiness_report
-from cbn_tools.external_cli import list_actions, require_action
+from cbn_tools.external_cli import _extract_dreamina_trace_messages, list_actions, require_action
 
 
 DIRECT_CLI_CAPABILITIES = {
@@ -100,6 +100,27 @@ class DirectCliProfileTests(unittest.TestCase):
         self.assertEqual(parsed["data"]["profile"], "jimeng")
         self.assertTrue(parsed["data"]["setup_required"])
         self.assertEqual(parsed["data"]["error_type"], "auth_required")
+
+    def test_direct_cli_typed_parser_classifies_jimeng_account_permission(self):
+        parsed = build_runtime().parser_registry.parse(
+            "direct-cli.typed",
+            "",
+            "dreamina diagnostic: 当前账号没有 dreamina_cli 使用权限: current account is not maestro vip\n",
+        )
+        self.assertEqual(parsed["data"]["profile"], "jimeng")
+        self.assertFalse(parsed["data"]["ready"])
+        self.assertTrue(parsed["data"]["setup_required"])
+        self.assertEqual(parsed["data"]["error_type"], "account_permission_required")
+
+    def test_dreamina_trace_messages_decode_non_stdio_errors(self):
+        trace = (
+            '853 write(8, "\\345\\275\\223\\345\\211\\215\\350\\264\\246\\345\\217\\267\\346\\262\\241\\346\\234\\211 '
+            'dreamina_cli \\344\\275\\277\\347\\224\\250\\346\\235\\203\\351\\231\\220: current account is not maestro vip\\n", 81) = 81\n'
+        )
+        self.assertEqual(
+            _extract_dreamina_trace_messages(trace),
+            ["当前账号没有 dreamina_cli 使用权限: current account is not maestro vip"],
+        )
 
     def test_direct_cli_readiness_report_covers_profiles_and_recovery(self):
         payload = direct_cli_readiness_report(build_runtime())
