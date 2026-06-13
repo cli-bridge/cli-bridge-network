@@ -896,6 +896,17 @@ async function reuseCard(card: Record<string, unknown>) {
   }
 }
 
+// Replay = feed the workflow as CONTEXT into the Workflow Agent (not a direct re-run).
+// Owner: "点击复用按钮，自动将此工作流作为上下文输入 workflow agent，等待用户填写需要做什么。"
+function replayWorkflowAsContext(card: Record<string, unknown>) {
+  const wf = card.workflow as { spec?: { tasks?: Array<Record<string, unknown>> } } | undefined;
+  const uses = (wf?.spec?.tasks ?? []).map((t) => String(t.uses ?? "")).filter(Boolean).join(" → ");
+  config.agentMessage = `复用工作流「${card.title ?? "工作流"}」(${Number(card.task_count ?? 0)} 节点：${uses || "—"})。请基于此工作流执行/调整；我的需求是：`;
+  currentView.value = "whiteboard";
+  if (agentPanelMode.value === "minimized") setAgentPanelMode("floating");
+  notify("工作流已作为上下文", "已填入 Agent，补充你的需求后点运行。", "success");
+}
+
 function mountCardMiniGraphs() {
   // Dispose handles whose cards disappeared, then mount any new card canvases.
   const liveIds = new Set(cardRows.value.map((c) => String(c.card_id)));
@@ -1883,7 +1894,7 @@ onUnmounted(() => {
               <div class="wb-card-actions" @pointerdown.stop>
                 <button type="button" @click="openCardDetail(card)">展开</button>
                 <button type="button" v-if="!card.favorite" @click="favoriteCard(card)">★</button>
-                <button type="button" @click="reuseCard(card)"><Play :size="13" /></button>
+                <button type="button" title="复用：把工作流作为上下文喂给 Agent" @click="replayWorkflowAsContext(card)">复用</button>
               </div>
             </article>
             <span v-if="!cardRows.length" class="wb-empty">在左侧对话线程里跟 Workflow Agent 聊；跑通后会生成工作流卡片，自由拖拽摆放在这块无界白板上。</span>
