@@ -54,6 +54,8 @@ class CapabilityExecutorDeps:
     event_bus: EventBus | None = None
     artifact_store: ArtifactStore | None = None
     parser_registry: ParserRegistry | None = None
+    in_process_runner: Any = None
+    mcp_client: Any = None
 
 
 class CapabilityExecutor:
@@ -78,8 +80,8 @@ class CapabilityExecutor:
         # Non-subprocess node runners (Everything-is-a-node): in-process agent callables
         # and the MCP client that proxies ingested MCP tools. Default None -> fail loud
         # with a clear reason if such a node is invoked before its runner is wired.
-        self.in_process_runner = overrides.get("in_process_runner")
-        self.mcp_client = overrides.get("mcp_client")
+        self.in_process_runner = resolved.in_process_runner
+        self.mcp_client = resolved.mcp_client
 
     def call(
         self,

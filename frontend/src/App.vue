@@ -337,6 +337,10 @@ const miniGraphHandles = new Map<string, { dispose: () => void }>();
 const cliAnythingCatalog = ref<{ status: Record<string, unknown>; catalog: Array<Record<string, unknown>> }>({ status: {}, catalog: [] });
 const showCliMarketPanel = ref(false);
 const cliMarketQuery = ref("");
+const mcpIngressServers = ref<Array<Record<string, unknown>>>([]);
+const mcpIngressCommand = ref("python");
+const mcpIngressArgs = ref("-m cbn mcp serve --stdio");
+const mcpIngressBusy = ref(false);
 const installingName = ref("");
 const installLines = ref<string[]>([]);
 const permissionMode = ref<PermissionMode>("full");
@@ -675,6 +679,7 @@ function setTab(tabId: string) {
   } else if (tabId === "cli-market") {
     showCliMarketPanel.value = true;
     void loadCliAnythingCatalog();
+    void loadMcpIngressServers();
   }
 }
 
@@ -977,6 +982,46 @@ async function loadCliAnythingCatalog() {
     cliAnythingCatalog.value = await api.value.cliAnythingCatalog();
   } catch (err) {
     notify("CLI-Anything 市场", `加载失败: ${err instanceof Error ? err.message : String(err)}`, "warning");
+  }
+}
+
+// MCP ingress: accept an external MCP server as CBN nodes (dogfood: python -m cbn mcp serve --stdio).
+async function loadMcpIngressServers() {
+  try {
+    const { servers } = await api.value.mcpIngressServers();
+    mcpIngressServers.value = servers;
+  } catch {
+    /* daemon down */
+  }
+}
+
+async function connectMcpIngress() {
+  const command = mcpIngressCommand.value.trim();
+  if (!command || mcpIngressBusy.value) return;
+  mcpIngressBusy.value = true;
+  try {
+    const args = mcpIngressArgs.value.trim().split(/\s+/).filter(Boolean);
+    const serverId = `mcp-${Date.now().toString(36)}`;
+    const result = await api.value.mcpIngressConnect(serverId, command, args);
+    if (result.ok) {
+      notify("MCP 入口", `已接入 ${result.registered ? (result.registered as string[]).length : 0} 个工具`, "success");
+      await loadMcpIngressServers();
+    } else {
+      notify("MCP 入口", String(result.error ?? "接入失败"), "warning");
+    }
+  } catch (err) {
+    notify("MCP 入口", err instanceof Error ? err.message : String(err), "warning");
+  } finally {
+    mcpIngressBusy.value = false;
+  }
+}
+
+async function disconnectMcpIngress(serverId: string) {
+  try {
+    await api.value.mcpIngressDisconnect(serverId);
+    await loadMcpIngressServers();
+  } catch (err) {
+    notify("MCP 入口", String(err), "warning");
   }
 }
 
@@ -2100,6 +2145,21 @@ onUnmounted(() => {
           </div>
         </article>
         <span v-if="!filteredCliMarket.length" class="artifact-empty">未找到匹配的 harness</span>
+      </div>
+      <div class="mcp-ingress">
+        <header><span>MCP 入口</span><strong>接入外部 MCP 服务为节点</strong></header>
+        <div class="mcp-ingress-form">
+          <input v-model="mcpIngressCommand" placeholder="command（如 python）" />
+          <input v-model="mcpIngressArgs" placeholder="args（如 -m cbn mcp serve --stdio）" />
+          <button type="button" :disabled="mcpIngressBusy" @click="connectMcpIngress()">{{ mcpIngressBusy ? "接入中…" : "接入" }}</button>
+        </div>
+        <div v-if="mcpIngressServers.length" class="mcp-ingress-list">
+          <div v-for="srv in mcpIngressServers" :key="String(srv.server_id)" class="mcp-ingress-row">
+            <Network :size="13" />
+            <span><strong>{{ srv.server_id }}</strong><small>{{ String(srv.command) }} · {{ srv.connected ? "已连接" : "离线" }} · {{ Number(srv.tool_count ?? 0) }} 工具</small></span>
+            <button type="button" @click="disconnectMcpIngress(String(srv.server_id))">断开</button>
+          </div>
+        </div>
       </div>
       <div v-if="installingName || installLines.length" class="cli-market-log">
         <header><span>安装日志</span><strong>{{ installingName || "完成" }}</strong></header>

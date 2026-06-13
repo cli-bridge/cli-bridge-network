@@ -16,6 +16,7 @@ from cbn_execution.executor import CapabilityExecutor
 from cbn_favorites.store import FavoriteStore
 from cbn_parsers.registry import ParserRegistry
 from cbn_plugins.operations import PluginOperationRunner
+from cbn_protocol.mcp_client import McpClient
 from cbn_threads.store import ThreadStore
 from cbn_workflow.runner import WorkflowRunner
 
@@ -33,6 +34,7 @@ class RuntimeContext:
     plugin_runner: PluginOperationRunner
     thread_store: ThreadStore
     favorite_store: FavoriteStore
+    mcp_client: McpClient
 
 
 _EXTERNAL_PATH_ADDED = False
@@ -73,6 +75,9 @@ def build_runtime(root: Path | None = None) -> RuntimeContext:
     event_bus = EventBus(paths.logs / "cbn-events.jsonl")
     artifact_store = ArtifactStore(paths.artifacts)
     parser_registry = ParserRegistry.builtins()
+    thread_store = ThreadStore(paths.threads)
+    favorite_store = FavoriteStore(paths.favorites)
+    mcp_client = McpClient(paths.mcp_ingress)
     executor = CapabilityExecutor(
         registry=registry,
         audit_log=audit_log,
@@ -80,9 +85,8 @@ def build_runtime(root: Path | None = None) -> RuntimeContext:
         event_bus=event_bus,
         artifact_store=artifact_store,
         parser_registry=parser_registry,
+        mcp_client=mcp_client,
     )
-    thread_store = ThreadStore(paths.threads)
-    favorite_store = FavoriteStore(paths.favorites)
     return RuntimeContext(
         registry=registry,
         audit_log=audit_log,
@@ -99,6 +103,7 @@ def build_runtime(root: Path | None = None) -> RuntimeContext:
         ),
         thread_store=thread_store,
         favorite_store=favorite_store,
+        mcp_client=mcp_client,
     )
 
 

@@ -1717,7 +1717,7 @@ pre {
   left: 50%;
   z-index: 60;
   display: grid;
-  grid-template-rows: 48px 44px minmax(0, 1fr) auto;
+  grid-template-rows: 48px 44px minmax(0, 1fr) auto auto;
   width: min(880px, 82%);
   height: min(620px, 82%);
   transform: translate(-50%, -50%);
@@ -1880,6 +1880,98 @@ pre {
   line-height: 1.4;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+/* MCP ingress sub-panel (accept external MCP servers as CBN nodes). */
+.mcp-ingress {
+  border-top: 1px solid var(--line);
+  padding: 10px 14px;
+}
+
+.mcp-ingress header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.mcp-ingress header strong {
+  color: var(--text);
+  font-size: 11.5px;
+  text-transform: none;
+}
+
+.mcp-ingress-form {
+  display: grid;
+  grid-template-columns: minmax(80px, 160px) minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+.mcp-ingress-form input {
+  min-width: 0;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-soft);
+  padding: 0 8px;
+  color: var(--text);
+  font-size: 11.5px;
+}
+
+.mcp-ingress-form button {
+  min-height: 28px;
+  padding: 0 14px;
+  border-color: rgba(168, 117, 255, 0.4);
+  background: rgba(168, 117, 255, 0.14);
+  color: #c9a8ff;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.mcp-ingress-list {
+  display: grid;
+  margin-top: 8px;
+  gap: 4px;
+}
+
+.mcp-ingress-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(168, 117, 255, 0.06);
+  padding: 6px 8px;
+  color: var(--muted);
+}
+
+.mcp-ingress-row span {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 1px;
+}
+
+.mcp-ingress-row strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcp-ingress-row small {
+  color: var(--faint);
+  font-size: 10.5px;
+}
+
+.mcp-ingress-row button {
+  min-height: 24px;
+  padding: 0 10px;
+  font-size: 11px;
 }
 
 .detail-grid {

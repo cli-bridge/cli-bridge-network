@@ -266,6 +266,24 @@ export class StudioApi {
     return this.post("/favorites/delete", { card_id: cardId });
   }
 
+  /** MCP ingress: connect an external MCP server (stdio) as CBN nodes. */
+  async mcpIngressConnect(serverId: string, command: string, args: string[], env?: Record<string, string>): Promise<Record<string, unknown>> {
+    const body: Record<string, unknown> = { server_id: serverId, command, args };
+    if (env) body.env = env;
+    return (await this.post("/mcp-ingress/connect", body)) as Record<string, unknown>;
+  }
+
+  async mcpIngressServers(): Promise<{ servers: Array<Record<string, unknown>> }> {
+    const payload = await this.get("/mcp-ingress/servers");
+    const data = (payload || {}) as Record<string, unknown>;
+    const list = Array.isArray(data.servers) ? (data.servers as Array<Record<string, unknown>>) : [];
+    return { servers: list };
+  }
+
+  async mcpIngressDisconnect(serverId: string): Promise<unknown> {
+    return this.post("/mcp-ingress/disconnect", { server_id: serverId });
+  }
+
   /** Re-run a workflow by body (POST /workflows/run accepts {workflow: <graph>}). */
   async runWorkflowBody(workflow: Record<string, unknown>): Promise<unknown> {
     return this.post("/workflows/run", {

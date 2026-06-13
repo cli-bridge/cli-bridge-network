@@ -90,6 +90,7 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/threads"},
     {"method": "GET", "path": "/cards"},
     {"method": "GET", "path": "/favorites"},
+    {"method": "GET", "path": "/mcp-ingress/servers"},
     {"method": "GET", "path": "/artifacts"},
     {"method": "GET", "path": "/parsers"},
     {"method": "GET", "path": "/parsers/fixtures"},
@@ -144,6 +145,8 @@ ROUTE_SUMMARY = [
     {"method": "POST", "path": "/threads/delete"},
     {"method": "POST", "path": "/favorites"},
     {"method": "POST", "path": "/favorites/delete"},
+    {"method": "POST", "path": "/mcp-ingress/connect"},
+    {"method": "POST", "path": "/mcp-ingress/disconnect"},
     {"method": "POST", "path": "/runtime/transports/gate"},
     {"method": "POST", "path": "/runtime/transports/plan"},
     {"method": "POST", "path": "/runtime/transports/install"},
@@ -708,6 +711,12 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
         if self.path == "/favorites/delete":
             _post_favorite_delete(self, payload)
             return True
+        if self.path == "/mcp-ingress/connect":
+            _post_mcp_ingress_connect(self, payload)
+            return True
+        if self.path == "/mcp-ingress/disconnect":
+            _post_mcp_ingress_disconnect(self, payload)
+            return True
         return False
 
     def _send_approval_decision_POST(self, payload: dict[str, Any], runtime: Any) -> None:
@@ -1048,6 +1057,35 @@ def _post_favorite_delete(handler: CbnRequestHandler, payload: dict[str, Any]) -
     handler._send(200, {"deleted": deleted, "card_id": card_id})
 
 
+def _get_mcp_ingress_servers(handler: CbnRequestHandler, query: dict[str, list[str]], runtime: Any) -> None:
+    handler._send(200, {"servers": runtime.mcp_client.list_servers()})
+
+
+def _post_mcp_ingress_connect(handler: CbnRequestHandler, payload: dict[str, Any]) -> None:
+    command = str(payload.get("command", "")).strip()
+    if not command:
+        handler._send_error(400, "bad_request", "command is required")
+        return
+    runtime = build_runtime()
+    args = [str(a) for a in (payload.get("args") or [])]
+    env = payload.get("env") if isinstance(payload.get("env"), dict) else None
+    result = runtime.mcp_client.connect(str(payload.get("server_id") or ""), command, args, env)
+    if result.get("ok"):
+        registered = runtime.mcp_client.register_as_capabilities(result["server_id"], runtime.registry)
+        result["registered"] = registered
+    handler._send(200 if result.get("ok") else 400, result)
+
+
+def _post_mcp_ingress_disconnect(handler: CbnRequestHandler, payload: dict[str, Any]) -> None:
+    server_id = str(payload.get("server_id", ""))
+    if not server_id:
+        handler._send_error(400, "bad_request", "server_id is required")
+        return
+    runtime = build_runtime()
+    disconnected = runtime.mcp_client.disconnect(server_id)
+    handler._send(200, {"disconnected": disconnected, "server_id": server_id})
+
+
 _RUNTIME_GET_ROUTES = {
     "/audit": _get_audit,
     "/events": _get_events,
@@ -1058,6 +1096,7 @@ _RUNTIME_GET_ROUTES = {
     "/threads": _get_threads,
     "/cards": _get_cards,
     "/favorites": _get_favorites,
+    "/mcp-ingress/servers": _get_mcp_ingress_servers,
 }
 
 
