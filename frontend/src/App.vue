@@ -31,6 +31,7 @@ import {
   SlidersHorizontal,
   TerminalSquare,
   UploadCloud,
+  User,
   Waypoints,
   Workflow,
   X,
@@ -319,6 +320,7 @@ const leftNavCollapsed = ref(false);
 const leftNavMode = ref<LeftNavMode>("threads");
 const showAudit = ref(false);
 const showDiagnostics = ref(false);
+const showArtifactsPanel = ref(false);
 const permissionMode = ref<PermissionMode>(config.confirmed ? (config.dryRun ? "auto" : "full") : "default");
 const zoom = ref(100);
 const graphCanvasEl = ref<HTMLCanvasElement | null>(null);
@@ -331,6 +333,7 @@ const savedAreaEl = ref<HTMLElement | null>(null);
 const temporaryAreaEl = ref<HTMLElement | null>(null);
 const agentConsoleEl = ref<HTMLElement | null>(null);
 const detailPopoverEl = ref<HTMLElement | null>(null);
+const artifactsPanelEl = ref<HTMLElement | null>(null);
 
 const draggableCards = useDraggableCards();
 
@@ -346,6 +349,7 @@ function useDraggableCards() {
     temporary: useDraggableCard(opts(() => temporaryAreaEl.value, "cbn.studio.card.temporary-area", () => dragEnabled.value)),
     agent: useDraggableCard(opts(() => agentConsoleEl.value, "cbn.studio.card.agent-console", () => dragEnabled.value && agentPanelMode.value === "floating")),
     detail: useDraggableCard(opts(() => detailPopoverEl.value, "cbn.studio.card.detail-popover", () => dragEnabled.value)),
+    artifacts: useDraggableCard(opts(() => artifactsPanelEl.value, "cbn.studio.card.artifacts-panel", () => dragEnabled.value)),
   };
 }
 const loading = ref("");
@@ -735,6 +739,14 @@ function openRightPanel(tab: PanelTarget) {
   }
 }
 
+function toggleRightPanel(tab: PanelTarget) {
+  if (rightPanelOpen.value && rightPanelTab.value === tab) {
+    rightPanelOpen.value = false;
+  } else {
+    openRightPanel(tab);
+  }
+}
+
 function defaultRightDockPosition() {
   const width = Math.min(windowState.value.isMaximized ? 420 : 392, Math.max(300, window.innerWidth - 72));
   const top = ribbonCollapsed.value ? 58 : windowState.value.isMaximized ? 104 : 94;
@@ -816,6 +828,7 @@ function handleWindowResize() {
   draggableCards.temporary.reclamp();
   draggableCards.agent.reclamp();
   draggableCards.detail.reclamp();
+  draggableCards.artifacts.reclamp();
   if (!rightDockPosition.x && !rightDockPosition.y) return;
   const next = clampRightDockPosition(rightDockPosition.x, rightDockPosition.y);
   rightDockPosition.x = next.x;
@@ -1292,6 +1305,7 @@ watch(leftNavCollapsed, () => {
   draggableCards.temporary.reclamp();
   draggableCards.agent.reclamp();
   draggableCards.detail.reclamp();
+  draggableCards.artifacts.reclamp();
 });
 
 onMounted(async () => {
@@ -1300,6 +1314,7 @@ onMounted(async () => {
   draggableCards.temporary.restore();
   draggableCards.agent.restore();
   draggableCards.detail.restore();
+  draggableCards.artifacts.restore();
   window.addEventListener("pointermove", handleRightDockDrag);
   window.addEventListener("pointerup", stopRightDockDrag);
   window.addEventListener("resize", handleWindowResize);
@@ -1352,6 +1367,12 @@ onUnmounted(() => {
         <button type="button" class="bell" :title="`打开审计中心 · ${dock.events.length} 条事件`" @click="showAudit = true">
           <Bell :size="15" />
           <span v-if="dock.events.length" class="bell-badge">{{ dock.events.length }}</span>
+        </button>
+        <button type="button" class="icon-btn" title="设置 · Daemon / Token / Workflow 路径" @click="openRightPanel('settings')">
+          <Settings :size="15" />
+        </button>
+        <button type="button" class="topbar-avatar" title="账户与会话配置" @click="openRightPanel('settings')">
+          <User :size="15" />
         </button>
       </div>
       <div class="window-controls" aria-label="Window controls">
@@ -1596,6 +1617,26 @@ onUnmounted(() => {
               <code>{{ permissionMode }}</code>
             </div>
           </section>
+
+          <section v-if="showArtifactsPanel" ref="artifactsPanelEl" data-draggable-card class="artifacts-panel floating-card" :style="draggableCards.artifacts.style.value">
+            <header class="drag-handle" @pointerdown="draggableCards.artifacts.startDrag">
+              <div>
+                <span>项目产物</span>
+                <strong>Artifacts · {{ artifactRows.length }}</strong>
+              </div>
+              <button type="button" title="关闭" @pointerdown.stop @click="showArtifactsPanel = false"><X :size="14" /></button>
+            </header>
+            <div class="artifact-tree nav-scroll">
+              <article v-for="artifact in artifactRows" :key="artifact.id" class="artifact-row">
+                <FileJson :size="14" />
+                <span>
+                  <strong>{{ artifact.name }}</strong>
+                  <small>{{ artifact.kind }} · {{ artifact.source }} · {{ artifact.size }}</small>
+                </span>
+              </article>
+              <span v-if="!artifactRows.length" class="artifact-empty">暂无产物 · 运行 workflow 后生成</span>
+            </div>
+          </section>
         </div>
 
       </section>
@@ -1604,8 +1645,8 @@ onUnmounted(() => {
       <aside v-if="rightPanelOpen" :class="['right-dock', 'floating-dock', { dragging: rightDockDrag.active }]" :style="rightDockStyle">
         <header class="dock-header dock-drag-handle" @pointerdown="startRightDockDrag">
           <div>
-            <span>CLI 接入</span>
-            <strong>Registry & Plugins</strong>
+            <span>命令与工具库</span>
+            <strong>CLI Library</strong>
           </div>
           <div class="dock-header-actions">
             <button type="button" title="设置" @pointerdown.stop @click="rightPanelTab = 'settings'"><Settings :size="15" /></button>
@@ -1816,8 +1857,10 @@ onUnmounted(() => {
     </section>
 
     <footer class="bottom-rail">
-      <button type="button" :class="{ active: rightPanelOpen && rightPanelTab === 'permissions' }" @click="openRightPanel('permissions')"><ShieldCheck :size="16" /> Permissions</button>
-      <button type="button" @click="showAudit = true"><ShieldCheck :size="16" /> Audit Center</button>
+      <button type="button" :class="{ active: rightPanelOpen && rightPanelTab === 'registry' }" @click="toggleRightPanel('registry')"><Boxes :size="16" /> CLI 库</button>
+      <button type="button" :class="{ active: showArtifactsPanel }" @click="showArtifactsPanel = !showArtifactsPanel"><Archive :size="16" /> 产物</button>
+      <button type="button" :class="{ active: rightPanelOpen && rightPanelTab === 'permissions' }" @click="toggleRightPanel('permissions')"><ShieldCheck :size="16" /> 权限</button>
+      <button type="button" @click="showAudit = true"><ListChecks :size="16" /> 审计中心</button>
     </footer>
 
     <div v-if="showAudit" class="drawer-backdrop" @click.self="showAudit = false">
