@@ -297,6 +297,19 @@ export class StudioApi {
     return this.get("/artifacts?limit=30");
   }
 
+  /** Shared产物 directory, grouped by producer (UE-Content-style tree). */
+  async artifactsGrouped(limit = 200): Promise<{ records: Array<Record<string, unknown>>; tree: Array<Record<string, unknown>> }> {
+    const payload = await this.get(`/artifacts?group=true&limit=${limit}`);
+    const data = (payload || {}) as Record<string, unknown>;
+    const records = Array.isArray(data.records) ? (data.records as Array<Record<string, unknown>>) : [];
+    const tree = Array.isArray(data.tree) ? (data.tree as Array<Record<string, unknown>>) : [];
+    return { records, tree };
+  }
+
+  async inspectArtifact(artifactId: string): Promise<Record<string, unknown>> {
+    return (await this.get(`/artifacts?artifact_id=${encodeURIComponent(artifactId)}`)) as Record<string, unknown>;
+  }
+
   private async get(path: string): Promise<unknown> {
     return this.request(path, { method: "GET" });
   }

@@ -1635,6 +1635,81 @@ pre {
   text-align: center;
 }
 
+.artifact-group {
+  border-bottom: 1px solid var(--line);
+  padding: 0 2px;
+}
+
+.artifact-group summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 6px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.artifact-group summary::-webkit-details-marker {
+  display: none;
+}
+
+.artifact-group summary strong {
+  overflow: hidden;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artifact-group summary small {
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.artifact-kind {
+  padding: 0 6px 8px 16px;
+}
+
+.artifact-kind header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.artifact-kind header small {
+  margin-left: auto;
+  color: var(--faint);
+}
+
+.artifact-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  padding: 5px 8px;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: left;
+}
+
+.artifact-item:hover {
+  background: rgba(99, 179, 255, 0.1);
+  color: var(--text);
+}
+
+.artifact-item small {
+  color: var(--faint);
+  font-size: 10px;
+}
+
 /* CLI-Anything dedicated market panel (秋叶 AAAKI-style plugin browser) */
 .cli-market-panel {
   position: absolute;

@@ -322,6 +322,12 @@ const leftNavMode = ref<LeftNavMode>("threads");
 const showAudit = ref(false);
 const showDiagnostics = ref(false);
 const showArtifactsPanel = ref(false);
+const artifactStoreTree = ref<Array<Record<string, unknown>>>([]);
+const artifactGroups = computed(() => artifactStoreTree.value as Array<{
+  producer: string;
+  count: number;
+  kinds: Array<{ kind: string; count: number; items: Array<Record<string, unknown>> }>;
+}>);
 const agentEvents = ref<Array<Record<string, unknown>>>([]);
 const agentRunning = ref(false);
 const conversationThreadsReal = ref<ConversationThread[]>([]);
@@ -971,6 +977,32 @@ async function loadCliAnythingCatalog() {
     cliAnythingCatalog.value = await api.value.cliAnythingCatalog();
   } catch (err) {
     notify("CLI-Anything 市场", `加载失败: ${err instanceof Error ? err.message : String(err)}`, "warning");
+  }
+}
+
+// Shared产物 directory (the real shared ArtifactStore, grouped by producer).
+async function loadArtifactStore() {
+  try {
+    const { tree } = await api.value.artifactsGrouped();
+    artifactStoreTree.value = tree;
+  } catch {
+    // daemon may be down — keep current tree
+  }
+}
+
+function toggleArtifactsPanel() {
+  showArtifactsPanel.value = !showArtifactsPanel.value;
+  if (showArtifactsPanel.value) void loadArtifactStore();
+}
+
+async function inspectArtifact(artifactId: string) {
+  if (!artifactId) return;
+  try {
+    const detail = await api.value.inspectArtifact(artifactId);
+    const content = String((detail as Record<string, unknown>).content ?? "");
+    notify("产物内容", content.slice(0, 240) || "(空)", "info");
+  } catch (err) {
+    notify("产物", err instanceof Error ? err.message : String(err), "warning");
   }
 }
 
@@ -1806,14 +1838,17 @@ onUnmounted(() => {
               <button type="button" title="关闭" @pointerdown.stop @click="showArtifactsPanel = false"><X :size="14" /></button>
             </header>
             <div class="artifact-tree nav-scroll">
-              <article v-for="artifact in artifactRows" :key="artifact.id" class="artifact-row">
-                <FileJson :size="14" />
-                <span>
-                  <strong>{{ artifact.name }}</strong>
-                  <small>{{ artifact.kind }} · {{ artifact.source }} · {{ artifact.size }}</small>
-                </span>
-              </article>
-              <span v-if="!artifactRows.length" class="artifact-empty">暂无产物 · 运行 workflow 后生成</span>
+              <details v-for="group in artifactGroups" :key="group.producer" class="artifact-group" open>
+                <summary><strong>{{ group.producer }}</strong> <small>{{ group.count }} 产物</small></summary>
+                <article v-for="kind in group.kinds" :key="kind.kind" class="artifact-kind">
+                  <header><FileJson :size="13" /> <span>{{ kind.kind }}</span> <small>{{ kind.count }}</small></header>
+                  <button v-for="(item, idx) in kind.items" :key="String(item.artifact_id ?? idx)" type="button" class="artifact-item" @click="String(item.artifact_id) && inspectArtifact(String(item.artifact_id))">
+                    <span>{{ Number(item.size_bytes ?? 0) }} B</span>
+                    <small>{{ String(item.created_at ?? "").slice(5, 16) }}</small>
+                  </button>
+                </article>
+              </details>
+              <span v-if="!artifactGroups.length" class="artifact-empty">暂无产物 · 运行 workflow 后生成（共享目录 runtime/artifacts/）</span>
             </div>
           </section>
         </div>
@@ -2074,7 +2109,7 @@ onUnmounted(() => {
 
     <footer class="bottom-rail">
       <button type="button" :class="{ active: rightPanelOpen && rightPanelTab === 'registry' }" @click="toggleRightPanel('registry')"><Boxes :size="16" /> CLI 库</button>
-      <button type="button" :class="{ active: showArtifactsPanel }" @click="showArtifactsPanel = !showArtifactsPanel"><Archive :size="16" /> 产物</button>
+      <button type="button" :class="{ active: showArtifactsPanel }" @click="toggleArtifactsPanel()"><Archive :size="16" /> 产物</button>
       <button type="button" :class="{ active: rightPanelOpen && rightPanelTab === 'permissions' }" @click="toggleRightPanel('permissions')"><ShieldCheck :size="16" /> 权限</button>
       <button type="button" @click="showAudit = true"><ListChecks :size="16" /> 审计中心</button>
     </footer>

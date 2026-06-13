@@ -918,8 +918,14 @@ def _get_artifacts(handler: CbnRequestHandler, query: dict[str, list[str]], runt
     artifact_id = query.get("artifact_id", [None])[0]
     if artifact_id:
         handler._send(200, runtime.artifact_store.inspect(artifact_id))
+        return
+    records = runtime.artifact_store.list(limit=int((query.get("limit", ["50"]) or ["50"])[0] or "50"))
+    if _query_bool(query, "group", default=False):
+        from cbn_artifacts.tree import build_artifact_tree
+
+        handler._send(200, {"records": records, "tree": build_artifact_tree(records)})
     else:
-        handler._send(200, runtime.artifact_store.list(limit=int(query.get("limit", ["50"])[0])))
+        handler._send(200, records)
 
 
 def _get_parsers(handler: CbnRequestHandler, query: dict[str, list[str]], runtime: Any) -> None:
