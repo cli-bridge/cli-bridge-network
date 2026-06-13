@@ -89,23 +89,6 @@ pre {
   color: var(--text);
 }
 
-.ribbon-shell.light {
-  --bg: #eef3f9;
-  --panel: rgba(255, 255, 255, 0.94);
-  --panel-strong: rgba(255, 255, 255, 0.98);
-  --panel-soft: rgba(244, 248, 253, 0.92);
-  --line: rgba(84, 103, 128, 0.2);
-  --line-strong: rgba(45, 119, 206, 0.36);
-  --text: #111827;
-  --muted: #526174;
-  --faint: #76849a;
-  --shadow: 0 18px 44px rgba(25, 43, 71, 0.18);
-  background:
-    radial-gradient(circle at 8% 14%, rgba(47, 141, 255, 0.14), transparent 30%),
-    radial-gradient(circle at 92% 18%, rgba(39, 214, 192, 0.11), transparent 28%),
-    #eef3f9;
-}
-
 .topbar {
   position: relative;
   display: grid;
@@ -120,10 +103,6 @@ pre {
   -webkit-app-region: drag;
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
-}
-
-.light .topbar {
-  background: rgba(248, 251, 255, 0.8);
 }
 
 .brand,
@@ -252,10 +231,6 @@ pre {
   background: rgba(6, 10, 18, 0.82);
 }
 
-.light .window-controls {
-  background: rgba(248, 251, 255, 0.9);
-}
-
 .window-controls button {
   display: grid;
   min-width: 0;
@@ -285,7 +260,6 @@ pre {
 .right-dock button,
 .workflow-card button,
 .detail-popover button,
-.bottom-preview button,
 .drawer-backdrop button,
 .settings-actions button {
   display: inline-flex;
@@ -298,20 +272,6 @@ pre {
   color: var(--text);
 }
 
-.light .top-actions button,
-.light .bottom-rail button,
-.light .canvas-toolbar button,
-.light .panel-header button,
-.light .window-actions button,
-.light .right-dock button,
-.light .workflow-card button,
-.light .detail-popover button,
-.light .bottom-preview button,
-.light .drawer-backdrop button,
-.light .settings-actions button {
-  background: #f5f8fc;
-}
-
 .top-actions button:hover,
 .bottom-rail button:hover,
 .canvas-toolbar button:hover,
@@ -320,7 +280,6 @@ pre {
 .right-dock button:hover,
 .workflow-card button:hover,
 .detail-popover button:hover,
-.bottom-preview button:hover,
 .drawer-backdrop button:hover,
 .settings-actions button:hover {
   border-color: var(--line-strong);
@@ -344,10 +303,6 @@ pre {
   backdrop-filter: blur(18px) saturate(132%);
   -webkit-backdrop-filter: blur(18px) saturate(132%);
   transition: grid-template-rows 180ms ease, min-height 180ms ease;
-}
-
-.light .ribbon {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(242, 247, 252, 0.9));
 }
 
 .ribbon-tabs {
@@ -449,10 +404,6 @@ pre {
   padding: 5px;
 }
 
-.light .ribbon-command {
-  background: #f6f9fd;
-}
-
 .ribbon-command span,
 .ribbon-command small {
   max-width: 100%;
@@ -507,9 +458,7 @@ pre {
 .canvas-toolbar span,
 .workflow-stage header span,
 .floating-card header span,
-.bottom-preview span,
-.drawer-backdrop header span,
-.preview-card span {
+.drawer-backdrop header span {
   color: var(--muted);
   font-size: 11px;
   font-weight: 760;
@@ -628,8 +577,7 @@ pre {
 .right-dock,
 .main-ide,
 .floating-card,
-.workflow-stage,
-.bottom-preview {
+.workflow-stage {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
@@ -658,16 +606,11 @@ pre {
   background: linear-gradient(180deg, rgba(14, 24, 38, 0.9), rgba(10, 17, 28, 0.96));
 }
 
-.artifact-panel {
-  grid-template-rows: 50px 38px minmax(0, 1fr);
-}
-
 .panel-header,
 .dock-header,
 .floating-card header,
 .workflow-stage header,
 .canvas-toolbar,
-.bottom-preview header,
 .drawer-backdrop header {
   display: flex;
   align-items: center;
@@ -686,7 +629,6 @@ pre {
 .dock-header div,
 .floating-card header div,
 .workflow-stage header div,
-.bottom-preview header div,
 .drawer-backdrop header div {
   display: grid;
   min-width: 0;
@@ -697,7 +639,6 @@ pre {
 .dock-header strong,
 .workflow-stage header strong,
 .floating-card header strong,
-.bottom-preview header strong,
 .drawer-backdrop header strong {
   min-width: 0;
   overflow: hidden;
@@ -708,7 +649,6 @@ pre {
 }
 
 .thread-list,
-.artifact-list,
 .dock-body {
   overflow: auto;
   padding: 10px;
@@ -775,7 +715,6 @@ pre {
 }
 
 .thread-row,
-.artifact-row,
 .favorite-row,
 .team-row {
   display: grid;
@@ -791,11 +730,6 @@ pre {
 .thread-row {
   min-height: 46px;
   grid-template-columns: 10px minmax(0, 1fr);
-}
-
-.artifact-row {
-  min-height: 44px;
-  grid-template-columns: auto minmax(0, 1fr);
 }
 
 .favorite-row,
@@ -830,8 +764,6 @@ pre {
 
 .thread-row strong,
 .thread-row small,
-.artifact-row strong,
-.artifact-row small,
 .favorite-row strong,
 .favorite-row small,
 .team-row strong,
@@ -843,7 +775,6 @@ pre {
 }
 
 .thread-row strong,
-.artifact-row strong,
 .favorite-row strong,
 .team-row strong {
   color: var(--text);
@@ -851,14 +782,12 @@ pre {
 }
 
 .thread-row small,
-.artifact-row small,
 .favorite-row small,
 .team-row small {
   color: var(--muted);
   font-size: 11px;
 }
 
-.artifact-row span,
 .favorite-row span,
 .team-row span {
   display: grid;
@@ -866,7 +795,6 @@ pre {
   gap: 2px;
 }
 
-.artifact-row.active,
 .favorite-row.active,
 .team-row.active {
   border-color: rgba(39, 214, 192, 0.5);
@@ -888,23 +816,14 @@ pre {
   transform: translateX(-18px);
 }
 
-.artifact-tabs,
 .dock-tabs {
   display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 6px;
   border-bottom: 1px solid var(--line);
   padding: 7px 10px;
 }
 
-.artifact-tabs {
-  grid-template-columns: repeat(4, 1fr);
-}
-
-.dock-tabs {
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-}
-
-.artifact-tabs button,
 .dock-tabs button {
   min-height: 24px;
   border-color: var(--line);
@@ -914,7 +833,6 @@ pre {
   font-size: 10px;
 }
 
-.artifact-tabs button.active,
 .dock-tabs button.active {
   border-color: rgba(99, 179, 255, 0.54);
   background: rgba(47, 141, 255, 0.18);
@@ -1002,12 +920,12 @@ pre {
 .floating-card,
 .workflow-stage {
   position: absolute;
+  z-index: 1;
   overflow: hidden;
 }
 
 .floating-card header,
 .workflow-stage header,
-.bottom-preview header,
 .drawer-backdrop header {
   min-height: 44px;
   border-bottom: 1px solid var(--line);
@@ -1016,10 +934,10 @@ pre {
 
 .agent-console {
   left: 50%;
-  top: 43%;
+  top: 53%;
   z-index: 6;
-  width: min(520px, 58%);
-  min-width: 410px;
+  width: min(470px, 50%);
+  min-width: 380px;
   transform: translate(-50%, -50%);
 }
 
@@ -1135,7 +1053,6 @@ pre {
 }
 
 .detail-popover header button,
-.bottom-preview header button,
 .workflow-card button {
   flex: 0 0 auto;
   white-space: nowrap;
@@ -1149,8 +1066,8 @@ pre {
 .saved-area {
   top: 36px;
   left: 36px;
-  width: min(560px, 50%);
-  height: 222px;
+  width: min(500px, 44%);
+  height: 200px;
   border-color: rgba(75, 209, 135, 0.38);
 }
 
@@ -1231,7 +1148,6 @@ pre {
 }
 
 .card-meta,
-.tool-chips,
 .detail-tags,
 .workflow-expanded {
   display: flex;
@@ -1240,7 +1156,6 @@ pre {
 }
 
 .card-meta span,
-.tool-chips code,
 .detail-tags code,
 .workflow-expanded code {
   max-width: 100%;
@@ -1293,55 +1208,35 @@ pre {
   font-size: 11px;
 }
 
-.graph-preview {
-  left: 32px;
-  bottom: 38px;
-  width: min(472px, 44%);
-  min-height: 176px;
-  border-color: rgba(242, 184, 91, 0.34);
-}
-
-.node-lane {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 18px;
-  overflow: auto;
-  padding: 16px 12px 10px;
-}
-
-.node-lane span {
-  position: relative;
-  display: grid;
-  min-width: 82px;
-  height: 36px;
-  place-items: center;
-  border: 1px solid rgba(99, 179, 255, 0.38);
-  border-radius: 8px;
-  background: rgba(47, 141, 255, 0.12);
-  color: var(--text);
-  font-size: 11px;
-  font-weight: 730;
-}
-
-.node-lane span:not(:last-child)::after {
+.workflow-graph-canvas {
   position: absolute;
-  right: -19px;
-  width: 18px;
-  height: 1px;
-  background: linear-gradient(90deg, rgba(99, 179, 255, 0.8), rgba(39, 214, 192, 0.36));
-  content: "";
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  cursor: grab;
 }
 
-.tool-chips {
-  padding: 0 12px 12px;
+.drag-handle {
+  cursor: grab;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+/* Drop the floating centering transform once the console has been dragged to
+   an explicit position; inline left/top then takes over. */
+.agent-console.dragged {
+  transform: none;
 }
 
 .detail-popover {
   right: 36px;
   top: 36px;
-  width: min(340px, 34%);
-  min-height: 206px;
+  width: min(320px, 30%);
+  min-height: 188px;
 }
 
 .detail-grid {
@@ -1352,7 +1247,6 @@ pre {
 }
 
 .detail-grid div,
-.preview-card,
 .dock-metrics div,
 .audit-grid article {
   display: grid;
@@ -1387,126 +1281,6 @@ pre {
   padding: 0 10px 10px;
 }
 
-.bottom-preview {
-  display: none;
-  position: relative;
-  z-index: 8;
-  grid-template-rows: 44px minmax(0, 1fr);
-  overflow: hidden;
-  border-top: 1px solid var(--line);
-  border-radius: 0;
-  box-shadow: none;
-}
-
-.bottom-preview header {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
-  gap: 10px;
-}
-
-.bottom-preview header .inspector-tabs {
-  display: flex;
-  min-width: 0;
-  max-width: 100%;
-  justify-content: flex-end;
-  gap: 6px;
-  overflow: auto hidden;
-  scrollbar-width: thin;
-}
-
-.bottom-preview header .inspector-tabs button {
-  flex: 0 0 auto;
-  min-height: 26px;
-  padding: 0 9px;
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.bottom-preview header .inspector-tabs button.active {
-  border-color: rgba(99, 179, 255, 0.58);
-  background: rgba(47, 141, 255, 0.16);
-  color: var(--text);
-}
-
-.preview-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  min-height: 0;
-  padding: 10px;
-}
-
-.preview-card strong,
-.preview-card p {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.preview-card strong {
-  color: var(--text);
-  white-space: nowrap;
-}
-
-.preview-card p {
-  display: -webkit-box;
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.4;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.inspector-table,
-.raw-grid,
-.inspector-split {
-  min-height: 0;
-  overflow: auto;
-  padding: 10px;
-}
-
-.inspector-table {
-  display: grid;
-  align-content: start;
-  gap: 6px;
-}
-
-.inspector-table > div {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: minmax(120px, 1.2fr) minmax(110px, 1fr) minmax(90px, 0.8fr) minmax(70px, 0.5fr) minmax(120px, 1fr);
-  align-items: center;
-  gap: 8px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.035);
-  padding: 8px;
-}
-
-.inspector-table .table-head {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  border-color: rgba(99, 179, 255, 0.24);
-  background: rgba(13, 22, 36, 0.96);
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 780;
-  text-transform: uppercase;
-}
-
-.light .inspector-table .table-head {
-  background: rgba(245, 249, 255, 0.96);
-}
-
-.inspector-table strong,
-.inspector-table code,
-.inspector-table span,
-.inspector-table small,
-.inspector-item strong,
-.inspector-item span,
-.inspector-item code,
 .compact-sequence span,
 .compact-sequence small,
 .command-list code,
@@ -1517,14 +1291,6 @@ pre {
   white-space: nowrap;
 }
 
-.inspector-table strong,
-.inspector-item strong {
-  color: var(--text);
-  font-size: 12px;
-}
-
-.inspector-table code,
-.inspector-item code,
 .command-list code,
 .info-block code {
   color: #8bc7ff;
@@ -1532,33 +1298,11 @@ pre {
   font-size: 11px;
 }
 
-.inspector-table span,
-.inspector-table small,
-.inspector-item span,
 .compact-sequence small {
   color: var(--muted);
   font-size: 11px;
 }
 
-.contract-row {
-  border-color: rgba(168, 117, 255, 0.26) !important;
-  background: rgba(168, 117, 255, 0.06) !important;
-}
-
-.inspector-split {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.inspector-split section {
-  display: grid;
-  min-width: 0;
-  align-content: start;
-  gap: 7px;
-}
-
-.inspector-split section > header,
 .info-block > header {
   display: flex;
   min-height: 28px;
@@ -1573,7 +1317,6 @@ pre {
   text-transform: uppercase;
 }
 
-.inspector-item,
 .info-block,
 .command-list div,
 .compact-sequence div {
@@ -1635,41 +1378,6 @@ pre {
 .command-list div {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-}
-
-.raw-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.raw-grid .info-block {
-  grid-template-rows: auto minmax(0, 1fr);
-}
-
-.raw-grid pre {
-  min-height: 0;
-  max-height: 132px;
-  overflow: auto;
-  margin: 0;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: rgba(0, 0, 0, 0.2);
-  padding: 8px;
-  color: var(--muted);
-  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
-  font-size: 10px;
-  line-height: 1.45;
-}
-
-.empty-row {
-  display: block;
-  min-height: 34px;
-  border: 1px dashed var(--line);
-  border-radius: 8px;
-  padding: 9px;
-  color: var(--muted);
-  font-size: 11px;
 }
 
 .right-dock {
@@ -1736,10 +1444,6 @@ pre {
 .dock-float-leave-to {
   opacity: 0;
   transform: translateX(22px) scale(0.98);
-}
-
-.light .right-dock {
-  background: rgba(255, 255, 255, 0.72);
 }
 
 .dock-body {
@@ -1945,10 +1649,6 @@ pre {
   padding: 10px 16px;
   backdrop-filter: blur(18px) saturate(132%);
   -webkit-backdrop-filter: blur(18px) saturate(132%);
-}
-
-.light .bottom-rail {
-  background: rgba(248, 251, 255, 0.82);
 }
 
 .bottom-rail button {
@@ -2183,46 +1883,6 @@ pre {
   padding-inline: 14px;
 }
 
-.ribbon-shell.maximized .agent-console {
-  width: min(580px, 44%);
-  min-width: 480px;
-}
-
-.ribbon-shell.maximized .agent-console.docked {
-  width: min(470px, 32%);
-}
-
-.ribbon-shell.maximized .saved-area {
-  left: 48px;
-  top: 42px;
-  width: min(660px, 52%);
-  height: 236px;
-}
-
-.ribbon-shell.maximized .temporary-area {
-  right: 48px;
-  bottom: 44px;
-  width: min(470px, 38%);
-  height: 190px;
-}
-
-.ribbon-shell.maximized .graph-preview {
-  left: 42px;
-  bottom: 44px;
-  width: min(540px, 42%);
-  min-height: 190px;
-}
-
-.ribbon-shell.maximized .detail-popover {
-  right: 48px;
-  top: 42px;
-  width: min(380px, 30%);
-}
-
-.ribbon-shell.maximized .preview-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
 .ribbon-shell.maximized .bottom-rail {
   gap: 14px;
 }
@@ -2284,14 +1944,6 @@ pre {
   .agent-console.docked {
     right: 16px;
     width: min(390px, 38%);
-  }
-
-  .inspector-table > div {
-    grid-template-columns: minmax(110px, 1.1fr) minmax(96px, 1fr) minmax(72px, 0.7fr) 52px minmax(96px, 0.9fr);
-  }
-
-  .raw-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -2379,10 +2031,6 @@ pre {
     width: min(360px, 48%);
   }
 
-  .graph-preview {
-    width: min(420px, 52%);
-  }
-
   .bottom-rail {
     justify-content: flex-start;
     gap: 8px;
@@ -2445,12 +2093,6 @@ pre {
     display: none;
   }
 
-  .preview-grid,
-  .inspector-split,
-  .raw-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
   .workflow-cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2464,10 +2106,6 @@ pre {
   .temporary-area,
   .detail-popover {
     right: 18px;
-  }
-
-  .graph-preview {
-    left: 18px;
   }
 
   .agent-console {
@@ -2496,7 +2134,6 @@ pre {
 
   .saved-area,
   .temporary-area,
-  .graph-preview,
   .detail-popover {
     transform: scale(0.92);
     transform-origin: top left;

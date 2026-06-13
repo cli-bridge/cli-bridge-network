@@ -1,32 +1,21 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref, type Component } from "vue";
+import { computed, onMounted, onUnmounted, reactive, ref, watch, type Component } from "vue";
 import {
   Archive,
-  Bell,
-  Bot,
   Boxes,
   BrainCircuit,
   CheckCircle2,
   ChevronDown,
   CircleDot,
-  Clock3,
   Code2,
   Command,
-  Copy,
-  Database,
-  FileCheck2,
   FileJson,
-  Files,
   Gauge,
-  GitBranch,
   HardDriveDownload,
-  History,
-  KeyRound,
   Layers3,
   Library,
   ListChecks,
   Maximize2,
-  MessageSquareText,
   Minus,
   Network,
   PackageCheck,
@@ -39,16 +28,17 @@ import {
   Settings,
   ShieldCheck,
   SlidersHorizontal,
-  Sparkles,
   TerminalSquare,
   UploadCloud,
   Waypoints,
   Workflow,
-  Wrench,
   X,
   Zap,
 } from "lucide-vue-next";
 import { StudioApi } from "./api";
+import { mountWorkflowGraph, type StudioGraph } from "./graph";
+import { useDraggableCard } from "./composables/useDraggableCard";
+import { layoutStore } from "./composables/layoutStore";
 import type {
   AcceptanceExecutionResult,
   AdapterAgentNodeBundle,
@@ -81,8 +71,6 @@ type Icon = Component;
 type PanelTarget = "registry" | "connect" | "direct" | "market" | "permissions" | "settings";
 type PermissionMode = "default" | "auto" | "full";
 type ToastTone = "info" | "success" | "warning" | "danger";
-type InspectorTab = "preview" | "workflow" | "agent" | "connect" | "demo" | "raw";
-type ArtifactTab = "artifacts" | "files" | "variables" | "environment";
 type AgentPanelMode = "floating" | "docked" | "minimized";
 type LeftNavMode = "threads" | "favorites";
 
@@ -129,14 +117,6 @@ declare global {
   interface Window {
     __cbnApp?: DesktopAppBridge;
   }
-}
-
-interface AgentCardView {
-  id: string;
-  title: string;
-  role: string;
-  status: string;
-  capabilities: string[];
 }
 
 interface SequenceStepView {
@@ -213,33 +193,6 @@ interface ToastMessage {
 
 const ribbonTabs: RibbonTab[] = [
   {
-    id: "orchestrate",
-    label: "Agent Orchestration",
-    groups: [
-      {
-        id: "agent",
-        title: "对话与任务",
-        tone: "blue",
-        actions: [
-          { id: "new-thread", label: "新建线程", level: "L2", icon: Plus, detail: "创建持久化的 workflow 对话会话" },
-          { id: "stream-chat", label: "流式对话", level: "L2", icon: MessageSquareText, detail: "主 Agent 消息流、工具调用和断点状态" },
-          { id: "tool-calls", label: "工具调用", level: "L3", icon: Wrench, detail: "加载 Agent 工具调用计划和执行批次" },
-          { id: "long-task", label: "长程任务", level: "L3", icon: Clock3, detail: "长任务 checkpoint、审批和恢复点" },
-        ],
-      },
-      {
-        id: "workflow-core",
-        title: "工作流生成",
-        tone: "teal",
-        actions: [
-          { id: "graph", label: "节点图", level: "L2", icon: Workflow, detail: "ComfyUI 式 workflow graph 预览与编辑" },
-          { id: "save-card", label: "保存卡片", level: "L2", icon: FileCheck2, detail: "将临时 workflow 固定到工作台" },
-          { id: "version", label: "版本", level: "L3", icon: GitBranch, detail: "保存、回滚、导入导出与团队复用" },
-        ],
-      },
-    ],
-  },
-  {
     id: "workflow",
     label: "Workflow Foundry",
     groups: [
@@ -260,7 +213,7 @@ const ribbonTabs: RibbonTab[] = [
         tone: "amber",
         actions: [
           { id: "outputs", label: "产物", level: "L2", icon: Archive, detail: "查看 workflow 生成的用户产物", target: "artifacts" },
-          { id: "preview", label: "预览", level: "L2", icon: Maximize2, detail: "在 IDE 面板中预览选中产物" },
+          { id: "preview", label: "预览", level: "L2", icon: Maximize2, detail: "在白板上预览选中产物" },
           { id: "package", label: "打包", level: "L3", icon: PackageCheck, detail: "导出可复用 workflow 包" },
         ],
       },
@@ -298,53 +251,47 @@ const ribbonTabs: RibbonTab[] = [
     ],
   },
   {
-    id: "assets",
-    label: "Reusable Assets",
+    id: "cli-market",
+    label: "CLI Market",
     groups: [
       {
-        id: "library",
-        title: "资产与收藏",
+        id: "browse",
+        title: "浏览与发现",
         tone: "teal",
         actions: [
-          { id: "favorites", label: "收藏工作流", level: "L2", icon: Library, detail: "可展开、可保存、可恢复的 workflow 栈" },
-          { id: "project-assets", label: "项目资产", level: "L2", icon: Files, detail: "项目产物、提示词、配置和导出包", target: "artifacts" },
-          { id: "workspace", label: "团队库", level: "L3", icon: Database, detail: "团队可复用工作流和插件资产" },
+          { id: "market", label: "市场", level: "L2", icon: UploadCloud, detail: "浏览可安装的外部 CLI 与插件", target: "market" },
+          { id: "installed", label: "已安装", level: "L2", icon: Boxes, detail: "查看已安装 CLI 与插件能力清单", target: "registry" },
+          { id: "market-search", label: "搜索", level: "L3", icon: Search, detail: "按名称、能力、来源搜索插件" },
         ],
       },
       {
-        id: "plugin",
-        title: "插件",
+        id: "lifecycle",
+        title: "安装与更新",
         tone: "green",
         actions: [
-          { id: "installed", label: "已安装", level: "L2", icon: Boxes, detail: "右侧浮窗列出已安装 CLI 与插件", target: "registry" },
-          { id: "market", label: "市场", level: "L2", icon: UploadCloud, detail: "可安装、可更新的外部插件接口", target: "market" },
-        ],
-      },
-    ],
-  },
-  {
-    id: "govern",
-    label: "Governance",
-    groups: [
-      {
-        id: "permission",
-        title: "受控执行",
-        tone: "amber",
-        actions: [
-          { id: "permissions", label: "权限模式", level: "L2", icon: ShieldCheck, detail: "默认审批、自动审查、完全访问三档", target: "permissions" },
-          { id: "approval", label: "审批队列", level: "L3", icon: KeyRound, detail: "敏感操作确认与审批历史", target: "audit" },
-          { id: "audit", label: "审计中心", level: "L2", icon: History, detail: "日志、安全、审批、性能统一归档", target: "audit" },
-          { id: "settings", label: "设置", level: "L2", icon: Settings, detail: "模型、base_url、主题、工作区与导出策略", target: "settings" },
+          { id: "market-install", label: "安装", level: "L3", icon: HardDriveDownload, detail: "安装排队、阻塞原因与安装计划" },
+          { id: "market-update", label: "更新", level: "L3", icon: RefreshCw, detail: "检查更新与升级计划" },
+          { id: "market-verify", label: "验证", level: "L3", icon: ShieldCheck, detail: "来源、签名与 live verification" },
         ],
       },
     ],
   },
 ];
 
+// Stable action lookup so call sites don't depend on tab/group/index order.
+function ribbonAction(id: string): RibbonAction {
+  for (const tab of ribbonTabs) {
+    for (const group of tab.groups) {
+      const found = group.actions.find((action) => action.id === id);
+      if (found) return found;
+    }
+  }
+  return { id, label: id, level: "L2", icon: Search, detail: "" };
+}
+
 const DEFAULT_DAEMON_URL = "http://127.0.0.1:8787";
 const DEFAULT_WORKFLOW_PATH = "workflows/cli-anything-macrocli-mermaid-routing.example.json";
 const DEFAULT_AGENT_MESSAGE = "Run this workflow as a reusable CLI-CLI harness agent and surface setup gates.";
-const RIGHT_DOCK_POSITION_KEY = "cbn.workflowStudio.rightDockPosition";
 
 const config = reactive<StudioConfig>({
   daemonUrl: DEFAULT_DAEMON_URL,
@@ -356,8 +303,8 @@ const config = reactive<StudioConfig>({
 });
 
 const api = computed(() => new StudioApi(config));
-const activeRibbonTab = ref("orchestrate");
-const activeActionId = ref("stream-chat");
+const activeRibbonTab = ref("workflow");
+const activeActionId = ref("refresh-run");
 const rightPanelTab = ref<PanelTarget>("registry");
 const rightPanelOpen = ref(false);
 const rightDockPosition = reactive({ x: 0, y: 0 });
@@ -365,9 +312,6 @@ const rightDockDrag = reactive({ active: false, offsetX: 0, offsetY: 0 });
 const selectedWorkflowId = ref("current");
 const expandedWorkflowId = ref("current");
 const expandedPluginId = ref("");
-const selectedArtifactId = ref("");
-const inspectorTab = ref<InspectorTab>("preview");
-const artifactTab = ref<ArtifactTab>("artifacts");
 const agentPanelMode = ref<AgentPanelMode>("floating");
 const ribbonCollapsed = ref(false);
 const leftNavCollapsed = ref(false);
@@ -375,8 +319,34 @@ const leftNavMode = ref<LeftNavMode>("threads");
 const showAudit = ref(false);
 const showDiagnostics = ref(false);
 const permissionMode = ref<PermissionMode>(config.confirmed ? (config.dryRun ? "auto" : "full") : "default");
-const theme = ref<"dark" | "light">("dark");
 const zoom = ref(100);
+const graphCanvasEl = ref<HTMLCanvasElement | null>(null);
+let studioGraph: StudioGraph | null = null;
+const canvasSurfaceEl = ref<HTMLElement | null>(null);
+const viewportW = ref(typeof window !== "undefined" ? window.innerWidth : 1280);
+const dragEnabled = computed(() => viewportW.value >= 1280);
+
+const savedAreaEl = ref<HTMLElement | null>(null);
+const temporaryAreaEl = ref<HTMLElement | null>(null);
+const agentConsoleEl = ref<HTMLElement | null>(null);
+const detailPopoverEl = ref<HTMLElement | null>(null);
+
+const draggableCards = useDraggableCards();
+
+function useDraggableCards() {
+  const opts = (el: () => HTMLElement | null, storageKey: string, enabled: () => boolean) => ({
+    storageKey,
+    boundsEl: () => canvasSurfaceEl.value,
+    cardEl: el,
+    enabled,
+  });
+  return {
+    saved: useDraggableCard(opts(() => savedAreaEl.value, "cbn.studio.card.saved-area", () => dragEnabled.value)),
+    temporary: useDraggableCard(opts(() => temporaryAreaEl.value, "cbn.studio.card.temporary-area", () => dragEnabled.value)),
+    agent: useDraggableCard(opts(() => agentConsoleEl.value, "cbn.studio.card.agent-console", () => dragEnabled.value && agentPanelMode.value === "floating")),
+    detail: useDraggableCard(opts(() => detailPopoverEl.value, "cbn.studio.card.detail-popover", () => dragEnabled.value)),
+  };
+}
 const loading = ref("");
 const error = ref("");
 const copiedText = ref("");
@@ -424,7 +394,7 @@ const activeAction = computed(() => {
       if (action) return action;
     }
   }
-  return ribbonTabs[0].groups[0].actions[1];
+  return ribbonTabs[0].groups[0].actions[0];
 });
 const activeGroup = computed(() => activeTab.value.groups.find((group) => group.actions.some((action) => action.id === activeAction.value.id)));
 const activeTrail = computed(() => [activeTab.value.label, activeGroup.value?.title || "工作区", activeAction.value.label, activeAction.value.level]);
@@ -492,7 +462,6 @@ const favoriteWorkflowCards = computed(() => [
     artifacts: artifactRows.value.slice(0, 2),
   },
 ].slice(0, 6));
-const selectedArtifact = computed(() => artifactRows.value.find((artifact) => artifact.id === selectedArtifactId.value) ?? artifactRows.value[0] ?? null);
 const conversationThreads = computed<ConversationThread[]>(() => [
   {
     id: "current",
@@ -600,24 +569,6 @@ const selectedPlugin = computed(() => pluginRows.value.find((plugin) => plugin.i
 const toolCalls = computed(() => toolCallPlan.value?.tool_calls ?? []);
 const setupCheckpoints = computed(() => toolCallPlan.value?.long_running_loop?.checkpoints ?? []);
 const agentCards = computed(() => agentBundle.value?.cards ?? connectPackage.value?.agent_node_bundle?.cards ?? []);
-const agentCardViews = computed<AgentCardView[]>(() => agentCards.value.map((card, index) => {
-  const record = asRecord(card);
-  const metadata = asRecord(record.metadata);
-  const spec = asRecord(record.spec);
-  const rawCapabilities = Array.isArray(spec.capabilities)
-    ? spec.capabilities
-    : Array.isArray(record.capabilities)
-      ? record.capabilities
-      : [];
-  const id = String(metadata.id || record.id || `agent-card-${index + 1}`);
-  return {
-    id,
-    title: String(metadata.title || record.title || id),
-    role: String(metadata.role || record.role || "agent"),
-    status: String(metadata.status || record.status || "ready"),
-    capabilities: rawCapabilities.filter((item): item is string => typeof item === "string").slice(0, 8),
-  };
-}));
 const registryMetrics = computed(() => ({
   registered: pluginRows.value.length,
   ready: pluginRows.value.filter((plugin) => /ready|就绪|ok|installed|已/.test(plugin.status)).length,
@@ -631,33 +582,8 @@ const connectSummary = computed<Partial<ConnectSummary>>(() => ({
   networkHarnessStatus: networkHarnessAgent.value?.status || connectPackage.value?.network_harness_agent?.status || "not loaded",
   acceptanceStatus: directAcceptance.value?.status || connectPackage.value?.acceptance?.status || "not loaded",
 }));
-const workflowRows = computed(() => tasks.value.map((task) => ({
-  id: task.id,
-  uses: task.uses,
-  needs: (task.needs ?? []).join(", ") || "root",
-  routes: task.argsFrom?.length ?? 0,
-  risk: task.capability?.risk || "normal",
-  parser: task.capability?.parser_ref || "parser pending",
-  verified: task.capability?.verified ? "verified" : "unverified",
-})));
-const contractSections = computed(() => {
-  const sections = contract.value?.contract?.contracts ?? {};
-  return Object.entries(sections).map(([id, section]) => ({
-    id,
-    kind: section?.kind || "contract",
-    owner: section?.owner || "core",
-    scope: section?.scope || "runtime",
-    required: [
-      ...(section?.required_metadata ?? []),
-      ...(section?.required_payload ?? []),
-      ...(section?.required_fields ?? []),
-      ...(section?.required_spec ?? []),
-    ].join(", ") || "none",
-  }));
-});
 const agentTasks = computed(() => agentBundle.value?.tasks ?? connectPackage.value?.agent_node_bundle?.tasks ?? []);
 const agentHandoffs = computed(() => agentBundle.value?.source_coordination_plan?.handoffs ?? []);
-const setupBatches = computed(() => toolCallPlan.value?.execution_batches ?? []);
 const connectQuickstart = computed<Partial<NetworkConnectQuickstart>>(() => directQuickstart.value ?? connectPackage.value?.consumer_quickstart ?? {});
 const quickstartRequests = computed(() => connectQuickstart.value.requests ?? []);
 const quickstartSequenceSteps = computed<SequenceStepView[]>(() => {
@@ -683,7 +609,6 @@ const quickstartSequenceSteps = computed<SequenceStepView[]>(() => {
     };
   });
 });
-const quickstartSdkSnippets = computed(() => connectQuickstart.value.sdk_snippets ?? []);
 const connectAcceptance = computed<Partial<NetworkConnectionAcceptance>>(() => directAcceptance.value ?? connectPackage.value?.acceptance ?? connectPackage.value?.consumer_quickstart?.acceptance ?? {});
 const acceptanceChecks = computed<ConnectionAcceptanceCheck[]>(() => connectAcceptance.value.checks ?? []);
 const acceptanceSummary = computed(() => ({
@@ -692,7 +617,6 @@ const acceptanceSummary = computed(() => ({
   failed: acceptanceResults.value.filter((result) => result.status === "failed").length,
   skipped: acceptanceResults.value.filter((result) => result.status === "skipped").length,
 }));
-const connectEndpoints = computed(() => connectPackage.value?.daemon_endpoints ?? []);
 const connectNextCommands = computed(() => unique([
   ...(connectPackage.value?.next_commands ?? []),
   ...(connectPackage.value?.consumer_manifest?.next_commands ?? []),
@@ -701,7 +625,6 @@ const connectNextCommands = computed(() => unique([
   ...(connectPackage.value?.registration_surface?.next_commands ?? []),
 ]));
 const connectDemoStages = computed(() => connectPackage.value?.demo_readiness?.stages ?? []);
-const connectDemoPlaybookSteps = computed(() => connectPackage.value?.demo_playbook?.steps ?? []);
 const connectAgentCards = computed(() => connectPackage.value?.agent_node_bundle?.cards ?? []);
 const connectAgentHarnesses = computed(() => connectPackage.value?.agent_node_bundle?.harnesses ?? []);
 const connectHarnessRoutes = computed(() => connectPackage.value?.agent_workflow_request?.bridge_routes ?? []);
@@ -733,35 +656,6 @@ const protocolWireSummary = computed(() => {
     protocols,
   };
 });
-const demoStages = computed(() => demoReport.value?.stages ?? []);
-const demoHandoffs = computed(() => demoReport.value?.communication_trace?.handoffs ?? []);
-const demoArtifacts = computed(() => demoReport.value?.evidence?.task_artifacts ?? []);
-const protocolExports = computed(() => demoReport.value?.protocol_exports?.exports ?? {});
-const protocolCards = computed(() => [
-  {
-    id: "MCP",
-    count: Array.isArray(protocolExports.value.mcp?.workflowTools) ? protocolExports.value.mcp.workflowTools.length : 0,
-    wire: protocolExports.value.mcp?.wire_compatible ? "wire" : "pending",
-  },
-  {
-    id: "A2A",
-    count: Array.isArray(protocolExports.value.a2a?.agentCard?.skills) ? protocolExports.value.a2a.agentCard.skills.length : 0,
-    wire: protocolExports.value.a2a?.wire_compatible ? "wire" : "pending",
-  },
-  {
-    id: "ACP",
-    count: Array.isArray(protocolExports.value.acp?.workflows) ? protocolExports.value.acp.workflows.length : 0,
-    wire: protocolExports.value.acp?.wire_compatible ? "wire" : "pending",
-  },
-]);
-const inspectorTabs: Array<{ id: InspectorTab; label: string }> = [
-  { id: "preview", label: "预览" },
-  { id: "workflow", label: "Workflow" },
-  { id: "agent", label: "Agent" },
-  { id: "connect", label: "Connect" },
-  { id: "demo", label: "Demo" },
-  { id: "raw", label: "Raw" },
-];
 const healthText = computed(() => {
   const record = asRecord(health.value);
   if (record.ok === true) return "System Healthy";
@@ -770,52 +664,25 @@ const healthText = computed(() => {
   return "Connecting";
 });
 const appShellText = computed(() => desktopApp.value ? `App · ${desktopApp.value.daemon.mode}` : "App starting");
-const visibleArtifactRows = computed(() => {
-  if (artifactTab.value === "artifacts") return artifactRows.value;
-  if (artifactTab.value === "files") return artifactRows.value.filter((artifact) => /file|html|json|txt|pdf|artifact/i.test(artifact.kind));
-  if (artifactTab.value === "variables") {
-    return [
-      { id: "var-workflow", name: "workflowPath", kind: "VAR", source: config.workflowPath, size: "runtime" },
-      { id: "var-daemon", name: "daemonUrl", kind: "VAR", source: config.daemonUrl, size: "app" },
-      { id: "var-permission", name: "permissionMode", kind: "VAR", source: permissionMode.value, size: config.dryRun ? "dry-run" : "live" },
-    ];
-  }
-  return [
-    { id: "env-shell", name: "shell", kind: "ENV", source: "desktop app", size: appShellText.value },
-    { id: "env-daemon", name: "daemon", kind: "ENV", source: config.daemonUrl, size: healthText.value },
-    { id: "env-workspace", name: "workspace", kind: "ENV", source: desktopApp.value?.workspaceRoot || "local", size: "UTF-8" },
-  ];
-});
 
 function setTab(tabId: string) {
   activeRibbonTab.value = tabId;
   const nextTab = activeTab.value;
   activeActionId.value = nextTab.groups[0]?.actions[0]?.id ?? activeActionId.value;
-  if (tabId === "orchestrate") {
-    inspectorTab.value = "agent";
-    rightPanelTab.value = "registry";
-    void loadToolCallPlan(true);
-  } else if (tabId === "workflow") {
-    inspectorTab.value = "workflow";
+  if (tabId === "workflow") {
     void Promise.allSettled([loadWorkflow(true), loadContract(true)]);
   } else if (tabId === "connect") {
-    inspectorTab.value = "connect";
     rightPanelTab.value = "connect";
     void loadConnectPackage(true);
-  } else if (tabId === "assets") {
-    inspectorTab.value = "preview";
-    rightPanelTab.value = "registry";
-    void loadDock(true);
-  } else if (tabId === "govern") {
-    rightPanelTab.value = "permissions";
-    inspectorTab.value = "raw";
+  } else if (tabId === "cli-market") {
+    rightPanelTab.value = "market";
+    void loadImportCatalog(true);
   }
 }
 
 function selectWorkflow(id: string) {
   selectedWorkflowId.value = id;
   expandedWorkflowId.value = expandedWorkflowId.value === id ? "" : id;
-  inspectorTab.value = "workflow";
 }
 
 function setPermissionMode(mode: PermissionMode) {
@@ -835,30 +702,22 @@ function setPermissionMode(mode: PermissionMode) {
 
 function setZoom(nextZoom: number) {
   zoom.value = Math.min(500, Math.max(10, nextZoom));
+  studioGraph?.setZoom(zoom.value / 100);
 }
 
-function setArtifactTab(tab: ArtifactTab) {
-  artifactTab.value = tab;
-  inspectorTab.value = "preview";
-  if (tab === "artifacts" || tab === "files") {
-    void loadDock(true);
-  }
+function resetGraphView() {
+  zoom.value = 100;
+  studioGraph?.resetView();
 }
 
 function selectThread(threadId: string) {
   if (threadId === "current") {
-    selectedWorkflowId.value = "current";
-    inspectorTab.value = "workflow";
-    void loadWorkflow(true);
+    selectedWorkflowId.value = "current";    void loadWorkflow(true);
   } else if (threadId === "setup" || threadId === "network") {
     selectedWorkflowId.value = "connect";
     activeRibbonTab.value = "connect";
-    rightPanelTab.value = "connect";
-    inspectorTab.value = "connect";
-    void loadConnectPackage(true);
+    rightPanelTab.value = "connect";    void loadConnectPackage(true);
   } else if (threadId === "agent") {
-    inspectorTab.value = "agent";
-    activeRibbonTab.value = "orchestrate";
     void loadToolCallPlan(true);
   }
 }
@@ -867,9 +726,7 @@ function openRightPanel(tab: PanelTarget) {
   rightPanelTab.value = tab;
   ensureRightDockPosition();
   rightPanelOpen.value = true;
-  if (tab === "connect") {
-    inspectorTab.value = "connect";
-    void loadConnectPackage(true);
+  if (tab === "connect") {    void loadConnectPackage(true);
   } else if (tab === "direct") {
     void Promise.allSettled([loadImportCatalog(true), loadDirectCliReadiness(true), loadProtocolWire(true)]);
   } else if (tab === "registry") {
@@ -888,20 +745,18 @@ function defaultRightDockPosition() {
 
 function clampRightDockPosition(x: number, y: number) {
   const dockWidth = Math.min(windowState.value.isMaximized ? 420 : 392, Math.max(300, window.innerWidth - 72));
-  const maxX = Math.max(12, window.innerWidth - dockWidth - 12);
+  // Keep the dock on the right rail so it cannot be dragged over the canvas cards.
+  const minX = Math.max(12, Math.floor(window.innerWidth * 0.5));
+  const maxX = Math.max(minX, window.innerWidth - dockWidth - 12);
   const maxY = Math.max(12, window.innerHeight - 132);
   return {
-    x: Math.min(Math.max(12, x), maxX),
+    x: Math.min(Math.max(minX, x), maxX),
     y: Math.min(Math.max(48, y), maxY),
   };
 }
 
 function saveRightDockPosition() {
-  try {
-    window.localStorage.setItem(RIGHT_DOCK_POSITION_KEY, JSON.stringify(rightDockPosition));
-  } catch {
-    // LocalStorage can be unavailable in restricted renderer contexts.
-  }
+  layoutStore.setRightDock({ x: rightDockPosition.x, y: rightDockPosition.y });
 }
 
 function ensureRightDockPosition() {
@@ -917,19 +772,12 @@ function ensureRightDockPosition() {
 }
 
 function restoreRightDockPosition() {
-  try {
-    const saved = window.localStorage.getItem(RIGHT_DOCK_POSITION_KEY);
-    if (saved) {
-      const parsed = JSON.parse(saved) as Partial<{ x: number; y: number }>;
-      if (typeof parsed.x === "number" && typeof parsed.y === "number") {
-        const next = clampRightDockPosition(parsed.x, parsed.y);
-        rightDockPosition.x = next.x;
-        rightDockPosition.y = next.y;
-        return;
-      }
-    }
-  } catch {
-    // Ignore malformed persisted positions and fall back to the default.
+  const saved = layoutStore.getRightDock();
+  if (saved) {
+    const next = clampRightDockPosition(saved.x, saved.y);
+    rightDockPosition.x = next.x;
+    rightDockPosition.y = next.y;
+    return;
   }
   const next = defaultRightDockPosition();
   rightDockPosition.x = next.x;
@@ -962,6 +810,11 @@ function stopRightDockDrag() {
 }
 
 function handleWindowResize() {
+  viewportW.value = typeof window !== "undefined" ? window.innerWidth : viewportW.value;
+  draggableCards.saved.reclamp();
+  draggableCards.temporary.reclamp();
+  draggableCards.agent.reclamp();
+  draggableCards.detail.reclamp();
   if (!rightDockPosition.x && !rightDockPosition.y) return;
   const next = clampRightDockPosition(rightDockPosition.x, rightDockPosition.y);
   rightDockPosition.x = next.x;
@@ -1287,79 +1140,69 @@ async function performAction(action: RibbonAction) {
     return;
   }
   if (action.target === "artifacts") {
-    inspectorTab.value = "preview";
     await loadDock();
     return;
   }
   if (action.target) openRightPanel(action.target);
-  if (action.id === "refresh-run") {
-    inspectorTab.value = "workflow";
-    await loadInitial();
-    await runWorkflow();
-  } else if (action.id === "demo") {
-    inspectorTab.value = "demo";
-    await runDemo();
-  } else if (action.id === "contract") {
-    inspectorTab.value = "workflow";
-    await loadContract();
-  } else if (action.id === "graph") {
-    inspectorTab.value = "workflow";
-    await Promise.allSettled([loadWorkflow(), loadContract()]);
-  } else if (action.id === "setup-plan" || action.id === "tool-calls" || action.id === "long-task") {
-    inspectorTab.value = "agent";
-    await loadToolCallPlan();
-  } else if (action.id === "connect") {
-    inspectorTab.value = "connect";
-    await loadConnectPackage();
-  } else if (action.id === "quick") {
-    inspectorTab.value = "connect";
-    await loadQuickstart();
-  } else if (action.id === "profile") {
-    inspectorTab.value = "connect";
-    await loadEntryProfile();
-  } else if (action.id === "harness") {
-    inspectorTab.value = "connect";
-    await loadHarnessAgent();
-  } else if (action.id === "launch") {
-    inspectorTab.value = "connect";
-    await loadLaunchContract();
-  } else if (action.id === "sdk") {
-    inspectorTab.value = "connect";
-    await loadSdkBootstrap();
-  } else if (action.id === "manifest") {
-    inspectorTab.value = "connect";
-    await loadConsumerManifest();
-  } else if (action.id === "accept") {
-    inspectorTab.value = "connect";
-    await loadAcceptance();
-    await runAcceptanceChecks();
-  } else if (action.id === "ready") {
-    inspectorTab.value = "connect";
-    await loadReadiness();
-    await verifyNetwork();
-  } else if (action.id === "imports") {
-    rightPanelTab.value = "direct";
-    await loadImportCatalog();
-  } else if (action.id === "directwire") {
-    rightPanelTab.value = "direct";
-    await loadProtocolWire();
-  } else if (action.id === "stream-chat" || action.id === "new-thread") {
-    inspectorTab.value = "agent";
-    await loadWorkflowRequestPlan();
-  } else if (action.id === "installed") {
-    openRightPanel("registry");
-  } else if (action.id === "market") {
-    openRightPanel("market");
-  } else if (action.id === "permissions") {
-    openRightPanel("permissions");
-  } else if (action.id === "settings") {
-    openRightPanel("settings");
-  } else if (action.id === "preview") {
-    inspectorTab.value = "preview";
-  } else if (action.id === "save-card") {
-    notify("保存卡片", "当前 workflow 已固定在工作台视图；持久化接口将在工作流存储层接入。", "info");
-  } else if (action.id === "version" || action.id === "package" || action.id === "favorites" || action.id === "workspace") {
-    notify("入口已定位", `${action.label} 已切换到对应工作区，后续可接入真实存储/导出操作。`, "info");
+  switch (action.id) {
+    case "refresh-run":
+      await loadInitial();
+      await runWorkflow();
+      break;
+    case "demo":
+      await runDemo();
+      break;
+    case "contract":
+      await loadContract();
+      break;
+    case "setup-plan":
+      await loadToolCallPlan();
+      break;
+    case "connect":
+      await loadConnectPackage();
+      break;
+    case "quick":
+      await loadQuickstart();
+      break;
+    case "profile":
+      await loadEntryProfile();
+      break;
+    case "harness":
+      await loadHarnessAgent();
+      break;
+    case "launch":
+      await loadLaunchContract();
+      break;
+    case "sdk":
+      await loadSdkBootstrap();
+      break;
+    case "manifest":
+      await loadConsumerManifest();
+      break;
+    case "accept":
+      await loadAcceptance();
+      await runAcceptanceChecks();
+      break;
+    case "ready":
+      await loadReadiness();
+      await verifyNetwork();
+      break;
+    case "imports":
+      rightPanelTab.value = "direct";
+      await loadImportCatalog();
+      break;
+    case "directwire":
+      rightPanelTab.value = "direct";
+      await loadProtocolWire();
+      break;
+    case "installed":
+      openRightPanel("registry");
+      break;
+    case "market":
+      openRightPanel("market");
+      break;
+    default:
+      notify("入口已定位", `${action.label} 已切换到对应工作区，后续接入真实操作。`, "info");
   }
 }
 
@@ -1435,8 +1278,27 @@ function shortJson(value: unknown): string {
   }
 }
 
+function mountStudioGraph() {
+  if (!graphCanvasEl.value || studioGraph) return;
+  studioGraph = mountWorkflowGraph(graphCanvasEl.value);
+  studioGraph.render(workflow.value, agentBundle.value);
+}
+
+watch(workflow, () => studioGraph?.render(workflow.value, agentBundle.value));
+watch(agentBundle, () => studioGraph?.render(workflow.value, agentBundle.value));
+watch(leftNavCollapsed, () => {
+  draggableCards.saved.reclamp();
+  draggableCards.temporary.reclamp();
+  draggableCards.agent.reclamp();
+  draggableCards.detail.reclamp();
+});
+
 onMounted(async () => {
   restoreRightDockPosition();
+  draggableCards.saved.restore();
+  draggableCards.temporary.restore();
+  draggableCards.agent.restore();
+  draggableCards.detail.restore();
   window.addEventListener("pointermove", handleRightDockDrag);
   window.addEventListener("pointerup", stopRightDockDrag);
   window.addEventListener("resize", handleWindowResize);
@@ -1448,19 +1310,22 @@ onMounted(async () => {
     return;
   }
   await loadInitial();
+  mountStudioGraph();
 });
 
 onUnmounted(() => {
   window.removeEventListener("pointermove", handleRightDockDrag);
   window.removeEventListener("pointerup", stopRightDockDrag);
   window.removeEventListener("resize", handleWindowResize);
+  studioGraph?.dispose();
+  studioGraph = null;
   disposeWindowState?.();
   disposeWindowState = null;
 });
 </script>
 
 <template>
-  <main :class="['ribbon-shell', theme, { maximized: windowState.isMaximized, 'ribbon-collapsed': ribbonCollapsed, 'left-collapsed': leftNavCollapsed }]">
+  <main :class="['ribbon-shell', { maximized: windowState.isMaximized, 'ribbon-collapsed': ribbonCollapsed, 'left-collapsed': leftNavCollapsed }]">
     <header class="topbar">
       <div class="brand app-drag-region">
         <div class="brand-mark"><Command :size="19" /></div>
@@ -1472,7 +1337,6 @@ onUnmounted(() => {
       <label class="global-search" aria-label="Search workflows agents tools">
         <Search :size="15" />
         <input value="搜索工作流、CLI、节点、产物..." readonly />
-        <kbd>Ctrl K</kbd>
       </label>
       <div class="top-actions">
         <button type="button" :class="['status-pill', desktopApp?.daemon.healthy ? '' : 'warn']" @click="loadDesktopAppState()">
@@ -1482,10 +1346,6 @@ onUnmounted(() => {
         <button type="button" :class="['status-pill', error ? 'warn' : '']" @click="loadHealth()">
           <CircleDot :size="14" />
           {{ healthText }}
-        </button>
-        <button type="button" title="切换主题" @click="theme = theme === 'dark' ? 'light' : 'dark'">
-          <Sparkles :size="15" />
-          {{ theme === "dark" ? "Light" : "Dark" }}
         </button>
         <button type="button" title="打开审计中心" @click="showAudit = true">
           <ShieldCheck :size="15" />
@@ -1557,7 +1417,7 @@ onUnmounted(() => {
                 v-if="leftNavMode === 'threads'"
                 type="button"
                 title="新建线程"
-                @click="performAction(ribbonTabs[0].groups[0].actions[0])"
+                @click="notify('新建线程', '持久化对话线程将在会话存储层接入。', 'info')"
               >
                 <Plus :size="15" />
               </button>
@@ -1608,19 +1468,15 @@ onUnmounted(() => {
                 <span>团队空间</span>
                 <strong>Workspace</strong>
               </div>
-              <button type="button" title="打开团队资产" @click="setTab('assets')">
+              <button type="button" title="打开团队资产" @click="openRightPanel('registry')">
                 <Library :size="15" />
               </button>
             </header>
             <div class="team-list">
-              <button type="button" class="team-row active">
+              <div class="team-row active">
                 <Layers3 :size="14" />
-                <span><strong>Platform Team</strong><small>共享 workflow、manifest、SDK 样例</small></span>
-              </button>
-              <button type="button" class="team-row">
-                <ShieldCheck :size="14" />
-                <span><strong>Governance</strong><small>权限策略、审批、审计归档</small></span>
-              </button>
+                <span><strong>团队空间</strong><small>共享 workflow、manifest 与权限策略将在协作层接入</small></span>
+              </div>
             </div>
           </section>
         </template>
@@ -1637,12 +1493,14 @@ onUnmounted(() => {
             <button type="button" @click="setZoom(zoom - 10)">-</button>
             <strong>{{ zoom }}%</strong>
             <button type="button" @click="setZoom(zoom + 10)">+</button>
+            <button type="button" title="复位视图" @click="resetGraphView()"><RefreshCw :size="14" /> 复位</button>
           </div>
         </div>
 
-        <div class="canvas-surface">
-          <section class="workflow-stage saved-area">
-            <header>
+        <div ref="canvasSurfaceEl" class="canvas-surface">
+          <canvas ref="graphCanvasEl" class="workflow-graph-canvas" aria-label="Workflow graph whiteboard" />
+          <section ref="savedAreaEl" data-draggable-card class="workflow-stage saved-area" :style="draggableCards.saved.style.value">
+            <header class="drag-handle" @pointerdown="draggableCards.saved.startDrag">
               <span>已保存区</span>
               <strong>Pinned Workflows</strong>
             </header>
@@ -1667,14 +1525,14 @@ onUnmounted(() => {
                 </div>
                 <div v-if="expandedWorkflowId === card.id" class="workflow-expanded">
                   <code v-for="tool in card.tools.slice(0, 4)" :key="tool">{{ tool }}</code>
-                  <button type="button" @click="performAction(ribbonTabs[1].groups[0].actions[2])">查看契约</button>
+                  <button type="button" @click="performAction(ribbonAction('contract'))">查看契约</button>
                 </div>
               </article>
             </div>
           </section>
 
-          <section class="workflow-stage temporary-area">
-            <header>
+          <section ref="temporaryAreaEl" data-draggable-card class="workflow-stage temporary-area" :style="draggableCards.temporary.style.value">
+            <header class="drag-handle" @pointerdown="draggableCards.temporary.startDrag">
               <span>临时区</span>
               <strong>Draft Workflows</strong>
             </header>
@@ -1685,13 +1543,13 @@ onUnmounted(() => {
             </div>
           </section>
 
-          <section :class="['agent-console', 'floating-card', agentPanelMode]">
-            <header>
+          <section ref="agentConsoleEl" data-draggable-card :class="['agent-console', 'floating-card', agentPanelMode, { dragged: draggableCards.agent.hasDragged.value && agentPanelMode === 'floating' }]" :style="draggableCards.agent.style.value">
+            <header class="drag-handle" @pointerdown="draggableCards.agent.startDrag">
               <div>
                 <span>Workflow Orchestration Agent</span>
                 <strong>Z.ai Streaming Agent</strong>
               </div>
-              <div class="window-actions">
+              <div class="window-actions" @pointerdown.stop>
                 <button type="button" title="缩小" @click="setAgentPanelMode('minimized')"><Minus :size="13" /></button>
                 <button type="button" title="停靠" @click="setAgentPanelMode('docked')"><PanelRight :size="13" /></button>
                 <button type="button" title="扩展" @click="setAgentPanelMode('floating')"><Maximize2 :size="13" /></button>
@@ -1712,37 +1570,17 @@ onUnmounted(() => {
             </div>
             <div v-if="agentPanelMode !== 'minimized'" class="composer">
               <input v-model="config.agentMessage" aria-label="Agent message" />
-              <button type="button" title="生成计划" @click="performAction(ribbonTabs[0].groups[0].actions[1])"><Play :size="14" /></button>
+              <button type="button" title="生成计划" @click="loadWorkflowRequestPlan()"><Play :size="14" /></button>
             </div>
           </section>
 
-          <section class="graph-preview floating-card">
-            <header>
-              <div>
-                <span>节点图预览</span>
-                <strong>{{ selectedWorkflow.title }}</strong>
-              </div>
-              <button type="button" @click="performAction(ribbonTabs[0].groups[1].actions[0])">
-                <Workflow :size="14" /> 编辑
-              </button>
-            </header>
-            <div class="node-lane">
-              <span v-for="task in tasks.slice(0, 7)" :key="task.id">{{ task.id }}</span>
-              <span v-if="!tasks.length">等待 workflow</span>
-            </div>
-            <div class="tool-chips">
-              <code v-for="tool in selectedWorkflow.tools.slice(0, 8)" :key="tool">{{ tool }}</code>
-              <code v-if="!selectedWorkflow.tools.length">no CLI loaded</code>
-            </div>
-          </section>
-
-          <section class="detail-popover floating-card">
-            <header>
+          <section ref="detailPopoverEl" data-draggable-card class="detail-popover floating-card" :style="draggableCards.detail.style.value">
+            <header class="drag-handle" @pointerdown="draggableCards.detail.startDrag">
               <div>
                 <span>工作流详情</span>
                 <strong>{{ selectedWorkflow.title }}</strong>
               </div>
-              <button type="button" @click="runWorkflow()"><Play :size="14" /> 运行</button>
+              <button type="button" @pointerdown.stop @click="runWorkflow()"><Play :size="14" /> 运行</button>
             </header>
             <div class="detail-grid">
               <div><span>Route Ready</span><strong>{{ routeReadyCount }}/{{ bridgeRouteCount }}</strong></div>
@@ -1758,146 +1596,6 @@ onUnmounted(() => {
           </section>
         </div>
 
-        <section class="bottom-preview">
-          <header>
-            <div>
-              <span>Runtime Preview</span>
-              <strong>{{ inspectorTabs.find((tab) => tab.id === inspectorTab)?.label || "Inspector" }}</strong>
-            </div>
-            <div class="inspector-tabs">
-              <button
-                v-for="tab in inspectorTabs"
-                :key="tab.id"
-                type="button"
-                :class="{ active: inspectorTab === tab.id }"
-                @click="inspectorTab = tab.id"
-              >
-                {{ tab.label }}
-              </button>
-            </div>
-          </header>
-          <div v-if="inspectorTab === 'preview'" class="preview-grid">
-            <div class="preview-card">
-              <span>产物</span>
-              <strong>{{ selectedArtifact?.kind || "—" }}</strong>
-              <p>{{ selectedArtifact?.path || selectedArtifact?.source || "选择左下角产物后在这里预览。" }}</p>
-            </div>
-            <div class="preview-card">
-              <span>Contract</span>
-              <strong>{{ contract?.ok === false ? "blocked" : contract ? "loaded" : "not loaded" }}</strong>
-              <p>{{ bridgeRouteCount }} routes · {{ routeReadyCount }} ready · {{ contract?.apiVersion || "apiVersion pending" }}</p>
-            </div>
-            <div class="preview-card">
-              <span>Run Result</span>
-              <strong>{{ runResult ? "available" : "not run" }}</strong>
-              <p>{{ demoReport?.ok ? "Killer demo evidence is available." : "运行 workflow 或 demo 后显示用户可用结果。" }}</p>
-            </div>
-          </div>
-          <div v-else-if="inspectorTab === 'workflow'" class="inspector-table">
-            <div class="table-head"><span>Task</span><span>Uses</span><span>Needs</span><span>Routes</span><span>Contract</span></div>
-            <div v-for="row in workflowRows" :key="row.id">
-              <strong>{{ row.id }}</strong>
-              <code>{{ row.uses }}</code>
-              <span>{{ row.needs }}</span>
-              <span>{{ row.routes }}</span>
-              <small>{{ row.risk }} · {{ row.verified }}</small>
-            </div>
-            <div v-if="!workflowRows.length" class="empty-row">No workflow tasks loaded</div>
-            <div v-for="section in contractSections" :key="section.id" class="contract-row">
-              <strong>{{ section.id }}</strong>
-              <code>{{ section.kind }}</code>
-              <span>{{ section.owner }}</span>
-              <span>{{ section.scope }}</span>
-              <small>{{ section.required }}</small>
-            </div>
-          </div>
-          <div v-else-if="inspectorTab === 'agent'" class="inspector-split">
-            <section>
-              <header>Agent Cards</header>
-              <div v-for="card in agentCardViews.slice(0, 6)" :key="card.id" class="inspector-item">
-                <strong>{{ card.title }}</strong>
-                <span>{{ card.role }} · {{ card.status }}</span>
-                <code>{{ card.capabilities.slice(0, 5).join(", ") || "capabilities pending" }}</code>
-              </div>
-              <span v-if="!agentCardViews.length" class="empty-row">No agent cards loaded</span>
-            </section>
-            <section>
-              <header>Tool Calls / Batches</header>
-              <div v-for="callItem in toolCalls.slice(0, 6)" :key="callItem.call_id || callItem.tool_use_id || callItem.action" class="inspector-item">
-                <strong>{{ callItem.action || callItem.tool || callItem.kind || "tool call" }}</strong>
-                <span>{{ callItem.risk || "normal" }} · {{ callItem.initial_status || "pending" }}</span>
-                <code>{{ (callItem.argv || []).join(" ") || callItem.permission_flow?.reason || "argv pending" }}</code>
-              </div>
-              <div v-for="batch in setupBatches.slice(0, 3)" :key="batch.batch_id" class="inspector-item">
-                <strong>{{ batch.batch_id || "batch" }}</strong>
-                <span>{{ batch.mode || "execution" }} · {{ batch.concurrency_safe ? "parallel" : "serial" }}</span>
-                <code>{{ (batch.tool_call_ids || batch.tool_use_ids || []).join(", ") }}</code>
-              </div>
-              <span v-if="!toolCalls.length && !setupBatches.length" class="empty-row">No tool plan loaded</span>
-            </section>
-          </div>
-          <div v-else-if="inspectorTab === 'connect'" class="inspector-split">
-            <section>
-              <header>Quickstart / SDK</header>
-              <div v-for="request in quickstartRequests.slice(0, 8)" :key="request.id || request.url" class="inspector-item">
-                <strong>{{ request.id || "request" }}</strong>
-                <span>{{ request.method || "GET" }}</span>
-                <code>{{ request.url || "not loaded" }}</code>
-              </div>
-              <div v-for="snippet in quickstartSdkSnippets.slice(0, 3)" :key="snippet.id || snippet.language" class="inspector-item">
-                <strong>{{ snippet.title || snippet.id || "SDK snippet" }}</strong>
-                <span>{{ snippet.language || "code" }} · {{ snippet.runtime || "runtime" }}</span>
-                <button type="button" @click="copyText(`snippet-${snippet.id || snippet.language}`, snippet.code || '')">
-                  <Copy :size="13" /> 复制
-                </button>
-              </div>
-            </section>
-            <section>
-              <header>Endpoints / Playbook</header>
-              <div v-for="endpoint in connectEndpoints.slice(0, 6)" :key="`${endpoint.method}:${endpoint.path}`" class="inspector-item">
-                <strong>{{ endpoint.method }}</strong>
-                <span>{{ endpoint.purpose || "daemon endpoint" }}</span>
-                <code>{{ endpoint.path || endpoint.url }}</code>
-              </div>
-              <div v-for="step in connectDemoPlaybookSteps.slice(0, 4)" :key="step.id || step.title" class="inspector-item">
-                <strong>{{ step.title || step.id || "Demo step" }}</strong>
-                <span>{{ step.action || "action" }}</span>
-                <code>{{ step.command || step.success_signal || "ready" }}</code>
-              </div>
-            </section>
-          </div>
-          <div v-else-if="inspectorTab === 'demo'" class="inspector-split">
-            <section>
-              <header>Killer Demo / Protocols</header>
-              <div v-for="stage in demoStages" :key="stage.id" class="inspector-item">
-                <strong>{{ stage.title }}</strong>
-                <span>{{ stage.status }}</span>
-                <code>{{ stage.id }}</code>
-              </div>
-              <div v-for="protocol in protocolCards" :key="protocol.id" class="inspector-item">
-                <strong>{{ protocol.id }}</strong>
-                <span>{{ protocol.count }} exported</span>
-                <code>{{ protocol.wire }}</code>
-              </div>
-            </section>
-            <section>
-              <header>Bridge Handoffs / Artifacts</header>
-              <div v-for="handoff in demoHandoffs.slice(0, 6)" :key="`${handoff.producer_task}:${handoff.consumer_task}:${handoff.selector}`" class="inspector-item">
-                <strong>{{ handoff.producer_task || "producer" }} -> {{ handoff.consumer_task || "consumer" }}</strong>
-                <span>{{ handoff.communication || "BridgeMessage" }}</span>
-                <code>{{ handoff.selector || "selector" }}</code>
-              </div>
-              <div v-for="artifact in demoArtifacts.slice(0, 4)" :key="artifact.artifact_id || artifact.path" class="inspector-item">
-                <strong>{{ artifact.label || artifact.artifact_id || "artifact" }}</strong>
-                <span>{{ artifact.kind || artifact.content_type || "artifact" }}</span>
-                <code>{{ artifact.path || artifact.artifact_id }}</code>
-              </div>
-            </section>
-          </div>
-          <div v-else class="raw-grid">
-            <pre>{{ shortJson({ workflow, contract, workflowRequestPlan, toolCallPlan, connectPackage, directQuickstart, launchContract, entryProfile, networkHarnessAgent, sdkBootstrap, consumerManifest, directAcceptance, directReadiness, importCatalog, directCliReadiness, protocolWireReport, networkVerifyReport, runResult, demoReport }) }}</pre>
-          </div>
-        </section>
       </section>
 
       <Transition name="dock-float">
@@ -1939,7 +1637,7 @@ onUnmounted(() => {
             </button>
             <div v-if="expandedPluginId === plugin.id" class="plugin-expanded">
               <code v-for="capability in plugin.capabilities.slice(0, 10)" :key="capability">{{ capability }}</code>
-              <button type="button" @click="performAction(ribbonTabs[2].groups[0].actions[3])">
+              <button type="button" @click="performAction(ribbonAction('harness'))">
                 <BrainCircuit :size="13" /> 交给 Harness
               </button>
             </div>
@@ -2116,12 +1814,6 @@ onUnmounted(() => {
     </section>
 
     <footer class="bottom-rail">
-      <button type="button" @click="setTab('orchestrate')"><BrainCircuit :size="16" /> Agent Orchestration</button>
-      <button type="button" @click="setTab('workflow')"><Workflow :size="16" /> Workflow Graph</button>
-      <button type="button" :class="{ active: rightPanelOpen && rightPanelTab === 'registry' }" @click="openRightPanel('registry')"><Boxes :size="16" /> CLI Registry</button>
-      <button type="button" :class="{ active: rightPanelOpen && rightPanelTab === 'connect' }" @click="openRightPanel('connect')"><Network :size="16" /> Network Connect</button>
-      <button type="button" :class="{ active: rightPanelOpen && rightPanelTab === 'market' }" @click="openRightPanel('market')"><UploadCloud :size="16" /> CLI Market</button>
-      <button type="button" :class="{ active: rightPanelOpen && rightPanelTab === 'direct' }" @click="openRightPanel('direct')"><Waypoints :size="16" /> DirectWire</button>
       <button type="button" :class="{ active: rightPanelOpen && rightPanelTab === 'permissions' }" @click="openRightPanel('permissions')"><ShieldCheck :size="16" /> Permissions</button>
       <button type="button" @click="showAudit = true"><ShieldCheck :size="16" /> Audit Center</button>
     </footer>
