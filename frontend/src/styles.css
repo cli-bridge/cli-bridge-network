@@ -290,8 +290,41 @@ pre {
   color: #63d994 !important;
 }
 
+.status-pill.shell {
+  color: var(--muted) !important;
+}
+
+.status-pill.ok {
+  border-color: rgba(99, 217, 148, 0.5) !important;
+  background: rgba(75, 209, 135, 0.14) !important;
+  color: #7fe2a6 !important;
+}
+
 .status-pill.warn {
+  border-color: rgba(242, 184, 91, 0.5) !important;
+  background: rgba(242, 184, 91, 0.14) !important;
   color: var(--amber) !important;
+}
+
+.bell {
+  position: relative;
+}
+
+.bell-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: var(--danger);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .ribbon {
@@ -1104,6 +1137,8 @@ pre {
 
 .workflow-card.unsaved {
   border-style: dashed;
+  border-color: rgba(168, 117, 255, 0.5);
+  background: rgba(168, 117, 255, 0.08);
 }
 
 .workflow-card-main {

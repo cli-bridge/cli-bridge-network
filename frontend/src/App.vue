@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch, type Component } from "vue";
 import {
   Archive,
+  Bell,
   Boxes,
   BrainCircuit,
   CheckCircle2,
@@ -1331,7 +1332,7 @@ onUnmounted(() => {
         <div class="brand-mark"><Command :size="19" /></div>
         <div>
           <strong>CLI Bridge Network</strong>
-          <span>Workflow Studio</span>
+          <span>对话驱动 · 工作流为结果</span>
         </div>
       </div>
       <label class="global-search" aria-label="Search workflows agents tools">
@@ -1339,17 +1340,18 @@ onUnmounted(() => {
         <input value="搜索工作流、CLI、节点、产物..." readonly />
       </label>
       <div class="top-actions">
-        <button type="button" :class="['status-pill', desktopApp?.daemon.healthy ? '' : 'warn']" @click="loadDesktopAppState()">
+        <button type="button" :class="['status-pill', 'shell', desktopApp?.daemon.healthy ? '' : 'warn']" @click="loadDesktopAppState()">
           <HardDriveDownload :size="14" />
           {{ appShellText }}
         </button>
-        <button type="button" :class="['status-pill', error ? 'warn' : '']" @click="loadHealth()">
-          <CircleDot :size="14" />
+        <button type="button" :class="['status-pill', 'health', error ? 'warn' : 'ok']" @click="loadHealth()">
+          <CheckCircle2 v-if="!error" :size="14" />
+          <CircleDot v-else :size="14" />
           {{ healthText }}
         </button>
-        <button type="button" title="打开审计中心" @click="showAudit = true">
-          <ShieldCheck :size="15" />
-          Audit
+        <button type="button" class="bell" :title="`打开审计中心 · ${dock.events.length} 条事件`" @click="showAudit = true">
+          <Bell :size="15" />
+          <span v-if="dock.events.length" class="bell-badge">{{ dock.events.length }}</span>
         </button>
       </div>
       <div class="window-controls" aria-label="Window controls">
