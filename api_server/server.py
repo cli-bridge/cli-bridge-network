@@ -88,6 +88,8 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/audit"},
     {"method": "GET", "path": "/events"},
     {"method": "GET", "path": "/threads"},
+    {"method": "GET", "path": "/cards"},
+    {"method": "GET", "path": "/favorites"},
     {"method": "GET", "path": "/artifacts"},
     {"method": "GET", "path": "/parsers"},
     {"method": "GET", "path": "/parsers/fixtures"},
@@ -140,6 +142,8 @@ ROUTE_SUMMARY = [
     {"method": "POST", "path": "/adapter-agent/tool-use"},
     {"method": "POST", "path": "/adapter-agent/run"},
     {"method": "POST", "path": "/threads/delete"},
+    {"method": "POST", "path": "/favorites"},
+    {"method": "POST", "path": "/favorites/delete"},
     {"method": "POST", "path": "/runtime/transports/gate"},
     {"method": "POST", "path": "/runtime/transports/plan"},
     {"method": "POST", "path": "/runtime/transports/install"},
@@ -698,6 +702,12 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
         if self.path == "/threads/delete":
             _post_thread_delete(self, payload)
             return True
+        if self.path == "/favorites":
+            _post_favorite_promote(self, payload)
+            return True
+        if self.path == "/favorites/delete":
+            _post_favorite_delete(self, payload)
+            return True
         return False
 
     def _send_approval_decision_POST(self, payload: dict[str, Any], runtime: Any) -> None:
@@ -957,6 +967,81 @@ def _post_thread_delete(handler: CbnRequestHandler, payload: dict[str, Any]) -> 
     handler._send(200, {"deleted": deleted, "thread_id": thread_id})
 
 
+def _workflow_task_count(workflow: dict[str, Any] | None) -> int:
+    if not isinstance(workflow, dict):
+        return 0
+    spec = workflow.get("spec")
+    tasks = spec.get("tasks") if isinstance(spec, dict) else None
+    return len(tasks) if isinstance(tasks, list) else 0
+
+
+def _build_card_rows(runtime: Any) -> list[dict[str, Any]]:
+    """Draft cards (threads with a captured workflow, not yet favorited) + favorite cards."""
+    cards: list[dict[str, Any]] = []
+    for row in runtime.thread_store.list(limit=100):
+        if not row.get("has_workflow"):
+            continue
+        thread = runtime.thread_store.get(row["thread_id"])
+        if not thread or not thread.get("captured_workflow") or thread.get("card_id"):
+            continue
+        workflow = thread["captured_workflow"]
+        cards.append(
+            {
+                "card_id": f"draft:{thread['thread_id']}",
+                "title": thread.get("title") or "草稿工作流",
+                "workflow": workflow,
+                "favorite": False,
+                "source_thread_id": thread["thread_id"],
+                "task_count": _workflow_task_count(workflow),
+            }
+        )
+    for fav in runtime.favorite_store.list_full(limit=100):
+        cards.append(
+            {
+                "card_id": fav["card_id"],
+                "title": fav.get("title") or "收藏工作流",
+                "workflow": fav["workflow"],
+                "favorite": True,
+                "source_thread_id": fav.get("source_thread_id"),
+                "task_count": _workflow_task_count(fav["workflow"]),
+            }
+        )
+    return cards
+
+
+def _get_cards(handler: CbnRequestHandler, query: dict[str, list[str]], runtime: Any) -> None:
+    handler._send(200, {"cards": _build_card_rows(runtime)})
+
+
+def _get_favorites(handler: CbnRequestHandler, query: dict[str, list[str]], runtime: Any) -> None:
+    handler._send(200, {"favorites": runtime.favorite_store.list()})
+
+
+def _post_favorite_promote(handler: CbnRequestHandler, payload: dict[str, Any]) -> None:
+    thread_id = str(payload.get("thread_id", ""))
+    if not thread_id:
+        handler._send_error(400, "bad_request", "thread_id is required")
+        return
+    runtime = build_runtime()
+    card = runtime.favorite_store.promote_from_thread(
+        runtime.thread_store, thread_id, title=payload.get("title")
+    )
+    if card is None:
+        handler._send_error(404, "not_found", "thread has no captured workflow to promote")
+        return
+    handler._send(200, card)
+
+
+def _post_favorite_delete(handler: CbnRequestHandler, payload: dict[str, Any]) -> None:
+    card_id = str(payload.get("card_id", ""))
+    if not card_id:
+        handler._send_error(400, "bad_request", "card_id is required")
+        return
+    runtime = build_runtime()
+    deleted = runtime.favorite_store.delete(card_id)
+    handler._send(200, {"deleted": deleted, "card_id": card_id})
+
+
 _RUNTIME_GET_ROUTES = {
     "/audit": _get_audit,
     "/events": _get_events,
@@ -965,6 +1050,8 @@ _RUNTIME_GET_ROUTES = {
     "/parsers/fixtures": _get_parser_fixtures,
     "/direct-cli/readiness": _get_direct_cli_readiness,
     "/threads": _get_threads,
+    "/cards": _get_cards,
+    "/favorites": _get_favorites,
 }
 
 

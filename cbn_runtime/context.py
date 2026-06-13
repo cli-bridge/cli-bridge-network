@@ -13,6 +13,7 @@ from cbn_artifacts.store import ArtifactStore
 from cbn_core.manifest import ManifestRegistry
 from cbn_events.bus import EventBus
 from cbn_execution.executor import CapabilityExecutor
+from cbn_favorites.store import FavoriteStore
 from cbn_parsers.registry import ParserRegistry
 from cbn_plugins.operations import PluginOperationRunner
 from cbn_threads.store import ThreadStore
@@ -31,6 +32,7 @@ class RuntimeContext:
     workflow_runner: WorkflowRunner
     plugin_runner: PluginOperationRunner
     thread_store: ThreadStore
+    favorite_store: FavoriteStore
 
 
 _EXTERNAL_PATH_ADDED = False
@@ -80,6 +82,7 @@ def build_runtime(root: Path | None = None) -> RuntimeContext:
         parser_registry=parser_registry,
     )
     thread_store = ThreadStore(paths.threads)
+    favorite_store = FavoriteStore(paths.favorites)
     return RuntimeContext(
         registry=registry,
         audit_log=audit_log,
@@ -95,6 +98,7 @@ def build_runtime(root: Path | None = None) -> RuntimeContext:
             artifact_store=artifact_store,
         ),
         thread_store=thread_store,
+        favorite_store=favorite_store,
     )
 
 
