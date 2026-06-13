@@ -1550,6 +1550,124 @@ pre {
   text-align: center;
 }
 
+/* CLI-Anything dedicated market panel (秋叶 AAAKI-style plugin browser) */
+.cli-market-panel {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 60;
+  display: grid;
+  grid-template-rows: 48px 44px minmax(0, 1fr);
+  width: min(880px, 82%);
+  height: min(620px, 82%);
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: rgba(10, 17, 28, 0.94);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(22px) saturate(132%);
+  -webkit-backdrop-filter: blur(22px) saturate(132%);
+}
+
+.cli-market-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.cli-market-head strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.cli-market-head-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.cli-market-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.cli-market-toolbar input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.cli-market-list {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 10px 14px;
+}
+
+.cli-market-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 9px 12px;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.cli-market-row:hover {
+  border-color: rgba(99, 179, 255, 0.42);
+  background: rgba(99, 179, 255, 0.08);
+}
+
+.cm-row-main {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.cm-row-main strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.cm-row-main small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cm-row-meta {
+  display: grid;
+  gap: 3px;
+  text-align: right;
+}
+
+.cm-row-meta code {
+  color: #8bc7ff;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
+}
+
+.cm-row-meta em {
+  color: var(--faint);
+  font-size: 10.5px;
+  font-style: normal;
+}
+
 .detail-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

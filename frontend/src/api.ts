@@ -88,6 +88,15 @@ export class StudioApi {
     return this.get("/imports/catalog");
   }
 
+  /** CLI-Anything market catalog + plugin status (dedicated market panel). */
+  async cliAnythingCatalog(): Promise<{ status: Record<string, unknown>; catalog: Array<Record<string, unknown>> }> {
+    const payload = await this.get("/plugins/cli-anything/catalog");
+    const data = (payload || {}) as Record<string, unknown>;
+    const catalog = Array.isArray(data.catalog) ? (data.catalog as Array<Record<string, unknown>>) : [];
+    const status = (data.status as Record<string, unknown>) || {};
+    return { status, catalog };
+  }
+
   async directCliReadiness(): Promise<unknown> {
     return this.get("/direct-cli/readiness");
   }

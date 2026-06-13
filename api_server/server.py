@@ -79,6 +79,7 @@ ROUTE_SUMMARY = [
     {"method": "GET", "path": "/plugins/operations"},
     {"method": "GET", "path": "/plugins/operations/validate"},
     {"method": "GET", "path": "/plugins/cli-anything/status"},
+    {"method": "GET", "path": "/plugins/cli-anything/catalog"},
     {"method": "GET", "path": "/plugins/cli-anything/preflight"},
     {"method": "GET", "path": "/plugins/cli-anything/provenance"},
     {"method": "GET", "path": "/plugins/cli-anything/update-check"},
@@ -756,6 +757,28 @@ def _get_cli_anything_status(handler: CbnRequestHandler, query: dict[str, list[s
     handler._send(200, CliAnythingHub().status())
 
 
+def _get_cli_anything_catalog(handler: CbnRequestHandler, query: dict[str, list[str]]) -> None:
+    """CLI-Anything market catalog + plugin status for the dedicated market panel."""
+    import json as _json
+
+    hub = CliAnythingHub()
+    status = hub.status()
+    result = hub.list_market()
+    catalog: list[dict[str, object]] = []
+    parsed = getattr(result, "parsed_json", None)
+    if isinstance(parsed, list):
+        catalog = parsed
+    else:
+        stdout = getattr(result, "stdout", "") or ""
+        try:
+            data = _json.loads(stdout)
+            if isinstance(data, list):
+                catalog = data
+        except (ValueError, TypeError):
+            catalog = []
+    handler._send(200, {"status": status, "catalog": catalog})
+
+
 def _get_cli_anything_preflight(handler: CbnRequestHandler, query: dict[str, list[str]]) -> None:
     handler._send(200, PluginManager().preflight("cli-anything"))
 
@@ -788,6 +811,7 @@ _STATIC_GET_ROUTES = {
     "/plugins/operations": _get_plugin_operations,
     "/plugins/operations/validate": _get_plugin_operations_validate,
     "/plugins/cli-anything/status": _get_cli_anything_status,
+    "/plugins/cli-anything/catalog": _get_cli_anything_catalog,
     "/plugins/cli-anything/preflight": _get_cli_anything_preflight,
     "/plugins/cli-anything/provenance": _get_cli_anything_provenance,
     "/plugins/cli-anything/update-check": _get_cli_anything_update_check,

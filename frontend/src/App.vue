@@ -323,6 +323,9 @@ const showDiagnostics = ref(false);
 const showArtifactsPanel = ref(false);
 const agentEvents = ref<Array<Record<string, unknown>>>([]);
 const agentRunning = ref(false);
+const cliAnythingCatalog = ref<{ status: Record<string, unknown>; catalog: Array<Record<string, unknown>> }>({ status: {}, catalog: [] });
+const showCliMarketPanel = ref(false);
+const cliMarketQuery = ref("");
 const permissionMode = ref<PermissionMode>("full");
 const zoom = ref(100);
 const graphCanvasEl = ref<HTMLCanvasElement | null>(null);
@@ -682,8 +685,8 @@ function setTab(tabId: string) {
     rightPanelTab.value = "connect";
     void loadConnectPackage(true);
   } else if (tabId === "cli-market") {
-    rightPanelTab.value = "market";
-    void loadImportCatalog(true);
+    showCliMarketPanel.value = true;
+    void loadCliAnythingCatalog();
   }
 }
 
@@ -870,6 +873,26 @@ async function runAgentTurn() {
     agentRunning.value = false;
   }
 }
+
+// CLI-Anything dedicated market panel (秋叶 AAAKI-style plugin browser).
+async function loadCliAnythingCatalog() {
+  try {
+    cliAnythingCatalog.value = await api.value.cliAnythingCatalog();
+  } catch (err) {
+    notify("CLI-Anything 市场", `加载失败: ${err instanceof Error ? err.message : String(err)}`, "warning");
+  }
+}
+
+const filteredCliMarket = computed(() => {
+  const q = cliMarketQuery.value.trim().toLowerCase();
+  const items = cliAnythingCatalog.value.catalog;
+  if (!q) return items;
+  return items.filter((h) =>
+    `${h.name ?? ""} ${h.display_name ?? ""} ${h.description ?? ""}`.toLowerCase().includes(q),
+  );
+});
+
+const cliHubReady = computed(() => !!cliAnythingCatalog.value.status.entrypoint_available);
 
 async function loadDesktopAppState(silent = false): Promise<boolean> {
   if (!window.__cbnApp) {
@@ -1904,6 +1927,36 @@ onUnmounted(() => {
         </section>
       </aside>
       </Transition>
+    </section>
+
+    <section v-if="showCliMarketPanel" class="cli-market-panel">
+      <header class="cli-market-head">
+        <div>
+          <span>插件市场</span>
+          <strong>CLI-Anything · {{ cliAnythingCatalog.catalog.length }} harnesses · cli-hub {{ cliHubReady ? '就绪' : '未就绪' }}</strong>
+        </div>
+        <div class="cli-market-head-actions">
+          <button type="button" title="刷新市场" @click="loadCliAnythingCatalog()"><RefreshCw :size="15" /></button>
+          <button type="button" title="关闭" @click="showCliMarketPanel = false"><X :size="16" /></button>
+        </div>
+      </header>
+      <div class="cli-market-toolbar">
+        <Search :size="14" />
+        <input v-model="cliMarketQuery" placeholder="搜索 harness（名称 / 描述）…" />
+      </div>
+      <div class="cli-market-list nav-scroll">
+        <article v-for="h in filteredCliMarket" :key="String(h.name)" class="cli-market-row">
+          <div class="cm-row-main">
+            <strong>{{ h.display_name || h.name }}</strong>
+            <small>{{ h.description }}</small>
+          </div>
+          <div class="cm-row-meta">
+            <code>{{ h.name }}</code>
+            <em>v{{ h.version || "?" }}</em>
+          </div>
+        </article>
+        <span v-if="!filteredCliMarket.length" class="artifact-empty">未找到匹配的 harness</span>
+      </div>
     </section>
 
     <footer class="bottom-rail">

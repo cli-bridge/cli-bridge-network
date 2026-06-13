@@ -60,6 +60,7 @@ def _ensure_external_plugin_path(paths: object) -> None:
 def build_runtime(root: Path | None = None) -> RuntimeContext:
     paths = resolve_project_paths(root)
     _ensure_external_plugin_path(paths)
+
     registry = ManifestRegistry()
     registry.load_dir(paths.manifests)
     registry.load_dir(paths.local_manifests, replace=True)
@@ -91,3 +92,12 @@ def build_runtime(root: Path | None = None) -> RuntimeContext:
             artifact_store=artifact_store,
         ),
     )
+
+
+# Run once at import so external plugin bins (cli-hub, lark-cli) are on PATH before
+# ANY request handler runs — including the static cli-anything GET routes that are
+# dispatched before build_runtime.
+try:
+    _ensure_external_plugin_path(resolve_project_paths())
+except Exception:
+    pass
