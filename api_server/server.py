@@ -56,6 +56,7 @@ from cbn_adapter_agent.orchestrator import (
     llm_content_covers_fallbacks,
 )
 from cbn_adapter_agent.tool_use import run_setup_tool, store_session_secret
+from cbn_adapter_agent.real_loop import run_agent_loop
 from cbn_adapter_agent.tool_call_plan import build_agent_tool_call_plan
 from cbn_adapter_agent.workflow_request import build_agent_workflow_request_plan
 from cbn_plugins.cli_anything import CliAnythingHub
@@ -134,6 +135,7 @@ ROUTE_SUMMARY = [
     {"method": "POST", "path": "/adapter-agent/orchestrate-stream"},
     {"method": "POST", "path": "/adapter-agent/tool-call-plan"},
     {"method": "POST", "path": "/adapter-agent/tool-use"},
+    {"method": "POST", "path": "/adapter-agent/run"},
     {"method": "POST", "path": "/runtime/transports/gate"},
     {"method": "POST", "path": "/runtime/transports/plan"},
     {"method": "POST", "path": "/runtime/transports/install"},
@@ -372,6 +374,30 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             self._send(200 if result["ok"] else 409, result)
             return
         self._send_error(400, "bad_request", f"unknown Adapter Agent tool-use action: {action}")
+
+    def _handle_adapter_agent_run(self, payload: dict[str, Any]) -> None:
+        message = payload.get("message", "")
+        permission = payload.get("permission") or payload.get("permission_mode") or "full"
+        if not isinstance(message, str) or not message.strip():
+            self._send_error(400, "bad_request", "message must be a non-empty string")
+            return
+        runtime = build_runtime()
+        runtime.executor.session_env.update(self._adapter_agent_env())
+        self._send_stream_headers()
+        try:
+            run_agent_loop(
+                message=message,
+                permission=str(permission),
+                executor=runtime.executor,
+                registry=runtime.registry,
+                env_store=self._adapter_agent_env(),
+                on_event=self._write_stream_event,
+                audit_log=runtime.audit_log,
+                event_bus=runtime.event_bus,
+            )
+        except Exception as exc:  # keep the stream well-formed even on a loop crash
+            self._write_stream_event({"type": "error", "error": f"{type(exc).__name__}: {exc}"})
+            self._write_stream_event({"type": "done", "ok": False})
 
     def do_GET(self) -> None:
         if not self._require_allowed_origin():
@@ -1108,12 +1134,17 @@ def _post_adapter_tool_use(handler: CbnRequestHandler, payload: dict[str, Any]) 
     handler._handle_adapter_agent_tool_use(payload)
 
 
+def _post_adapter_agent_run(handler: CbnRequestHandler, payload: dict[str, Any]) -> None:
+    handler._handle_adapter_agent_run(payload)
+
+
 _ADAPTER_AGENT_POST_ROUTES = {
     "/adapter-agent/orchestrate": _post_adapter_orchestrate,
     "/adapter-agent/orchestrate-stream": _post_adapter_orchestrate_stream,
     "/adapter-agent/tool-call-plan": _post_adapter_tool_call_plan,
     "/adapter-agent/workflow-request-plan": _post_adapter_workflow_request_plan,
     "/adapter-agent/tool-use": _post_adapter_tool_use,
+    "/adapter-agent/run": _post_adapter_agent_run,
 }
 
 
