@@ -237,6 +237,42 @@ function zoomAt(graphCanvas: LGraphCanvas, scale: number): void {
   graphCanvas.setDirty(true, true);
 }
 
+// Word-aware wrap so long node text (e.g. the "select ..." route line) never
+// overflows the node box. Any single unbreakable token wider than the box is
+// ellipsised rather than clipped mid-glyph.
+function wrapNodeText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+  const lines: string[] = [];
+  for (const raw of text.split("\n")) {
+    if (!raw) {
+      lines.push("");
+      continue;
+    }
+    let line = "";
+    for (const part of raw.split(/(\s+)/)) {
+      if (!line || ctx.measureText(line + part).width <= maxWidth) {
+        line += part;
+      } else {
+        lines.push(line.trimEnd());
+        line = part.replace(/^\s+/, "");
+      }
+    }
+    if (line) lines.push(line);
+  }
+  return lines.map((line) => ellipsise(ctx, line, maxWidth));
+}
+
+function ellipsise(ctx: CanvasRenderingContext2D, line: string, maxWidth: number): string {
+  if (ctx.measureText(line).width <= maxWidth) return line;
+  let lo = 0;
+  let hi = line.length;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (ctx.measureText(line.slice(0, mid) + "…").width <= maxWidth) lo = mid;
+    else hi = mid - 1;
+  }
+  return line.slice(0, Math.max(1, lo)) + "…";
+}
+
 function ensureStudioTextNode(): void {
   if (studioTextNodeRegistered) return;
   function StudioTextNode(this: any) {
@@ -247,12 +283,24 @@ function ensureStudioTextNode(): void {
   StudioTextNode.prototype.onDrawForeground = function onDrawForeground(ctx: CanvasRenderingContext2D) {
     const text = String(this.properties?.text ?? "");
     const tone = String(this.properties?.tone ?? TONE.blue);
-    const lines = text.split("\n");
+    const padX = 12;
+    const lineH = 16;
+    const top = 30;
+    const maxLines = 8;
     ctx.font = "12px ui-monospace, Consolas, monospace";
-    lines.slice(0, 4).forEach((line, index) => {
+    const maxWidth = Math.max(60, (this.size[0] || 244) - padX * 2);
+    const wrapped = wrapNodeText(ctx, text, maxWidth).slice(0, maxLines);
+    wrapped.forEach((line, index) => {
       ctx.fillStyle = index === 0 ? tone : index === 1 ? NODE_MUTED : NODE_TEXT;
-      ctx.fillText(line, 12, 30 + index * 16);
+      ctx.fillText(line, padX, top + index * lineH);
     });
+    // Adapt node height to the wrapped body so text never spills past the box
+    // (idempotent: stops writing once converged, so no per-frame re-layout churn).
+    const needed = top + wrapped.length * lineH + 12;
+    const cur = this.size[1] || 116;
+    if (Math.abs(cur - needed) > 1) {
+      this.size[1] = Math.min(260, Math.max(96, needed));
+    }
   };
   LiteGraph.registerNodeType?.("cbn/text", StudioTextNode);
   studioTextNodeRegistered = true;

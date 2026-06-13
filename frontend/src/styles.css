@@ -1325,6 +1325,55 @@ pre {
   cursor: grabbing;
 }
 
+.agent-perm-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.agent-perm-label {
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
+.agent-perm-seg {
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 2px;
+  flex: 1;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.agent-perm-seg button {
+  min-height: 24px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.agent-perm-seg button:hover {
+  color: var(--text);
+}
+
+.agent-perm-seg button.active {
+  background: linear-gradient(135deg, rgba(47, 141, 255, 0.42), rgba(39, 214, 192, 0.18));
+  color: #ffffff;
+  box-shadow: 0 6px 16px rgba(47, 141, 255, 0.22);
+}
+
 /* Drop the floating centering transform once the console has been dragged to
    an explicit position; inline left/top then takes over. */
 .agent-console.dragged {

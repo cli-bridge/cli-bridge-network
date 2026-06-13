@@ -300,8 +300,8 @@ const config = reactive<StudioConfig>({
   sessionToken: "",
   workflowPath: DEFAULT_WORKFLOW_PATH,
   agentMessage: DEFAULT_AGENT_MESSAGE,
-  dryRun: true,
-  confirmed: false,
+  dryRun: false,
+  confirmed: true,
 });
 
 const api = computed(() => new StudioApi(config));
@@ -321,7 +321,7 @@ const leftNavMode = ref<LeftNavMode>("threads");
 const showAudit = ref(false);
 const showDiagnostics = ref(false);
 const showArtifactsPanel = ref(false);
-const permissionMode = ref<PermissionMode>(config.confirmed ? (config.dryRun ? "auto" : "full") : "default");
+const permissionMode = ref<PermissionMode>("full");
 const zoom = ref(100);
 const graphCanvasEl = ref<HTMLCanvasElement | null>(null);
 let studioGraph: StudioGraph | null = null;
@@ -692,17 +692,15 @@ function selectWorkflow(id: string) {
 
 function setPermissionMode(mode: PermissionMode) {
   permissionMode.value = mode;
-  if (mode === "default") {
-    config.dryRun = true;
-    config.confirmed = false;
-  } else if (mode === "auto") {
-    config.dryRun = true;
-    config.confirmed = true;
-  } else {
-    config.dryRun = false;
-    config.confirmed = true;
-  }
-  notify("权限模式已切换", `${mode} · ${config.dryRun ? "dry-run" : "live"} · ${config.confirmed ? "confirmed" : "approval required"}`, "success");
+  // All three modes run LIVE (real execution, no dry-run simulation). They differ
+  // only in approval autonomy:
+  //   default = every capability blocks for human approval (maximally interactive)
+  //   auto    = low-risk auto-runs, risky/external still asks (policy-gated; agent-loop refines)
+  //   full    = autonomous long-horizon, no per-step approval (recommended default)
+  config.dryRun = false;
+  config.confirmed = mode === "full";
+  const autonomy = mode === "full" ? "Agent 自主长程" : mode === "auto" ? "风险操作确认" : "每步人工确认";
+  notify("权限模式已切换", `${mode} · live · ${autonomy}`, "success");
 }
 
 function setZoom(nextZoom: number) {
@@ -1578,6 +1576,14 @@ onUnmounted(() => {
                 <button type="button" title="扩展" @click="setAgentPanelMode('floating')"><Maximize2 :size="13" /></button>
               </div>
             </header>
+            <div v-if="agentPanelMode !== 'minimized'" class="agent-perm-bar" @pointerdown.stop>
+              <span class="agent-perm-label">权限</span>
+              <div class="agent-perm-seg" role="radiogroup" aria-label="权限模式">
+                <button type="button" :class="{ active: permissionMode === 'default' }" @click="setPermissionMode('default')" title="默认审批 · 每步人工确认">默认</button>
+                <button type="button" :class="{ active: permissionMode === 'auto' }" @click="setPermissionMode('auto')" title="自动审查 · 普通自动、风险确认">自动</button>
+                <button type="button" :class="{ active: permissionMode === 'full' }" @click="setPermissionMode('full')" title="完全访问 · Agent 自主长程（推荐）">完全</button>
+              </div>
+            </div>
             <div v-if="agentPanelMode !== 'minimized'" class="message-feed">
               <p><b>你</b> {{ config.agentMessage }}</p>
               <p>
