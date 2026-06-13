@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref, watch, type Component } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch, type Component } from "vue";
 import {
   Archive,
   Bell,
@@ -39,6 +39,7 @@ import {
 } from "lucide-vue-next";
 import { StudioApi } from "./api";
 import { mountWorkflowGraph, type StudioGraph } from "./graph";
+import { mountMiniGraph } from "./MiniGraph";
 import { useDraggableCard } from "./composables/useDraggableCard";
 import { layoutStore } from "./composables/layoutStore";
 import type {
@@ -325,6 +326,8 @@ const agentEvents = ref<Array<Record<string, unknown>>>([]);
 const agentRunning = ref(false);
 const conversationThreadsReal = ref<ConversationThread[]>([]);
 const currentThreadId = ref("");
+const cardRows = ref<Array<Record<string, unknown>>>([]);
+const miniGraphHandles = new Map<string, { dispose: () => void }>();
 const cliAnythingCatalog = ref<{ status: Record<string, unknown>; catalog: Array<Record<string, unknown>> }>({ status: {}, catalog: [] });
 const showCliMarketPanel = ref(false);
 const cliMarketQuery = ref("");
@@ -464,18 +467,18 @@ const workflowCards = computed<WorkflowCard[]>(() => {
   return cards;
 });
 const selectedWorkflow = computed(() => workflowCards.value.find((card) => card.id === selectedWorkflowId.value) ?? workflowCards.value[0]);
-const favoriteWorkflowCards = computed(() => [
-  ...workflowCards.value,
-  {
-    id: "favorite-connect",
-    title: "CLI Registry Intake",
-    status: `${pluginRows.value.length} plugins · ${registryMetrics.value.gated} gated`,
+const favoriteWorkflowCards = computed(() =>
+  favoriteCards.value.map((c) => ({
+    id: String(c.card_id),
+    title: String(c.title ?? "收藏工作流"),
+    status: `${Number(c.task_count ?? 0)} 节点`,
     saved: true,
     tasks: [],
-    tools: pluginRows.value.slice(0, 4).map((plugin) => plugin.name),
-    artifacts: artifactRows.value.slice(0, 2),
-  },
-].slice(0, 6));
+    tools: [],
+    artifacts: [],
+  })),
+);
+
 const conversationThreads = computed<ConversationThread[]>(() => conversationThreadsReal.value);
 const artifactRows = computed<ArtifactRow[]>(() => {
   const rows: ArtifactRow[] = [];
@@ -744,6 +747,72 @@ function startNewThread() {
   notify("新对话", "已开始新线程，输入任务后运行。", "info");
 }
 
+// Workflow cards (drafts from threads + favorites) — each card IS a workflow graph.
+const favoriteCards = computed(() => cardRows.value.filter((c) => c.favorite));
+const draftCards = computed(() => cardRows.value.filter((c) => !c.favorite));
+
+async function loadCards() {
+  try {
+    const { cards } = await api.value.cards();
+    cardRows.value = cards;
+  } catch {
+    // daemon may be down — keep current cards
+  }
+}
+
+async function favoriteCard(card: Record<string, unknown>) {
+  const sourceId = String(card.source_thread_id ?? "");
+  if (!sourceId) {
+    notify("收藏失败", "该卡片没有来源线程。", "warning");
+    return;
+  }
+  try {
+    await api.value.saveFavorite(sourceId, String(card.title ?? "收藏工作流"));
+    notify("已收藏", String(card.title ?? "收藏工作流"), "success");
+    await loadCards();
+  } catch (err) {
+    notify("收藏失败", err instanceof Error ? err.message : String(err), "warning");
+  }
+}
+
+async function reuseCard(card: Record<string, unknown>) {
+  const workflow = card.workflow as Record<string, unknown> | undefined;
+  if (!workflow) {
+    notify("运行失败", "该卡片没有工作流体。", "warning");
+    return;
+  }
+  try {
+    const result = (await api.value.runWorkflowBody(workflow)) as Record<string, unknown>;
+    notify("重新运行", `工作流已提交：${result?.status ?? "已运行"}`, "success");
+  } catch (err) {
+    notify("运行失败", err instanceof Error ? err.message : String(err), "warning");
+  }
+}
+
+function mountCardMiniGraphs() {
+  // Dispose handles whose cards disappeared, then mount any new card canvases.
+  const liveIds = new Set(cardRows.value.map((c) => String(c.card_id)));
+  for (const [id, handle] of miniGraphHandles) {
+    if (!liveIds.has(id)) {
+      handle.dispose();
+      miniGraphHandles.delete(id);
+    }
+  }
+  void nextTick(() => {
+    const canvases = document.querySelectorAll<HTMLElement>(".card-mini-graph[data-card-id]");
+    canvases.forEach((el) => {
+      const cardId = el.getAttribute("data-card-id") || "";
+      if (!cardId || miniGraphHandles.has(cardId)) return;
+      const card = cardRows.value.find((c) => String(c.card_id) === cardId);
+      const workflow = card?.workflow as { spec?: { tasks?: unknown[] } } | undefined;
+      const handle = mountMiniGraph(el as HTMLCanvasElement, workflow ?? null);
+      if (handle) miniGraphHandles.set(cardId, handle);
+    });
+  });
+}
+
+watch(cardRows, () => mountCardMiniGraphs(), { flush: "post" });
+
 function openRightPanel(tab: PanelTarget) {
   rightPanelTab.value = tab;
   ensureRightDockPosition();
@@ -892,6 +961,7 @@ async function runAgentTurn() {
   } finally {
     agentRunning.value = false;
     void loadThreads();
+    void loadCards();
   }
 }
 
@@ -1419,6 +1489,7 @@ onMounted(async () => {
   }
   await loadInitial();
   void loadThreads();
+  void loadCards();
   mountStudioGraph();
 });
 
@@ -1618,44 +1689,39 @@ onUnmounted(() => {
           <section ref="savedAreaEl" data-draggable-card class="workflow-stage saved-area" :style="draggableCards.saved.style.value">
             <header class="drag-handle" @pointerdown="draggableCards.saved.startDrag">
               <span>已保存区</span>
-              <strong>Pinned Workflows</strong>
+              <strong>Pinned Workflows · {{ favoriteCards.length }}</strong>
             </header>
-            <div class="workflow-cards">
-              <article
-                v-for="card in workflowCards.slice(0, 3)"
-                :key="card.id"
-                :class="['workflow-card', { active: selectedWorkflow.id === card.id, unsaved: !card.saved }]"
-              >
-                <button type="button" class="workflow-card-main" @click="selectWorkflow(card.id)">
-                  <Workflow :size="17" />
-                  <span>
-                    <strong>{{ card.title }}</strong>
-                    <small>{{ card.status }}</small>
-                  </span>
-                  <ChevronDown :class="{ open: expandedWorkflowId === card.id }" :size="15" />
-                </button>
-                <div class="card-meta">
-                  <span>{{ card.tools.length }} CLI</span>
-                  <span>{{ card.tasks.length || bridgeRouteCount }} 步骤</span>
-                  <span>{{ card.artifacts.length }} 产物</span>
+            <div class="workflow-cards wf-cards-mini">
+              <article v-for="card in favoriteCards" :key="String(card.card_id)" class="workflow-card wf-card-mini">
+                <canvas class="card-mini-graph" :data-card-id="String(card.card_id)" aria-label="workflow graph" />
+                <div class="wf-card-body">
+                  <strong>{{ card.title }}</strong>
+                  <small>{{ Number(card.task_count ?? 0) }} 节点</small>
                 </div>
-                <div v-if="expandedWorkflowId === card.id" class="workflow-expanded">
-                  <code v-for="tool in card.tools.slice(0, 4)" :key="tool">{{ tool }}</code>
-                  <button type="button" @click="performAction(ribbonAction('contract'))">查看契约</button>
-                </div>
+                <button type="button" class="wf-card-run" @click="reuseCard(card)"><Play :size="13" /> 运行</button>
               </article>
+              <span v-if="!favoriteCards.length" class="wf-card-empty">收藏的工作流卡片显示在这里</span>
             </div>
           </section>
 
           <section ref="temporaryAreaEl" data-draggable-card class="workflow-stage temporary-area" :style="draggableCards.temporary.style.value">
             <header class="drag-handle" @pointerdown="draggableCards.temporary.startDrag">
               <span>临时区</span>
-              <strong>Draft Workflows</strong>
+              <strong>Draft Workflows · {{ draftCards.length }}</strong>
             </header>
-            <div class="draft-drop">
-              <Plus :size="24" />
-              <span>Agent 跑通后生成临时卡片</span>
-              <small>保存后固定到白板，否则保留在历史会话中</small>
+            <div class="workflow-cards wf-cards-mini">
+              <article v-for="card in draftCards" :key="String(card.card_id)" class="workflow-card wf-card-mini">
+                <canvas class="card-mini-graph" :data-card-id="String(card.card_id)" aria-label="workflow graph" />
+                <div class="wf-card-body">
+                  <strong>{{ card.title }}</strong>
+                  <small>{{ Number(card.task_count ?? 0) }} 节点 · 草稿</small>
+                </div>
+                <div class="wf-card-actions">
+                  <button type="button" class="wf-card-fav" @click="favoriteCard(card)">★ 收藏</button>
+                  <button type="button" class="wf-card-run" @click="reuseCard(card)"><Play :size="13" /> 运行</button>
+                </div>
+              </article>
+              <span v-if="!draftCards.length" class="wf-card-empty">Agent 跑通后生成的草稿工作流卡片显示在这里</span>
             </div>
           </section>
 

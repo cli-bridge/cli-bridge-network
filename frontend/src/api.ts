@@ -243,6 +243,38 @@ export class StudioApi {
     return this.post("/threads/delete", { thread_id: id });
   }
 
+  /** Workflow cards: drafts (thread-captured, not favorited) + favorites, with workflow body. */
+  async cards(): Promise<{ cards: Array<Record<string, unknown>> }> {
+    const payload = await this.get("/cards");
+    const data = (payload || {}) as Record<string, unknown>;
+    const list = Array.isArray(data.cards) ? (data.cards as Array<Record<string, unknown>>) : [];
+    return { cards: list };
+  }
+
+  async favorites(): Promise<{ favorites: Array<Record<string, unknown>> }> {
+    const payload = await this.get("/favorites");
+    const data = (payload || {}) as Record<string, unknown>;
+    const list = Array.isArray(data.favorites) ? (data.favorites as Array<Record<string, unknown>>) : [];
+    return { favorites: list };
+  }
+
+  async saveFavorite(threadId: string, title: string): Promise<Record<string, unknown>> {
+    return (await this.post("/favorites", { thread_id: threadId, title })) as Record<string, unknown>;
+  }
+
+  async deleteFavorite(cardId: string): Promise<unknown> {
+    return this.post("/favorites/delete", { card_id: cardId });
+  }
+
+  /** Re-run a workflow by body (POST /workflows/run accepts {workflow: <graph>}). */
+  async runWorkflowBody(workflow: Record<string, unknown>): Promise<unknown> {
+    return this.post("/workflows/run", {
+      workflow,
+      dry_run: this.config.dryRun,
+      confirmed: this.config.confirmed,
+    });
+  }
+
   async killerDemo(): Promise<unknown> {
     return this.post("/demo/killer", {
       workflow_path: this.config.workflowPath,
