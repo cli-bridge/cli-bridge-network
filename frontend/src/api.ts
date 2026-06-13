@@ -97,6 +97,48 @@ export class StudioApi {
     return { status, catalog };
   }
 
+  /** Stream a real `cli-hub install <name>` (pip from GitHub, slow) as NDJSON. */
+  async installHarness(name: string, onEvent: (event: Record<string, unknown>) => void): Promise<void> {
+    const headers = new Headers({ "Content-Type": "application/json" });
+    const token = this.sessionToken();
+    if (token) headers.set("X-CBN-Session", token);
+    let response: Response;
+    try {
+      response = await fetch(this.requestUrl("/plugins/cli-anything/install"), {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ name }),
+      });
+    } catch (err) {
+      onEvent({ type: "error", error: `request failed: ${String(err)}` });
+      return;
+    }
+    if (!response.ok || !response.body) {
+      onEvent({ type: "error", error: `HTTP ${response.status}` });
+      return;
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let nl: number;
+      while ((nl = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, nl).trim();
+        buffer = buffer.slice(nl + 1);
+        if (line) {
+          try {
+            onEvent(JSON.parse(line));
+          } catch {
+            // skip non-JSON
+          }
+        }
+      }
+    }
+  }
+
   async directCliReadiness(): Promise<unknown> {
     return this.get("/direct-cli/readiness");
   }

@@ -326,6 +326,8 @@ const agentRunning = ref(false);
 const cliAnythingCatalog = ref<{ status: Record<string, unknown>; catalog: Array<Record<string, unknown>> }>({ status: {}, catalog: [] });
 const showCliMarketPanel = ref(false);
 const cliMarketQuery = ref("");
+const installingName = ref("");
+const installLines = ref<string[]>([]);
 const permissionMode = ref<PermissionMode>("full");
 const zoom = ref(100);
 const graphCanvasEl = ref<HTMLCanvasElement | null>(null);
@@ -880,6 +882,24 @@ async function loadCliAnythingCatalog() {
     cliAnythingCatalog.value = await api.value.cliAnythingCatalog();
   } catch (err) {
     notify("CLI-Anything 市场", `加载失败: ${err instanceof Error ? err.message : String(err)}`, "warning");
+  }
+}
+
+// One-click harness install (real `cli-hub install <name>`, pip from GitHub, streamed).
+async function installHarness(name: string) {
+  if (installingName.value) return;
+  installingName.value = name;
+  installLines.value = [];
+  try {
+    await api.value.installHarness(name, (e) => {
+      if (e.type === "line") installLines.value = [...installLines.value, String(e.text ?? "")];
+      else if (e.type === "done") notify(`安装 ${name}`, e.ok ? "完成" : "失败（见日志）", e.ok ? "success" : "warning");
+      else if (e.type === "error") notify(`安装 ${name}`, String(e.error ?? ""), "warning");
+    });
+  } catch (err) {
+    notify(`安装 ${name}`, String(err), "warning");
+  } finally {
+    installingName.value = "";
   }
 }
 
@@ -1953,9 +1973,16 @@ onUnmounted(() => {
           <div class="cm-row-meta">
             <code>{{ h.name }}</code>
             <em>v{{ h.version || "?" }}</em>
+            <button type="button" class="cm-install" :disabled="!!installingName" @click="installHarness(String(h.name))">
+              {{ installingName === h.name ? "安装中…" : "安装" }}
+            </button>
           </div>
         </article>
         <span v-if="!filteredCliMarket.length" class="artifact-empty">未找到匹配的 harness</span>
+      </div>
+      <div v-if="installingName || installLines.length" class="cli-market-log">
+        <header><span>安装日志</span><strong>{{ installingName || "完成" }}</strong></header>
+        <pre>{{ installLines.slice(-40).join("\n") }}</pre>
       </div>
     </section>
 

@@ -147,6 +147,7 @@ ROUTE_SUMMARY = [
     {"method": "POST", "path": "/plugins/plan"},
     {"method": "POST", "path": "/plugins/execute"},
     {"method": "POST", "path": "/plugins/cli-anything/market"},
+    {"method": "POST", "path": "/plugins/cli-anything/install"},
     {"method": "POST", "path": "/plugins/cli-anything/import-harness"},
     {"method": "POST", "path": "/plugins/cli-anything/adapt-harness"},
     {"method": "POST", "path": "/plugins/cli-anything/prepare-harness"},
@@ -397,6 +398,37 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 event_bus=runtime.event_bus,
             )
         except Exception as exc:  # keep the stream well-formed even on a loop crash
+            self._write_stream_event({"type": "error", "error": f"{type(exc).__name__}: {exc}"})
+            self._write_stream_event({"type": "done", "ok": False})
+
+    def _handle_cli_anything_install(self, payload: dict[str, Any]) -> None:
+        import subprocess
+
+        name = str(payload.get("name", "")).strip()
+        if not name:
+            self._send_error(400, "bad_request", "name is required")
+            return
+        hub = CliAnythingHub()
+        entrypoint = hub.status().get("entrypoint_path") or "cli-hub"
+        self._send_stream_headers()
+        self._write_stream_event({"type": "start", "name": name})
+        try:
+            proc = subprocess.Popen(
+                [entrypoint, "install", name],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                bufsize=1,
+            )
+            stdout = proc.stdout
+            if stdout is not None:
+                for line in stdout:
+                    self._write_stream_event({"type": "line", "text": line.rstrip("\n")[:500]})
+            rc = proc.wait()
+            self._write_stream_event({"type": "done", "name": name, "exit_code": rc, "ok": rc == 0})
+        except Exception as exc:
             self._write_stream_event({"type": "error", "error": f"{type(exc).__name__}: {exc}"})
             self._write_stream_event({"type": "done", "ok": False})
 
@@ -1669,8 +1701,13 @@ def _post_cli_anything_harness(handler: CbnRequestHandler, payload: dict[str, An
     handler._send(200 if result["status"] == "completed" else 409, result)
 
 
+def _post_cli_anything_install(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    handler._handle_cli_anything_install(payload)
+
+
 _CLI_ANYTHING_POST_ROUTES = {
     "/plugins/cli-anything/market": _post_cli_anything_market,
+    "/plugins/cli-anything/install": _post_cli_anything_install,
     "/plugins/cli-anything/import-harness": _post_cli_anything_import_harness,
     "/plugins/cli-anything/adapt-harness": _post_cli_anything_adapt_harness,
     "/plugins/cli-anything/prepare-harness": _post_cli_anything_prepare_harness,
