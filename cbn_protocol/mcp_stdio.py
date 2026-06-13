@@ -71,12 +71,36 @@ class McpStdioServer:
         if method == "ping":
             return {}
         if method == "tools/list":
-            descriptor = export_capabilities(self.runtime.registry.list())
-            workflow_descriptor = export_workflow_protocol(self.runtime.registry, "mcp")
-            return {"tools": [*descriptor["tools"], *workflow_descriptor["workflowTools"]]}
+            return self._list_tools(params)
         if method == "tools/call":
             return self._call_tool(params)
         raise NotImplementedError
+
+    def _list_tools(self, params: Any) -> dict[str, Any]:
+        # CBN extension: an optional `query` (or _meta.query) filters capabilities so an
+        # external agent (e.g. Codex) can search "obsidian" without loading every tool.
+        query = None
+        if isinstance(params, dict):
+            meta = params.get("_meta")
+            raw_q = params.get("query") or (meta.get("query") if isinstance(meta, dict) else None)
+            query = (str(raw_q).strip() if raw_q else "") or None
+        capabilities = self.runtime.registry.list()
+        if query:
+            lowered = query.lower()
+            capabilities = [
+                c for c in capabilities
+                if lowered in str(getattr(c, "capability_id", "")).lower()
+                or lowered in str(getattr(c, "title", "")).lower()
+            ]
+        descriptor = export_capabilities(capabilities)
+        workflow_tools = export_workflow_protocol(self.runtime.registry, "mcp")["workflowTools"]
+        if query:
+            lowered = query.lower()
+            workflow_tools = [
+                t for t in workflow_tools
+                if lowered in str(t.get("name", "")).lower() or lowered in str(t.get("description", "")).lower()
+            ]
+        return {"tools": [*descriptor["tools"], *workflow_tools]}
 
     def _call_tool(self, params: Any) -> dict[str, Any]:
         name, arguments = _mcp_tool_call_args(params)
