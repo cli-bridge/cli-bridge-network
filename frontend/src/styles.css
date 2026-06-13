@@ -1033,8 +1033,13 @@ pre {
   left: 50%;
   top: 53%;
   z-index: 6;
+  display: flex;
+  flex-direction: column;
   width: min(470px, 50%);
   min-width: 380px;
+  min-height: 300px;
+  height: min(560px, 68vh);
+  resize: both;
   transform: translate(-50%, -50%);
 }
 
@@ -1072,6 +1077,10 @@ pre {
   display: grid;
   gap: 8px;
   padding: 10px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .message-feed p {

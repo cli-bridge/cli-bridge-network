@@ -239,7 +239,8 @@ function zoomAt(graphCanvas: LGraphCanvas, scale: number): void {
 
 // Word-aware wrap so long node text (e.g. the "select ..." route line) never
 // overflows the node box. Any single unbreakable token wider than the box is
-// ellipsised rather than clipped mid-glyph.
+// hard-wrapped by character (full text shown across more lines, NEVER ellipsised)
+// — the node height auto-grows to fit. Owner requirement: show the full text.
 function wrapNodeText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
   const lines: string[] = [];
   for (const raw of text.split("\n")) {
@@ -258,19 +259,24 @@ function wrapNodeText(ctx: CanvasRenderingContext2D, text: string, maxWidth: num
     }
     if (line) lines.push(line);
   }
-  return lines.map((line) => ellipsise(ctx, line, maxWidth));
+  // hard-wrap any line still wider than the box by character -> full text, no ellipsis
+  return lines.flatMap((line) => hardWrap(ctx, line, maxWidth));
 }
 
-function ellipsise(ctx: CanvasRenderingContext2D, line: string, maxWidth: number): string {
-  if (ctx.measureText(line).width <= maxWidth) return line;
-  let lo = 0;
-  let hi = line.length;
-  while (lo < hi) {
-    const mid = (lo + hi + 1) >> 1;
-    if (ctx.measureText(line.slice(0, mid) + "…").width <= maxWidth) lo = mid;
-    else hi = mid - 1;
+function hardWrap(ctx: CanvasRenderingContext2D, line: string, maxWidth: number): string[] {
+  if (!line || ctx.measureText(line).width <= maxWidth) return [line];
+  const out: string[] = [];
+  let buf = "";
+  for (const ch of Array.from(line)) {
+    if (ctx.measureText(buf + ch).width <= maxWidth) {
+      buf += ch;
+    } else {
+      if (buf) out.push(buf);
+      buf = ch;
+    }
   }
-  return line.slice(0, Math.max(1, lo)) + "…";
+  if (buf) out.push(buf);
+  return out;
 }
 
 function ensureStudioTextNode(): void {
