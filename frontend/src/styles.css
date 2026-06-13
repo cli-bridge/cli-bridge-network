@@ -1003,16 +1003,169 @@ pre {
   min-height: 0;
   overflow: hidden;
   background:
-    linear-gradient(rgba(117, 159, 213, 0.1) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(117, 159, 213, 0.1) 1px, transparent 1px),
     radial-gradient(circle at 42% 18%, rgba(47, 141, 255, 0.14), transparent 28%),
-    radial-gradient(circle at 74% 84%, rgba(168, 117, 255, 0.14), transparent 30%);
-  background-size:
-    28px 28px,
-    28px 28px,
-    auto,
-    auto;
+    radial-gradient(circle at 74% 84%, rgba(168, 117, 255, 0.14), transparent 30%),
+    #0a0f18;
 }
+
+/* ===== Boundless whiteboard (R2): zoomable viewport + free-placed cards ===== */
+.whiteboard-viewport {
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 0;
+  cursor: grab;
+}
+
+.whiteboard-viewport:active {
+  cursor: grabbing;
+}
+
+.whiteboard-grid {
+  position: absolute;
+  top: -5000px;
+  left: -5000px;
+  width: 15000px;
+  height: 15000px;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(117, 159, 213, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(117, 159, 213, 0.08) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+.wb-card {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  grid-template-rows: 88px auto auto;
+  gap: 6px;
+  width: 240px;
+  padding: 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: rgba(13, 22, 35, 0.92);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(14px) saturate(130%);
+  -webkit-backdrop-filter: blur(14px) saturate(130%);
+  cursor: grab;
+  user-select: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.wb-card:hover {
+  border-color: rgba(99, 179, 255, 0.6);
+  box-shadow: 0 20px 50px rgba(47, 141, 255, 0.2);
+}
+
+.wb-card .card-mini-graph {
+  width: 100%;
+  height: 88px;
+  border-radius: 8px;
+  background: rgba(6, 10, 18, 0.6);
+}
+
+.wb-card-body {
+  display: grid;
+  gap: 2px;
+}
+
+.wb-card-body strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wb-card-body small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.wb-card-actions {
+  display: flex;
+  gap: 5px;
+}
+
+.wb-card-actions button {
+  flex: 1;
+  min-height: 26px;
+  font-size: 11px;
+  font-weight: 700;
+  border-color: rgba(99, 179, 255, 0.32);
+  background: rgba(47, 141, 255, 0.1);
+  color: #9fcfff;
+}
+
+.wb-card-actions button:hover {
+  border-color: rgba(99, 179, 255, 0.6);
+  background: rgba(47, 141, 255, 0.2);
+}
+
+.wb-empty {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  max-width: 420px;
+  color: var(--faint);
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* ===== Card-detail 2nd-level view (R3): full-screen node graph + back ===== */
+.card-detail-view {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: 44px minmax(0, 1fr);
+  background: #0a0f18;
+}
+
+.card-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(10, 17, 28, 0.92);
+}
+
+.card-detail-head button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 30px;
+  padding: 0 12px;
+  border-color: var(--line);
+  background: rgba(19, 32, 49, 0.78);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.card-detail-head strong {
+  flex: 1;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-detail-graph {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+}
+
+.crumb-active {
+  color: var(--text);
+  font-size: 12px;
+  margin-left: 4px;
+}
+
 
 .floating-card,
 .workflow-stage {

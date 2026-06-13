@@ -346,10 +346,106 @@ const installLines = ref<string[]>([]);
 const permissionMode = ref<PermissionMode>("full");
 const zoom = ref(100);
 const graphCanvasEl = ref<HTMLCanvasElement | null>(null);
+const cardGraphCanvasEl = ref<HTMLCanvasElement | null>(null);
 let studioGraph: StudioGraph | null = null;
+let cardGraph: StudioGraph | null = null;
 const canvasSurfaceEl = ref<HTMLElement | null>(null);
 const viewportW = ref(typeof window !== "undefined" ? window.innerWidth : 1280);
 const dragEnabled = computed(() => viewportW.value >= 1280);
+
+// ---- Boundless whiteboard + 2-level routing (R1-R3) ----
+type BoardView = "whiteboard" | "card-detail" | "draft";
+const currentView = ref<BoardView>("whiteboard");
+const activeCardId = ref("");
+const activeCard = computed(() => cardRows.value.find((c) => String(c.card_id) === activeCardId.value) ?? null);
+const whiteboardZoom = ref(1); // 0.1 .. 5
+const whiteboardPan = reactive({ x: 0, y: 0 });
+const cardPositions = ref<Record<string, { x: number; y: number }>>({});
+const whiteboardDrag = reactive({ active: false, movingId: "", startX: 0, startY: 0, origX: 0, origY: 0 });
+
+const whiteboardViewportStyle = computed(() => ({
+  transform: `translate(${whiteboardPan.x}px, ${whiteboardPan.y}px) scale(${whiteboardZoom.value})`,
+}));
+
+function cardBoardPos(cardId: string, idx: number): { left: string; top: string } {
+  const stored = cardPositions.value[cardId];
+  if (stored) return { left: `${stored.x}px`, top: `${stored.y}px` };
+  // default scatter so cards don't stack
+  const col = idx % 3;
+  const row = Math.floor(idx / 3);
+  return { left: `${120 + col * 300}px`, top: `${100 + row * 200}px` };
+}
+
+function onWhiteboardWheel(e: WheelEvent): void {
+  e.preventDefault();
+  const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+  whiteboardZoom.value = Math.min(5, Math.max(0.1, whiteboardZoom.value * factor));
+  zoom.value = Math.round(whiteboardZoom.value * 100);
+}
+
+function startCardDrag(e: PointerEvent, cardId: string): void {
+  const pos = cardPositions.value[cardId] ?? { x: 120, y: 100 };
+  whiteboardDrag.active = true;
+  whiteboardDrag.movingId = cardId;
+  whiteboardDrag.startX = e.clientX;
+  whiteboardDrag.startY = e.clientY;
+  whiteboardDrag.origX = pos.x;
+  whiteboardDrag.origY = pos.y;
+  (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+}
+
+function moveCardDrag(e: PointerEvent): void {
+  if (!whiteboardDrag.active) return;
+  const dx = (e.clientX - whiteboardDrag.startX) / whiteboardZoom.value;
+  const dy = (e.clientY - whiteboardDrag.startY) / whiteboardZoom.value;
+  cardPositions.value = {
+    ...cardPositions.value,
+    [whiteboardDrag.movingId]: { x: whiteboardDrag.origX + dx, y: whiteboardDrag.origY + dy },
+  };
+}
+
+function endCardDrag(): void {
+  whiteboardDrag.active = false;
+  whiteboardDrag.movingId = "";
+  // persist positions
+  try {
+    localStorage.setItem("cbn.studio.whiteboard-positions", JSON.stringify(cardPositions.value));
+  } catch { /* ignore */ }
+}
+
+function loadCardPositions(): void {
+  try {
+    const raw = localStorage.getItem("cbn.studio.whiteboard-positions");
+    if (raw) cardPositions.value = JSON.parse(raw);
+  } catch { /* ignore */ }
+}
+
+function openCardDetail(card: Record<string, unknown>): void {
+  activeCardId.value = String(card.card_id ?? "");
+  currentView.value = "card-detail";
+  void nextTick(() => mountCardGraph());
+}
+
+function backToWhiteboard(): void {
+  currentView.value = "whiteboard";
+  try { cardGraph?.dispose(); } catch { /* ignore */ }
+  cardGraph = null;
+}
+
+function mountCardGraph(): void {
+  if (!cardGraphCanvasEl.value || cardGraph) return;
+  cardGraph = mountWorkflowGraph(cardGraphCanvasEl.value);
+  if (activeCard.value) {
+    const wf = activeCard.value.workflow as { spec?: { tasks?: unknown[] } } | undefined;
+    cardGraph.render({ tasks: wf?.spec?.tasks ?? [] } as never, null);
+    cardGraph.setZoom(0.9);
+  }
+}
+
+function setBoardZoom(nextPct: number): void {
+  whiteboardZoom.value = Math.min(5, Math.max(0.1, nextPct / 100));
+  zoom.value = Math.round(whiteboardZoom.value * 100);
+}
 
 const savedAreaEl = ref<HTMLElement | null>(null);
 const temporaryAreaEl = ref<HTMLElement | null>(null);
@@ -1557,6 +1653,9 @@ onMounted(async () => {
   window.addEventListener("pointermove", handleRightDockDrag);
   window.addEventListener("pointerup", stopRightDockDrag);
   window.addEventListener("resize", handleWindowResize);
+  window.addEventListener("pointermove", moveCardDrag);
+  window.addEventListener("pointerup", endCardDrag);
+  loadCardPositions();
   await bindWindowState();
   const appReady = await loadDesktopAppState(true);
   if (!appReady) {
@@ -1573,6 +1672,8 @@ onMounted(async () => {
 onUnmounted(() => {
   window.removeEventListener("pointermove", handleRightDockDrag);
   window.removeEventListener("pointerup", stopRightDockDrag);
+  window.removeEventListener("pointermove", moveCardDrag);
+  window.removeEventListener("pointerup", endCardDrag);
   window.removeEventListener("resize", handleWindowResize);
   studioGraph?.dispose();
   studioGraph = null;
@@ -1750,57 +1851,54 @@ onUnmounted(() => {
         <div class="canvas-toolbar">
           <div class="breadcrumbs">
             <span v-for="crumb in activeTrail" :key="crumb">{{ crumb }}</span>
+            <span v-if="currentView === 'card-detail' && activeCard" class="crumb-active">› {{ activeCard.title }}</span>
           </div>
           <div class="toolbar-actions">
-            <button type="button" title="刷新工作台" @click="loadInitial()"><RefreshCw :size="14" /> 刷新</button>
-            <button type="button" title="运行当前 workflow" @click="runWorkflow()"><Play :size="14" /> 运行</button>
-            <button type="button" @click="setZoom(zoom - 10)">-</button>
+            <button type="button" title="刷新卡片" @click="loadCards()"><RefreshCw :size="14" /> 刷新</button>
+            <button type="button" title="缩小白板" @click="setBoardZoom(zoom - 10)">-</button>
             <strong>{{ zoom }}%</strong>
-            <button type="button" @click="setZoom(zoom + 10)">+</button>
-            <button type="button" title="复位视图" @click="resetGraphView()"><RefreshCw :size="14" /> 复位</button>
+            <button type="button" title="放大白板" @click="setBoardZoom(zoom + 10)">+</button>
+            <button type="button" title="复位白板" @click="whiteboardZoom = 1; whiteboardPan.x = 0; whiteboardPan.y = 0; zoom = 100"><RefreshCw :size="14" /> 复位</button>
           </div>
         </div>
 
         <div ref="canvasSurfaceEl" class="canvas-surface">
-          <canvas ref="graphCanvasEl" class="workflow-graph-canvas" aria-label="Workflow graph whiteboard" />
-          <section ref="savedAreaEl" data-draggable-card class="workflow-stage saved-area" :style="draggableCards.saved.style.value">
-            <header class="drag-handle" @pointerdown="draggableCards.saved.startDrag">
-              <span>已保存区</span>
-              <strong>Pinned Workflows · {{ favoriteCards.length }}</strong>
-            </header>
-            <div class="workflow-cards wf-cards-mini">
-              <article v-for="card in favoriteCards" :key="String(card.card_id)" class="workflow-card wf-card-mini">
-                <canvas class="card-mini-graph" :data-card-id="String(card.card_id)" aria-label="workflow graph" />
-                <div class="wf-card-body">
-                  <strong>{{ card.title }}</strong>
-                  <small>{{ Number(card.task_count ?? 0) }} 节点</small>
-                </div>
-                <button type="button" class="wf-card-run" @click="reuseCard(card)"><Play :size="13" /> 运行</button>
-              </article>
-              <span v-if="!favoriteCards.length" class="wf-card-empty">收藏的工作流卡片显示在这里</span>
-            </div>
-          </section>
+          <canvas v-if="false" ref="graphCanvasEl" class="workflow-graph-canvas" aria-label="Workflow graph whiteboard" />
+          <!-- WHITEBOARD VIEW (主页无界白板：卡片自由摆放 + 整体缩放) -->
+          <div v-if="currentView === 'whiteboard'" class="whiteboard-viewport" :style="whiteboardViewportStyle" @wheel="onWhiteboardWheel">
+            <div class="whiteboard-grid" aria-hidden="true"></div>
+            <article
+              v-for="(card, idx) in cardRows"
+              :key="String(card.card_id)"
+              class="wb-card"
+              :style="cardBoardPos(String(card.card_id), idx)"
+              @pointerdown="startCardDrag($event, String(card.card_id))"
+              @dblclick="openCardDetail(card)"
+            >
+              <canvas class="card-mini-graph" :data-card-id="String(card.card_id)" aria-label="workflow graph" />
+              <div class="wb-card-body">
+                <strong>{{ card.title }}</strong>
+                <small>{{ Number(card.task_count ?? 0) }} 节点 · {{ card.favorite ? "收藏" : "草稿" }}</small>
+              </div>
+              <div class="wb-card-actions" @pointerdown.stop>
+                <button type="button" @click="openCardDetail(card)">展开</button>
+                <button type="button" v-if="!card.favorite" @click="favoriteCard(card)">★</button>
+                <button type="button" @click="reuseCard(card)"><Play :size="13" /></button>
+              </div>
+            </article>
+            <span v-if="!cardRows.length" class="wb-empty">在左侧对话线程里跟 Workflow Agent 聊；跑通后会生成工作流卡片，自由拖拽摆放在这块无界白板上。</span>
+          </div>
 
-          <section ref="temporaryAreaEl" data-draggable-card class="workflow-stage temporary-area" :style="draggableCards.temporary.style.value">
-            <header class="drag-handle" @pointerdown="draggableCards.temporary.startDrag">
-              <span>临时区</span>
-              <strong>Draft Workflows · {{ draftCards.length }}</strong>
+          <!-- CARD-DETAIL VIEW (二级路由：节点图 + 返回白板) -->
+          <div v-else-if="currentView === 'card-detail'" class="card-detail-view">
+            <header class="card-detail-head">
+              <button type="button" @click="backToWhiteboard()"><ChevronDown :size="16" /> 返回白板</button>
+              <strong>{{ activeCard?.title ?? "工作流" }}</strong>
+              <button type="button" v-if="activeCard" @click="reuseCard(activeCard)"><Play :size="14" /> 运行</button>
             </header>
-            <div class="workflow-cards wf-cards-mini">
-              <article v-for="card in draftCards" :key="String(card.card_id)" class="workflow-card wf-card-mini">
-                <canvas class="card-mini-graph" :data-card-id="String(card.card_id)" aria-label="workflow graph" />
-                <div class="wf-card-body">
-                  <strong>{{ card.title }}</strong>
-                  <small>{{ Number(card.task_count ?? 0) }} 节点 · 草稿</small>
-                </div>
-                <div class="wf-card-actions">
-                  <button type="button" class="wf-card-fav" @click="favoriteCard(card)">★ 收藏</button>
-                  <button type="button" class="wf-card-run" @click="reuseCard(card)"><Play :size="13" /> 运行</button>
-                </div>
-              </article>
-              <span v-if="!draftCards.length" class="wf-card-empty">Agent 跑通后生成的草稿工作流卡片显示在这里</span>
-            </div>
-          </section>
+            <canvas ref="cardGraphCanvasEl" class="card-detail-graph" aria-label="card workflow graph" />
+          </div>
+
 
           <section ref="agentConsoleEl" data-draggable-card :class="['agent-console', 'floating-card', agentPanelMode, { dragged: draggableCards.agent.hasDragged.value && agentPanelMode === 'floating' }]" :style="draggableCards.agent.style.value">
             <header class="drag-handle" @pointerdown="draggableCards.agent.startDrag">
