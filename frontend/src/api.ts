@@ -128,6 +128,52 @@ export class StudioApi {
     });
   }
 
+  /**
+   * Stream the real Workflow Agent loop (POST /adapter-agent/run, NDJSON).
+   * Calls onEvent for each event (start/thinking/tool_call/tool_result/final/error/done).
+   * Uses its own fetch with NO short timeout — the loop is long-running.
+   */
+  async runAgent(message: string, permission: string, onEvent: (event: Record<string, unknown>) => void): Promise<void> {
+    const headers = new Headers({ "Content-Type": "application/json" });
+    const token = this.sessionToken();
+    if (token) headers.set("X-CBN-Session", token);
+    let response: Response;
+    try {
+      response = await fetch(this.requestUrl("/adapter-agent/run"), {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ message, permission }),
+      });
+    } catch (err) {
+      onEvent({ type: "error", error: `request failed: ${String(err)}` });
+      return;
+    }
+    if (!response.ok || !response.body) {
+      onEvent({ type: "error", error: `HTTP ${response.status}` });
+      return;
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let nl: number;
+      while ((nl = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, nl).trim();
+        buffer = buffer.slice(nl + 1);
+        if (line) {
+          try {
+            onEvent(JSON.parse(line));
+          } catch {
+            // skip non-JSON keepalive/partial lines
+          }
+        }
+      }
+    }
+  }
+
   async killerDemo(): Promise<unknown> {
     return this.post("/demo/killer", {
       workflow_path: this.config.workflowPath,

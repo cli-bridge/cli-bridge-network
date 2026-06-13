@@ -321,6 +321,8 @@ const leftNavMode = ref<LeftNavMode>("threads");
 const showAudit = ref(false);
 const showDiagnostics = ref(false);
 const showArtifactsPanel = ref(false);
+const agentEvents = ref<Array<Record<string, unknown>>>([]);
+const agentRunning = ref(false);
 const permissionMode = ref<PermissionMode>("full");
 const zoom = ref(100);
 const graphCanvasEl = ref<HTMLCanvasElement | null>(null);
@@ -837,6 +839,36 @@ function handleWindowResize() {
 function setAgentPanelMode(mode: AgentPanelMode) {
   agentPanelMode.value = agentPanelMode.value === mode && mode !== "floating" ? "floating" : mode;
   notify("Agent 面板状态", agentPanelMode.value, "info");
+}
+
+function agentEventSummary(result: unknown): string {
+  if (!result || typeof result !== "object") return String(result ?? "");
+  const r = result as Record<string, unknown>;
+  const content = r.parsed_content ?? r.stdout ?? r.reason ?? r.error;
+  if (typeof content === "string" && content) return content.slice(0, 240);
+  if (Array.isArray(r.artifacts) && r.artifacts.length) {
+    const first = r.artifacts[0] as Record<string, unknown> | undefined;
+    return `artifact: ${first?.artifact_id ?? ""}`;
+  }
+  return JSON.stringify(r).slice(0, 160);
+}
+
+// Drive the REAL built-in Workflow Agent loop (GLM function-calling -> real CBN bus).
+// Streams start/thinking/tool_call/tool_result/final/error/done into agentEvents.
+async function runAgentTurn() {
+  if (agentRunning.value || !config.agentMessage.trim()) return;
+  const message = config.agentMessage.trim();
+  agentRunning.value = true;
+  agentEvents.value = [{ type: "user", text: message }];
+  try {
+    await api.value.runAgent(message, permissionMode.value, (event) => {
+      agentEvents.value = [...agentEvents.value, event];
+    });
+  } catch (err) {
+    agentEvents.value = [...agentEvents.value, { type: "error", error: String(err) }];
+  } finally {
+    agentRunning.value = false;
+  }
 }
 
 async function loadDesktopAppState(silent = false): Promise<boolean> {
@@ -1585,21 +1617,33 @@ onUnmounted(() => {
               </div>
             </div>
             <div v-if="agentPanelMode !== 'minimized'" class="message-feed">
-              <p><b>你</b> {{ config.agentMessage }}</p>
-              <p>
-                <b>Agent</b>
-                当前 workflow 已加载 {{ tasks.length }} 个 task，{{ bridgeRouteCount }} 条 BridgeMessage 路由。
-              </p>
-              <div class="tool-call">
-                <TerminalSquare :size="15" />
-                <span>tool calls</span>
-                <strong>{{ toolCalls.length }} planned · {{ setupCheckpoints.length }} checkpoints</strong>
-                <em>{{ loading ? humanLabel(loading) : "idle" }}</em>
-              </div>
+              <template v-if="!agentEvents.length">
+                <p><b>你</b> {{ config.agentMessage }}</p>
+                <p>
+                  <b>Agent</b>
+                  输入任务后点运行——内置 Agent 会真实驱动 CLI 总线（obsidian / jimeng …），思考、工具调用、产物实时显示。
+                </p>
+              </template>
+              <template v-for="(ev, idx) in agentEvents" :key="idx">
+                <p v-if="ev.type === 'user'" class="ev-user"><b>你</b> {{ ev.text }}</p>
+                <p v-else-if="ev.type === 'thinking'" class="ev-think"><b>思考</b> {{ ev.text }}</p>
+                <div v-else-if="ev.type === 'tool_call'" class="ev-tool">
+                  <TerminalSquare :size="14" />
+                  <strong>{{ ev.name }}</strong>
+                  <code>{{ JSON.stringify(ev.args) }}</code>
+                </div>
+                <div v-else-if="ev.type === 'tool_result'" class="ev-result" :class="{ ok: ev.ok }">
+                  <span>{{ ev.ok ? '✓' : '✗' }} {{ ev.name }}</span>
+                  <small>{{ agentEventSummary(ev.result) }}</small>
+                </div>
+                <p v-else-if="ev.type === 'final'" class="ev-final"><b>Agent</b> {{ ev.text }}</p>
+                <p v-else-if="ev.type === 'error'" class="ev-error"><b>错误</b> {{ ev.error }}</p>
+              </template>
+              <div v-if="agentRunning" class="ev-running"><span class="dot"></span> Agent 运行中…</div>
             </div>
             <div v-if="agentPanelMode !== 'minimized'" class="composer">
-              <input v-model="config.agentMessage" aria-label="Agent message" />
-              <button type="button" title="生成计划" @click="loadWorkflowRequestPlan()"><Play :size="14" /></button>
+              <input v-model="config.agentMessage" aria-label="Agent message" @keyup.enter="runAgentTurn()" />
+              <button type="button" :disabled="agentRunning" :title="agentRunning ? '运行中…' : '运行 Agent（真实）'" @click="runAgentTurn()"><Play :size="14" /></button>
             </div>
           </section>
 
