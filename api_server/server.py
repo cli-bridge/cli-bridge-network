@@ -57,6 +57,7 @@ from cbn_adapter_agent.orchestrator import (
 )
 from cbn_adapter_agent.tool_use import run_setup_tool, store_session_secret
 from cbn_adapter_agent.real_loop import run_agent_loop
+from cbn_threads.workflow_capture import WorkflowCapture
 from cbn_adapter_agent.tool_call_plan import build_agent_tool_call_plan
 from cbn_adapter_agent.workflow_request import build_agent_workflow_request_plan
 from cbn_plugins.cli_anything import CliAnythingHub
@@ -399,9 +400,16 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
         self._send_stream_headers()
         self._write_stream_event({"type": "thread", "thread_id": thread_id})
 
+        capture = WorkflowCapture()
+
         def on_event(event: dict[str, Any]) -> None:
             self._write_stream_event(event)
             kind = str(event.get("type") or "")
+            if kind == "tool_call" and event.get("name") == "run_capability":
+                args = event.get("args") or {}
+                capability_id = args.get("capability_id")
+                if capability_id:
+                    capture.record_capability_call(str(capability_id), args.get("args") or [])
             if kind in {"thinking", "tool_call", "tool_result", "final", "error"}:
                 try:
                     thread_store.append_event(thread_id, "assistant_event", kind, event)
@@ -420,6 +428,15 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 audit_log=runtime.audit_log,
                 event_bus=runtime.event_bus,
             )
+            captured = capture.build()
+            if captured is not None:
+                try:
+                    WorkflowGraph.from_dict(captured).validate()
+                    thread_store.set_captured_workflow(thread_id, captured)
+                    self._write_stream_event({"type": "workflow_captured", "workflow": captured})
+                except Exception:
+                    # invalid capture (e.g. empty) — skip silently; the run still succeeded
+                    pass
         except Exception as exc:  # keep the stream well-formed even on a loop crash
             self._write_stream_event({"type": "error", "error": f"{type(exc).__name__}: {exc}"})
             self._write_stream_event({"type": "done", "ok": False})
