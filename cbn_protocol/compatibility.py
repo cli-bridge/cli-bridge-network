@@ -41,28 +41,15 @@ def check_protocol(
     capability_id: str | None = None,
     workflow_path: str | None = None,
 ) -> dict[str, Any]:
-    if capability_id and workflow_path:
-        raise ValueError("protocol check accepts capability_id or workflow_path, not both")
+    _validate_protocol_check_request(protocol, capability_id, workflow_path)
     if protocol == "all":
         return check_all_protocols(registry, capability_id=capability_id, workflow_path=workflow_path)
-    if protocol not in PROTOCOL_SOURCES:
-        raise KeyError(f"unknown protocol check: {protocol}")
-    if workflow_path:
-        descriptor = export_workflow_protocol(registry, protocol, workflow_path=workflow_path)
-        if protocol == "mcp":
-            checks = _check_mcp_workflow(registry, descriptor)
-        elif protocol == "a2a":
-            checks = _check_a2a_workflow(registry, descriptor)
-        else:
-            checks = _check_acp_workflow(registry, descriptor)
-    else:
-        descriptor = export_protocol(registry, protocol, capability_id=capability_id)
-        if protocol == "mcp":
-            checks = _check_mcp(descriptor)
-        elif protocol == "a2a":
-            checks = _check_a2a(descriptor)
-        else:
-            checks = _check_acp(descriptor)
+    checks = _protocol_checks(
+        registry,
+        protocol,
+        capability_id=capability_id,
+        workflow_path=workflow_path,
+    )
     status_counts = _status_counts(checks)
     return {
         "protocol": protocol,
@@ -75,6 +62,39 @@ def check_protocol(
         "checks": checks,
         "next_steps": _next_steps(protocol),
     }
+
+
+def _validate_protocol_check_request(
+    protocol: str,
+    capability_id: str | None,
+    workflow_path: str | None,
+) -> None:
+    if capability_id and workflow_path:
+        raise ValueError("protocol check accepts capability_id or workflow_path, not both")
+    if protocol != "all" and protocol not in PROTOCOL_SOURCES:
+        raise KeyError(f"unknown protocol check: {protocol}")
+
+
+def _protocol_checks(
+    registry: ManifestRegistry,
+    protocol: str,
+    *,
+    capability_id: str | None,
+    workflow_path: str | None,
+) -> list[dict[str, str]]:
+    if workflow_path:
+        descriptor = export_workflow_protocol(registry, protocol, workflow_path=workflow_path)
+        return _workflow_protocol_checkers()[protocol](registry, descriptor)
+    descriptor = export_protocol(registry, protocol, capability_id=capability_id)
+    return _capability_protocol_checkers()[protocol](descriptor)
+
+
+def _capability_protocol_checkers():
+    return {"mcp": _check_mcp, "a2a": _check_a2a, "acp": _check_acp}
+
+
+def _workflow_protocol_checkers():
+    return {"mcp": _check_mcp_workflow, "a2a": _check_a2a_workflow, "acp": _check_acp_workflow}
 
 
 def check_all_protocols(
@@ -99,43 +119,8 @@ def protocol_matrix(
     registry: ManifestRegistry,
     include_workflows: bool = False,
 ) -> dict[str, Any]:
-    capability_rows = [
-        _matrix_row(
-            kind="capability",
-            item_id=manifest.capability_id,
-            title=manifest.title,
-            checks=check_all_protocols(registry, capability_id=manifest.capability_id)["checks"],
-            path=None,
-        )
-        for manifest in sorted(registry.list(), key=lambda item: item.capability_id)
-    ]
-    workflow_rows = []
-    if include_workflows:
-        for workflow in list_workflows(registry=registry):
-            path = workflow.get("path")
-            workflow_id = workflow.get("workflow_id") or path
-            if not isinstance(path, str) or not workflow.get("valid"):
-                workflow_rows.append(
-                    {
-                        "kind": "workflow",
-                        "id": str(workflow_id),
-                        "title": workflow.get("title"),
-                        "path": path,
-                        "valid": False,
-                        "errors": workflow.get("errors", []),
-                        "protocols": {},
-                    }
-                )
-                continue
-            workflow_rows.append(
-                _matrix_row(
-                    kind="workflow",
-                    item_id=str(workflow_id),
-                    title=workflow.get("title"),
-                    checks=check_all_protocols(registry, workflow_path=path)["checks"],
-                    path=path,
-                )
-            )
+    capability_rows = _capability_matrix_rows(registry)
+    workflow_rows = _workflow_matrix_rows(registry) if include_workflows else []
     return {
         "ok": True,
         "protocols": list(PROTOCOLS),
@@ -145,6 +130,48 @@ def protocol_matrix(
         "rows": capability_rows + workflow_rows,
         "summary": _matrix_summary(capability_rows + workflow_rows),
     }
+
+
+def _capability_matrix_rows(registry: ManifestRegistry) -> list[dict[str, Any]]:
+    return [
+        _matrix_row(
+            kind="capability",
+            item_id=manifest.capability_id,
+            title=manifest.title,
+            checks=check_all_protocols(registry, capability_id=manifest.capability_id)["checks"],
+            path=None,
+        )
+        for manifest in sorted(registry.list(), key=lambda item: item.capability_id)
+    ]
+
+
+def _workflow_matrix_rows(registry: ManifestRegistry) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for workflow in list_workflows(registry=registry):
+        rows.append(_workflow_matrix_row(registry, workflow))
+    return rows
+
+
+def _workflow_matrix_row(registry: ManifestRegistry, workflow: dict[str, Any]) -> dict[str, Any]:
+    path = workflow.get("path")
+    workflow_id = workflow.get("workflow_id") or path
+    if not isinstance(path, str) or not workflow.get("valid"):
+        return {
+            "kind": "workflow",
+            "id": str(workflow_id),
+            "title": workflow.get("title"),
+            "path": path,
+            "valid": False,
+            "errors": workflow.get("errors", []),
+            "protocols": {},
+        }
+    return _matrix_row(
+        kind="workflow",
+        item_id=str(workflow_id),
+        title=workflow.get("title"),
+        checks=check_all_protocols(registry, workflow_path=path)["checks"],
+        path=path,
+    )
 
 
 def _matrix_row(
@@ -244,34 +271,12 @@ def _check_mcp(descriptor: dict[str, Any]) -> list[dict[str, str]]:
 
 
 def _check_a2a(descriptor: dict[str, Any]) -> list[dict[str, str]]:
-    agent_card = descriptor.get("agentCard")
-    skills = agent_card.get("skills") if isinstance(agent_card, dict) else None
-    first_skill = skills[0] if isinstance(skills, list) and skills else {}
+    agent_card, skills, first_skill = _a2a_capability_context(descriptor)
     return [
-        _check(
-            "descriptor declares A2A target",
-            descriptor.get("protocol") == "a2a" and descriptor.get("wire_compatible") is False,
-            "protocol=a2a and wire_compatible=false",
-        ),
-        _check(
-            "AgentCard-like descriptor exists",
-            isinstance(agent_card, dict)
-            and isinstance(agent_card.get("name"), str)
-            and isinstance(agent_card.get("description"), str),
-            "export includes name, description, and skills container",
-        ),
-        _check(
-            "skills preserve CBN capability identity",
-            isinstance(skills, list)
-            and all(isinstance(skill.get("id"), str) and isinstance(skill.get("name"), str) for skill in skills),
-            "skills include id/name fields and embedded CBN descriptors",
-        ),
-        _check(
-            "input/output modes are explicit",
-            isinstance(first_skill.get("inputModes"), list)
-            and isinstance(first_skill.get("outputModes"), list),
-            "skill declares JSON-oriented input and output modes",
-        ),
+        _a2a_capability_target_check(descriptor),
+        _a2a_agent_card_shape_check(agent_card),
+        _a2a_skill_identity_check(skills),
+        _a2a_skill_modes_check(first_skill),
         _partial(
             "A2A AgentCard and SendMessage smoke",
             "python -m cbn a2a smoke exercises /.well-known/agent-card.json and SendMessage over local HTTP+JSON JSON-RPC",
@@ -285,6 +290,48 @@ def _check_a2a(descriptor: dict[str, Any]) -> list[dict[str, str]]:
             "A2A HTTP+JSON has local SendMessage/GetTask/ListTasks/CancelTask coverage; streaming, push notifications, authentication, and SDK/conformance certification are not implemented yet",
         ),
     ]
+
+
+def _a2a_capability_context(descriptor: dict[str, Any]) -> tuple[Any, Any, dict[str, Any]]:
+    agent_card = descriptor.get("agentCard")
+    skills = agent_card.get("skills") if isinstance(agent_card, dict) else None
+    first_skill = skills[0] if isinstance(skills, list) and skills and isinstance(skills[0], dict) else {}
+    return agent_card, skills, first_skill
+
+
+def _a2a_capability_target_check(descriptor: dict[str, Any]) -> dict[str, str]:
+    return _check(
+        "descriptor declares A2A target",
+        descriptor.get("protocol") == "a2a" and descriptor.get("wire_compatible") is False,
+        "protocol=a2a and wire_compatible=false",
+    )
+
+
+def _a2a_agent_card_shape_check(agent_card: Any) -> dict[str, str]:
+    return _check(
+        "AgentCard-like descriptor exists",
+        isinstance(agent_card, dict)
+        and isinstance(agent_card.get("name"), str)
+        and isinstance(agent_card.get("description"), str),
+        "export includes name, description, and skills container",
+    )
+
+
+def _a2a_skill_identity_check(skills: Any) -> dict[str, str]:
+    return _check(
+        "skills preserve CBN capability identity",
+        isinstance(skills, list)
+        and all(isinstance(skill.get("id"), str) and isinstance(skill.get("name"), str) for skill in skills),
+        "skills include id/name fields and embedded CBN descriptors",
+    )
+
+
+def _a2a_skill_modes_check(first_skill: dict[str, Any]) -> dict[str, str]:
+    return _check(
+        "input/output modes are explicit",
+        isinstance(first_skill.get("inputModes"), list) and isinstance(first_skill.get("outputModes"), list),
+        "skill declares JSON-oriented input and output modes",
+    )
 
 
 def _check_acp(descriptor: dict[str, Any]) -> list[dict[str, str]]:
@@ -326,124 +373,187 @@ def _check_acp(descriptor: dict[str, Any]) -> list[dict[str, str]]:
 
 
 def _check_mcp_workflow(registry: ManifestRegistry, descriptor: dict[str, Any]) -> list[dict[str, str]]:
-    tools = descriptor.get("workflowTools")
-    first_tool = tools[0] if isinstance(tools, list) and tools else {}
-    input_schema = first_tool.get("inputSchema") if isinstance(first_tool, dict) else {}
-    meta = first_tool.get("_meta", {}) if isinstance(first_tool, dict) else {}
-    cbn = meta.get("cbn") if isinstance(meta, dict) else None
-    workflow = meta.get("cbn_workflow") if isinstance(meta, dict) else None
+    tools, input_schema, cbn, workflow = _mcp_workflow_context(descriptor)
     return [
-        _check(
-            "descriptor declares MCP workflow target",
-            descriptor.get("protocol") == "mcp" and descriptor.get("wire_compatible") is False,
-            "protocol=mcp and wire_compatible=false",
-        ),
-        _check(
-            "workflow tools/list descriptor shape",
-            isinstance(tools, list)
-            and all(isinstance(tool.get("name"), str) and tool["name"].startswith("workflow:") for tool in tools),
-            "export includes workflowTools entries named workflow:<id>",
-        ),
-        _check(
-            "workflow input schema is JSON object",
-            isinstance(input_schema, dict)
-            and input_schema.get("type") == "object",
-            "workflow tool exposes dry_run/confirmed inputSchema",
-        ),
+        _mcp_workflow_target_check(descriptor),
+        _mcp_workflow_tools_check(tools),
+        _mcp_workflow_input_schema_check(input_schema),
         _workflow_handle_check("MCP", cbn, input_schema),
-        _workflow_descriptor_roundtrip_check(registry, "mcp", descriptor),
-        _workflow_descriptor_check(cbn, workflow),
-        _workflow_routing_check(workflow),
-        _partial(
-            "MCP workflow tools/call smoke",
-            _workflow_smoke_command("mcp", workflow),
-        ),
-        _gap(
-            "MCP workflow full conformance",
-            "Workflow tools/call is an MVP facade; streaming progress, cancellation, pagination, HTTP transport, and official conformance coverage are not implemented yet",
-        ),
+        *_common_workflow_checks(registry, "mcp", "MCP", descriptor, cbn, workflow),
     ]
+
+
+def _mcp_workflow_context(descriptor: dict[str, Any]) -> tuple[Any, dict[str, Any], Any, Any]:
+    tools = descriptor.get("workflowTools")
+    first_tool = tools[0] if isinstance(tools, list) and tools and isinstance(tools[0], dict) else {}
+    input_schema = first_tool.get("inputSchema") if isinstance(first_tool.get("inputSchema"), dict) else {}
+    meta = first_tool.get("_meta") if isinstance(first_tool.get("_meta"), dict) else {}
+    return tools, input_schema, meta.get("cbn"), meta.get("cbn_workflow")
+
+
+def _mcp_workflow_target_check(descriptor: dict[str, Any]) -> dict[str, str]:
+    return _check(
+        "descriptor declares MCP workflow target",
+        descriptor.get("protocol") == "mcp" and descriptor.get("wire_compatible") is False,
+        "protocol=mcp and wire_compatible=false",
+    )
+
+
+def _mcp_workflow_tools_check(tools: Any) -> dict[str, str]:
+    return _check(
+        "workflow tools/list descriptor shape",
+        isinstance(tools, list)
+        and all(isinstance(tool.get("name"), str) and tool["name"].startswith("workflow:") for tool in tools),
+        "export includes workflowTools entries named workflow:<id>",
+    )
+
+
+def _mcp_workflow_input_schema_check(input_schema: dict[str, Any]) -> dict[str, str]:
+    return _check(
+        "workflow input schema is JSON object",
+        input_schema.get("type") == "object",
+        "workflow tool exposes dry_run/confirmed inputSchema",
+    )
 
 
 def _check_a2a_workflow(registry: ManifestRegistry, descriptor: dict[str, Any]) -> list[dict[str, str]]:
+    agent_card, skills, first_skill, cbn, workflow, cbn_input = _a2a_workflow_context(descriptor)
+    return [
+        _a2a_workflow_target_check(descriptor),
+        _a2a_workflow_skill_check(agent_card, skills),
+        _a2a_workflow_modes_check(first_skill),
+        _workflow_handle_check("A2A", cbn, cbn_input),
+        *_common_workflow_checks(registry, "a2a", "A2A", descriptor, cbn, workflow),
+    ]
+
+
+def _a2a_workflow_context(descriptor: dict[str, Any]) -> tuple[Any, Any, dict[str, Any], Any, Any, Any]:
     agent_card = descriptor.get("agentCard")
     skills = agent_card.get("skills") if isinstance(agent_card, dict) else None
-    first_skill = skills[0] if isinstance(skills, list) and skills else {}
-    cbn = first_skill.get("cbn") if isinstance(first_skill, dict) else None
-    workflow = first_skill.get("cbn_workflow") if isinstance(first_skill, dict) else None
-    metadata = first_skill.get("metadata") if isinstance(first_skill, dict) else {}
-    return [
-        _check(
-            "descriptor declares A2A workflow target",
-            descriptor.get("protocol") == "a2a" and descriptor.get("wire_compatible") is False,
-            "protocol=a2a and wire_compatible=false",
-        ),
-        _check(
-            "AgentCard workflow skill exists",
-            isinstance(agent_card, dict)
-            and isinstance(skills, list)
-            and all(isinstance(skill.get("id"), str) and skill["id"].startswith("workflow:") for skill in skills),
-            "AgentCard skills include workflow:<id> entries",
-        ),
-        _check(
-            "workflow skill input/output modes are explicit",
-            isinstance(first_skill.get("inputModes"), list)
-            and isinstance(first_skill.get("outputModes"), list),
-            "workflow skill declares JSON input/output modes",
-        ),
-        _workflow_handle_check("A2A", cbn, metadata.get("cbn_input") if isinstance(metadata, dict) else None),
-        _workflow_descriptor_roundtrip_check(registry, "a2a", descriptor),
-        _workflow_descriptor_check(cbn, workflow),
-        _workflow_routing_check(workflow),
-        _partial(
-            "A2A workflow SendMessage smoke",
-            _workflow_smoke_command("a2a", workflow),
-        ),
-        _gap(
-            "A2A workflow full task lifecycle and conformance",
-            "Workflow SendMessage has local task polling/error coverage; streaming, push notifications, authentication, and SDK/conformance certification are not implemented yet",
-        ),
-    ]
+    first_skill = skills[0] if isinstance(skills, list) and skills and isinstance(skills[0], dict) else {}
+    metadata = first_skill.get("metadata")
+    cbn_input = metadata.get("cbn_input") if isinstance(metadata, dict) else None
+    return agent_card, skills, first_skill, first_skill.get("cbn"), first_skill.get("cbn_workflow"), cbn_input
+
+
+def _a2a_workflow_target_check(descriptor: dict[str, Any]) -> dict[str, str]:
+    return _check(
+        "descriptor declares A2A workflow target",
+        descriptor.get("protocol") == "a2a" and descriptor.get("wire_compatible") is False,
+        "protocol=a2a and wire_compatible=false",
+    )
+
+
+def _a2a_workflow_skill_check(agent_card: Any, skills: Any) -> dict[str, str]:
+    return _check(
+        "AgentCard workflow skill exists",
+        isinstance(agent_card, dict)
+        and isinstance(skills, list)
+        and all(isinstance(skill.get("id"), str) and skill["id"].startswith("workflow:") for skill in skills),
+        "AgentCard skills include workflow:<id> entries",
+    )
+
+
+def _a2a_workflow_modes_check(first_skill: dict[str, Any]) -> dict[str, str]:
+    return _check(
+        "workflow skill input/output modes are explicit",
+        isinstance(first_skill.get("inputModes"), list) and isinstance(first_skill.get("outputModes"), list),
+        "workflow skill declares JSON input/output modes",
+    )
 
 
 def _check_acp_workflow(registry: ManifestRegistry, descriptor: dict[str, Any]) -> list[dict[str, str]]:
-    workflows = descriptor.get("workflows")
-    first_workflow = workflows[0] if isinstance(workflows, list) and workflows else {}
-    cbn = first_workflow.get("cbn") if isinstance(first_workflow, dict) else None
-    workflow = first_workflow.get("cbn_workflow") if isinstance(first_workflow, dict) else None
-    workflow_input = first_workflow.get("input") if isinstance(first_workflow, dict) else {}
+    workflows, first_workflow, cbn, workflow, workflow_input = _acp_workflow_context(descriptor)
     return [
-        _check(
-            "descriptor declares ACP workflow target",
-            descriptor.get("protocol") == "acp" and descriptor.get("wire_compatible") is False,
-            "protocol=acp and wire_compatible=false",
-        ),
-        _check(
-            "workflow descriptors preserve identity",
-            isinstance(workflows, list)
-            and all(isinstance(item.get("id"), str) and item["id"].startswith("workflow:") for item in workflows),
-            "ACP workflow descriptors include workflow:<id> ids",
-        ),
-        _check(
-            "workflow output maps WorkflowRun and BridgeMessage",
-            isinstance(first_workflow.get("output"), dict)
-            and first_workflow["output"].get("run") == "WorkflowRun"
-            and first_workflow["output"].get("messages") == "BridgeMessage[]",
-            "ACP workflow output declares WorkflowRun plus task BridgeMessages",
-        ),
+        _acp_workflow_target_check(descriptor),
+        _acp_workflow_identity_check(workflows),
+        _acp_workflow_output_check(first_workflow),
         _workflow_handle_check("ACP", cbn, workflow_input),
-        _workflow_descriptor_roundtrip_check(registry, "acp", descriptor),
+        *_common_workflow_checks(registry, "acp", "ACP", descriptor, cbn, workflow),
+    ]
+
+
+def _acp_workflow_context(descriptor: dict[str, Any]) -> tuple[Any, dict[str, Any], Any, Any, dict[str, Any]]:
+    workflows = descriptor.get("workflows")
+    first_workflow = workflows[0] if isinstance(workflows, list) and workflows and isinstance(workflows[0], dict) else {}
+    workflow_input = first_workflow.get("input") if isinstance(first_workflow.get("input"), dict) else {}
+    return workflows, first_workflow, first_workflow.get("cbn"), first_workflow.get("cbn_workflow"), workflow_input
+
+
+def _acp_workflow_target_check(descriptor: dict[str, Any]) -> dict[str, str]:
+    return _check(
+        "descriptor declares ACP workflow target",
+        descriptor.get("protocol") == "acp" and descriptor.get("wire_compatible") is False,
+        "protocol=acp and wire_compatible=false",
+    )
+
+
+def _acp_workflow_identity_check(workflows: Any) -> dict[str, str]:
+    return _check(
+        "workflow descriptors preserve identity",
+        isinstance(workflows, list)
+        and all(isinstance(item.get("id"), str) and item["id"].startswith("workflow:") for item in workflows),
+        "ACP workflow descriptors include workflow:<id> ids",
+    )
+
+
+def _acp_workflow_output_check(first_workflow: dict[str, Any]) -> dict[str, str]:
+    output = first_workflow.get("output")
+    return _check(
+        "workflow output maps WorkflowRun and BridgeMessage",
+        isinstance(output, dict)
+        and output.get("run") == "WorkflowRun"
+        and output.get("messages") == "BridgeMessage[]",
+        "ACP workflow output declares WorkflowRun plus task BridgeMessages",
+    )
+
+
+def _common_workflow_checks(
+    registry: ManifestRegistry,
+    protocol: str,
+    label: str,
+    descriptor: dict[str, Any],
+    cbn: Any,
+    workflow: Any,
+) -> list[dict[str, str]]:
+    return [
+        _workflow_descriptor_roundtrip_check(registry, protocol, descriptor),
         _workflow_descriptor_check(cbn, workflow),
         _workflow_routing_check(workflow),
-        _partial(
-            "ACP workflow session/prompt smoke",
-            _workflow_smoke_command("acp", workflow),
-        ),
-        _gap(
-            "ACP workflow full session lifecycle and conformance",
-            "Workflow session/prompt is an MVP facade; streaming updates, cancellation, permissions, auth, callbacks, and SDK/conformance coverage are not implemented yet",
-        ),
+        _partial(_workflow_smoke_title(protocol, label), _workflow_smoke_command(protocol, workflow)),
+        _gap(_workflow_gap_title(protocol, label), _workflow_gap_message(protocol)),
     ]
+
+
+def _workflow_smoke_title(protocol: str, label: str) -> str:
+    action = {"mcp": "tools/call", "a2a": "SendMessage", "acp": "session/prompt"}[protocol]
+    return f"{label} workflow {action} smoke"
+
+
+def _workflow_gap_title(protocol: str, label: str) -> str:
+    suffix = {
+        "mcp": "full conformance",
+        "a2a": "full task lifecycle and conformance",
+        "acp": "full session lifecycle and conformance",
+    }[protocol]
+    return f"{label} workflow {suffix}"
+
+
+def _workflow_gap_message(protocol: str) -> str:
+    return {
+        "mcp": (
+            "Workflow tools/call is an MVP facade; streaming progress, cancellation, pagination, "
+            "HTTP transport, and official conformance coverage are not implemented yet"
+        ),
+        "a2a": (
+            "Workflow SendMessage has local task polling/error coverage; streaming, push notifications, "
+            "authentication, and SDK/conformance certification are not implemented yet"
+        ),
+        "acp": (
+            "Workflow session/prompt is an MVP facade; streaming updates, cancellation, permissions, "
+            "auth, callbacks, and SDK/conformance coverage are not implemented yet"
+        ),
+    }[protocol]
 
 
 def _workflow_descriptor_check(cbn: Any, workflow: Any) -> dict[str, str]:
@@ -481,47 +591,57 @@ def _workflow_descriptor_roundtrip_check(
 
 
 def _workflow_handle_check(protocol: str, cbn: Any, input_descriptor: Any) -> dict[str, str]:
-    workflow_id = cbn.get("workflow_id") if isinstance(cbn, dict) else None
-    if protocol == "MCP":
-        properties = input_descriptor.get("properties", {}) if isinstance(input_descriptor, dict) else {}
-        required = input_descriptor.get("required", []) if isinstance(input_descriptor, dict) else []
-        passed = (
-            isinstance(workflow_id, str)
-            and bool(workflow_id)
-            and isinstance(properties, dict)
-            and "workflow_id" in properties
-            and "workflow_path" not in required
-        )
-        evidence = "workflow:<id> tool name and optional workflow_id can generate a call without local workflow_path"
-    elif protocol == "A2A":
-        passed = (
-            isinstance(workflow_id, str)
-            and bool(workflow_id)
-            and isinstance(input_descriptor, dict)
-            and "metadata.cbn.workflow_id" in input_descriptor
-        )
-        evidence = "AgentCard skill metadata documents metadata.cbn.workflow_id for SendMessage"
-    else:
-        passed = (
-            isinstance(workflow_id, str)
-            and bool(workflow_id)
-            and isinstance(input_descriptor, dict)
-            and "workflow_id" in input_descriptor
-        )
-        evidence = "ACP workflow input declares workflow_id so session/prompt need not expose a local path"
+    passed, evidence = _WORKFLOW_HANDLE_CHECKS[protocol](cbn, input_descriptor)
     return _check(f"{protocol} workflow handle is descriptor-native", passed, evidence)
+
+
+def _mcp_workflow_handle(cbn: Any, input_descriptor: Any) -> tuple[bool, str]:
+    workflow_id = cbn.get("workflow_id") if isinstance(cbn, dict) else None
+    properties = input_descriptor.get("properties", {}) if isinstance(input_descriptor, dict) else {}
+    required = input_descriptor.get("required", []) if isinstance(input_descriptor, dict) else []
+    passed = (
+        _has_workflow_id(workflow_id)
+        and isinstance(properties, dict)
+        and "workflow_id" in properties
+        and "workflow_path" not in required
+    )
+    evidence = "workflow:<id> tool name and optional workflow_id can generate a call without local workflow_path"
+    return passed, evidence
+
+
+def _a2a_workflow_handle(cbn: Any, input_descriptor: Any) -> tuple[bool, str]:
+    workflow_id = cbn.get("workflow_id") if isinstance(cbn, dict) else None
+    passed = (
+        _has_workflow_id(workflow_id)
+        and isinstance(input_descriptor, dict)
+        and "metadata.cbn.workflow_id" in input_descriptor
+    )
+    evidence = "AgentCard skill metadata documents metadata.cbn.workflow_id for SendMessage"
+    return passed, evidence
+
+
+def _acp_workflow_handle(cbn: Any, input_descriptor: Any) -> tuple[bool, str]:
+    workflow_id = cbn.get("workflow_id") if isinstance(cbn, dict) else None
+    passed = _has_workflow_id(workflow_id) and isinstance(input_descriptor, dict) and "workflow_id" in input_descriptor
+    evidence = "ACP workflow input declares workflow_id so session/prompt need not expose a local path"
+    return passed, evidence
+
+
+def _has_workflow_id(value: Any) -> bool:
+    return isinstance(value, str) and bool(value)
+
+
+_WORKFLOW_HANDLE_CHECKS = {
+    "MCP": _mcp_workflow_handle,
+    "A2A": _a2a_workflow_handle,
+    "ACP": _acp_workflow_handle,
+}
 
 
 def _workflow_routing_check(workflow: Any) -> dict[str, str]:
     if not isinstance(workflow, dict):
         return _check("workflow routing metadata is inspectable", False, "workflow descriptor is missing")
-    tasks = workflow.get("tasks")
-    routed = []
-    if isinstance(tasks, list):
-        for task in tasks:
-            for mapping in task.get("argsFrom", []) if isinstance(task, dict) else []:
-                if isinstance(mapping, dict) and isinstance(mapping.get("selector"), str):
-                    routed.append(mapping["selector"])
+    routed = _workflow_route_selectors(workflow)
     has_payload = any(selector.startswith("payload.") for selector in routed)
     has_artifact = any(selector.startswith("artifacts[") for selector in routed)
     evidence = "argsFrom selectors: " + (", ".join(routed) if routed else "none")
@@ -533,6 +653,27 @@ def _workflow_routing_check(workflow: Any) -> dict[str, str]:
             f"artifact routing={str(has_artifact).lower()}"
         ),
     }
+
+
+def _workflow_route_selectors(workflow: dict[str, Any]) -> list[str]:
+    tasks = workflow.get("tasks")
+    if not isinstance(tasks, list):
+        return []
+    return [
+        mapping["selector"]
+        for task in tasks
+        for mapping in _workflow_task_args_from(task)
+        if isinstance(mapping.get("selector"), str)
+    ]
+
+
+def _workflow_task_args_from(task: Any) -> list[dict[str, Any]]:
+    if not isinstance(task, dict):
+        return []
+    mappings = task.get("argsFrom", [])
+    if not isinstance(mappings, list):
+        return []
+    return [mapping for mapping in mappings if isinstance(mapping, dict)]
 
 
 def _workflow_smoke_command(protocol: str, workflow: Any) -> str:

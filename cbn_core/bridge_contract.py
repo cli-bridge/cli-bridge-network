@@ -154,72 +154,25 @@ def workflow_bridge_contract_report(
 
 def _workflow_contract(workflow: dict[str, Any]) -> dict[str, Any]:
     if not workflow.get("valid"):
-        return {
-            "valid": False,
-            "workflow_id": workflow.get("workflow_id"),
-            "path": workflow.get("path"),
-            "title": workflow.get("title"),
-            "task_count": workflow.get("task_count", 0),
-            "routes": [],
-            "errors": workflow.get("errors", []),
-            "summary": {
-                "route_count": 0,
-                "route_ready_count": 0,
-                "blocked_route_count": 0,
-                "payload_route_count": 0,
-                "artifact_route_count": 0,
-                "metadata_route_count": 0,
-                "unknown_route_count": 0,
-                "invalid_selector_count": 0,
-                "source_not_in_needs_count": 0,
-                "missing_source_route_count": 0,
-                "missing_capability_route_count": 0,
-                "unverified_source_route_count": 0,
-                "argv_mapping_ready_count": 0,
-            },
-        }
-    tasks = workflow.get("tasks", [])
-    by_task = {task["id"]: task for task in tasks if isinstance(task, dict) and "id" in task}
-    routes = []
-    for task in tasks:
-        if not isinstance(task, dict):
-            continue
-        for mapping in task.get("argsFrom", []):
-            if not isinstance(mapping, dict):
-                continue
-            source_id = mapping.get("task")
-            selector = mapping.get("selector", "")
-            source = by_task.get(source_id)
-            selector_report = validate_selector_syntax(selector)
-            consumer_capability = task.get("capability", {}) if isinstance(task, dict) else {}
-            source_capability = source.get("capability", {}) if isinstance(source, dict) else {}
-            route_kind = _route_kind(selector)
-            route = {
-                "consumer_task": task.get("id"),
-                "consumer_capability": task.get("uses"),
-                "consumer_capability_exists": consumer_capability.get("exists"),
-                "source_task": source_id,
-                "source_capability": source.get("uses") if isinstance(source, dict) else None,
-                "source_capability_exists": source_capability.get("exists"),
-                "selector": selector,
-                "selector_valid": selector_report["valid"],
-                "selector_tokens": selector_report["tokens"],
-                "selector_error": selector_report["error"],
-                "route_kind": route_kind,
-                "source_in_needs": source_id in task.get("needs", []),
-                "source_exists": source is not None,
-                "source_parser_ref": source_capability.get("parser_ref"),
-                "source_output_verified": source_capability.get("verified"),
-                "verified_source_required": route_kind == "payload",
-                "verified_source_satisfied": route_kind != "payload" or source_capability.get("verified") is True,
-                "argv_mapping": {
-                    "ready": selector_report["valid"] and route_kind in {"payload", "artifact", "metadata"},
-                    "encoding": "bridge_value_to_arg",
-                },
-            }
-            route["blockers"] = _route_blockers(route)
-            route["ready"] = len(route["blockers"]) == 0
-            routes.append(route)
+        return _invalid_workflow_contract(workflow)
+    routes = _workflow_routes(workflow)
+    return _valid_workflow_contract(workflow, routes)
+
+
+def _invalid_workflow_contract(workflow: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "valid": False,
+        "workflow_id": workflow.get("workflow_id"),
+        "path": workflow.get("path"),
+        "title": workflow.get("title"),
+        "task_count": workflow.get("task_count", 0),
+        "routes": [],
+        "errors": workflow.get("errors", []),
+        "summary": _workflow_summary([]),
+    }
+
+
+def _valid_workflow_contract(workflow: dict[str, Any], routes: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "valid": True,
         "workflow_id": workflow.get("workflow_id"),
@@ -229,6 +182,68 @@ def _workflow_contract(workflow: dict[str, Any]) -> dict[str, Any]:
         "routes": routes,
         "errors": [],
         "summary": _workflow_summary(routes),
+    }
+
+
+def _workflow_routes(workflow: dict[str, Any]) -> list[dict[str, Any]]:
+    tasks = workflow.get("tasks", [])
+    by_task = {task["id"]: task for task in tasks if isinstance(task, dict) and "id" in task}
+    routes = []
+    for task in tasks:
+        if not isinstance(task, dict):
+            continue
+        for mapping in task.get("argsFrom", []):
+            if not isinstance(mapping, dict):
+                continue
+            routes.append(_route_contract(task, mapping, by_task))
+    return routes
+
+
+def _route_contract(
+    task: dict[str, Any],
+    mapping: dict[str, Any],
+    by_task: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    source_id = mapping.get("task")
+    selector = mapping.get("selector", "")
+    source = by_task.get(source_id)
+    selector_report = validate_selector_syntax(selector)
+    route_kind = _route_kind(selector)
+    source_capability = source.get("capability", {}) if isinstance(source, dict) else {}
+    route = {
+        "consumer_task": task.get("id"),
+        "consumer_capability": task.get("uses"),
+        "consumer_capability_exists": _task_capability(task).get("exists"),
+        "source_task": source_id,
+        "source_capability": source.get("uses") if isinstance(source, dict) else None,
+        "source_capability_exists": source_capability.get("exists"),
+        "selector": selector,
+        "selector_valid": selector_report["valid"],
+        "selector_tokens": selector_report["tokens"],
+        "selector_error": selector_report["error"],
+        "route_kind": route_kind,
+        "source_in_needs": source_id in task.get("needs", []),
+        "source_exists": source is not None,
+        "source_parser_ref": source_capability.get("parser_ref"),
+        "source_output_verified": source_capability.get("verified"),
+        "verified_source_required": route_kind == "payload",
+        "verified_source_satisfied": route_kind != "payload" or source_capability.get("verified") is True,
+        "argv_mapping": _argv_mapping(selector_report, route_kind),
+    }
+    route["blockers"] = _route_blockers(route)
+    route["ready"] = len(route["blockers"]) == 0
+    return route
+
+
+def _task_capability(task: dict[str, Any]) -> dict[str, Any]:
+    capability = task.get("capability", {})
+    return capability if isinstance(capability, dict) else {}
+
+
+def _argv_mapping(selector_report: dict[str, Any], route_kind: str) -> dict[str, Any]:
+    return {
+        "ready": selector_report["valid"] and route_kind in {"payload", "artifact", "metadata"},
+        "encoding": "bridge_value_to_arg",
     }
 
 
@@ -245,27 +260,35 @@ def _route_kind(selector: str) -> str:
 def _workflow_summary(routes: list[dict[str, Any]]) -> dict[str, int]:
     return {
         "route_count": len(routes),
-        "route_ready_count": sum(1 for route in routes if route["ready"]),
-        "blocked_route_count": sum(1 for route in routes if not route["ready"]),
-        "payload_route_count": sum(1 for route in routes if route["route_kind"] == "payload"),
-        "artifact_route_count": sum(1 for route in routes if route["route_kind"] == "artifact"),
-        "metadata_route_count": sum(1 for route in routes if route["route_kind"] == "metadata"),
-        "unknown_route_count": sum(1 for route in routes if route["route_kind"] == "unknown"),
-        "invalid_selector_count": sum(1 for route in routes if not route["selector_valid"]),
-        "source_not_in_needs_count": sum(1 for route in routes if not route["source_in_needs"]),
-        "missing_source_route_count": sum(1 for route in routes if not route["source_exists"]),
-        "missing_capability_route_count": sum(
-            1
-            for route in routes
-            if route["source_capability_exists"] is False or route["consumer_capability_exists"] is False
-        ),
-        "unverified_source_route_count": sum(
-            1
-            for route in routes
-            if route["source_output_verified"] is False and route["route_kind"] == "payload"
-        ),
-        "argv_mapping_ready_count": sum(1 for route in routes if route["argv_mapping"]["ready"]),
+        "route_ready_count": _count_routes(routes, lambda route: route["ready"]),
+        "blocked_route_count": _count_routes(routes, lambda route: not route["ready"]),
+        "payload_route_count": _route_kind_count(routes, "payload"),
+        "artifact_route_count": _route_kind_count(routes, "artifact"),
+        "metadata_route_count": _route_kind_count(routes, "metadata"),
+        "unknown_route_count": _route_kind_count(routes, "unknown"),
+        "invalid_selector_count": _count_routes(routes, lambda route: not route["selector_valid"]),
+        "source_not_in_needs_count": _count_routes(routes, lambda route: not route["source_in_needs"]),
+        "missing_source_route_count": _count_routes(routes, lambda route: not route["source_exists"]),
+        "missing_capability_route_count": _count_routes(routes, _route_missing_capability),
+        "unverified_source_route_count": _count_routes(routes, _unverified_payload_route),
+        "argv_mapping_ready_count": _count_routes(routes, lambda route: route["argv_mapping"]["ready"]),
     }
+
+
+def _count_routes(routes: list[dict[str, Any]], predicate) -> int:
+    return sum(1 for route in routes if predicate(route))
+
+
+def _route_kind_count(routes: list[dict[str, Any]], route_kind: str) -> int:
+    return _count_routes(routes, lambda route: route["route_kind"] == route_kind)
+
+
+def _route_missing_capability(route: dict[str, Any]) -> bool:
+    return route["source_capability_exists"] is False or route["consumer_capability_exists"] is False
+
+
+def _unverified_payload_route(route: dict[str, Any]) -> bool:
+    return route["source_output_verified"] is False and route["route_kind"] == "payload"
 
 
 def _route_blockers(route: dict[str, Any]) -> list[str]:

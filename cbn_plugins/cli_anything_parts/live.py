@@ -2,25 +2,117 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 
 PLUGIN_ID = "cli-anything"
+LIVE_WORKFLOW_PATH = "workflows/cli-anything-macrocli-mermaid-routing.example.json"
+_LIVE_OPTION_NAMES = (
+    "harnesses",
+    "candidate_query",
+    "candidate_limit",
+    "include_candidates",
+    "include_workflows",
+    "run_smoke_suite",
+    "smoke_extra_args",
+)
+
+
+@dataclass(frozen=True)
+class LiveVerificationRequest:
+    harnesses: tuple[str, ...]
+    candidate_query: str | None
+    candidate_limit: int
+    include_candidates: bool
+    include_workflows: bool
+    run_smoke_suite: bool
+    smoke_extra_args: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class LiveVerificationReportInput:
+    request: LiveVerificationRequest
+    status: dict[str, Any]
+    environment: dict[str, Any]
+    harness_summary: list[dict[str, Any]]
+    harness_reports: list[dict[str, Any]]
+    candidates: dict[str, Any] | None
+    workflow_readiness: dict[str, Any] | None
+    summary: dict[str, Any]
 
 
 def live_verification(
     hub: Any,
-    harnesses: tuple[str, ...] = ("mermaid", "macrocli"),
-    candidate_query: str | None = "image",
-    candidate_limit: int = 10,
-    include_candidates: bool = True,
-    include_workflows: bool = True,
-    run_smoke_suite: bool = False,
-    smoke_extra_args: tuple[str, ...] = (),
+    *args: Any,
+    **options: Any,
 ) -> dict[str, Any]:
+    request = live_verification_request(args, options)
     status = hub.status()
     environment = hub._environment_verification()
-    harness_reports = [
+    harness_reports = live_harness_reports(
+        hub,
+        harnesses=request.harnesses,
+        include_workflows=request.include_workflows,
+        run_smoke_suite=request.run_smoke_suite,
+        smoke_extra_args=request.smoke_extra_args,
+    )
+    harness_summary = [harness_live_summary(report) for report in harness_reports]
+    candidates = live_candidate_scan(hub, request.candidate_query, request.candidate_limit, request.include_candidates)
+    workflow_readiness = live_workflow_readiness(hub, request.include_workflows)
+    summary = live_verification_summary(
+        status=status,
+        environment=environment,
+        harness_summary=harness_summary,
+        candidates=candidates,
+        workflow_readiness=workflow_readiness,
+    )
+    return live_verification_report(LiveVerificationReportInput(
+        request=request,
+        status=status,
+        environment=environment,
+        harness_summary=harness_summary,
+        harness_reports=harness_reports,
+        candidates=candidates,
+        workflow_readiness=workflow_readiness,
+        summary=summary,
+    ))
+
+
+def live_verification_request(args: tuple[Any, ...], options: dict[str, Any]) -> LiveVerificationRequest:
+    if len(args) > len(_LIVE_OPTION_NAMES):
+        raise TypeError(f"live_verification expected at most {len(_LIVE_OPTION_NAMES) + 1} arguments")
+    values = {
+        "harnesses": ("mermaid", "macrocli"),
+        "candidate_query": "image",
+        "candidate_limit": 10,
+        "include_candidates": True,
+        "include_workflows": True,
+        "run_smoke_suite": False,
+        "smoke_extra_args": (),
+    }
+    for name, value in zip(_LIVE_OPTION_NAMES, args):
+        if name in options:
+            raise TypeError(f"live_verification got multiple values for argument '{name}'")
+        values[name] = value
+    unknown = sorted(set(options) - set(_LIVE_OPTION_NAMES))
+    if unknown:
+        raise TypeError(f"unknown live verification option(s): {', '.join(unknown)}")
+    values.update(options)
+    values["harnesses"] = tuple(values["harnesses"])
+    values["smoke_extra_args"] = tuple(values["smoke_extra_args"])
+    return LiveVerificationRequest(**values)
+
+
+def live_harness_reports(
+    hub: Any,
+    *,
+    harnesses: tuple[str, ...],
+    include_workflows: bool,
+    run_smoke_suite: bool,
+    smoke_extra_args: tuple[str, ...],
+) -> list[dict[str, Any]]:
+    return [
         hub.verify_harness(
             harness,
             from_market=True,
@@ -30,58 +122,73 @@ def live_verification(
         )
         for harness in harnesses
     ]
-    harness_summary = [harness_live_summary(report) for report in harness_reports]
-    candidates = (
-        hub.candidate_harnesses(
-            query=candidate_query,
-            limit=candidate_limit,
-            with_probes=True,
-            compact=True,
-        )
-        if include_candidates
-        else None
+
+
+def live_candidate_scan(
+    hub: Any,
+    candidate_query: str | None,
+    candidate_limit: int,
+    include_candidates: bool,
+) -> dict[str, Any] | None:
+    if not include_candidates:
+        return None
+    return hub.candidate_harnesses(
+        query=candidate_query,
+        limit=candidate_limit,
+        with_probes=True,
+        compact=True,
     )
-    workflow_readiness = (
-        hub._workflow_readiness("workflows/cli-anything-macrocli-mermaid-routing.example.json")
-        if include_workflows
-        else None
-    )
-    summary = live_verification_summary(
-        status=status,
-        environment=environment,
-        harness_summary=harness_summary,
-        candidates=candidates,
-        workflow_readiness=workflow_readiness,
-    )
+
+
+def live_workflow_readiness(hub: Any, include_workflows: bool) -> dict[str, Any] | None:
+    if not include_workflows:
+        return None
+    return hub._workflow_readiness(LIVE_WORKFLOW_PATH)
+
+
+def live_verification_report(report: LiveVerificationReportInput) -> dict[str, Any]:
     return {
-        "ok": summary["entrypoint_available"]
-        and summary["verified_harness_count"] == len(harness_summary)
-        and summary["workflow_internal_bridge_ready"] is not False,
+        "ok": live_verification_ok(report.summary, report.harness_summary),
         "plugin_id": PLUGIN_ID,
         "kind": "CliAnythingLiveVerification",
-        "run_smoke_suite": run_smoke_suite,
-        "status": status,
-        "environment": environment,
-        "harnesses": harness_summary,
-        "candidate_scan": candidate_live_summary(candidates) if candidates else None,
-        "workflow_readiness": workflow_live_summary(workflow_readiness) if workflow_readiness else None,
-        "summary": summary,
+        "run_smoke_suite": report.request.run_smoke_suite,
+        "status": report.status,
+        "environment": report.environment,
+        "harnesses": report.harness_summary,
+        "candidate_scan": candidate_live_summary(report.candidates) if report.candidates else None,
+        "workflow_readiness": workflow_live_summary(report.workflow_readiness) if report.workflow_readiness else None,
+        "summary": report.summary,
         "reports": {
-            "harness_verifications": harness_reports,
-            "candidates": candidates,
-            "workflow_readiness": workflow_readiness,
+            "harness_verifications": report.harness_reports,
+            "candidates": report.candidates,
+            "workflow_readiness": report.workflow_readiness,
         },
-        "next_commands": [
-            "python -m cbn plugin live-verification cli-anything",
-            "python -m cbn plugin candidates cli-anything --query image --limit 10 --with-probes --compact",
-            "python -m cbn plugin verify-harness cli-anything mermaid",
-            "python -m cbn plugin verify-harness cli-anything macrocli",
-            "python -m cbn plugin verify-harness cli-anything 3mf --smoke-suite --smoke-extra-arg=--help --no-workflows",
-            "python -m cbn call cli-anything.macrocli.backends",
-            "python -m cbn workflow run workflows/cli-anything-macrocli-mermaid-routing.example.json",
-            "python -m cbn protocol readiness --workflow-path workflows/cli-anything-macrocli-mermaid-routing.example.json",
-        ],
+        "next_commands": live_verification_next_commands(),
     }
+
+
+def live_verification_ok(
+    summary: dict[str, Any],
+    harness_summary: list[dict[str, Any]],
+) -> bool:
+    return (
+        summary["entrypoint_available"]
+        and summary["verified_harness_count"] == len(harness_summary)
+        and summary["workflow_internal_bridge_ready"] is not False
+    )
+
+
+def live_verification_next_commands() -> list[str]:
+    return [
+        "python -m cbn plugin live-verification cli-anything",
+        "python -m cbn plugin candidates cli-anything --query image --limit 10 --with-probes --compact",
+        "python -m cbn plugin verify-harness cli-anything mermaid",
+        "python -m cbn plugin verify-harness cli-anything macrocli",
+        "python -m cbn plugin verify-harness cli-anything 3mf --smoke-suite --smoke-extra-arg=--help --no-workflows",
+        "python -m cbn call cli-anything.macrocli.backends",
+        f"python -m cbn workflow run {LIVE_WORKFLOW_PATH}",
+        f"python -m cbn protocol readiness --workflow-path {LIVE_WORKFLOW_PATH}",
+    ]
 
 
 def harness_live_summary(report: dict[str, Any]) -> dict[str, Any]:
@@ -151,35 +258,48 @@ def live_verification_summary(
     candidates: dict[str, Any] | None,
     workflow_readiness: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    workflow_gate = None
-    if workflow_readiness is not None:
-        readiness = workflow_readiness.get("readiness") if isinstance(workflow_readiness.get("readiness"), dict) else {}
-        workflow_gate = readiness.get("internal_bridge_ready")
     return {
         "entrypoint_available": bool(status.get("entrypoint_available")),
         "source_trusted": environment.get("source_trusted"),
         "ready_for_update": environment.get("ready_for_update"),
+        **live_harness_summary_counts(harness_summary),
+        **live_candidate_summary_counts(candidates),
+        **live_workflow_summary_counts(workflow_readiness),
+    }
+
+
+def live_harness_summary_counts(harness_summary: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
         "harness_count": len(harness_summary),
-        "verified_harness_count": sum(
-            1
-            for item in harness_summary
-            if item["ok"] and item["ready_for_runtime_verification"]
-        ),
+        "verified_harness_count": sum(1 for item in harness_summary if _harness_verified(item)),
         "launch_ready_harness_count": sum(1 for item in harness_summary if item["launch_ready"]),
         "unverified_parser_count": sum(1 for item in harness_summary if not item["parser_verified"]),
         "protocol_smoke_suite_run_count": sum(1 for item in harness_summary if item["protocol_smoke_suite_run"]),
-        "protocol_smoke_suite_passed_count": sum(
-            1
-            for item in harness_summary
-            if item["protocol_smoke_suite_run"] and item["protocol_smoke_suite_ok"]
-        ),
+        "protocol_smoke_suite_passed_count": sum(1 for item in harness_summary if _smoke_suite_passed(item)),
+    }
+
+
+def _harness_verified(item: dict[str, Any]) -> bool:
+    return bool(item["ok"] and item["ready_for_runtime_verification"])
+
+
+def _smoke_suite_passed(item: dict[str, Any]) -> bool:
+    return bool(item["protocol_smoke_suite_run"] and item["protocol_smoke_suite_ok"])
+
+
+def live_candidate_summary_counts(candidates: dict[str, Any] | None) -> dict[str, Any]:
+    return {
         "candidate_query": candidates.get("query") if candidates else None,
         "candidate_market_count": candidates.get("market_count") if candidates else None,
         "candidate_blocked_count": candidates.get("blocked_count") if candidates else None,
         "candidate_install_candidate_count": candidates.get("install_candidate_count") if candidates else None,
-        "workflow_internal_bridge_ready": workflow_gate,
-        "external_protocol_wire_compatible": bool(
-            workflow_readiness
-            and (workflow_readiness.get("readiness") or {}).get("external_protocol_wire_compatible")
-        ),
+    }
+
+
+def live_workflow_summary_counts(workflow_readiness: dict[str, Any] | None) -> dict[str, Any]:
+    readiness = workflow_readiness.get("readiness") if workflow_readiness else {}
+    readiness = readiness if isinstance(readiness, dict) else {}
+    return {
+        "workflow_internal_bridge_ready": readiness.get("internal_bridge_ready") if workflow_readiness else None,
+        "external_protocol_wire_compatible": bool(readiness.get("external_protocol_wire_compatible")),
     }

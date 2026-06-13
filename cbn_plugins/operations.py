@@ -53,123 +53,139 @@ class PluginOperationRunner:
         self.artifact_store = artifact_store
 
     def execute(self, plan: PluginPlan) -> dict[str, Any]:
-        operation_id = str(uuid.uuid4())
-        started_at = now_iso()
-        plugin_dir = Path(plan.plugin_dir)
-        plugin_dir.mkdir(parents=True, exist_ok=True)
-        lock = self._acquire_lock(plan, operation_id, started_at)
+        operation_id, started_at, lock = self._prepare_operation(plan)
         if not lock["acquired"]:
-            payload = {
-                "operation_id": operation_id,
-                "plugin_id": plan.plugin_id,
-                "action": plan.action,
-                "status": "blocked",
-                "started_at": started_at,
-                "completed_at": now_iso(),
-                "blockers": ["plugin operation already running"],
-                "lock": lock,
-                "results": [],
-            }
-            self._audit("plugin.operation.blocked", operation_id, plan, payload)
-            self._publish(EventType.PLUGIN_OPERATION_COMPLETED, plan.plugin_id, payload, operation_id)
-            return payload
-
-        self._audit(
-            "plugin.operation.started",
-            operation_id,
-            plan,
-            {"command_count": len(plan.commands), "lock": lock},
-        )
-        self._publish(
-            EventType.PLUGIN_OPERATION_STARTED,
-            plan.plugin_id,
-            {"operation_id": operation_id, "action": plan.action},
-            operation_id,
-        )
-        results: list[dict[str, Any]] = []
-        status = "completed"
-
+            return self._blocked_operation(operation_id, started_at, plan, lock, {"results": []})
+        self._start_operation(operation_id, plan, lock, {"command_count": len(plan.commands)})
         try:
-            for index, command in enumerate(plan.commands):
-                result = self._execute_command(operation_id, plan, index, command)
-                results.append(result)
-                if result.get("exit_code") not in (0, None) and not command.optional:
-                    status = "failed"
-                    break
+            results, status = self._run_commands(operation_id, plan)
         finally:
             self._release_lock(lock)
-
-        payload = {
-            "operation_id": operation_id,
-            "plugin_id": plan.plugin_id,
-            "action": plan.action,
-            "status": status,
-            "started_at": started_at,
-            "completed_at": now_iso(),
-            "lock": lock,
-            "results": results,
-        }
-        self._audit("plugin.operation.completed", operation_id, plan, payload)
-        self._publish(EventType.PLUGIN_OPERATION_COMPLETED, plan.plugin_id, payload, operation_id)
-        return payload
+        return self._complete_operation(
+            operation_id,
+            started_at,
+            plan,
+            lock,
+            status,
+            {"results": results},
+        )
 
     def execute_write(
         self,
         plan: PluginPlan,
         writer: Callable[[str], dict[str, Any]],
     ) -> dict[str, Any]:
-        operation_id = str(uuid.uuid4())
-        started_at = now_iso()
-        plugin_dir = Path(plan.plugin_dir)
-        plugin_dir.mkdir(parents=True, exist_ok=True)
-        lock = self._acquire_lock(plan, operation_id, started_at)
+        operation_id, started_at, lock = self._prepare_operation(plan)
         if not lock["acquired"]:
-            payload = {
-                "operation_id": operation_id,
-                "plugin_id": plan.plugin_id,
-                "action": plan.action,
-                "status": "blocked",
-                "started_at": started_at,
-                "completed_at": now_iso(),
-                "blockers": ["plugin operation already running"],
-                "lock": lock,
-                "write_result": None,
-                "artifact_ids": [],
-            }
-            self._audit("plugin.operation.blocked", operation_id, plan, payload)
-            self._publish(EventType.PLUGIN_OPERATION_COMPLETED, plan.plugin_id, payload, operation_id)
-            return payload
-
-        self._audit(
-            "plugin.operation.started",
-            operation_id,
-            plan,
-            {"write": True, "lock": lock},
-        )
-        self._publish(
-            EventType.PLUGIN_OPERATION_STARTED,
-            plan.plugin_id,
-            {"operation_id": operation_id, "action": plan.action, "write": True},
-            operation_id,
-        )
-        write_result: dict[str, Any]
-        status = "completed"
+            return self._blocked_operation(
+                operation_id,
+                started_at,
+                plan,
+                lock,
+                {"write_result": None, "artifact_ids": []},
+            )
+        self._start_operation(operation_id, plan, lock, {"write": True})
         try:
-            write_result = writer(operation_id)
-            if write_result.get("status") not in (None, "completed"):
-                status = str(write_result.get("status"))
-        except Exception as exc:  # pragma: no cover - defensive boundary
-            status = "failed"
-            write_result = {
-                "status": "failed",
-                "error": str(exc),
-                "written": [],
-                "backups": [],
-            }
+            write_result, status = self._run_writer(operation_id, writer)
         finally:
             self._release_lock(lock)
-
         artifact_ids = self._record_write_artifact(plan.plugin_id, operation_id, write_result)
+        return self._complete_operation(
+            operation_id,
+            started_at,
+            plan,
+            lock,
+            status,
+            {"write_result": write_result, "artifact_ids": artifact_ids},
+        )
+
+    def _prepare_operation(self, plan: PluginPlan) -> tuple[str, str, dict[str, Any]]:
+        operation_id = str(uuid.uuid4())
+        started_at = now_iso()
+        Path(plan.plugin_dir).mkdir(parents=True, exist_ok=True)
+        lock = self._acquire_lock(plan, operation_id, started_at)
+        return operation_id, started_at, lock
+
+    def _blocked_operation(
+        self,
+        operation_id: str,
+        started_at: str,
+        plan: PluginPlan,
+        lock: dict[str, Any],
+        fields: dict[str, Any],
+    ) -> dict[str, Any]:
+        payload = self._operation_payload(operation_id, started_at, plan, lock, "blocked", fields)
+        payload["blockers"] = ["plugin operation already running"]
+        self._audit("plugin.operation.blocked", operation_id, plan, payload)
+        self._publish(EventType.PLUGIN_OPERATION_COMPLETED, plan.plugin_id, payload, operation_id)
+        return payload
+
+    def _start_operation(
+        self,
+        operation_id: str,
+        plan: PluginPlan,
+        lock: dict[str, Any],
+        fields: dict[str, Any],
+    ) -> None:
+        payload = dict(fields)
+        payload["lock"] = lock
+        self._audit("plugin.operation.started", operation_id, plan, payload)
+        started_event = {"operation_id": operation_id, "action": plan.action}
+        if fields.get("write") is True:
+            started_event["write"] = True
+        self._publish(EventType.PLUGIN_OPERATION_STARTED, plan.plugin_id, started_event, operation_id)
+
+    def _run_commands(
+        self,
+        operation_id: str,
+        plan: PluginPlan,
+    ) -> tuple[list[dict[str, Any]], str]:
+        results: list[dict[str, Any]] = []
+        status = "completed"
+        for index, command in enumerate(plan.commands):
+            result = self._execute_command(operation_id, plan, index, command)
+            results.append(result)
+            if result.get("exit_code") not in (0, None) and not command.optional:
+                status = "failed"
+                break
+        return results, status
+
+    def _run_writer(
+        self,
+        operation_id: str,
+        writer: Callable[[str], dict[str, Any]],
+    ) -> tuple[dict[str, Any], str]:
+        try:
+            write_result = writer(operation_id)
+        except Exception as exc:  # pragma: no cover - defensive boundary
+            return {"status": "failed", "error": str(exc), "written": [], "backups": []}, "failed"
+        if write_result.get("status") in (None, "completed"):
+            return write_result, "completed"
+        return write_result, str(write_result.get("status"))
+
+    def _complete_operation(
+        self,
+        operation_id: str,
+        started_at: str,
+        plan: PluginPlan,
+        lock: dict[str, Any],
+        status: str,
+        fields: dict[str, Any],
+    ) -> dict[str, Any]:
+        payload = self._operation_payload(operation_id, started_at, plan, lock, status, fields)
+        self._audit("plugin.operation.completed", operation_id, plan, payload)
+        self._publish(EventType.PLUGIN_OPERATION_COMPLETED, plan.plugin_id, payload, operation_id)
+        return payload
+
+    def _operation_payload(
+        self,
+        operation_id: str,
+        started_at: str,
+        plan: PluginPlan,
+        lock: dict[str, Any],
+        status: str,
+        fields: dict[str, Any],
+    ) -> dict[str, Any]:
         payload = {
             "operation_id": operation_id,
             "plugin_id": plan.plugin_id,
@@ -178,11 +194,8 @@ class PluginOperationRunner:
             "started_at": started_at,
             "completed_at": now_iso(),
             "lock": lock,
-            "write_result": write_result,
-            "artifact_ids": artifact_ids,
         }
-        self._audit("plugin.operation.completed", operation_id, plan, payload)
-        self._publish(EventType.PLUGIN_OPERATION_COMPLETED, plan.plugin_id, payload, operation_id)
+        payload.update(fields)
         return payload
 
     def _acquire_lock(self, plan: PluginPlan, operation_id: str, started_at: str) -> dict[str, Any]:
@@ -229,21 +242,53 @@ class PluginOperationRunner:
         command: PluginCommand,
     ) -> dict[str, Any]:
         command_id = f"{operation_id}:{index}"
-        plugin_dir = Path(plan.plugin_dir)
-        if command.label.startswith("Clone") and (plugin_dir / "repo").exists():
-            result = {
-                "command_id": command_id,
-                "label": command.label,
-                "argv": list(command.argv),
-                "skipped": True,
-                "reason": "repository already exists",
-                "artifact_ids": [],
-            }
-            self._audit("plugin.command.skipped", operation_id, plan, result)
-            self._publish(EventType.PLUGIN_COMMAND_COMPLETED, plan.plugin_id, result, operation_id)
-            return result
-
+        skipped = self._skip_existing_clone(operation_id, plan, command_id, command)
+        if skipped is not None:
+            return skipped
         env, env_policy = _operation_env(command.env)
+        self._start_command(operation_id, plan, command_id, command, env_policy)
+        captured = _run_command_with_bounded_output(
+            argv=command.argv,
+            cwd=command.cwd,
+            env=env,
+            timeout_seconds=command.timeout_seconds,
+            output_limit_bytes=PLUGIN_COMMAND_OUTPUT_LIMIT_BYTES,
+        )
+        result = self._command_result(operation_id, plan, command_id, command, captured, env_policy)
+        self._complete_command(operation_id, plan, result)
+        return result
+
+    def _skip_existing_clone(
+        self,
+        operation_id: str,
+        plan: PluginPlan,
+        command_id: str,
+        command: PluginCommand,
+    ) -> dict[str, Any] | None:
+        if not command.label.startswith("Clone"):
+            return None
+        if not (Path(plan.plugin_dir) / "repo").exists():
+            return None
+        result = {
+            "command_id": command_id,
+            "label": command.label,
+            "argv": list(command.argv),
+            "skipped": True,
+            "reason": "repository already exists",
+            "artifact_ids": [],
+        }
+        self._audit("plugin.command.skipped", operation_id, plan, result)
+        self._publish(EventType.PLUGIN_COMMAND_COMPLETED, plan.plugin_id, result, operation_id)
+        return result
+
+    def _start_command(
+        self,
+        operation_id: str,
+        plan: PluginPlan,
+        command_id: str,
+        command: PluginCommand,
+        env_policy: dict[str, Any],
+    ) -> None:
         self._audit(
             "plugin.command.started",
             operation_id,
@@ -271,36 +316,43 @@ class PluginOperationRunner:
             },
             operation_id,
         )
-        captured = _run_command_with_bounded_output(
-            argv=command.argv,
-            cwd=command.cwd,
-            env=env,
-            timeout_seconds=command.timeout_seconds,
-            output_limit_bytes=PLUGIN_COMMAND_OUTPUT_LIMIT_BYTES,
-        )
+
+    def _command_result(
+        self,
+        operation_id: str,
+        plan: PluginPlan,
+        command_id: str,
+        command: PluginCommand,
+        captured: dict[str, Any],
+        env_policy: dict[str, Any],
+    ) -> dict[str, Any]:
         if captured.get("timed_out"):
-            stdout = str(captured.get("stdout") or "")
-            stderr = str(captured.get("stderr") or "")
-            if stderr:
-                stderr = f"{stderr}\n"
-            stderr = f"{stderr}command timed out after {command.timeout_seconds} seconds"
-            result = {
-                "command_id": command_id,
-                "label": command.label,
-                "argv": list(command.argv),
-                "cwd": command.cwd,
-                "optional": command.optional,
-                "timeout_seconds": command.timeout_seconds,
+            return self._timeout_result(operation_id, plan, command_id, command, captured, env_policy)
+        if captured.get("spawn_error"):
+            return self._spawn_error_result(command_id, command, captured, env_policy)
+        return self._success_result(operation_id, plan, command_id, command, captured, env_policy)
+
+    def _timeout_result(
+        self,
+        operation_id: str,
+        plan: PluginPlan,
+        command_id: str,
+        command: PluginCommand,
+        captured: dict[str, Any],
+        env_policy: dict[str, Any],
+    ) -> dict[str, Any]:
+        stdout = str(captured.get("stdout") or "")
+        stderr = str(captured.get("stderr") or "")
+        if stderr:
+            stderr = f"{stderr}\n"
+        stderr = f"{stderr}command timed out after {command.timeout_seconds} seconds"
+        result = self._base_command_result(command_id, command, captured, env_policy)
+        result.update(
+            {
                 "timed_out": True,
                 "exit_code": 124,
                 "stdout": stdout[-PLUGIN_COMMAND_RESULT_TAIL_CHARS:],
                 "stderr": stderr[-PLUGIN_COMMAND_RESULT_TAIL_CHARS:],
-                "stdout_bytes": captured.get("stdout_bytes", 0),
-                "stderr_bytes": captured.get("stderr_bytes", 0),
-                "stdout_truncated": captured.get("stdout_truncated", False),
-                "stderr_truncated": captured.get("stderr_truncated", False),
-                "output_limit_bytes": PLUGIN_COMMAND_OUTPUT_LIMIT_BYTES,
-                "env_policy": env_policy,
                 "artifact_ids": self._record_artifact_texts(
                     plan.plugin_id,
                     operation_id,
@@ -309,74 +361,87 @@ class PluginOperationRunner:
                     stderr,
                 ),
             }
-            self._audit("plugin.command.completed", operation_id, plan, result)
-            self._publish(EventType.PLUGIN_COMMAND_COMPLETED, plan.plugin_id, result, operation_id)
-            return result
-        if captured.get("spawn_error"):
-            result = {
-                "command_id": command_id,
-                "label": command.label,
-                "argv": list(command.argv),
-                "cwd": command.cwd,
-                "optional": command.optional,
-                "timeout_seconds": command.timeout_seconds,
+        )
+        return result
+
+    def _spawn_error_result(
+        self,
+        command_id: str,
+        command: PluginCommand,
+        captured: dict[str, Any],
+        env_policy: dict[str, Any],
+    ) -> dict[str, Any]:
+        result = self._base_command_result(command_id, command, {}, env_policy)
+        result.update(
+            {
                 "timed_out": False,
                 "exit_code": 127,
                 "stdout": "",
                 "stderr": f"{command.argv[0]} failed to start: {captured['spawn_error']}",
-                "stdout_bytes": 0,
-                "stderr_bytes": 0,
-                "stdout_truncated": False,
-                "stderr_truncated": False,
-                "output_limit_bytes": PLUGIN_COMMAND_OUTPUT_LIMIT_BYTES,
-                "env_policy": env_policy,
                 "artifact_ids": [],
             }
-            self._audit("plugin.command.completed", operation_id, plan, result)
-            self._publish(EventType.PLUGIN_COMMAND_COMPLETED, plan.plugin_id, result, operation_id)
-            return result
+        )
+        return result
+
+    def _success_result(
+        self,
+        operation_id: str,
+        plan: PluginPlan,
+        command_id: str,
+        command: PluginCommand,
+        captured: dict[str, Any],
+        env_policy: dict[str, Any],
+    ) -> dict[str, Any]:
         stdout = str(captured.get("stdout") or "")
         stderr = str(captured.get("stderr") or "")
-        artifact_ids = self._record_artifact_texts(plan.plugin_id, operation_id, command_id, stdout, stderr)
-        result = {
+        result = self._base_command_result(command_id, command, captured, env_policy)
+        result.update(
+            {
+                "timed_out": False,
+                "exit_code": captured.get("exit_code"),
+                "stdout": stdout[-PLUGIN_COMMAND_RESULT_TAIL_CHARS:],
+                "stderr": stderr[-PLUGIN_COMMAND_RESULT_TAIL_CHARS:],
+                "artifact_ids": self._record_artifact_texts(
+                    plan.plugin_id,
+                    operation_id,
+                    command_id,
+                    stdout,
+                    stderr,
+                ),
+            }
+        )
+        return result
+
+    def _base_command_result(
+        self,
+        command_id: str,
+        command: PluginCommand,
+        captured: dict[str, Any],
+        env_policy: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
             "command_id": command_id,
             "label": command.label,
             "argv": list(command.argv),
             "cwd": command.cwd,
             "optional": command.optional,
             "timeout_seconds": command.timeout_seconds,
-            "timed_out": False,
-            "exit_code": captured.get("exit_code"),
-            "stdout": stdout[-PLUGIN_COMMAND_RESULT_TAIL_CHARS:],
-            "stderr": stderr[-PLUGIN_COMMAND_RESULT_TAIL_CHARS:],
             "stdout_bytes": captured.get("stdout_bytes", 0),
             "stderr_bytes": captured.get("stderr_bytes", 0),
             "stdout_truncated": captured.get("stdout_truncated", False),
             "stderr_truncated": captured.get("stderr_truncated", False),
             "output_limit_bytes": PLUGIN_COMMAND_OUTPUT_LIMIT_BYTES,
             "env_policy": env_policy,
-            "artifact_ids": artifact_ids,
         }
+
+    def _complete_command(
+        self,
+        operation_id: str,
+        plan: PluginPlan,
+        result: dict[str, Any],
+    ) -> None:
         self._audit("plugin.command.completed", operation_id, plan, result)
         self._publish(EventType.PLUGIN_COMMAND_COMPLETED, plan.plugin_id, result, operation_id)
-        return result
-
-    def _record_artifacts(
-        self,
-        plugin_id: str,
-        operation_id: str,
-        command_id: str,
-        proc: subprocess.CompletedProcess[str],
-    ) -> list[str]:
-        if self.artifact_store is None:
-            return []
-        return self._record_artifact_texts(
-            plugin_id,
-            operation_id,
-            command_id,
-            proc.stdout,
-            proc.stderr,
-        )
 
     def _record_artifact_texts(
         self,
@@ -457,40 +522,58 @@ def _run_command_with_bounded_output(
     with tempfile.TemporaryDirectory(prefix="cbn-plugin-output-") as tmp:
         stdout_path = Path(tmp) / "stdout.bin"
         stderr_path = Path(tmp) / "stderr.bin"
-        with stdout_path.open("wb") as stdout_file, stderr_path.open("wb") as stderr_file:
-            try:
-                proc = subprocess.Popen(
-                    list(argv),
-                    cwd=cwd,
-                    env=env,
-                    stdout=stdout_file,
-                    stderr=stderr_file,
-                )
-            except OSError as exc:
-                return {"spawn_error": str(exc)}
-            timed_out = False
-            try:
-                exit_code = proc.wait(timeout=timeout_seconds)
-            except subprocess.TimeoutExpired:
-                timed_out = True
-                proc.kill()
-                exit_code = 124
-                try:
-                    proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    pass
-        stdout = _read_output_tail(stdout_path, output_limit_bytes)
-        stderr = _read_output_tail(stderr_path, output_limit_bytes)
-        return {
-            "exit_code": exit_code,
-            "timed_out": timed_out,
-            "stdout": stdout["text"],
-            "stderr": stderr["text"],
-            "stdout_bytes": stdout["total_bytes"],
-            "stderr_bytes": stderr["total_bytes"],
-            "stdout_truncated": stdout["truncated"],
-            "stderr_truncated": stderr["truncated"],
-        }
+        process = _run_command_to_files(argv, cwd, env, timeout_seconds, stdout_path, stderr_path)
+        if process.get("spawn_error"):
+            return process
+        return _bounded_command_result(process, stdout_path, stderr_path, output_limit_bytes)
+
+
+def _run_command_to_files(
+    argv: tuple[str, ...],
+    cwd: str | None,
+    env: dict[str, str],
+    timeout_seconds: int,
+    stdout_path: Path,
+    stderr_path: Path,
+) -> dict[str, Any]:
+    with stdout_path.open("wb") as stdout_file, stderr_path.open("wb") as stderr_file:
+        try:
+            proc = subprocess.Popen(list(argv), cwd=cwd, env=env, stdout=stdout_file, stderr=stderr_file)
+        except OSError as exc:
+            return {"spawn_error": str(exc)}
+        return _wait_for_process(proc, timeout_seconds)
+
+
+def _wait_for_process(proc: subprocess.Popen[Any], timeout_seconds: int) -> dict[str, Any]:
+    try:
+        return {"exit_code": proc.wait(timeout=timeout_seconds), "timed_out": False}
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            pass
+        return {"exit_code": 124, "timed_out": True}
+
+
+def _bounded_command_result(
+    process: dict[str, Any],
+    stdout_path: Path,
+    stderr_path: Path,
+    output_limit_bytes: int,
+) -> dict[str, Any]:
+    stdout = _read_output_tail(stdout_path, output_limit_bytes)
+    stderr = _read_output_tail(stderr_path, output_limit_bytes)
+    return {
+        "exit_code": process["exit_code"],
+        "timed_out": process["timed_out"],
+        "stdout": stdout["text"],
+        "stderr": stderr["text"],
+        "stdout_bytes": stdout["total_bytes"],
+        "stderr_bytes": stderr["total_bytes"],
+        "stdout_truncated": stdout["truncated"],
+        "stderr_truncated": stderr["truncated"],
+    }
 
 
 def _read_output_tail(path: Path, limit_bytes: int) -> dict[str, Any]:

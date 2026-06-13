@@ -55,58 +55,58 @@ class AuthSetupGuide:
         }
 
 
+RUNTIME_INPUT_REQUIREMENTS: dict[str, tuple[dict[str, object], ...]] = {
+    "jimeng.text2image.submit": (
+        {
+            "name": "prompt",
+            "kind": "text",
+            "required": True,
+            "source": "workflow args or argsFrom",
+            "example_arg": "--prompt=a product concept image",
+        },
+        {
+            "name": "generation_options",
+            "kind": "cli-flags",
+            "required": False,
+            "source": "workflow args",
+            "example_arg": "--ratio=1:1",
+        },
+    ),
+    "obsidian-cli.local-rest.note.read": (
+        {
+            "name": "note_path",
+            "kind": "vault-relative-path",
+            "required": True,
+            "source": "workflow args or UI note picker",
+            "example_arg": "Projects/demo.md",
+        },
+        {
+            "name": "OBSIDIAN_API_KEY",
+            "kind": "secret",
+            "required": True,
+            "source": "environment variable or secret store",
+            "persist_in_repo": False,
+        },
+    ),
+    "jimeng.query_result": (
+        {
+            "name": "submit_id",
+            "kind": "task-id",
+            "required": True,
+            "source": "workflow args or argsFrom from jimeng.text2image.submit",
+            "example_arg": "--submit_id=550e8400-e29b-41d4-a716-446655440000",
+        },
+    ),
+}
+
+
 def auth_setup_required(manifest: CapabilityManifest) -> bool:
     gate = manifest.annotations.get("cbn.auth_gate", "").strip().casefold()
     return bool(gate) and not gate.startswith("none")
 
 
 def runtime_input_requirements(manifest: CapabilityManifest) -> list[dict[str, object]]:
-    capability_id = manifest.capability_id
-    if capability_id == "jimeng.text2image.submit":
-        return [
-            {
-                "name": "prompt",
-                "kind": "text",
-                "required": True,
-                "source": "workflow args or argsFrom",
-                "example_arg": "--prompt=a product concept image",
-            },
-            {
-                "name": "generation_options",
-                "kind": "cli-flags",
-                "required": False,
-                "source": "workflow args",
-                "example_arg": "--ratio=1:1",
-            },
-        ]
-    if capability_id == "obsidian-cli.local-rest.note.read":
-        return [
-            {
-                "name": "note_path",
-                "kind": "vault-relative-path",
-                "required": True,
-                "source": "workflow args or UI note picker",
-                "example_arg": "Projects/demo.md",
-            },
-            {
-                "name": "OBSIDIAN_API_KEY",
-                "kind": "secret",
-                "required": True,
-                "source": "environment variable or secret store",
-                "persist_in_repo": False,
-            },
-        ]
-    if capability_id == "jimeng.query_result":
-        return [
-            {
-                "name": "submit_id",
-                "kind": "task-id",
-                "required": True,
-                "source": "workflow args or argsFrom from jimeng.text2image.submit",
-                "example_arg": "--submit_id=550e8400-e29b-41d4-a716-446655440000",
-            }
-        ]
-    return []
+    return [dict(item) for item in RUNTIME_INPUT_REQUIREMENTS.get(manifest.capability_id, ())]
 
 
 def build_auth_setup_guide(

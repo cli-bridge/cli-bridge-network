@@ -22,24 +22,9 @@ def protocol_conformance_plan(
 ) -> dict[str, Any]:
     """Return the conservative conformance plan for MCP/A2A/ACP."""
 
-    protocols = list(PROTOCOLS) if target == "all" else [target]
-    unknown = [protocol for protocol in protocols if protocol not in PROTOCOLS]
-    if unknown:
-        raise KeyError(f"unknown protocol conformance target: {unknown[0]}")
-    if capability_id and workflow_path:
-        raise ValueError("protocol conformance-plan accepts capability_id or workflow_path, not both")
-    reports = {
-        protocol: _protocol_report(
-            protocol,
-            check_protocol(
-                registry,
-                protocol,
-                capability_id=capability_id,
-                workflow_path=workflow_path,
-            ),
-        )
-        for protocol in protocols
-    }
+    protocols = _selected_protocols(target)
+    _validate_conformance_scope(capability_id, workflow_path)
+    reports = _protocol_reports(registry, protocols, capability_id, workflow_path)
     summary = _summary(reports)
     return {
         "ok": True,
@@ -53,6 +38,39 @@ def protocol_conformance_plan(
         "summary": summary,
         "protocols": reports,
         "next_steps": _next_steps(summary),
+    }
+
+
+def _selected_protocols(target: str) -> list[str]:
+    protocols = list(PROTOCOLS) if target == "all" else [target]
+    unknown = [protocol for protocol in protocols if protocol not in PROTOCOLS]
+    if unknown:
+        raise KeyError(f"unknown protocol conformance target: {unknown[0]}")
+    return protocols
+
+
+def _validate_conformance_scope(capability_id: str | None, workflow_path: str | None) -> None:
+    if capability_id and workflow_path:
+        raise ValueError("protocol conformance-plan accepts capability_id or workflow_path, not both")
+
+
+def _protocol_reports(
+    registry: ManifestRegistry,
+    protocols: list[str],
+    capability_id: str | None,
+    workflow_path: str | None,
+) -> dict[str, Any]:
+    return {
+        protocol: _protocol_report(
+            protocol,
+            check_protocol(
+                registry,
+                protocol,
+                capability_id=capability_id,
+                workflow_path=workflow_path,
+            ),
+        )
+        for protocol in protocols
     }
 
 

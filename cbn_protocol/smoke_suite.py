@@ -7,6 +7,7 @@ compatibility is sourced from the dedicated wire-conformance suite.
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import dataclass
 from typing import Any
 
 from cbn_core.manifest import ManifestRegistry
@@ -20,24 +21,151 @@ from cbn_protocol.readiness import protocol_readiness_report
 
 DEFAULT_SMOKE_CAPABILITIES = ("git.version",)
 DEFAULT_SMOKE_WORKFLOWS = ("workflows/example.json",)
+_SMOKE_SUITE_OPTION_NAMES = (
+    "capability_ids",
+    "workflow_paths",
+    "extra_args",
+    "dry_run",
+    "workflow_dry_run",
+    "workflow_confirmed",
+    "include_payloads",
+)
+
+
+@dataclass(frozen=True)
+class ProtocolSmokeSuiteRequest:
+    capability_ids: Iterable[str] | None = None
+    workflow_paths: Iterable[str] | None = None
+    extra_args: Iterable[str] = ()
+    dry_run: bool = False
+    workflow_dry_run: bool = False
+    workflow_confirmed: bool = False
+    include_payloads: bool = False
+
+
+@dataclass(frozen=True)
+class ProtocolSmokeSuiteResult:
+    ok: bool
+    selected_capabilities: tuple[str, ...]
+    selected_workflows: tuple[str, ...]
+    dry_run: bool
+    workflow_dry_run: bool
+    workflow_confirmed: bool
+    include_payloads: bool
+    summary: dict[str, Any]
+    readiness: dict[str, Any]
+    contract: dict[str, Any]
+    checks: list[dict[str, Any]]
 
 
 def protocol_smoke_suite(
     registry: ManifestRegistry,
-    capability_ids: Iterable[str] | None = None,
-    workflow_paths: Iterable[str] | None = None,
-    extra_args: Iterable[str] = (),
-    dry_run: bool = False,
-    workflow_dry_run: bool = False,
-    workflow_confirmed: bool = False,
-    include_payloads: bool = False,
+    *args: Any,
+    **options: Any,
 ) -> dict[str, Any]:
     """Run a bounded MCP/A2A/ACP smoke suite for selected CBN surfaces."""
 
-    selected_capabilities = tuple(DEFAULT_SMOKE_CAPABILITIES if capability_ids is None else capability_ids)
-    selected_workflows = tuple(DEFAULT_SMOKE_WORKFLOWS if workflow_paths is None else workflow_paths)
-    checks: list[dict[str, Any]] = []
+    request = _smoke_suite_request(args, options)
+    selected_capabilities, selected_workflows = _selected_smoke_targets(request.capability_ids, request.workflow_paths)
+    checks = _protocol_smoke_checks(
+        selected_capabilities,
+        selected_workflows,
+        extra_args=request.extra_args,
+        dry_run=request.dry_run,
+        workflow_dry_run=request.workflow_dry_run,
+        workflow_confirmed=request.workflow_confirmed,
+        include_payloads=request.include_payloads,
+    )
+    readiness = protocol_readiness_report(registry)
+    contract = workflow_bridge_contract_report(registry)
+    summary = _summary(checks)
+    return protocol_smoke_suite_report(ProtocolSmokeSuiteResult(
+        ok=_smoke_suite_ok(checks, summary, readiness, contract),
+        selected_capabilities=selected_capabilities,
+        selected_workflows=selected_workflows,
+        dry_run=request.dry_run,
+        workflow_dry_run=request.workflow_dry_run,
+        workflow_confirmed=request.workflow_confirmed,
+        include_payloads=request.include_payloads,
+        summary=summary,
+        readiness=readiness,
+        contract=contract,
+        checks=checks,
+    ))
 
+
+def _smoke_suite_request(args: tuple[Any, ...], options: dict[str, Any]) -> ProtocolSmokeSuiteRequest:
+    if len(args) > len(_SMOKE_SUITE_OPTION_NAMES):
+        raise TypeError(f"protocol_smoke_suite expected at most {len(_SMOKE_SUITE_OPTION_NAMES) + 1} arguments")
+    values = {}
+    for name, value in zip(_SMOKE_SUITE_OPTION_NAMES, args):
+        if name in options:
+            raise TypeError(f"protocol_smoke_suite got multiple values for argument '{name}'")
+        values[name] = value
+    unknown = sorted(set(options) - set(_SMOKE_SUITE_OPTION_NAMES))
+    if unknown:
+        raise TypeError(f"unknown protocol smoke suite option(s): {', '.join(unknown)}")
+    values.update(options)
+    return ProtocolSmokeSuiteRequest(**values)
+
+
+def _selected_smoke_targets(
+    capability_ids: Iterable[str] | None,
+    workflow_paths: Iterable[str] | None,
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    capabilities = tuple(DEFAULT_SMOKE_CAPABILITIES if capability_ids is None else capability_ids)
+    workflows = tuple(DEFAULT_SMOKE_WORKFLOWS if workflow_paths is None else workflow_paths)
+    return capabilities, workflows
+
+
+def _protocol_smoke_checks(
+    selected_capabilities: tuple[str, ...],
+    selected_workflows: tuple[str, ...],
+    *,
+    extra_args: Iterable[str],
+    dry_run: bool,
+    workflow_dry_run: bool,
+    workflow_confirmed: bool,
+    include_payloads: bool,
+) -> list[dict[str, Any]]:
+    return [
+        *protocol_smoke_capability_checks(
+            selected_capabilities,
+            extra_args=extra_args,
+            dry_run=dry_run,
+            include_payloads=include_payloads,
+        ),
+        *protocol_smoke_workflow_checks(
+            selected_workflows,
+            workflow_dry_run=workflow_dry_run,
+            workflow_confirmed=workflow_confirmed,
+            include_payloads=include_payloads,
+        ),
+    ]
+
+
+def _smoke_suite_ok(
+    checks: list[dict[str, Any]],
+    summary: dict[str, Any],
+    readiness: dict[str, Any],
+    contract: dict[str, Any],
+) -> bool:
+    return bool(
+        checks
+        and summary["failed_count"] == 0
+        and readiness["readiness"]["internal_bridge_ready"]
+        and contract["ok"]
+    )
+
+
+def protocol_smoke_capability_checks(
+    selected_capabilities: tuple[str, ...],
+    *,
+    extra_args: Iterable[str],
+    dry_run: bool,
+    include_payloads: bool,
+) -> list[dict[str, Any]]:
+    checks: list[dict[str, Any]] = []
     for capability_id in selected_capabilities:
         checks.extend(
             [
@@ -61,67 +189,74 @@ def protocol_smoke_suite(
                 ),
             ]
         )
+    return checks
 
+
+def protocol_smoke_workflow_checks(
+    selected_workflows: tuple[str, ...],
+    *,
+    workflow_dry_run: bool,
+    workflow_confirmed: bool,
+    include_payloads: bool,
+) -> list[dict[str, Any]]:
+    checks: list[dict[str, Any]] = []
     for workflow_path in selected_workflows:
-        checks.extend(
-            [
-                _workflow_check(
-                    "mcp",
-                    workflow_path,
-                    smoke_mcp_workflow_stdio(
-                        workflow_path,
-                        dry_run=workflow_dry_run,
-                        confirmed=workflow_confirmed,
-                    ),
-                    include_payloads=include_payloads,
-                ),
-                _workflow_check(
-                    "a2a",
-                    workflow_path,
-                    smoke_a2a_workflow_http(
-                        workflow_path,
-                        dry_run=workflow_dry_run,
-                        confirmed=workflow_confirmed,
-                    ),
-                    include_payloads=include_payloads,
-                ),
-                _workflow_check(
-                    "acp",
-                    workflow_path,
-                    smoke_acp_workflow_stdio(
-                        workflow_path,
-                        dry_run=workflow_dry_run,
-                        confirmed=workflow_confirmed,
-                    ),
-                    include_payloads=include_payloads,
-                ),
-            ]
-        )
+        checks.extend(protocol_smoke_checks_for_workflow(
+            workflow_path,
+            workflow_dry_run=workflow_dry_run,
+            workflow_confirmed=workflow_confirmed,
+            include_payloads=include_payloads,
+        ))
+    return checks
 
-    readiness = protocol_readiness_report(registry)
-    contract = workflow_bridge_contract_report(registry)
-    summary = _summary(checks)
-    ok = bool(
-        checks
-        and summary["failed_count"] == 0
-        and readiness["readiness"]["internal_bridge_ready"]
-        and contract["ok"]
-    )
 
+def protocol_smoke_checks_for_workflow(
+    workflow_path: str,
+    *,
+    workflow_dry_run: bool,
+    workflow_confirmed: bool,
+    include_payloads: bool,
+) -> list[dict[str, Any]]:
+    return [
+        _workflow_check(
+            "mcp",
+            workflow_path,
+            smoke_mcp_workflow_stdio(workflow_path, dry_run=workflow_dry_run, confirmed=workflow_confirmed),
+            include_payloads=include_payloads,
+        ),
+        _workflow_check(
+            "a2a",
+            workflow_path,
+            smoke_a2a_workflow_http(workflow_path, dry_run=workflow_dry_run, confirmed=workflow_confirmed),
+            include_payloads=include_payloads,
+        ),
+        _workflow_check(
+            "acp",
+            workflow_path,
+            smoke_acp_workflow_stdio(workflow_path, dry_run=workflow_dry_run, confirmed=workflow_confirmed),
+            include_payloads=include_payloads,
+        ),
+    ]
+
+
+def protocol_smoke_suite_report(result: ProtocolSmokeSuiteResult) -> dict[str, Any]:
+    readiness = result.readiness
+    contract = result.contract
+    checks = result.checks
     return {
-        "ok": ok,
+        "ok": result.ok,
         "apiVersion": "bridge.dev/v1alpha1",
         "kind": "ProtocolSmokeSuiteReport",
         "scope": "project",
         "wire_compatible": bool(readiness["wire_compatible"]),
         "external_protocol_boundary": readiness["readiness"]["external_protocol_boundary"],
-        "capability_ids": list(selected_capabilities),
-        "workflow_paths": list(selected_workflows),
-        "dry_run": dry_run,
-        "workflow_dry_run": workflow_dry_run,
-        "workflow_confirmed": workflow_confirmed,
-        "include_payloads": include_payloads,
-        "summary": summary,
+        "capability_ids": list(result.selected_capabilities),
+        "workflow_paths": list(result.selected_workflows),
+        "dry_run": result.dry_run,
+        "workflow_dry_run": result.workflow_dry_run,
+        "workflow_confirmed": result.workflow_confirmed,
+        "include_payloads": result.include_payloads,
+        "summary": result.summary,
         "readiness": {
             "ok": readiness["ok"],
             "internal_bridge_ready": readiness["readiness"]["internal_bridge_ready"],
@@ -141,7 +276,7 @@ def protocol_smoke_suite(
         },
         "checks": checks,
         "failures": [check for check in checks if not check["ok"]],
-        "next_steps": _next_steps(ok),
+        "next_steps": _next_steps(result.ok),
     }
 
 

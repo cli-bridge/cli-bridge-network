@@ -25,10 +25,27 @@ from cbn_adapter_agent.workflow_setup import build_workflow_setup_plan
 
 
 def main(argv: list[str] | None = None) -> int:
+    _configure_stdio()
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+    root = Path(args.root) if args.root else None
+    payload = _select_payload(args, root)
+    payload = _write_drafts_if_requested(payload, args, root)
+    if args.glm_validate and payload.get("kind") != "AdapterAgentOrchestrationTurn":
+        payload = {**payload, "llm_validation": validate_with_glm(payload)}
+
+    print(json.dumps(payload, ensure_ascii=False, indent=args.indent))
+    return _exit_code(payload)
+
+
+def _configure_stdio() -> None:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     if hasattr(sys.stderr, "reconfigure"):
         sys.stderr.reconfigure(encoding="utf-8")
+
+
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m cbn_adapter_agent")
     parser.add_argument("--profile", action="append", default=[], help="Built-in adapter profile to draft.")
     parser.add_argument("--all", action="store_true", help="Draft every built-in adapter profile.")
@@ -48,81 +65,133 @@ def main(argv: list[str] | None = None) -> int:
         default=DEFAULT_WORKFLOW_PATH,
         help="Workflow JSON path for --orchestrate. Defaults to the auth-gated first-run example.",
     )
-    parser.add_argument("--glm-validate", action="store_true", help="Validate the draft/plan with GLM using ZAI_API_KEY.")
+    parser.add_argument(
+        "--glm-validate",
+        action="store_true",
+        help="Validate drafts with GLM; orchestration uses GLM by default.",
+    )
+    parser.add_argument("--no-glm", action="store_true", help="Disable GLM for an orchestration turn.")
     parser.add_argument("--write-draft", action="store_true", help="Write draft JSON files under runtime.")
     parser.add_argument("--out", help="Draft output directory when --write-draft is used.")
     parser.add_argument("--indent", type=int, default=2)
-    args = parser.parse_args(argv)
+    return parser
 
-    root = Path(args.root) if args.root else None
-    if args.orchestrate:
-        payload = build_orchestration_turn(
-            message=args.message,
-            workflow_path=args.workflow_path,
-            root=root,
-            use_glm=args.glm_validate,
-        )
-    elif args.coordination_plan:
-        payload = build_multi_agent_coordination_plan(
-            message=args.message,
-            workflow_path=args.workflow_path,
-            profiles=tuple(args.profile) or None,
-            root=root,
-        )
-    elif args.node_bundle:
-        payload = build_adapter_agent_node_bundle(
-            message=args.message,
-            workflow_path=args.workflow_path,
-            profiles=tuple(args.profile) or None,
-            root=root,
-        )
-    elif args.tool_call_plan:
-        payload = build_agent_tool_call_plan(
-            message=args.message,
-            workflow_path=args.workflow_path,
-            root=root,
-        )
-        if args.write_loop_checkpoint:
-            payload = {**payload, "loop_checkpoint": write_agent_loop_checkpoint(payload, root=root)}
-    elif args.workflow_request_plan:
-        payload = build_agent_workflow_request_plan(
-            message=args.message,
-            workflow_path=args.workflow_path,
-            root=root,
-            dry_run=True,
-            confirmed=False,
-        )
-    elif args.workflow_setup:
-        payload = build_workflow_setup_plan(Path(args.workflow_setup), root=root)
-    elif args.workflow_init:
-        payload = build_workflow_initialization_plan(Path(args.workflow_init), root=root)
-    elif args.manifest_bootstrap:
-        payload = build_manifest_bootstrap_plan(profiles=tuple(args.profile) or None, root=root)
-    elif args.all:
-        payload = build_adapter_draft_batch(root=root)
-    else:
-        profiles = tuple(args.profile) or ("feishu",)
-        if len(profiles) == 1:
-            payload = build_adapter_draft(profiles[0], root=root)
-        else:
-            payload = build_adapter_draft_batch(profiles=profiles, root=root)
 
-    written: list[dict[str, str]] = []
-    if args.write_draft:
-        output_dir = Path(args.out) if args.out else None
-        if payload.get("kind") in {"AdapterAgentDraftBatch", "ManifestBootstrapPlan"}:
-            drafts = payload.get("drafts", [])
-        elif payload.get("kind") == "AdapterAgentDraft":
-            drafts = [payload]
-        else:
-            drafts = []
-        written = [write_adapter_draft(draft, output_dir=output_dir, root=root) for draft in drafts]
-        payload = {**payload, "written": written}
+def _select_payload(args: argparse.Namespace, root: Path | None) -> dict[str, object]:
+    handler = _select_payload_handler(args)
+    if handler:
+        return handler(args, root)
+    if args.all:
+        return build_adapter_draft_batch(root=root)
+    return _adapter_draft_payload(tuple(args.profile) or ("feishu",), root)
 
-    if args.glm_validate and payload.get("kind") != "AdapterAgentOrchestrationTurn":
-        payload = {**payload, "llm_validation": validate_with_glm(payload)}
 
-    print(json.dumps(payload, ensure_ascii=False, indent=args.indent))
+def _select_payload_handler(args: argparse.Namespace):
+    handlers = (
+        (args.orchestrate, _orchestration_payload),
+        (args.coordination_plan, _coordination_payload),
+        (args.node_bundle, _node_bundle_payload),
+        (args.tool_call_plan, _tool_call_plan_payload),
+        (args.workflow_request_plan, _workflow_request_payload),
+        (args.workflow_setup, _workflow_setup_payload),
+        (args.workflow_init, _workflow_init_payload),
+        (args.manifest_bootstrap, _manifest_bootstrap_payload),
+    )
+    for enabled, handler in handlers:
+        if enabled:
+            return handler
+    return None
+
+
+def _orchestration_payload(args: argparse.Namespace, root: Path | None) -> dict[str, object]:
+    return build_orchestration_turn(
+        message=args.message,
+        workflow_path=args.workflow_path,
+        root=root,
+        use_glm=not args.no_glm,
+    )
+
+
+def _coordination_payload(args: argparse.Namespace, root: Path | None) -> dict[str, object]:
+    return build_multi_agent_coordination_plan(
+        message=args.message,
+        workflow_path=args.workflow_path,
+        profiles=tuple(args.profile) or None,
+        root=root,
+    )
+
+
+def _node_bundle_payload(args: argparse.Namespace, root: Path | None) -> dict[str, object]:
+    return build_adapter_agent_node_bundle(
+        message=args.message,
+        workflow_path=args.workflow_path,
+        profiles=tuple(args.profile) or None,
+        root=root,
+    )
+
+
+def _tool_call_plan_payload(args: argparse.Namespace, root: Path | None) -> dict[str, object]:
+    payload = build_agent_tool_call_plan(
+        message=args.message,
+        workflow_path=args.workflow_path,
+        root=root,
+    )
+    if args.write_loop_checkpoint:
+        return {**payload, "loop_checkpoint": write_agent_loop_checkpoint(payload, root=root)}
+    return payload
+
+
+def _workflow_request_payload(args: argparse.Namespace, root: Path | None) -> dict[str, object]:
+    return build_agent_workflow_request_plan(
+        message=args.message,
+        workflow_path=args.workflow_path,
+        root=root,
+        dry_run=True,
+        confirmed=False,
+    )
+
+
+def _workflow_setup_payload(args: argparse.Namespace, root: Path | None) -> dict[str, object]:
+    return build_workflow_setup_plan(Path(args.workflow_setup), root=root)
+
+
+def _workflow_init_payload(args: argparse.Namespace, root: Path | None) -> dict[str, object]:
+    return build_workflow_initialization_plan(Path(args.workflow_init), root=root)
+
+
+def _manifest_bootstrap_payload(args: argparse.Namespace, root: Path | None) -> dict[str, object]:
+    return build_manifest_bootstrap_plan(profiles=tuple(args.profile) or None, root=root)
+
+
+def _adapter_draft_payload(profiles: tuple[str, ...], root: Path | None) -> dict[str, object]:
+    if len(profiles) == 1:
+        return build_adapter_draft(profiles[0], root=root)
+    return build_adapter_draft_batch(profiles=profiles, root=root)
+
+
+def _write_drafts_if_requested(
+    payload: dict[str, object],
+    args: argparse.Namespace,
+    root: Path | None,
+) -> dict[str, object]:
+    if not args.write_draft:
+        return payload
+
+    output_dir = Path(args.out) if args.out else None
+    written = [write_adapter_draft(draft, output_dir=output_dir, root=root) for draft in _drafts_from_payload(payload)]
+    return {**payload, "written": written}
+
+
+def _drafts_from_payload(payload: dict[str, object]) -> list[dict[str, object]]:
+    if payload.get("kind") in {"AdapterAgentDraftBatch", "ManifestBootstrapPlan"}:
+        drafts = payload.get("drafts", [])
+        return [draft for draft in drafts if isinstance(draft, dict)]
+    if payload.get("kind") == "AdapterAgentDraft":
+        return [payload]
+    return []
+
+
+def _exit_code(payload: dict[str, object]) -> int:
     if payload.get("kind") in {
         "WorkflowInitializationPlan",
         "WorkflowSetupPlan",

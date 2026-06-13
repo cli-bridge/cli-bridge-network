@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +31,21 @@ READ_ONLY_COMMAND_PREFIXES = (
 )
 
 
+@dataclass(frozen=True)
+class ToolCallSpec:
+    kind: str
+    agent_role: str
+    tool: str
+    source: dict[str, Any]
+    action: str
+    risk: str
+    initial_status: str
+    requires_user: bool
+    concurrency_safe: bool
+    argv: list[str]
+    permission_reason: str
+
+
 def build_agent_tool_call_plan(
     *,
     workflow_path: str | Path | None = None,
@@ -46,39 +62,69 @@ def build_agent_tool_call_plan(
         tool_calls=tool_calls,
         message_present=bool(message.strip()),
     )
+    summary = summarize_tool_call_plan({"tool_calls": tool_calls, "execution_batches": batches})
+    return _agent_tool_call_plan_payload(
+        target=target,
+        setup_plan=setup_plan,
+        message_present=bool(message.strip()),
+        tool_calls=tool_calls,
+        batches=batches,
+        summary=summary,
+        loop_plan=loop_plan,
+    )
+
+
+def _agent_tool_call_plan_payload(
+    *,
+    target: Path,
+    setup_plan: dict[str, Any],
+    message_present: bool,
+    tool_calls: list[dict[str, Any]],
+    batches: list[dict[str, Any]],
+    summary: dict[str, Any],
+    loop_plan: dict[str, Any],
+) -> dict[str, Any]:
     return {
         "kind": "AdapterAgentToolCallPlan",
         "apiVersion": "bridge.dev/v1alpha1",
         "ok": True,
         "workflow": setup_plan.get("workflow"),
         "workflow_path": str(target),
-        "message_present": bool(message.strip()),
-        "reference_basis": [
-            {
-                "source": "reference-learn/codex",
-                "lesson": "centralize approval, sandbox, network approval, retry, telemetry, and lifecycle events around tool calls",
-            },
-            {
-                "source": "reference-learn/claude-code-v-2.1.88",
-                "lesson": "batch only concurrency-safe tool calls, race permission hooks with prompts, and dedupe resolved tool_use ids",
-            },
-            {
-                "source": "reference-learn/codex",
-                "lesson": "separate session-scoped state from turn-scoped state and checkpoint long loops before compaction or continuation",
-            },
-        ],
+        "message_present": message_present,
+        "reference_basis": _reference_basis(),
         "tool_call_policy": _tool_call_policy(),
         "lifecycle_events": _lifecycle_events(),
         "hook_points": _hook_points(),
-        "duplicate_guard": {
-            "tracks": "tool_use_id",
-            "window": 1000,
-            "behavior": "ignore duplicate completion/control responses after the first terminal result",
-        },
+        "duplicate_guard": _duplicate_guard(),
         "tool_calls": tool_calls,
         "execution_batches": batches,
-        "summary": summarize_tool_call_plan({"tool_calls": tool_calls, "execution_batches": batches}),
+        "summary": summary,
         "long_running_loop": loop_plan,
+    }
+
+
+def _reference_basis() -> list[dict[str, str]]:
+    return [
+        {
+            "source": "reference-learn/codex",
+            "lesson": "centralize approval, sandbox, network approval, retry, telemetry, and lifecycle events around tool calls",
+        },
+        {
+            "source": "reference-learn/claude-code-v-2.1.88",
+            "lesson": "batch only concurrency-safe tool calls, race permission hooks with prompts, and dedupe resolved tool_use ids",
+        },
+        {
+            "source": "reference-learn/codex",
+            "lesson": "separate session-scoped state from turn-scoped state and checkpoint long loops before compaction or continuation",
+        },
+    ]
+
+
+def _duplicate_guard() -> dict[str, Any]:
+    return {
+        "tracks": "tool_use_id",
+        "window": 1000,
+        "behavior": "ignore duplicate completion/control responses after the first terminal result",
     }
 
 
@@ -141,50 +187,66 @@ def build_agent_loop_plan(
         "loop_id": loop_id,
         "status": "waiting_on_setup" if not workflow_setup.get("ok") else "ready_to_run",
         "message_present": message_present,
-        "session_scoped_state": {
-            "workflow_id": workflow_setup.get("workflow", {}).get("workflow_id"),
-            "agent_roles": [
-                "manifest-bootstrap-agent",
-                "workflow-setup-agent",
-                "orchestration-coordinator-agent",
-                "verification-agent",
-            ],
-            "resolved_tool_use_id_window": 1000,
-            "transport_fallback_state": "session-scoped",
-            "approval_state": "must persist across setup resume and workflow retry",
-        },
-        "turn_scoped_state": {
-            "redacted_user_message": "turn-scoped",
-            "tool_call_batches": "turn-scoped",
-            "hook_results": "turn-scoped unless persisted by policy",
-            "permission_prompt_state": "turn-scoped",
-        },
+        "session_scoped_state": _session_scoped_state(workflow_setup),
+        "turn_scoped_state": _turn_scoped_state(),
         "checkpoints": _loop_checkpoints(workflow_setup, tool_calls),
-        "continuation_policy": {
-            "resume_modes": [
-                "manual_resume_after_setup",
-                "rerun_after_approval",
-                "rerun_after_fix",
-                "ready_to_run",
-            ],
-            "stall_detection": "record same blocking reason across turns before declaring blocked",
-            "completion_gate": "run verification-agent checklist and inspect current evidence before marking complete",
-        },
-        "compaction_policy": {
-            "trigger": [
-                "large orchestration context",
-                "long setup session",
-                "multiple failed retries with repeated evidence",
-            ],
-            "must_preserve": [
-                "workflow path and workflow id",
-                "agent role sequence",
-                "pending setup guides",
-                "pending tool_use ids",
-                "approval and permission state",
-                "last checkpoint and next action",
-            ],
-        },
+        "continuation_policy": _continuation_policy(),
+        "compaction_policy": _compaction_policy(),
+    }
+
+
+def _session_scoped_state(workflow_setup: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "workflow_id": workflow_setup.get("workflow", {}).get("workflow_id"),
+        "agent_roles": [
+            "manifest-bootstrap-agent",
+            "workflow-setup-agent",
+            "orchestration-coordinator-agent",
+            "verification-agent",
+        ],
+        "resolved_tool_use_id_window": 1000,
+        "transport_fallback_state": "session-scoped",
+        "approval_state": "must persist across setup resume and workflow retry",
+    }
+
+
+def _turn_scoped_state() -> dict[str, str]:
+    return {
+        "redacted_user_message": "turn-scoped",
+        "tool_call_batches": "turn-scoped",
+        "hook_results": "turn-scoped unless persisted by policy",
+        "permission_prompt_state": "turn-scoped",
+    }
+
+
+def _continuation_policy() -> dict[str, Any]:
+    return {
+        "resume_modes": [
+            "manual_resume_after_setup",
+            "rerun_after_approval",
+            "rerun_after_fix",
+            "ready_to_run",
+        ],
+        "stall_detection": "record same blocking reason across turns before declaring blocked",
+        "completion_gate": "run verification-agent checklist and inspect current evidence before marking complete",
+    }
+
+
+def _compaction_policy() -> dict[str, list[str]]:
+    return {
+        "trigger": [
+            "large orchestration context",
+            "long setup session",
+            "multiple failed retries with repeated evidence",
+        ],
+        "must_preserve": [
+            "workflow path and workflow id",
+            "agent role sequence",
+            "pending setup guides",
+            "pending tool_use ids",
+            "approval and permission state",
+            "last checkpoint and next action",
+        ],
     }
 
 
@@ -206,109 +268,119 @@ def write_agent_loop_checkpoint(
 def _setup_tool_calls(setup_plan: dict[str, Any]) -> list[dict[str, Any]]:
     calls: list[dict[str, Any]] = []
     for guide in setup_plan.get("setup_guides", []):
-        setup_id = str(guide.get("setup_id"))
-        profile = str(guide.get("profile") or "unknown")
-        for secret in guide.get("secret_inputs", []):
-            name = str(secret.get("name"))
-            calls.append(
-                _tool_call(
-                    kind="setup-secret",
-                    agent_role="workflow-setup-agent",
-                    tool="AdapterAgentToolUse.store-secret",
-                    source={"setup_id": setup_id, "profile": profile, "secret_name": name},
-                    action="store-secret",
-                    risk="write-workspace",
-                    initial_status="waiting_user_secret",
-                    requires_user=True,
-                    concurrency_safe=False,
-                    argv=[],
-                    permission_reason="secret value must come through dashboard secret field or secret store, never chat",
-                )
-            )
-        for command in guide.get("verification_commands", []):
-            command_id = str(command.get("id"))
-            is_start = command_id in {"login", "login-headless"}
-            is_safe = _is_read_only_command(command_id)
-            calls.append(
-                _tool_call(
-                    kind="setup-command",
-                    agent_role="workflow-setup-agent",
-                    tool="AdapterAgentToolUse.run-setup-tool",
-                    source={"setup_id": setup_id, "profile": profile, "command_id": command_id},
-                    action=command_id,
-                    risk="external-network" if is_start else "read",
-                    initial_status="waiting_user_action" if is_start else "queued",
-                    requires_user=is_start,
-                    concurrency_safe=is_safe and not is_start,
-                    argv=[str(part) for part in command.get("argv", [])],
-                    permission_reason=(
-                        "interactive login starts a user-controlled external auth flow"
-                        if is_start
-                        else "verification command is read-only and can run after setup inputs exist"
-                    ),
-                )
-            )
+        setup_id, profile = _setup_guide_identity(guide)
+        calls.extend(_setup_secret_tool_calls(setup_id, profile, guide.get("secret_inputs", [])))
+        calls.extend(_setup_command_tool_calls(setup_id, profile, guide.get("verification_commands", [])))
     return calls
+
+
+def _setup_guide_identity(guide: dict[str, Any]) -> tuple[str, str]:
+    return str(guide.get("setup_id")), str(guide.get("profile") or "unknown")
+
+
+def _setup_secret_tool_calls(setup_id: str, profile: str, secrets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [_tool_call(_setup_secret_tool_call_spec(setup_id, profile, secret)) for secret in secrets]
+
+
+def _setup_secret_tool_call_spec(setup_id: str, profile: str, secret: dict[str, Any]) -> ToolCallSpec:
+    return ToolCallSpec(
+        kind="setup-secret",
+        agent_role="workflow-setup-agent",
+        tool="AdapterAgentToolUse.store-secret",
+        source={"setup_id": setup_id, "profile": profile, "secret_name": str(secret.get("name"))},
+        action="store-secret",
+        risk="write-workspace",
+        initial_status="waiting_user_secret",
+        requires_user=True,
+        concurrency_safe=False,
+        argv=[],
+        permission_reason="secret value must come through dashboard secret field or secret store, never chat",
+    )
+
+
+def _setup_command_tool_calls(setup_id: str, profile: str, commands: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [_tool_call(_setup_command_tool_call_spec(setup_id, profile, command)) for command in commands]
+
+
+def _setup_command_tool_call_spec(setup_id: str, profile: str, command: dict[str, Any]) -> ToolCallSpec:
+    command_id = str(command.get("id"))
+    is_start = command_id in {"login", "login-headless"}
+    is_safe = _is_read_only_command(command_id)
+    return ToolCallSpec(
+        kind="setup-command",
+        agent_role="workflow-setup-agent",
+        tool="AdapterAgentToolUse.run-setup-tool",
+        source={"setup_id": setup_id, "profile": profile, "command_id": command_id},
+        action=command_id,
+        risk="external-network" if is_start else "read",
+        initial_status="waiting_user_action" if is_start else "queued",
+        requires_user=is_start,
+        concurrency_safe=is_safe and not is_start,
+        argv=[str(part) for part in command.get("argv", [])],
+        permission_reason=_setup_command_permission_reason(is_start),
+    )
+
+
+def _setup_command_permission_reason(is_start: bool) -> str:
+    if is_start:
+        return "interactive login starts a user-controlled external auth flow"
+    return "verification command is read-only and can run after setup inputs exist"
 
 
 def _workflow_tool_calls(setup_plan: dict[str, Any]) -> list[dict[str, Any]]:
-    calls: list[dict[str, Any]] = []
-    for task in setup_plan.get("tasks", []):
-        task_id = str(task.get("task_id"))
-        status = str(task.get("status"))
-        risk = str(task.get("risk") or "read")
-        calls.append(
-            _tool_call(
-                kind="workflow-capability",
-                agent_role="orchestration-coordinator-agent",
-                tool="cbn.workflow.task",
-                source={"task_id": task_id, "capability_id": task.get("uses")},
-                action=str(task.get("uses")),
-                risk=risk,
-                initial_status="blocked_by_setup" if status != "ready" else "queued",
-                requires_user=bool(task.get("requires_confirmation")) or status != "ready",
-                concurrency_safe=False,
-                argv=[],
-                permission_reason=(
-                    "workflow task waits for setup/runtime inputs before execution"
-                    if status != "ready"
-                    else "workflow DAG order is authoritative; run through WorkflowRunner"
-                ),
-            )
-        )
-    return calls
+    return [_tool_call(_workflow_tool_call_spec(task)) for task in setup_plan.get("tasks", [])]
 
 
-def _tool_call(
-    *,
-    kind: str,
-    agent_role: str,
-    tool: str,
-    source: dict[str, Any],
-    action: str,
-    risk: str,
-    initial_status: str,
-    requires_user: bool,
-    concurrency_safe: bool,
-    argv: list[str],
-    permission_reason: str,
-) -> dict[str, Any]:
-    call_id = _stable_id(kind, agent_role, tool, action, json.dumps(source, ensure_ascii=False, sort_keys=True))
-    tool_use_id = f"{agent_role}:{call_id}"
+def _workflow_tool_call_spec(task: dict[str, Any]) -> ToolCallSpec:
+    status = str(task.get("status"))
+    return ToolCallSpec(
+        kind="workflow-capability",
+        agent_role="orchestration-coordinator-agent",
+        tool="cbn.workflow.task",
+        source={"task_id": str(task.get("task_id")), "capability_id": task.get("uses")},
+        action=str(task.get("uses")),
+        risk=str(task.get("risk") or "read"),
+        initial_status="blocked_by_setup" if status != "ready" else "queued",
+        requires_user=bool(task.get("requires_confirmation")) or status != "ready",
+        concurrency_safe=False,
+        argv=[],
+        permission_reason=_workflow_permission_reason(status),
+    )
+
+
+def _workflow_permission_reason(status: str) -> str:
+    if status != "ready":
+        return "workflow task waits for setup/runtime inputs before execution"
+    return "workflow DAG order is authoritative; run through WorkflowRunner"
+
+
+def _tool_call(spec: ToolCallSpec) -> dict[str, Any]:
+    call_id = _stable_id(
+        spec.kind,
+        spec.agent_role,
+        spec.tool,
+        spec.action,
+        json.dumps(spec.source, ensure_ascii=False, sort_keys=True),
+    )
+    tool_use_id = f"{spec.agent_role}:{call_id}"
     return {
         "call_id": call_id,
         "tool_use_id": tool_use_id,
-        "kind": kind,
-        "agent_role": agent_role,
-        "tool": tool,
-        "source": source,
-        "action": action,
-        "argv": argv,
-        "risk": risk,
-        "initial_status": initial_status,
-        "requires_user": requires_user,
-        "concurrency_safe": concurrency_safe,
-        "permission_flow": _permission_flow(risk=risk, requires_user=requires_user, reason=permission_reason),
+        "kind": spec.kind,
+        "agent_role": spec.agent_role,
+        "tool": spec.tool,
+        "source": spec.source,
+        "action": spec.action,
+        "argv": spec.argv,
+        "risk": spec.risk,
+        "initial_status": spec.initial_status,
+        "requires_user": spec.requires_user,
+        "concurrency_safe": spec.concurrency_safe,
+        "permission_flow": _permission_flow(
+            risk=spec.risk,
+            requires_user=spec.requires_user,
+            reason=spec.permission_reason,
+        ),
         "lifecycle": _lifecycle_events(),
         "hook_points": _hook_points(),
     }

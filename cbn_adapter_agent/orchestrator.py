@@ -32,19 +32,8 @@ def build_orchestration_turn(
     plan_context = build_orchestration_context(message=message, workflow_path=workflow_path, root=root)
     target = plan_context["workflow_path"]
     initialization = plan_context["workflow_initialization"]
-    llm = (
-        complete_with_glm(plan_context, system_prompt=ORCHESTRATION_SYSTEM_PROMPT)
-        if use_glm
-        else {
-            "kind": "AdapterAgentGLMTurn",
-            "ok": False,
-            "skipped": True,
-            "reason": "GLM disabled by request",
-        }
-    )
-    llm_content = llm.get("content") if llm.get("ok") and llm.get("content") else ""
-    llm_content_accepted = llm_content_covers_fallbacks(str(llm_content), plan_context["auth_fallbacks"])
-    assistant_message = str(llm_content) if llm_content_accepted else fallback_message(plan_context)
+    llm = orchestration_llm_turn(plan_context, use_glm)
+    assistant = orchestration_assistant_message(plan_context, llm)
     return {
         "kind": "AdapterAgentOrchestrationTurn",
         "apiVersion": "bridge.dev/v1alpha1",
@@ -52,15 +41,35 @@ def build_orchestration_turn(
         "status": initialization["status"],
         "workflow_path": str(target),
         "message_redacted": plan_context["message_redacted"],
-        "assistant_message": assistant_message,
+        "assistant_message": assistant["message"],
         "recommended_next_action": plan_context["recommended_next_action"],
         "coordination_plan": plan_context["coordination_plan"],
         "workflow_initialization": initialization,
         "cli_routes": plan_context["cli_routes"],
         "auth_fallbacks": plan_context["auth_fallbacks"],
         "continuation": initialization["continuation"],
-        "glm_content_accepted": llm_content_accepted,
+        "glm_content_accepted": assistant["glm_content_accepted"],
         "glm": llm,
+    }
+
+
+def orchestration_llm_turn(plan_context: dict[str, Any], use_glm: bool) -> dict[str, Any]:
+    if use_glm:
+        return complete_with_glm(plan_context, system_prompt=ORCHESTRATION_SYSTEM_PROMPT)
+    return {
+        "kind": "AdapterAgentGLMTurn",
+        "ok": False,
+        "skipped": True,
+        "reason": "GLM disabled by request",
+    }
+
+
+def orchestration_assistant_message(plan_context: dict[str, Any], llm: dict[str, Any]) -> dict[str, Any]:
+    llm_content = llm.get("content") if llm.get("ok") and llm.get("content") else ""
+    accepted = llm_content_covers_fallbacks(str(llm_content), plan_context["auth_fallbacks"])
+    return {
+        "message": str(llm_content) if accepted else fallback_message(plan_context),
+        "glm_content_accepted": accepted,
     }
 
 
@@ -174,21 +183,29 @@ def _redact_secrets(value: str) -> str:
 def llm_content_covers_fallbacks(content: str, fallbacks: list[dict[str, Any]]) -> bool:
     if not content:
         return False
-    required_terms: set[str] = set()
-    for fallback in fallbacks:
-        setup = fallback.get("setup") or {}
-        profile = str(setup.get("profile") or "").casefold()
-        setup_id = str(setup.get("setup_id") or "").casefold()
-        if profile:
-            required_terms.add(profile)
-        if "obsidian" in setup_id:
-            required_terms.add("obsidian")
-        if "jimeng" in setup_id:
-            required_terms.add("jimeng")
+    required_terms = fallback_required_terms(fallbacks)
     if not required_terms:
         return True
     lowered = content.casefold()
     return all(term in lowered for term in required_terms)
+
+
+def fallback_required_terms(fallbacks: list[dict[str, Any]]) -> set[str]:
+    required_terms: set[str] = set()
+    for fallback in fallbacks:
+        required_terms.update(fallback_setup_terms(fallback.get("setup") or {}))
+    return required_terms
+
+
+def fallback_setup_terms(setup: dict[str, Any]) -> set[str]:
+    profile = str(setup.get("profile") or "").casefold()
+    setup_id = str(setup.get("setup_id") or "").casefold()
+    terms = {profile} if profile else set()
+    if "obsidian" in setup_id:
+        terms.add("obsidian")
+    if "jimeng" in setup_id:
+        terms.add("jimeng")
+    return terms
 
 
 ORCHESTRATION_SYSTEM_PROMPT = """

@@ -23,16 +23,12 @@ def build_multi_agent_coordination_plan(
     """Compose manifest bootstrap, workflow setup, orchestration, and verification roles."""
 
     target = Path(workflow_path) if workflow_path is not None else Path("workflows/auth-gated-first-run.example.json")
-    setup_plan = workflow_setup or build_workflow_setup_plan(target, root=root)
-    profile_scope = profiles or _profiles_from_workflow_setup(setup_plan) or tuple(BUILT_IN_PROFILES)
-    manifest_plan = build_manifest_bootstrap_plan(
-        profiles=profile_scope,
-        root=root,
-        include_drafts=False,
-    )
-    tool_call_plan = build_agent_tool_call_plan(
+    setup_plan = _setup_plan(target, root, workflow_setup)
+    profile_scope = _profile_scope(profiles, setup_plan)
+    manifest_plan = _manifest_plan(profile_scope, root)
+    tool_call_plan = _tool_call_plan(
         message=message,
-        workflow_path=target,
+        target=target,
         root=root,
         workflow_setup=setup_plan,
     )
@@ -49,38 +45,81 @@ def build_multi_agent_coordination_plan(
         "handoffs": _handoffs(setup_plan),
         "tool_call_plan_summary": summarize_tool_call_plan(tool_call_plan),
         "long_running_loop": tool_call_plan["long_running_loop"],
-        "parallelization": [
-            {
-                "group_id": "read-only-bootstrap",
-                "agents": ["manifest-bootstrap-agent"],
-                "mode": "parallel-safe-by-profile",
-                "reason": "profile evidence, schema validation, and fixture summaries are read-only",
-            },
-            {
-                "group_id": "setup-and-routing",
-                "agents": ["workflow-setup-agent", "orchestration-coordinator-agent"],
-                "mode": "serial-after-manifest-acceptance",
-                "reason": "workflow setup depends on accepted manifests and coordinator depends on setup status",
-            },
-            {
-                "group_id": "verification",
-                "agents": ["verification-agent"],
-                "mode": "read-only-after-plan",
-                "reason": "verification reports evidence and must not mark blocked setup as ready",
-            },
-        ],
-        "reference_learnings": [
-            {
-                "source": "reference-learn/codex",
-                "applied_as": "role catalog, explicit agent sequence, inherited policy boundary, structured lifecycle payloads",
-            },
-            {
-                "source": "reference-learn/claude-code-v-2.1.88",
-                "applied_as": "tool-bounded built-in agents, read-only setup/planning roles, verification evidence contract",
-            },
-        ],
+        "parallelization": _parallelization(),
+        "reference_learnings": _reference_learnings(),
         "next_actions": _next_actions(manifest_plan, setup_plan),
     }
+
+
+def _setup_plan(
+    target: Path,
+    root: Path | None,
+    workflow_setup: dict[str, Any] | None,
+) -> dict[str, Any]:
+    return workflow_setup or build_workflow_setup_plan(target, root=root)
+
+
+def _profile_scope(profiles: tuple[str, ...] | None, setup_plan: dict[str, Any]) -> tuple[str, ...]:
+    return profiles or _profiles_from_workflow_setup(setup_plan) or tuple(BUILT_IN_PROFILES)
+
+
+def _manifest_plan(profile_scope: tuple[str, ...], root: Path | None) -> dict[str, Any]:
+    return build_manifest_bootstrap_plan(
+        profiles=profile_scope,
+        root=root,
+        include_drafts=False,
+    )
+
+
+def _tool_call_plan(
+    *,
+    message: str,
+    target: Path,
+    root: Path | None,
+    workflow_setup: dict[str, Any],
+) -> dict[str, Any]:
+    return build_agent_tool_call_plan(
+        message=message,
+        workflow_path=target,
+        root=root,
+        workflow_setup=workflow_setup,
+    )
+
+
+def _parallelization() -> list[dict[str, Any]]:
+    return [
+        {
+            "group_id": "read-only-bootstrap",
+            "agents": ["manifest-bootstrap-agent"],
+            "mode": "parallel-safe-by-profile",
+            "reason": "profile evidence, schema validation, and fixture summaries are read-only",
+        },
+        {
+            "group_id": "setup-and-routing",
+            "agents": ["workflow-setup-agent", "orchestration-coordinator-agent"],
+            "mode": "serial-after-manifest-acceptance",
+            "reason": "workflow setup depends on accepted manifests and coordinator depends on setup status",
+        },
+        {
+            "group_id": "verification",
+            "agents": ["verification-agent"],
+            "mode": "read-only-after-plan",
+            "reason": "verification reports evidence and must not mark blocked setup as ready",
+        },
+    ]
+
+
+def _reference_learnings() -> list[dict[str, str]]:
+    return [
+        {
+            "source": "reference-learn/codex",
+            "applied_as": "role catalog, explicit agent sequence, inherited policy boundary, structured lifecycle payloads",
+        },
+        {
+            "source": "reference-learn/claude-code-v-2.1.88",
+            "applied_as": "tool-bounded built-in agents, read-only setup/planning roles, verification evidence contract",
+        },
+    ]
 
 
 def _agent_steps(
@@ -89,46 +128,63 @@ def _agent_steps(
     workflow_setup: dict[str, Any],
 ) -> list[dict[str, Any]]:
     return [
-        {
-            **get_agent_role("manifest-bootstrap-agent"),
-            "sequence": DEFAULT_AGENT_SEQUENCE.index("manifest-bootstrap-agent") + 1,
-            "status": "ready" if manifest_plan.get("ok") else "needs_manifest_attention",
-            "output_kind": "ManifestBootstrapPlan",
-            "summary": manifest_plan.get("summary"),
-        },
-        {
-            **get_agent_role("workflow-setup-agent"),
-            "sequence": DEFAULT_AGENT_SEQUENCE.index("workflow-setup-agent") + 1,
-            "status": workflow_setup.get("status"),
-            "output_kind": workflow_setup.get("kind"),
-            "summary": workflow_setup.get("summary"),
-        },
-        {
-            **get_agent_role("orchestration-coordinator-agent"),
-            "sequence": DEFAULT_AGENT_SEQUENCE.index("orchestration-coordinator-agent") + 1,
-            "status": _coordinator_status(workflow_setup),
-            "output_kind": "AdapterAgentOrchestrationTurn",
-            "summary": {
-                "recommended_next_action": _recommended_next_action(workflow_setup),
-                "setup_blocking": bool((workflow_setup.get("summary") or {}).get("blocking_task_count")),
-                "input_blocking": bool((workflow_setup.get("summary") or {}).get("input_blocking_task_count")),
-            },
-        },
-        {
-            **get_agent_role("verification-agent"),
-            "sequence": DEFAULT_AGENT_SEQUENCE.index("verification-agent") + 1,
-            "status": "pending",
-            "output_kind": "VerificationChecklist",
-            "summary": {
-                "checks": [
-                    "manifest schema validation",
-                    "parser fixture coverage",
-                    "workflow setup gates",
-                    "orchestration redaction and fallback coverage",
-                ]
-            },
-        },
+        _manifest_bootstrap_step(manifest_plan),
+        _workflow_setup_step(workflow_setup),
+        _orchestration_step(workflow_setup),
+        _verification_step(),
     ]
+
+
+def _manifest_bootstrap_step(manifest_plan: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **get_agent_role("manifest-bootstrap-agent"),
+        "sequence": DEFAULT_AGENT_SEQUENCE.index("manifest-bootstrap-agent") + 1,
+        "status": "ready" if manifest_plan.get("ok") else "needs_manifest_attention",
+        "output_kind": "ManifestBootstrapPlan",
+        "summary": manifest_plan.get("summary"),
+    }
+
+
+def _workflow_setup_step(workflow_setup: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **get_agent_role("workflow-setup-agent"),
+        "sequence": DEFAULT_AGENT_SEQUENCE.index("workflow-setup-agent") + 1,
+        "status": workflow_setup.get("status"),
+        "output_kind": workflow_setup.get("kind"),
+        "summary": workflow_setup.get("summary"),
+    }
+
+
+def _orchestration_step(workflow_setup: dict[str, Any]) -> dict[str, Any]:
+    summary = workflow_setup.get("summary") or {}
+    return {
+        **get_agent_role("orchestration-coordinator-agent"),
+        "sequence": DEFAULT_AGENT_SEQUENCE.index("orchestration-coordinator-agent") + 1,
+        "status": _coordinator_status(workflow_setup),
+        "output_kind": "AdapterAgentOrchestrationTurn",
+        "summary": {
+            "recommended_next_action": _recommended_next_action(workflow_setup),
+            "setup_blocking": bool(summary.get("blocking_task_count")),
+            "input_blocking": bool(summary.get("input_blocking_task_count")),
+        },
+    }
+
+
+def _verification_step() -> dict[str, Any]:
+    return {
+        **get_agent_role("verification-agent"),
+        "sequence": DEFAULT_AGENT_SEQUENCE.index("verification-agent") + 1,
+        "status": "pending",
+        "output_kind": "VerificationChecklist",
+        "summary": {
+            "checks": [
+                "manifest schema validation",
+                "parser fixture coverage",
+                "workflow setup gates",
+                "orchestration redaction and fallback coverage",
+            ]
+        },
+    }
 
 
 def _handoffs(workflow_setup: dict[str, Any]) -> list[dict[str, Any]]:

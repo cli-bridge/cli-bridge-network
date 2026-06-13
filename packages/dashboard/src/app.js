@@ -497,7 +497,7 @@ async function sendAdapterAgent() {
   const command = [
     "python -m cbn_adapter_agent --orchestrate",
     `--workflow-path ${workflowPath}`,
-    adapterUseGlm.checked ? "--glm-validate" : null,
+    adapterUseGlm.checked ? "--glm-validate" : "--no-glm",
   ].filter(Boolean).join(" ");
   stageCommand(command, "Adapter Agent orchestration turn");
   adapterAgentMessages.textContent = "";

@@ -28,22 +28,30 @@ EXPECTED_PART_MODULES = (
 def module_split_report(*, facade_path: Path | None = None) -> dict[str, Any]:
     """Return a machine-readable report for the CLI-Anything facade split."""
 
-    package_name = __name__
-    parts: list[dict[str, Any]] = []
-    for module_name in EXPECTED_PART_MODULES:
-        spec = importlib.util.find_spec(f"{package_name}.{module_name}")
-        path = Path(spec.origin) if spec and spec.origin else None
-        parts.append(
-            {
-                "id": module_name,
-                "module": f"{package_name}.{module_name}",
-                "present": path is not None and path.exists(),
-                "path": str(path) if path else None,
-            }
-        )
-
+    parts = [_part_module_status(module_name) for module_name in EXPECTED_PART_MODULES]
     facade_lines = _line_count(facade_path) if facade_path else None
     present_count = sum(1 for part in parts if part["present"])
+    return _module_split_payload(facade_path, facade_lines, parts, present_count)
+
+
+def _part_module_status(module_name: str) -> dict[str, Any]:
+    qualified_name = f"{__name__}.{module_name}"
+    spec = importlib.util.find_spec(qualified_name)
+    path = Path(spec.origin) if spec and spec.origin else None
+    return {
+        "id": module_name,
+        "module": qualified_name,
+        "present": path is not None and path.exists(),
+        "path": str(path) if path else None,
+    }
+
+
+def _module_split_payload(
+    facade_path: Path | None,
+    facade_lines: int | None,
+    parts: list[dict[str, Any]],
+    present_count: int,
+) -> dict[str, Any]:
     return {
         "kind": "CliAnythingModuleSplitReport",
         "status": "ready" if present_count == len(EXPECTED_PART_MODULES) else "incomplete",

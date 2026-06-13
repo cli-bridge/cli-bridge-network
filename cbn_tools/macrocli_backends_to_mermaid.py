@@ -67,9 +67,13 @@ def _load_payload(value: str) -> dict[str, Any]:
 
 
 def _extract_backends(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    return [_backend_from_item(item) for item in _backend_items(payload)]
+
+
+def _backend_items(payload: dict[str, Any]) -> list[Any]:
     raw_backends = payload.get("backends", payload)
     if isinstance(raw_backends, dict):
-        raw_backends = [
+        return [
             {
                 "id": key,
                 "name": value.get("name", key),
@@ -79,33 +83,52 @@ def _extract_backends(payload: dict[str, Any]) -> list[dict[str, Any]]:
             for key, value in raw_backends.items()
             if isinstance(value, dict)
         ]
-    if not isinstance(raw_backends, list):
-        raise ValueError("MacroCLI payload must include a backends list")
-    backends: list[dict[str, Any]] = []
-    for item in raw_backends:
-        if not isinstance(item, dict):
-            raise ValueError("MacroCLI backend item must be an object")
-        backend_id = item.get("id")
-        name = item.get("name")
-        priority = item.get("priority")
-        available = item.get("available")
-        if not isinstance(backend_id, str) or not backend_id:
-            raise ValueError("MacroCLI backend id must be a non-empty string")
-        if not isinstance(name, str) or not name:
-            raise ValueError(f"MacroCLI backend {backend_id} name must be a non-empty string")
-        if not isinstance(priority, int) or isinstance(priority, bool):
-            raise ValueError(f"MacroCLI backend {backend_id} priority must be an integer")
-        if not isinstance(available, bool):
-            raise ValueError(f"MacroCLI backend {backend_id} available must be a boolean")
-        backends.append(
-            {
-                "id": backend_id,
-                "name": name,
-                "priority": priority,
-                "available": available,
-            }
-        )
-    return backends
+    if isinstance(raw_backends, list):
+        return raw_backends
+    raise ValueError("MacroCLI payload must include a backends list")
+
+
+def _backend_from_item(item: Any) -> dict[str, Any]:
+    if not isinstance(item, dict):
+        raise ValueError("MacroCLI backend item must be an object")
+    backend_id = _backend_id(item)
+    name = _backend_name(item, backend_id)
+    priority = _backend_priority(item, backend_id)
+    available = _backend_available(item, backend_id)
+    return {
+        "id": backend_id,
+        "name": name,
+        "priority": priority,
+        "available": available,
+    }
+
+
+def _backend_id(item: dict[str, Any]) -> str:
+    backend_id = item.get("id")
+    if isinstance(backend_id, str) and backend_id:
+        return backend_id
+    raise ValueError("MacroCLI backend id must be a non-empty string")
+
+
+def _backend_name(item: dict[str, Any], backend_id: str) -> str:
+    name = item.get("name")
+    if isinstance(name, str) and name:
+        return name
+    raise ValueError(f"MacroCLI backend {backend_id} name must be a non-empty string")
+
+
+def _backend_priority(item: dict[str, Any], backend_id: str) -> int:
+    priority = item.get("priority")
+    if isinstance(priority, int) and not isinstance(priority, bool):
+        return priority
+    raise ValueError(f"MacroCLI backend {backend_id} priority must be an integer")
+
+
+def _backend_available(item: dict[str, Any], backend_id: str) -> bool:
+    available = item.get("available")
+    if isinstance(available, bool):
+        return available
+    raise ValueError(f"MacroCLI backend {backend_id} available must be a boolean")
 
 
 def _node_id(value: str) -> str:

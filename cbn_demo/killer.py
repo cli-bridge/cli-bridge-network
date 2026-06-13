@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -25,96 +26,256 @@ KILLER_CAPABILITIES = (
 )
 
 
+@dataclass(frozen=True)
+class KillerDemoRequest:
+    workflow_path: str
+    run: bool
+    dry_run: bool
+    confirmed: bool
+    include_payloads: bool
+    run_smoke_suite: bool
+    event_tail: list[dict[str, Any]]
+    audit_tail: list[dict[str, Any]]
+    artifact_list: list[dict[str, Any]]
+
+
+_KILLER_OPTION_NAMES = (
+    "workflow_path",
+    "run",
+    "dry_run",
+    "confirmed",
+    "include_payloads",
+    "run_smoke_suite",
+    "event_tail",
+    "audit_tail",
+    "artifact_list",
+)
+
+
 def killer_demo_report(
     registry: ManifestRegistry,
     workflow_runner: WorkflowRunner | None = None,
-    workflow_path: str = DEFAULT_KILLER_WORKFLOW_PATH,
-    run: bool = True,
-    dry_run: bool = True,
-    confirmed: bool = False,
-    include_payloads: bool = False,
-    run_smoke_suite: bool = True,
-    event_tail: list[dict[str, Any]] | None = None,
-    audit_tail: list[dict[str, Any]] | None = None,
-    artifact_list: list[dict[str, Any]] | None = None,
+    *args: Any,
+    **options: Any,
 ) -> dict[str, Any]:
     """Return one product-facing evidence bundle for the MVP killer demo."""
 
-    manifests = _manifest_evidence(registry)
-    workflow = inspect_workflow(Path(workflow_path), registry=registry)
-    contract = workflow_bridge_contract_report(registry, workflow_path=workflow_path)
+    request = killer_demo_request(args, options)
+    bundle = _killer_evidence_bundle(
+        registry=registry,
+        workflow_runner=workflow_runner,
+        request=request,
+    )
+    return _killer_report_payload(request, bundle)
+
+
+def killer_demo_request(args: tuple[Any, ...], options: dict[str, Any]) -> KillerDemoRequest:
+    values = _killer_demo_options(args, options)
+    return KillerDemoRequest(
+        workflow_path=values["workflow_path"],
+        run=values["run"],
+        dry_run=values["dry_run"],
+        confirmed=values["confirmed"],
+        include_payloads=values["include_payloads"],
+        run_smoke_suite=values["run_smoke_suite"],
+        event_tail=values["event_tail"] or [],
+        audit_tail=values["audit_tail"] or [],
+        artifact_list=values["artifact_list"] or [],
+    )
+
+
+def _killer_demo_options(args: tuple[Any, ...], options: dict[str, Any]) -> dict[str, Any]:
+    if len(args) > len(_KILLER_OPTION_NAMES):
+        raise TypeError(f"killer_demo_report expected at most {len(_KILLER_OPTION_NAMES) + 2} arguments")
+    values = _default_killer_demo_options()
+    for name, value in zip(_KILLER_OPTION_NAMES, args):
+        if name in options:
+            raise TypeError(f"killer_demo_report got multiple values for argument '{name}'")
+        values[name] = value
+    unknown = sorted(set(options) - set(_KILLER_OPTION_NAMES))
+    if unknown:
+        raise TypeError(f"unknown killer demo option(s): {', '.join(unknown)}")
+    values.update(options)
+    return values
+
+
+def _default_killer_demo_options() -> dict[str, Any]:
+    return {
+        "workflow_path": DEFAULT_KILLER_WORKFLOW_PATH,
+        "run": True,
+        "dry_run": True,
+        "confirmed": False,
+        "include_payloads": False,
+        "run_smoke_suite": True,
+        "event_tail": None,
+        "audit_tail": None,
+        "artifact_list": None,
+    }
+
+
+def _killer_evidence_bundle(
+    *,
+    registry: ManifestRegistry,
+    workflow_runner: WorkflowRunner | None,
+    request: KillerDemoRequest,
+) -> dict[str, Any]:
+    base = _killer_base_evidence(registry, request.workflow_path)
+    runtime = _killer_runtime_bundle(
+        registry=registry,
+        workflow_runner=workflow_runner,
+        workflow=base["workflow"],
+        request=request,
+    )
+    stages = _killer_stages(base, runtime)
+    summary = _killer_summary(stages, base, runtime)
+    return _killer_bundle_payload(summary, stages, base, runtime)
+
+
+def _killer_stages(base: dict[str, Any], runtime: dict[str, Any]) -> list[dict[str, Any]]:
+    return _stages(
+        manifests=base["manifests"],
+        workflow=base["workflow"],
+        contract=base["contract"],
+        run_result=runtime["run_result"],
+        evidence=runtime["evidence"],
+        smoke=runtime["smoke"],
+        lab=runtime["lab"],
+    )
+
+
+def _killer_summary(
+    stages: list[dict[str, Any]],
+    base: dict[str, Any],
+    runtime: dict[str, Any],
+) -> dict[str, Any]:
+    return _summary(
+        stages,
+        base["contract"],
+        runtime["run_result"],
+        runtime["evidence"],
+        runtime["smoke"],
+        runtime["lab"],
+        runtime["communication_trace"],
+    )
+
+
+def _killer_bundle_payload(
+    summary: dict[str, Any],
+    stages: list[dict[str, Any]],
+    base: dict[str, Any],
+    runtime: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "summary": summary,
+        "stages": stages,
+        **base,
+        **runtime,
+    }
+
+
+def _killer_base_evidence(registry: ManifestRegistry, workflow_path: str) -> dict[str, Any]:
+    return {
+        "manifests": _manifest_evidence(registry),
+        "workflow": inspect_workflow(Path(workflow_path), registry=registry),
+        "contract": workflow_bridge_contract_report(registry, workflow_path=workflow_path),
+        "protocol_exports": export_all_workflow_protocols(registry, workflow_path=workflow_path),
+    }
+
+
+def _killer_runtime_bundle(
+    *,
+    registry: ManifestRegistry,
+    workflow_runner: WorkflowRunner | None,
+    workflow: dict[str, Any],
+    request: KillerDemoRequest,
+) -> dict[str, Any]:
     run_result = (
-        _run_workflow(workflow_runner, workflow_path, dry_run=dry_run, confirmed=confirmed)
-        if run
+        _run_workflow(workflow_runner, request.workflow_path, dry_run=request.dry_run, confirmed=request.confirmed)
+        if request.run
         else _skipped_run()
     )
-    protocol_exports = export_all_workflow_protocols(registry, workflow_path=workflow_path)
-    smoke = (
-        protocol_smoke_suite(
+    return {
+        "run_result": run_result,
+        "communication_trace": _communication_trace(workflow=workflow, run_result=run_result),
+        "evidence": _runtime_evidence(run_result, request.event_tail, request.audit_tail, request.artifact_list),
+        "smoke": _smoke_suite_evidence(
             registry,
-            capability_ids=("git.version",),
-            workflow_paths=(workflow_path,),
-            workflow_dry_run=True,
-            workflow_confirmed=confirmed,
-            include_payloads=include_payloads,
-        )
-        if run_smoke_suite
-        else {
+            request.workflow_path,
+            request.confirmed,
+            request.include_payloads,
+            request.run_smoke_suite,
+        ),
+        "lab": _bridge_lab_evidence(registry, workflow_runner, request),
+    }
+
+
+def _smoke_suite_evidence(
+    registry: ManifestRegistry,
+    workflow_path: str,
+    confirmed: bool,
+    include_payloads: bool,
+    run_smoke_suite: bool,
+) -> dict[str, Any]:
+    if not run_smoke_suite:
+        return {
             "ok": None,
             "run": False,
             "status": "not_run",
             "reason": "smoke suite disabled",
         }
+    return protocol_smoke_suite(
+        registry,
+        capability_ids=("git.version",),
+        workflow_paths=(workflow_path,),
+        workflow_dry_run=True,
+        workflow_confirmed=confirmed,
+        include_payloads=include_payloads,
     )
-    lab = bridge_lab_report(
+
+
+def _bridge_lab_evidence(
+    registry: ManifestRegistry,
+    workflow_runner: WorkflowRunner | None,
+    request: KillerDemoRequest,
+) -> dict[str, Any]:
+    return bridge_lab_report(
         registry,
         workflow_runner,
-        workflow_paths=(workflow_path,),
-        run=run,
-        dry_run=dry_run,
-        confirmed=confirmed,
-        include_payloads=include_payloads,
-        run_smoke_suite=run_smoke_suite,
+        workflow_paths=(request.workflow_path,),
+        run=request.run,
+        dry_run=request.dry_run,
+        confirmed=request.confirmed,
+        include_payloads=request.include_payloads,
+        run_smoke_suite=request.run_smoke_suite,
     )
-    evidence = _runtime_evidence(
-        run_result=run_result,
-        event_tail=event_tail or [],
-        audit_tail=audit_tail or [],
-        artifact_list=artifact_list or [],
-    )
-    communication_trace = _communication_trace(workflow=workflow, run_result=run_result)
-    stages = _stages(
-        manifests=manifests,
-        workflow=workflow,
-        contract=contract,
-        run_result=run_result,
-        evidence=evidence,
-        smoke=smoke,
-        lab=lab,
-    )
-    summary = _summary(stages, contract, run_result, evidence, smoke, lab, communication_trace)
+
+
+def _killer_report_payload(request: KillerDemoRequest, bundle: dict[str, Any]) -> dict[str, Any]:
+    summary = bundle["summary"]
+    run_result = bundle["run_result"]
+    lab = bundle["lab"]
     return {
         "ok": bool(summary["ok"]),
         "apiVersion": "demo.cbn.dev/v1alpha1",
         "kind": "CbnKillerDemoReport",
-        "workflow_path": workflow_path,
-        "run": run,
-        "dry_run": dry_run,
-        "confirmed": confirmed,
-        "include_payloads": include_payloads,
-        "run_smoke_suite": run_smoke_suite,
+        "workflow_path": request.workflow_path,
+        "run": request.run,
+        "dry_run": request.dry_run,
+        "confirmed": request.confirmed,
+        "include_payloads": request.include_payloads,
+        "run_smoke_suite": request.run_smoke_suite,
         "summary": summary,
-        "stages": stages,
-        "manifests": manifests,
-        "workflow": workflow,
-        "contract": contract,
-        "run_result": run_result if include_payloads else _bounded_run_result(run_result),
-        "communication_trace": communication_trace,
-        "evidence": evidence,
-        "protocol_exports": protocol_exports,
-        "protocol_smoke_suite": smoke,
-        "bridge_lab": lab if include_payloads else _bounded_bridge_lab(lab),
-        "next_commands": _next_commands(workflow_path, run_smoke_suite),
+        "stages": bundle["stages"],
+        "manifests": bundle["manifests"],
+        "workflow": bundle["workflow"],
+        "contract": bundle["contract"],
+        "run_result": run_result if request.include_payloads else _bounded_run_result(run_result),
+        "communication_trace": bundle["communication_trace"],
+        "evidence": bundle["evidence"],
+        "protocol_exports": bundle["protocol_exports"],
+        "protocol_smoke_suite": bundle["smoke"],
+        "bridge_lab": lab if request.include_payloads else _bounded_bridge_lab(lab),
+        "next_commands": _next_commands(request.workflow_path, request.run_smoke_suite),
     }
 
 
@@ -204,13 +365,26 @@ def _runtime_evidence(
 def _communication_trace(*, workflow: dict[str, Any], run_result: dict[str, Any]) -> dict[str, Any]:
     """Build a bounded CLI-CLI handoff trace from BridgeMessage selector routes."""
 
-    tasks = workflow.get("tasks") if isinstance(workflow.get("tasks"), list) else []
-    task_results = {
-        str(task.get("task_id")): task
-        for task in run_result.get("tasks", [])
-        if isinstance(task, dict) and task.get("task_id")
+    handoffs = _communication_handoffs(workflow=workflow, run_result=run_result)
+    ready = bool(handoffs) and all(item.get("message_valid") for item in handoffs)
+    return {
+        "kind": "CliCliCommunicationTrace",
+        "status": "ready" if ready else "needs_attention",
+        "workflow_id": workflow.get("workflow_id"),
+        "handoff_count": len(handoffs),
+        "message_valid_count": sum(1 for handoff in handoffs if handoff.get("message_valid")),
+        "handoffs": handoffs,
     }
-    handoffs = []
+
+
+def _communication_handoffs(
+    *,
+    workflow: dict[str, Any],
+    run_result: dict[str, Any],
+) -> list[dict[str, Any]]:
+    tasks = _workflow_tasks(workflow)
+    task_results = _task_results_by_id(run_result)
+    handoffs: list[dict[str, Any]] = []
     for task in tasks:
         if not isinstance(task, dict):
             continue
@@ -221,47 +395,94 @@ def _communication_trace(*, workflow: dict[str, Any], run_result: dict[str, Any]
         for route_index, route in enumerate(args_from):
             if not isinstance(route, dict):
                 continue
-            producer_id = str(route.get("task") or "")
-            selector = str(route.get("selector") or "")
-            producer_result = task_results.get(producer_id, {})
-            producer_call = producer_result.get("result") if isinstance(producer_result.get("result"), dict) else {}
-            message = producer_call.get("message") if isinstance(producer_call.get("message"), dict) else {}
-            validation = validate_bridge_message(message) if message else {"valid": False, "errors": ["message missing"]}
-            selected = _selected_value(message, selector)
-            selected_value = selected.get("value")
-            resolved_arg = resolved_args[route_index] if route_index < len(resolved_args) else (
-                bridge_value_to_arg(selected_value) if selected.get("ok") else None
-            )
             handoffs.append(
-                {
-                    "index": len(handoffs) + 1,
-                    "kind": "CliCliBridgeHandoff",
-                    "communication": "BridgeMessage argsFrom",
-                    "producer_task": producer_id,
-                    "producer_capability": producer_result.get("uses"),
-                    "consumer_task": consumer_id,
-                    "consumer_capability": task.get("uses"),
-                    "selector": selector,
-                    "message_kind": message.get("kind"),
-                    "message_channel": (message.get("metadata") or {}).get("channel") if isinstance(message.get("metadata"), dict) else message.get("channel"),
-                    "parser_ref": (message.get("metadata") or {}).get("parser_ref") if isinstance(message.get("metadata"), dict) else None,
-                    "message_valid": validation.get("valid"),
-                    "message_errors": validation.get("errors", [])[:3],
-                    "selected_type": _value_type(selected_value) if selected.get("ok") else None,
-                    "selected_preview": _preview_value(selected_value) if selected.get("ok") else selected.get("error"),
-                    "resolved_arg_preview": _preview_value(resolved_arg),
-                    "artifact_ids": _artifact_ids(producer_call),
-                }
+                _communication_handoff(
+                    index=len(handoffs) + 1,
+                    task=task,
+                    route=route,
+                    route_index=route_index,
+                    consumer_id=consumer_id,
+                    task_results=task_results,
+                    resolved_args=resolved_args,
+                )
             )
-    ready = bool(handoffs) and all(item.get("message_valid") for item in handoffs)
+    return handoffs
+
+
+def _workflow_tasks(workflow: dict[str, Any]) -> list[Any]:
+    return workflow.get("tasks") if isinstance(workflow.get("tasks"), list) else []
+
+
+def _task_results_by_id(run_result: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return {
-        "kind": "CliCliCommunicationTrace",
-        "status": "ready" if ready else "needs_attention",
-        "workflow_id": workflow.get("workflow_id"),
-        "handoff_count": len(handoffs),
-        "message_valid_count": sum(1 for handoff in handoffs if handoff.get("message_valid")),
-        "handoffs": handoffs,
+        str(task.get("task_id")): task
+        for task in run_result.get("tasks", [])
+        if isinstance(task, dict) and task.get("task_id")
     }
+
+
+def _communication_handoff(
+    *,
+    index: int,
+    task: dict[str, Any],
+    route: dict[str, Any],
+    route_index: int,
+    consumer_id: str,
+    task_results: dict[str, dict[str, Any]],
+    resolved_args: list[Any],
+) -> dict[str, Any]:
+    producer_id = str(route.get("task") or "")
+    selector = str(route.get("selector") or "")
+    producer_result = task_results.get(producer_id, {})
+    producer_call = producer_result.get("result") if isinstance(producer_result.get("result"), dict) else {}
+    message = producer_call.get("message") if isinstance(producer_call.get("message"), dict) else {}
+    validation = validate_bridge_message(message) if message else {"valid": False, "errors": ["message missing"]}
+    selected = _selected_value(message, selector)
+    selected_value = selected.get("value")
+    resolved_arg = _resolved_handoff_arg(resolved_args, route_index, selected, selected_value)
+    return {
+        "index": index,
+        "kind": "CliCliBridgeHandoff",
+        "communication": "BridgeMessage argsFrom",
+        "producer_task": producer_id,
+        "producer_capability": producer_result.get("uses"),
+        "consumer_task": consumer_id,
+        "consumer_capability": task.get("uses"),
+        "selector": selector,
+        "message_kind": message.get("kind"),
+        "message_channel": _message_channel(message),
+        "parser_ref": _message_parser_ref(message),
+        "message_valid": validation.get("valid"),
+        "message_errors": validation.get("errors", [])[:3],
+        "selected_type": _value_type(selected_value) if selected.get("ok") else None,
+        "selected_preview": _preview_value(selected_value) if selected.get("ok") else selected.get("error"),
+        "resolved_arg_preview": _preview_value(resolved_arg),
+        "artifact_ids": _artifact_ids(producer_call),
+    }
+
+
+def _resolved_handoff_arg(
+    resolved_args: list[Any],
+    route_index: int,
+    selected: dict[str, Any],
+    selected_value: Any,
+) -> Any:
+    if route_index < len(resolved_args):
+        return resolved_args[route_index]
+    return bridge_value_to_arg(selected_value) if selected.get("ok") else None
+
+
+def _message_metadata(message: dict[str, Any]) -> dict[str, Any]:
+    return message.get("metadata") if isinstance(message.get("metadata"), dict) else {}
+
+
+def _message_channel(message: dict[str, Any]) -> Any:
+    metadata = _message_metadata(message)
+    return metadata.get("channel") or message.get("channel")
+
+
+def _message_parser_ref(message: dict[str, Any]) -> Any:
+    return _message_metadata(message).get("parser_ref")
 
 
 def _selected_value(message: dict[str, Any], selector: str) -> dict[str, Any]:
@@ -321,7 +542,14 @@ def _stages(
     smoke: dict[str, Any],
     lab: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    run_status = run_result.get("status")
+    return [
+        *_manifest_stage_rows(manifests),
+        *_workflow_stage_rows(contract, run_result),
+        *_runtime_stage_rows(workflow, run_result, evidence, smoke, lab),
+    ]
+
+
+def _manifest_stage_rows(manifests: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         {
             "id": "import_cli_anything_harness",
@@ -338,6 +566,11 @@ def _stages(
             "status": "completed" if all(row.get("ready") for row in manifests) else "blocked",
             "evidence": {"capabilities": [row["capability_id"] for row in manifests if row.get("ready")]},
         },
+    ]
+
+
+def _workflow_stage_rows(contract: dict[str, Any], run_result: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
         {
             "id": "run_macrocli",
             "title": "Run macrocli backend listing",
@@ -365,38 +598,62 @@ def _stages(
             "status": _task_stage_status(run_result, "mermaid-consumer"),
             "evidence": _task_evidence(run_result, "mermaid-consumer"),
         },
-        {
-            "id": "show_artifact_event_audit",
-            "title": "Show artifact, event and audit evidence",
-            "status": "completed" if evidence["task_artifact_count"] > 0 else "blocked",
-            "evidence": {
-                "run_id": evidence.get("run_id"),
-                "task_artifact_count": evidence["task_artifact_count"],
-                "event_count": evidence["event_count"],
-                "audit_count": evidence["audit_count"],
-            },
-        },
-        {
-            "id": "export_mcp_a2a_smoke",
-            "title": "Export MCP/A2A/ACP smoke",
-            "status": "completed" if smoke.get("ok") is True else "not_run" if smoke.get("ok") is None else "blocked",
-            "evidence": {
-                "run": smoke.get("run"),
-                "ok": smoke.get("ok"),
-                "failed_count": (smoke.get("summary") or {}).get("failed_count"),
-            },
-        },
-        {
-            "id": "workflow_studio_ready",
-            "title": "Workflow Studio display bundle",
-            "status": "completed" if workflow.get("valid") and lab.get("ok") and run_status == "completed" else "blocked",
-            "evidence": {
-                "workflow_valid": workflow.get("valid"),
-                "bridge_lab_ok": lab.get("ok"),
-                "run_status": run_status,
-            },
-        },
     ]
+
+
+def _runtime_stage_rows(
+    workflow: dict[str, Any],
+    run_result: dict[str, Any],
+    evidence: dict[str, Any],
+    smoke: dict[str, Any],
+    lab: dict[str, Any],
+) -> list[dict[str, Any]]:
+    run_status = run_result.get("status")
+    return [
+        _artifact_event_audit_stage(evidence),
+        _protocol_smoke_stage(smoke),
+        _workflow_studio_stage(workflow, lab, run_status),
+    ]
+
+
+def _artifact_event_audit_stage(evidence: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": "show_artifact_event_audit",
+        "title": "Show artifact, event and audit evidence",
+        "status": "completed" if evidence["task_artifact_count"] > 0 else "blocked",
+        "evidence": {
+            "run_id": evidence.get("run_id"),
+            "task_artifact_count": evidence["task_artifact_count"],
+            "event_count": evidence["event_count"],
+            "audit_count": evidence["audit_count"],
+        },
+    }
+
+
+def _protocol_smoke_stage(smoke: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": "export_mcp_a2a_smoke",
+        "title": "Export MCP/A2A/ACP smoke",
+        "status": "completed" if smoke.get("ok") is True else "not_run" if smoke.get("ok") is None else "blocked",
+        "evidence": {
+            "run": smoke.get("run"),
+            "ok": smoke.get("ok"),
+            "failed_count": (smoke.get("summary") or {}).get("failed_count"),
+        },
+    }
+
+
+def _workflow_studio_stage(workflow: dict[str, Any], lab: dict[str, Any], run_status: Any) -> dict[str, Any]:
+    return {
+        "id": "workflow_studio_ready",
+        "title": "Workflow Studio display bundle",
+        "status": "completed" if workflow.get("valid") and lab.get("ok") and run_status == "completed" else "blocked",
+        "evidence": {
+            "workflow_valid": workflow.get("valid"),
+            "bridge_lab_ok": lab.get("ok"),
+            "run_status": run_status,
+        },
+    }
 
 
 def _task_stage_status(run_result: dict[str, Any], task_id: str) -> str:

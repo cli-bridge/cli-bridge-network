@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import time
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -19,10 +20,65 @@ APPROVAL_STATUSES = {
     APPROVAL_DENIED,
     APPROVAL_USED,
 }
+_MISSING = object()
+_REQUEST_OPTION_NAMES = ("cwd", "risk", "reason", "dry_run", "scope_hash", "scope")
+
+
+@dataclass(frozen=True)
+class ApprovalRequestInput:
+    call_id: str
+    capability_id: str
+    argv: tuple[str, ...]
+    cwd: str | None
+    risk: str
+    reason: str
+    dry_run: bool
+    scope_hash: str | None
+    scope: dict[str, Any] | None
 
 
 def now_iso() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%S%z")
+
+
+def _approval_request_input(
+    call_id: str,
+    capability_id: str,
+    argv: tuple[str, ...],
+    args: tuple[Any, ...],
+    options: dict[str, Any],
+) -> ApprovalRequestInput:
+    values = _approval_request_options(args, options)
+    return ApprovalRequestInput(call_id=call_id, capability_id=capability_id, argv=argv, **values)
+
+
+def _approval_request_options(args: tuple[Any, ...], options: dict[str, Any]) -> dict[str, Any]:
+    if len(args) > len(_REQUEST_OPTION_NAMES):
+        raise TypeError(f"request expected at most {len(_REQUEST_OPTION_NAMES) + 4} arguments")
+    values = _default_request_options()
+    for name, value in zip(_REQUEST_OPTION_NAMES, args):
+        if name in options:
+            raise TypeError(f"request got multiple values for argument '{name}'")
+        values[name] = value
+    unknown = sorted(set(options) - set(_REQUEST_OPTION_NAMES))
+    if unknown:
+        raise TypeError(f"unknown approval request option(s): {', '.join(unknown)}")
+    values.update(options)
+    missing = [name for name in ("risk", "reason", "dry_run") if values[name] is _MISSING]
+    if missing:
+        raise TypeError(f"missing approval request option(s): {', '.join(missing)}")
+    return values
+
+
+def _default_request_options() -> dict[str, Any]:
+    return {
+        "cwd": None,
+        "risk": _MISSING,
+        "reason": _MISSING,
+        "dry_run": _MISSING,
+        "scope_hash": None,
+        "scope": None,
+    }
 
 
 class ApprovalStore:
@@ -35,34 +91,31 @@ class ApprovalStore:
         call_id: str,
         capability_id: str,
         argv: tuple[str, ...],
-        cwd: str | None,
-        risk: str,
-        reason: str,
-        dry_run: bool,
-        scope_hash: str | None = None,
-        scope: dict[str, Any] | None = None,
+        *args: Any,
+        **options: Any,
     ) -> dict[str, Any]:
+        request = _approval_request_input(call_id, capability_id, argv, args, options)
         approval_id = str(uuid.uuid4())
         record = {
             "approval_id": approval_id,
             "status": APPROVAL_PENDING,
             "created_at": now_iso(),
             "updated_at": now_iso(),
-            "call_id": call_id,
-            "capability_id": capability_id,
-            "argv": list(argv),
-            "cwd": cwd,
-            "risk": risk,
-            "reason": reason,
-            "dry_run": dry_run,
-            "scope_hash": scope_hash,
-            "scope": scope,
+            "call_id": request.call_id,
+            "capability_id": request.capability_id,
+            "argv": list(request.argv),
+            "cwd": request.cwd,
+            "risk": request.risk,
+            "reason": request.reason,
+            "dry_run": request.dry_run,
+            "scope_hash": request.scope_hash,
+            "scope": request.scope,
             "history": [
                 {
                     "ts": now_iso(),
                     "action": "requested",
                     "actor": "system",
-                    "reason": reason,
+                    "reason": request.reason,
                 }
             ],
         }

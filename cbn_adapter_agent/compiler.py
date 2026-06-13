@@ -39,6 +39,18 @@ class AdapterProfile:
         }
 
 
+@dataclass(frozen=True)
+class _AdapterDraftContext:
+    profile: AdapterProfile
+    probe_plans: list[dict[str, object]]
+    candidate_records: list[dict[str, object]]
+    risk_summary: dict[str, object]
+    setup_guides: list[dict[str, object]]
+    fixture_coverage: dict[str, Any]
+    manifest_validation: dict[str, Any]
+    stages: list[dict[str, object]]
+
+
 BUILT_IN_PROFILES: dict[str, AdapterProfile] = {
     "feishu": AdapterProfile(
         profile_id="feishu",
@@ -84,6 +96,11 @@ BUILT_IN_PROFILES: dict[str, AdapterProfile] = {
 
 
 def build_adapter_draft(profile_id: str, root: Path | None = None) -> dict[str, Any]:
+    context = _adapter_draft_context(profile_id, root)
+    return _adapter_draft_payload(context)
+
+
+def _adapter_draft_context(profile_id: str, root: Path | None) -> _AdapterDraftContext:
     paths = resolve_project_paths(root)
     profile = _require_profile(profile_id)
     registry = ManifestRegistry()
@@ -106,12 +123,25 @@ def build_adapter_draft(profile_id: str, root: Path | None = None) -> dict[str, 
         manifest_validation=manifest_validation,
         fixture_coverage=fixture_coverage,
     )
+    return _AdapterDraftContext(
+        profile=profile,
+        probe_plans=probe_plans,
+        candidate_records=candidate_records,
+        risk_summary=risk_summary,
+        setup_guides=setup_guides,
+        fixture_coverage=fixture_coverage,
+        manifest_validation=manifest_validation,
+        stages=stages,
+    )
+
+
+def _adapter_draft_payload(context: _AdapterDraftContext) -> dict[str, Any]:
     return {
         "kind": "AdapterAgentDraft",
         "apiVersion": "bridge.dev/v1alpha1",
-        "ok": all(stage["status"] != "blocked" for stage in stages),
+        "ok": all(stage["status"] != "blocked" for stage in context.stages),
         "agent_role": get_agent_role("manifest-bootstrap-agent"),
-        "profile": profile.as_dict(),
+        "profile": context.profile.as_dict(),
         "agent_policy": {
             "role": "manifest-bootstrap-agent",
             "legacy_role": "initialization-compiler",
@@ -120,20 +150,20 @@ def build_adapter_draft(profile_id: str, root: Path | None = None) -> dict[str, 
             "writes_require_explicit_flag": True,
             "high_risk_registration_requires_human_acceptance": True,
         },
-        "probe_plans": probe_plans,
-        "capability_candidates": candidate_records,
-        "risk_summary": risk_summary,
-        "setup_guides": setup_guides,
-        "parser_fixture_coverage": fixture_coverage,
+        "probe_plans": context.probe_plans,
+        "capability_candidates": context.candidate_records,
+        "risk_summary": context.risk_summary,
+        "setup_guides": context.setup_guides,
+        "parser_fixture_coverage": context.fixture_coverage,
         "manifest_validation": {
-            "valid": manifest_validation["valid"],
-            "checked_count": manifest_validation["checked_count"],
-            "error_count": manifest_validation["error_count"],
-            "warning_count": manifest_validation["warning_count"],
+            "valid": context.manifest_validation["valid"],
+            "checked_count": context.manifest_validation["checked_count"],
+            "error_count": context.manifest_validation["error_count"],
+            "warning_count": context.manifest_validation["warning_count"],
         },
-        "stages": stages,
-        "adapter_lock_preview": _adapter_lock_preview(profile, candidate_records),
-        "next_actions": _next_actions(stages),
+        "stages": context.stages,
+        "adapter_lock_preview": _adapter_lock_preview(context.profile, context.candidate_records),
+        "next_actions": _next_actions(context.stages),
     }
 
 
@@ -297,55 +327,90 @@ def _stages(
     manifest_validation: dict[str, Any],
     fixture_coverage: dict[str, Any],
 ) -> list[dict[str, object]]:
-    unverified = [
+    unverified = _unverified_capabilities(candidate_records)
+    return [
+        _discover_profile_stage(profile),
+        _probe_plan_stage(probe_plans),
+        _manifest_candidates_stage(candidate_records),
+        _manifest_schema_stage(manifest_validation),
+        _policy_classification_stage(candidate_records),
+        _parser_contracts_stage(fixture_coverage, unverified),
+        _acceptance_stage(),
+    ]
+
+
+def _unverified_capabilities(candidate_records: list[dict[str, object]]) -> list[object]:
+    return [
         candidate["capability_id"]
         for candidate in candidate_records
         if not _candidate_output_verified(candidate)
     ]
-    return [
-        {
-            "id": "discover_profile",
-            "status": "passed",
-            "evidence": profile.source,
+
+
+def _discover_profile_stage(profile: AdapterProfile) -> dict[str, object]:
+    return {
+        "id": "discover_profile",
+        "status": "passed",
+        "evidence": profile.source,
+    }
+
+
+def _probe_plan_stage(probe_plans: list[dict[str, object]]) -> dict[str, object]:
+    return {
+        "id": "probe_plan",
+        "status": "passed" if probe_plans else "blocked",
+        "evidence": {"planned_probe_count": len(probe_plans)},
+    }
+
+
+def _manifest_candidates_stage(candidate_records: list[dict[str, object]]) -> dict[str, object]:
+    return {
+        "id": "manifest_candidates",
+        "status": "passed" if candidate_records else "blocked",
+        "evidence": {"candidate_count": len(candidate_records)},
+    }
+
+
+def _manifest_schema_stage(manifest_validation: dict[str, Any]) -> dict[str, object]:
+    return {
+        "id": "manifest_schema",
+        "status": "passed" if manifest_validation["valid"] else "blocked",
+        "evidence": {
+            "checked_count": manifest_validation["checked_count"],
+            "error_count": manifest_validation["error_count"],
+            "warning_count": manifest_validation["warning_count"],
         },
-        {
-            "id": "probe_plan",
-            "status": "passed" if probe_plans else "blocked",
-            "evidence": {"planned_probe_count": len(probe_plans)},
+    }
+
+
+def _policy_classification_stage(candidate_records: list[dict[str, object]]) -> dict[str, object]:
+    return {
+        "id": "policy_classification",
+        "status": "passed",
+        "evidence": _risk_summary(candidate_records),
+    }
+
+
+def _parser_contracts_stage(
+    fixture_coverage: dict[str, Any],
+    unverified: list[object],
+) -> dict[str, object]:
+    return {
+        "id": "parser_contracts",
+        "status": "partial" if unverified else "passed",
+        "evidence": {
+            "fixture_ok": fixture_coverage["ok"],
+            "unverified_capabilities": unverified,
         },
-        {
-            "id": "manifest_candidates",
-            "status": "passed" if candidate_records else "blocked",
-            "evidence": {"candidate_count": len(candidate_records)},
-        },
-        {
-            "id": "manifest_schema",
-            "status": "passed" if manifest_validation["valid"] else "blocked",
-            "evidence": {
-                "checked_count": manifest_validation["checked_count"],
-                "error_count": manifest_validation["error_count"],
-                "warning_count": manifest_validation["warning_count"],
-            },
-        },
-        {
-            "id": "policy_classification",
-            "status": "passed",
-            "evidence": _risk_summary(candidate_records),
-        },
-        {
-            "id": "parser_contracts",
-            "status": "partial" if unverified else "passed",
-            "evidence": {
-                "fixture_ok": fixture_coverage["ok"],
-                "unverified_capabilities": unverified,
-            },
-        },
-        {
-            "id": "acceptance",
-            "status": "pending",
-            "evidence": "requires user review before writing adapter.lock or promoting parsers",
-        },
-    ]
+    }
+
+
+def _acceptance_stage() -> dict[str, object]:
+    return {
+        "id": "acceptance",
+        "status": "pending",
+        "evidence": "requires user review before writing adapter.lock or promoting parsers",
+    }
 
 
 def _candidate_output_verified(candidate: dict[str, object]) -> bool:

@@ -85,28 +85,28 @@ def quickstart_powershell_script(requests: list[dict[str, Any]], *, headers: dic
 
 def quickstart_sequence_steps(*, requests: list[dict[str, Any]], studio_url: str | None) -> list[dict[str, Any]]:
     requests_by_id = {str(request.get("id")): request for request in requests if request.get("id")}
+    step_definitions = quickstart_request_step_definitions()
+    evidence_order = len(step_definitions) + 2
+    return [
+        quickstart_open_studio_step(studio_url),
+        *(
+            quickstart_request_step(index, requests_by_id, request_id, title, intent, success_signal)
+            for index, (request_id, title, intent, success_signal) in enumerate(step_definitions, start=2)
+        ),
+        quickstart_evidence_step(evidence_order),
+    ]
 
-    def request_step(
-        order: int,
-        request_id: str,
-        title: str,
-        intent: str,
-        success_signal: str,
-    ) -> dict[str, Any]:
-        request = requests_by_id.get(request_id, {})
-        return {
-            "order": order,
-            "id": request_id,
-            "kind": "http",
-            "title": title,
-            "intent": intent,
-            "request_id": request_id,
-            "method": request.get("method", "GET"),
-            "url": request.get("url", ""),
-            "success_signal": success_signal,
-        }
 
-    step_definitions = [
+def quickstart_request_step_definitions() -> list[tuple[str, str, str, str]]:
+    return [
+        *quickstart_entry_step_definitions(),
+        *quickstart_inspection_step_definitions(),
+        *quickstart_execution_step_definitions(),
+    ]
+
+
+def quickstart_entry_step_definitions() -> list[tuple[str, str, str, str]]:
+    return [
         (
             "launch_contract",
             "Read launch contract",
@@ -137,6 +137,19 @@ def quickstart_sequence_steps(*, requests: list[dict[str, Any]], studio_url: str
             "Read the redacted persistable network entry file before discovering optional importers.",
             "NetworkConsumerManifest.status == ready and secret_values_included == false.",
         ),
+    ]
+
+
+def quickstart_inspection_step_definitions() -> list[tuple[str, str, str, str]]:
+    return [
+        *quickstart_registration_inspection_steps(),
+        *quickstart_workflow_inspection_steps(),
+        *quickstart_protocol_inspection_steps(),
+    ]
+
+
+def quickstart_registration_inspection_steps() -> list[tuple[str, str, str, str]]:
+    return [
         (
             "import_catalog",
             "Discover importers",
@@ -149,6 +162,11 @@ def quickstart_sequence_steps(*, requests: list[dict[str, Any]], studio_url: str
             "Confirm typed parser coverage and setup recovery for direct external CLI profiles.",
             "DirectCliReadinessReport.ok == true and recovery_type_count >= 1.",
         ),
+    ]
+
+
+def quickstart_workflow_inspection_steps() -> list[tuple[str, str, str, str]]:
+    return [
         (
             "inspect_workflow",
             "Inspect workflow DAG",
@@ -161,6 +179,11 @@ def quickstart_sequence_steps(*, requests: list[dict[str, Any]], studio_url: str
             "Understand ToolManifest, BridgeMessage, Artifact, and selector boundaries.",
             "bridge contract ok and route_count >= 1.",
         ),
+    ]
+
+
+def quickstart_protocol_inspection_steps() -> list[tuple[str, str, str, str]]:
+    return [
         (
             "inspect_agent_nodes",
             "Inspect harness agent nodes",
@@ -173,6 +196,11 @@ def quickstart_sequence_steps(*, requests: list[dict[str, Any]], studio_url: str
             "Expose MCP, A2A, and ACP workflow descriptors from the same internal bus contract.",
             "protocol exports include mcp, a2a, and acp.",
         ),
+    ]
+
+
+def quickstart_execution_step_definitions() -> list[tuple[str, str, str, str]]:
+    return [
         (
             "plan_agent_request",
             "Plan natural-language run",
@@ -186,31 +214,52 @@ def quickstart_sequence_steps(*, requests: list[dict[str, Any]], studio_url: str
             "workflow run receipt status == completed.",
         ),
     ]
-    evidence_order = len(step_definitions) + 2
-    return [
-        {
-            "order": 1,
-            "id": "open_studio",
-            "kind": "ui",
-            "title": "Open Workflow Studio",
-            "intent": "Start the visual handoff for the target CLI-CLI workflow.",
-            "target": studio_url or "",
-            "success_signal": "Studio opens with daemon URL, workflow path, and session token prefilled.",
-        },
-        *(
-            request_step(index, request_id, title, intent, success_signal)
-            for index, (request_id, title, intent, success_signal) in enumerate(step_definitions, start=2)
-        ),
-        {
-            "order": evidence_order,
-            "id": "read_evidence",
-            "kind": "evidence",
-            "title": "Read evidence",
-            "intent": "Collect runtime events, audit records, and artifacts after the workflow call.",
-            "request_ids": list(QUICKSTART_EVIDENCE_REQUEST_IDS),
-            "success_signal": "events, audit, and artifacts endpoints return non-empty JSON arrays.",
-        },
-    ]
+
+
+def quickstart_open_studio_step(studio_url: str | None) -> dict[str, Any]:
+    return {
+        "order": 1,
+        "id": "open_studio",
+        "kind": "ui",
+        "title": "Open Workflow Studio",
+        "intent": "Start the visual handoff for the target CLI-CLI workflow.",
+        "target": studio_url or "",
+        "success_signal": "Studio opens with daemon URL, workflow path, and session token prefilled.",
+    }
+
+
+def quickstart_request_step(
+    order: int,
+    requests_by_id: dict[str, dict[str, Any]],
+    request_id: str,
+    title: str,
+    intent: str,
+    success_signal: str,
+) -> dict[str, Any]:
+    request = requests_by_id.get(request_id, {})
+    return {
+        "order": order,
+        "id": request_id,
+        "kind": "http",
+        "title": title,
+        "intent": intent,
+        "request_id": request_id,
+        "method": request.get("method", "GET"),
+        "url": request.get("url", ""),
+        "success_signal": success_signal,
+    }
+
+
+def quickstart_evidence_step(order: int) -> dict[str, Any]:
+    return {
+        "order": order,
+        "id": "read_evidence",
+        "kind": "evidence",
+        "title": "Read evidence",
+        "intent": "Collect runtime events, audit records, and artifacts after the workflow call.",
+        "request_ids": list(QUICKSTART_EVIDENCE_REQUEST_IDS),
+        "success_signal": "events, audit, and artifacts endpoints return non-empty JSON arrays.",
+    }
 
 
 def quickstart_sdk_snippets(
@@ -221,67 +270,71 @@ def quickstart_sdk_snippets(
 ) -> list[dict[str, Any]]:
     requests_by_id = {str(request.get("id")): request for request in requests if request.get("id")}
     return [
-        {
-            "id": "python-stdlib-consumer",
-            "title": "Python stdlib consumer",
-            "language": "python",
-            "runtime": "python>=3.10",
-            "entrypoint": "run_workflow",
-            "workflow_path": workflow_path,
-            "uses_request_ids": list(QUICKSTART_SDK_REQUEST_IDS),
-            "code": _python_consumer_snippet(requests_by_id, headers=headers),
-            "safety": {
-                "dry_run": True,
-                "confirmed": False,
-                "writes_files": False,
-                "requires_daemon": True,
-            },
-        },
-        {
-            "id": "typescript-fetch-consumer",
-            "title": "TypeScript fetch consumer",
-            "language": "typescript",
-            "runtime": "node>=18 or browser fetch",
-            "entrypoint": "run_workflow",
-            "workflow_path": workflow_path,
-            "uses_request_ids": list(QUICKSTART_SDK_REQUEST_IDS),
-            "code": _typescript_consumer_snippet(requests_by_id, headers=headers),
-            "safety": {
-                "dry_run": True,
-                "confirmed": False,
-                "writes_files": False,
-                "requires_daemon": True,
-            },
-        },
+        quickstart_sdk_snippet("python-stdlib-consumer", "Python stdlib consumer", "python", "python>=3.10", workflow_path, _python_consumer_snippet(requests_by_id, headers=headers)),
+        quickstart_sdk_snippet("typescript-fetch-consumer", "TypeScript fetch consumer", "typescript", "node>=18 or browser fetch", workflow_path, _typescript_consumer_snippet(requests_by_id, headers=headers)),
     ]
 
 
-def _python_consumer_snippet(requests_by_id: dict[str, dict[str, Any]], *, headers: dict[str, str]) -> str:
-    def request_line(request_id: str) -> str:
-        request = requests_by_id[request_id]
-        payload = request.get("json") if isinstance(request.get("json"), dict) else None
-        payload_literal = repr(payload) if payload is not None else "None"
-        return (
-            f"    {request_id!r}: "
-            f"{{'method': {str(request.get('method') or 'GET')!r}, 'url': {str(request.get('url') or '')!r}, "
-            f"'json': {payload_literal}}},"
-        )
+def quickstart_sdk_snippet(
+    snippet_id: str,
+    title: str,
+    language: str,
+    runtime: str,
+    workflow_path: str,
+    code: str,
+) -> dict[str, Any]:
+    return {
+        "id": snippet_id,
+        "title": title,
+        "language": language,
+        "runtime": runtime,
+        "entrypoint": "run_workflow",
+        "workflow_path": workflow_path,
+        "uses_request_ids": list(QUICKSTART_SDK_REQUEST_IDS),
+        "code": code,
+        "safety": quickstart_sdk_safety(),
+    }
 
+
+def quickstart_sdk_safety() -> dict[str, bool]:
+    return {
+        "dry_run": True,
+        "confirmed": False,
+        "writes_files": False,
+        "requires_daemon": True,
+    }
+
+
+def _python_consumer_snippet(requests_by_id: dict[str, dict[str, Any]], *, headers: dict[str, str]) -> str:
     request_lines = "\n".join(
-        request_line(request_id)
+        _python_request_line(requests_by_id, request_id)
         for request_id in QUICKSTART_SDK_REQUEST_IDS
         if request_id in requests_by_id
     )
     return "\n".join(
         [
-            "import json",
-            "import urllib.request",
-            "",
-            f"HEADERS = {json.dumps(headers, ensure_ascii=False)}",
+            *_python_prelude_lines(headers),
             "REQUESTS = {",
             request_lines,
             "}",
             "",
+            *_python_call_function_lines(),
+            *_python_consumer_flow_lines(),
+        ]
+    )
+
+
+def _python_prelude_lines(headers: dict[str, str]) -> list[str]:
+    return [
+            "import json",
+            "import urllib.request",
+            "",
+            f"HEADERS = {json.dumps(headers, ensure_ascii=False)}",
+    ]
+
+
+def _python_call_function_lines() -> list[str]:
+    return [
             "def call(request_id):",
             "    request = REQUESTS[request_id]",
             "    body = None",
@@ -293,6 +346,11 @@ def _python_consumer_snippet(requests_by_id: dict[str, dict[str, Any]], *, heade
             "    with urllib.request.urlopen(http_request, timeout=30) as response:",
             "        return json.loads(response.read().decode('utf-8'))",
             "",
+    ]
+
+
+def _python_consumer_flow_lines() -> list[str]:
+    return [
             "call('health')",
             "launch_contract = call('launch_contract')",
             "entry_profile = call('entry_profile')",
@@ -305,12 +363,35 @@ def _python_consumer_snippet(requests_by_id: dict[str, dict[str, Any]], *, heade
             "receipt = call('run_workflow')",
             "evidence = {key: call(key) for key in ('events', 'audit', 'artifacts')}",
             "print(json.dumps({'launch_contract': launch_contract.get('status'), 'entry_profile': entry_profile.get('status'), 'harness_agent': harness_agent.get('status'), 'sdk_bootstrap': sdk_bootstrap.get('status'), 'consumer_manifest': consumer_manifest.get('status'), 'importers': catalog.get('importer_count'), 'direct_cli': direct_cli.get('summary', {}).get('capability_count'), 'plan': plan.get('kind'), 'workflow_status': receipt.get('status'), 'evidence': {k: len(v) for k, v in evidence.items()}}, indent=2))",
-        ]
+    ]
+
+
+def _python_request_line(requests_by_id: dict[str, dict[str, Any]], request_id: str) -> str:
+    request = requests_by_id[request_id]
+    payload = request.get("json") if isinstance(request.get("json"), dict) else None
+    payload_literal = repr(payload) if payload is not None else "None"
+    return (
+        f"    {request_id!r}: "
+        f"{{'method': {str(request.get('method') or 'GET')!r}, 'url': {str(request.get('url') or '')!r}, "
+        f"'json': {payload_literal}}},"
     )
 
 
 def _typescript_consumer_snippet(requests_by_id: dict[str, dict[str, Any]], *, headers: dict[str, str]) -> str:
-    serializable_requests = {
+    serializable_requests = _typescript_serializable_requests(requests_by_id)
+    return "\n".join(
+        [
+            f"const headers = {json.dumps(headers, ensure_ascii=False)};",
+            f"const requests = {json.dumps(serializable_requests, ensure_ascii=False, indent=2)};",
+            "",
+            *_typescript_call_function_lines(),
+            *_typescript_consumer_flow_lines(),
+        ]
+    )
+
+
+def _typescript_serializable_requests(requests_by_id: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    return {
         request_id: {
             "method": request.get("method") or "GET",
             "url": request.get("url") or "",
@@ -319,36 +400,39 @@ def _typescript_consumer_snippet(requests_by_id: dict[str, dict[str, Any]], *, h
         for request_id, request in requests_by_id.items()
         if request_id in QUICKSTART_SDK_REQUEST_IDS
     }
-    return "\n".join(
-        [
-            f"const headers = {json.dumps(headers, ensure_ascii=False)};",
-            f"const requests = {json.dumps(serializable_requests, ensure_ascii=False, indent=2)};",
-            "",
-            "async function call(requestId: keyof typeof requests) {",
-            "  const request = requests[requestId];",
-            "  const response = await fetch(request.url, {",
-            "    method: request.method,",
-            "    headers: request.json ? { ...headers, 'Content-Type': 'application/json' } : headers,",
-            "    body: request.json ? JSON.stringify(request.json) : undefined,",
-            "  });",
-            "  if (!response.ok) throw new Error(`${requestId} failed: ${response.status}`);",
-            "  return response.json();",
-            "}",
-            "",
-            "await call('health');",
-            "const launchContract = await call('launch_contract');",
-            "const entryProfile = await call('entry_profile');",
-            "const harnessAgent = await call('harness_agent');",
-            "const sdkBootstrap = await call('sdk_bootstrap');",
-            "const consumerManifest = await call('consumer_manifest');",
-            "const catalog = await call('import_catalog');",
-            "const directCli = await call('direct_cli_readiness');",
-            "const plan = await call('plan_agent_request');",
-            "const receipt = await call('run_workflow');",
-            "const [events, audit, artifacts] = await Promise.all([call('events'), call('audit'), call('artifacts')]);",
-            "console.log({ launchContract: launchContract.status, entryProfile: entryProfile.status, harnessAgent: harnessAgent.status, sdkBootstrap: sdkBootstrap.status, consumerManifest: consumerManifest.status, importers: catalog.importer_count, directCli: directCli.summary?.capability_count, plan: plan.kind, workflowStatus: receipt.status, evidence: { events: events.length, audit: audit.length, artifacts: artifacts.length } });",
-        ]
-    )
+
+
+def _typescript_call_function_lines() -> list[str]:
+    return [
+        "async function call(requestId: keyof typeof requests) {",
+        "  const request = requests[requestId];",
+        "  const response = await fetch(request.url, {",
+        "    method: request.method,",
+        "    headers: request.json ? { ...headers, 'Content-Type': 'application/json' } : headers,",
+        "    body: request.json ? JSON.stringify(request.json) : undefined,",
+        "  });",
+        "  if (!response.ok) throw new Error(`${requestId} failed: ${response.status}`);",
+        "  return response.json();",
+        "}",
+        "",
+    ]
+
+
+def _typescript_consumer_flow_lines() -> list[str]:
+    return [
+        "await call('health');",
+        "const launchContract = await call('launch_contract');",
+        "const entryProfile = await call('entry_profile');",
+        "const harnessAgent = await call('harness_agent');",
+        "const sdkBootstrap = await call('sdk_bootstrap');",
+        "const consumerManifest = await call('consumer_manifest');",
+        "const catalog = await call('import_catalog');",
+        "const directCli = await call('direct_cli_readiness');",
+        "const plan = await call('plan_agent_request');",
+        "const receipt = await call('run_workflow');",
+        "const [events, audit, artifacts] = await Promise.all([call('events'), call('audit'), call('artifacts')]);",
+        "console.log({ launchContract: launchContract.status, entryProfile: entryProfile.status, harnessAgent: harnessAgent.status, sdkBootstrap: sdkBootstrap.status, consumerManifest: consumerManifest.status, importers: catalog.importer_count, directCli: directCli.summary?.capability_count, plan: plan.kind, workflowStatus: receipt.status, evidence: { events: events.length, audit: audit.length, artifacts: artifacts.length } });",
+    ]
 
 
 def _quickstart_curl(

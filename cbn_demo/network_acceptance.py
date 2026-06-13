@@ -47,65 +47,76 @@ def run_acceptance_check(
     request_id = str(check.get("request_id") or "")
     request = requests_by_id.get(request_id)
     if request is None:
-        return {
-            "check_id": check_id,
-            "request_id": request_id or "unknown",
-            "status": "skipped",
-            "proves": check.get("proves"),
-            "expect": check.get("expect", {}),
-            "error": "matching quickstart request not found",
-        }
+        return acceptance_check_result(check, check_id, request_id or "unknown", "skipped", error="matching quickstart request not found")
     response = _execute_quickstart_request(request, timeout_seconds=timeout_seconds)
     if response.get("error"):
-        return {
-            "check_id": check_id,
-            "request_id": request_id,
-            "status": "failed",
-            "http_status": response.get("http_status", 0),
-            "proves": check.get("proves"),
-            "expect": check.get("expect", {}),
-            "error": response.get("error"),
-        }
+        return acceptance_check_result(
+            check,
+            check_id,
+            request_id,
+            "failed",
+            http_status=response.get("http_status", 0),
+            error=response.get("error"),
+        )
     evaluation = _evaluate_acceptance_expectation(
         check.get("expect", {}) if isinstance(check.get("expect"), dict) else {},
         response.get("payload"),
         int(response.get("http_status", 0)),
     )
-    return {
+    status = "passed" if evaluation["passed"] else "failed"
+    return acceptance_check_result(
+        check,
+        check_id,
+        request_id,
+        status,
+        http_status=response.get("http_status", 0),
+        evidence=evaluation["evidence"],
+        error=evaluation.get("error"),
+    )
+
+
+def acceptance_check_result(
+    check: dict[str, Any],
+    check_id: str,
+    request_id: str,
+    status: str,
+    *,
+    http_status: Any = None,
+    evidence: Any = None,
+    error: Any = None,
+) -> dict[str, Any]:
+    result = {
         "check_id": check_id,
         "request_id": request_id,
-        "status": "passed" if evaluation["passed"] else "failed",
-        "http_status": response.get("http_status", 0),
+        "status": status,
         "proves": check.get("proves"),
         "expect": check.get("expect", {}),
-        "evidence": evaluation["evidence"],
-        "error": evaluation.get("error"),
+        "error": error,
+    }
+    if http_status is not None:
+        result["http_status"] = http_status
+    if evidence is not None:
+        result["evidence"] = evidence
+    return {
+        key: value
+        for key, value in result.items()
+        if value is not None or key == "error"
     }
 
 
 def _execute_quickstart_request(request: dict[str, Any], *, timeout_seconds: float) -> dict[str, Any]:
     method = str(request.get("method") or "GET")
     url = str(request.get("url") or "")
-    headers = {
-        str(key): str(value)
-        for key, value in (request.get("headers") if isinstance(request.get("headers"), dict) else {}).items()
-    }
-    data = None
-    if isinstance(request.get("json"), dict):
+    headers = _quickstart_headers(request)
+    data = _quickstart_json_body(request)
+    if data is not None:
         headers["Content-Type"] = "application/json"
-        data = json.dumps(request["json"], ensure_ascii=False).encode("utf-8")
     try:
         http_request = urllib.request.Request(url, data=data, headers=headers, method=method)
         with urllib.request.urlopen(http_request, timeout=timeout_seconds) as response:
-            return {
-                "http_status": response.status,
-                "payload": _decode_json_body(response.read()),
-            }
+            return _http_payload_response(response.status, response.read())
     except urllib.error.HTTPError as exc:
-        return {
-            "http_status": exc.code,
-            "payload": _decode_json_body(exc.read()),
-        }
+        return _http_payload_response(exc.code, exc.read())
     except urllib.error.URLError as exc:
         return {
             "http_status": 0,
@@ -118,6 +129,25 @@ def _execute_quickstart_request(request: dict[str, Any], *, timeout_seconds: flo
             "payload": None,
             "error": str(exc),
         }
+
+
+def _quickstart_headers(request: dict[str, Any]) -> dict[str, str]:
+    raw_headers = request.get("headers") if isinstance(request.get("headers"), dict) else {}
+    return {str(key): str(value) for key, value in raw_headers.items()}
+
+
+def _quickstart_json_body(request: dict[str, Any]) -> bytes | None:
+    payload = request.get("json")
+    if not isinstance(payload, dict):
+        return None
+    return json.dumps(payload, ensure_ascii=False).encode("utf-8")
+
+
+def _http_payload_response(status: int, body: bytes) -> dict[str, Any]:
+    return {
+        "http_status": status,
+        "payload": _decode_json_body(body),
+    }
 
 
 def _decode_json_body(body: bytes) -> Any:

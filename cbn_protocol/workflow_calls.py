@@ -31,20 +31,42 @@ def resolve_workflow_path(
     cbn_meta: dict[str, Any],
     workflow_tool: str | None = None,
 ) -> str:
-    workflow_path = cbn_meta.get("workflow_path")
-    if isinstance(workflow_path, str) and workflow_path:
-        return workflow_path
-    workflow_id = cbn_meta.get("workflow_id")
-    if not isinstance(workflow_id, str) or not workflow_id:
-        workflow_id = _workflow_id_from_tool(workflow_tool)
+    direct_path = _metadata_workflow_path(cbn_meta)
+    if direct_path:
+        return direct_path
+    workflow_id = _metadata_workflow_id(cbn_meta, workflow_tool)
     if not workflow_id:
         raise ValueError("cbn workflow metadata requires workflow_id or workflow_path")
+    path = _catalog_workflow_path(runtime, workflow_id)
+    if path:
+        return path
+    raise ValueError(f"unknown workflow_id: {workflow_id}")
+
+
+def _metadata_workflow_path(cbn_meta: dict[str, Any]) -> str | None:
+    workflow_path = cbn_meta.get("workflow_path")
+    return workflow_path if isinstance(workflow_path, str) and workflow_path else None
+
+
+def _metadata_workflow_id(cbn_meta: dict[str, Any], workflow_tool: str | None) -> str | None:
+    workflow_id = cbn_meta.get("workflow_id")
+    if isinstance(workflow_id, str) and workflow_id:
+        return workflow_id
+    return _workflow_id_from_tool(workflow_tool)
+
+
+def _catalog_workflow_path(runtime: RuntimeContext, workflow_id: str) -> str | None:
     for workflow in list_workflows(registry=runtime.registry):
-        if workflow.get("workflow_id") == workflow_id or f"workflow:{workflow.get('workflow_id')}" == workflow_id:
+        if _workflow_matches_id(workflow, workflow_id):
             path = workflow.get("path")
             if isinstance(path, str) and path:
                 return path
-    raise ValueError(f"unknown workflow_id: {workflow_id}")
+    return None
+
+
+def _workflow_matches_id(workflow: dict[str, Any], workflow_id: str) -> bool:
+    catalog_id = workflow.get("workflow_id")
+    return catalog_id == workflow_id or f"workflow:{catalog_id}" == workflow_id
 
 
 def workflow_run_ok(result: dict[str, Any]) -> bool:

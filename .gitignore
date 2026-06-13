@@ -1,6 +1,11 @@
 # Local browser automation output
 .playwright-mcp/
 
+# Local secrets and API configuration
+.env
+.env.*
+!.env.example
+
 # Local-only research, reports, and reference imports
 AGENTS.md
 deep-research-report.md

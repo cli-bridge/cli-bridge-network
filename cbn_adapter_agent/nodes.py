@@ -17,13 +17,53 @@ def build_adapter_agent_node_bundle(
     root: Path | None = None,
     coordination_plan: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    plan = coordination_plan or build_multi_agent_coordination_plan(
+    plan = _node_bundle_coordination_plan(
+        coordination_plan=coordination_plan,
         message=message,
         workflow_path=workflow_path,
         profiles=profiles,
         root=root,
     )
-    session = AgentSession(
+    session = _node_bundle_session(plan)
+    agents = _node_bundle_agents(plan)
+    cards = [_agent_card(agent) for agent in agents]
+    harnesses = _agent_harnesses(cards)
+    tasks = [_agent_task(agent=agent, session_id=session.session_id) for agent in agents]
+    bridge_message = _node_bundle_bridge_message(plan, session, cards, tasks)
+    return {
+        "kind": "AdapterAgentNodeBundle",
+        "apiVersion": "bridge.dev/v1alpha1",
+        "ok": bool(plan.get("ok")),
+        "status": plan.get("status"),
+        "workflow_path": plan.get("workflow_path"),
+        "session": session.as_dict(),
+        "cards": [card.as_dict() for card in cards],
+        "harnesses": [harness.as_dict() for harness in harnesses],
+        "tasks": [task.as_dict() for task in tasks],
+        "workflow_nodes": [task.as_workflow_node() for task in tasks],
+        "bridge_message": bridge_message,
+        "source_coordination_plan": _source_coordination_plan(plan),
+    }
+
+
+def _node_bundle_coordination_plan(
+    *,
+    coordination_plan: dict[str, Any] | None,
+    message: str,
+    workflow_path: str | Path | None,
+    profiles: tuple[str, ...] | None,
+    root: Path | None,
+) -> dict[str, Any]:
+    return coordination_plan or build_multi_agent_coordination_plan(
+        message=message,
+        workflow_path=workflow_path,
+        profiles=profiles,
+        root=root,
+    )
+
+
+def _node_bundle_session(plan: dict[str, Any]) -> AgentSession:
+    return AgentSession(
         agent_id="orchestration-coordinator-agent",
         workflow_id=str(plan.get("workflow_path") or ""),
         state="ready" if plan.get("ok") else "waiting_on_setup",
@@ -34,14 +74,23 @@ def build_adapter_agent_node_bundle(
             "next_actions": plan.get("next_actions", []),
         },
     )
-    cards = [_agent_card(agent) for agent in plan.get("agents", []) if isinstance(agent, dict)]
-    harnesses = [AgentHarness(harness_id=f"{card.agent_id}.harness", card=card) for card in cards]
-    tasks = [
-        _agent_task(agent=agent, session_id=session.session_id)
-        for agent in plan.get("agents", [])
-        if isinstance(agent, dict)
-    ]
-    bridge_message = AgentBridgeMessage(
+
+
+def _node_bundle_agents(plan: dict[str, Any]) -> list[dict[str, Any]]:
+    return [agent for agent in plan.get("agents", []) if isinstance(agent, dict)]
+
+
+def _agent_harnesses(cards: list[AgentCard]) -> list[AgentHarness]:
+    return [AgentHarness(harness_id=f"{card.agent_id}.harness", card=card) for card in cards]
+
+
+def _node_bundle_bridge_message(
+    plan: dict[str, Any],
+    session: AgentSession,
+    cards: list[AgentCard],
+    tasks: list[AgentTask],
+) -> dict[str, Any]:
+    return AgentBridgeMessage(
         agent_id=session.agent_id,
         session_id=session.session_id,
         task_id="adapter-agent-node-bundle",
@@ -55,25 +104,15 @@ def build_adapter_agent_node_bundle(
             "next_actions": plan.get("next_actions", []),
         },
     ).as_bridge_message()
+
+
+def _source_coordination_plan(plan: dict[str, Any]) -> dict[str, Any]:
     return {
-        "kind": "AdapterAgentNodeBundle",
-        "apiVersion": "bridge.dev/v1alpha1",
-        "ok": bool(plan.get("ok")),
+        "kind": plan.get("kind"),
         "status": plan.get("status"),
-        "workflow_path": plan.get("workflow_path"),
-        "session": session.as_dict(),
-        "cards": [card.as_dict() for card in cards],
-        "harnesses": [harness.as_dict() for harness in harnesses],
-        "tasks": [task.as_dict() for task in tasks],
-        "workflow_nodes": [task.as_workflow_node() for task in tasks],
-        "bridge_message": bridge_message,
-        "source_coordination_plan": {
-            "kind": plan.get("kind"),
-            "status": plan.get("status"),
-            "profile_scope": plan.get("profile_scope", []),
-            "handoffs": plan.get("handoffs", []),
-            "tool_call_plan_summary": plan.get("tool_call_plan_summary", {}),
-        },
+        "profile_scope": plan.get("profile_scope", []),
+        "handoffs": plan.get("handoffs", []),
+        "tool_call_plan_summary": plan.get("tool_call_plan_summary", {}),
     }
 
 

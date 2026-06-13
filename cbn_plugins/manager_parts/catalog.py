@@ -3,9 +3,23 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import Any
 
 from cbn_plugins.manifest import PluginManifest
+
+
+@dataclass(frozen=True)
+class OperationDescriptor:
+    operation_id: str
+    title: str
+    kind: str
+    command: str
+    api: dict[str, str] | None = None
+    requires_confirmation: bool = False
+    side_effects: tuple[str, ...] = ()
+    input_schema: dict[str, Any] | None = None
+    payload_template: dict[str, Any] | None = None
 
 
 def operation_catalog_for_manifest(manifest: PluginManifest, installed: bool) -> dict[str, Any]:
@@ -18,10 +32,6 @@ def operation_catalog_for_manifest(manifest: PluginManifest, installed: bool) ->
             ]
         )
     )
-    by_kind: dict[str, int] = {}
-    for operation in operations:
-        kind = str(operation.get("kind", "unknown"))
-        by_kind[kind] = by_kind.get(kind, 0) + 1
     return {
         "ok": True,
         "kind": "PluginProviderOperationCatalog",
@@ -32,24 +42,36 @@ def operation_catalog_for_manifest(manifest: PluginManifest, installed: bool) ->
         "installed": installed,
         "operation_kinds": ["report", "gate", "plan", "execute", "write"],
         "operations": operations,
-        "summary": {
-            "operation_count": len(operations),
-            "by_kind": by_kind,
-            "requires_confirmation_count": sum(
-                1 for operation in operations if operation.get("requires_confirmation")
-            ),
-            "write_or_execute_count": sum(
-                1 for operation in operations if operation.get("kind") in {"execute", "write"}
-            ),
-        },
+        "summary": operation_catalog_summary(operations),
         "validation": _validate_operation_catalog(manifest, operations),
-        "next_commands": [
-            f"python -m cbn plugin operations {manifest.plugin_id}",
-            f"python -m cbn plugin validate-operations {manifest.plugin_id}",
-            f"python -m cbn plugin gate {manifest.plugin_id} --action install",
-            f"python -m cbn plugin plan {manifest.plugin_id}",
-        ],
+        "next_commands": operation_catalog_next_commands(manifest.plugin_id),
     }
+
+
+def operation_catalog_summary(operations: list[dict[str, Any]]) -> dict[str, Any]:
+    by_kind: dict[str, int] = {}
+    for operation in operations:
+        kind = str(operation.get("kind", "unknown"))
+        by_kind[kind] = by_kind.get(kind, 0) + 1
+    return {
+        "operation_count": len(operations),
+        "by_kind": by_kind,
+        "requires_confirmation_count": sum(
+            1 for operation in operations if operation.get("requires_confirmation")
+        ),
+        "write_or_execute_count": sum(
+            1 for operation in operations if operation.get("kind") in {"execute", "write"}
+        ),
+    }
+
+
+def operation_catalog_next_commands(plugin_id: str) -> list[str]:
+    return [
+        f"python -m cbn plugin operations {plugin_id}",
+        f"python -m cbn plugin validate-operations {plugin_id}",
+        f"python -m cbn plugin gate {plugin_id} --action install",
+        f"python -m cbn plugin plan {plugin_id}",
+    ]
 
 
 def catalog_list_validation(catalogs: list[dict[str, Any]]) -> dict[str, Any]:
@@ -128,6 +150,14 @@ def operation_api_request(api: dict[str, Any] | None, payload: Any) -> dict[str,
 def _generic_plugin_operations(manifest: PluginManifest) -> list[dict[str, Any]]:
     plugin_id = manifest.plugin_id
     return [
+        *_generic_metadata_operations(plugin_id),
+        *_generic_gate_plan_operations(plugin_id),
+        *_generic_execute_operations(plugin_id),
+    ]
+
+
+def _generic_metadata_operations(plugin_id: str) -> list[dict[str, Any]]:
+    return [
         _operation("info", "Plugin Metadata", "report", f"python -m cbn plugin info {plugin_id}"),
         _operation(
             "preflight",
@@ -152,38 +182,21 @@ def _generic_plugin_operations(manifest: PluginManifest) -> list[dict[str, Any]]
             payload_template={"plugin_id": plugin_id, "remote": False},
             input_schema={"remote": "boolean"},
         ),
-        _operation(
-            "install-gate",
-            "Install Gate",
-            "gate",
-            f"python -m cbn plugin gate {plugin_id} --action install",
-            api={"method": "POST", "path": "/plugins/gate"},
-            payload_template={"plugin_id": plugin_id, "action": "install"},
-        ),
-        _operation(
-            "update-gate",
-            "Update Gate",
-            "gate",
-            f"python -m cbn plugin gate {plugin_id} --action update",
-            api={"method": "POST", "path": "/plugins/gate"},
-            payload_template={"plugin_id": plugin_id, "action": "update"},
-        ),
-        _operation(
-            "install-plan",
-            "Install Plan",
-            "plan",
-            f"python -m cbn plugin plan {plugin_id}",
-            api={"method": "POST", "path": "/plugins/plan"},
-            payload_template={"plugin_id": plugin_id, "action": "install"},
-        ),
-        _operation(
-            "update-plan",
-            "Update Plan",
-            "plan",
-            f"python -m cbn plugin plan {plugin_id} --action update",
-            api={"method": "POST", "path": "/plugins/plan"},
-            payload_template={"plugin_id": plugin_id, "action": "update"},
-        ),
+    ]
+
+
+def _generic_gate_plan_operations(plugin_id: str) -> list[dict[str, Any]]:
+    specs = (
+        ("install-gate", "Install Gate", "gate", "gate", "install", " --action install"),
+        ("update-gate", "Update Gate", "gate", "gate", "update", " --action update"),
+        ("install-plan", "Install Plan", "plan", "plan", "install", ""),
+        ("update-plan", "Update Plan", "plan", "plan", "update", " --action update"),
+    )
+    return [
+        *[
+            _plugin_gate_plan_operation(plugin_id, spec)
+            for spec in specs
+        ],
         _operation(
             "verify-plan",
             "Post-Operation Verification",
@@ -193,6 +206,26 @@ def _generic_plugin_operations(manifest: PluginManifest) -> list[dict[str, Any]]
             payload_template={"plugin_id": plugin_id, "action": "install", "run": False},
             input_schema={"action": "string", "run": "boolean"},
         ),
+    ]
+
+
+def _plugin_gate_plan_operation(
+    plugin_id: str,
+    spec: tuple[str, str, str, str, str, str],
+) -> dict[str, Any]:
+    operation_id, title, kind, command, action, suffix = spec
+    return _operation(
+        operation_id,
+        title,
+        kind,
+        f"python -m cbn plugin {command} {plugin_id}{suffix}",
+        api={"method": "POST", "path": f"/plugins/{command}"},
+        payload_template={"plugin_id": plugin_id, "action": action},
+    )
+
+
+def _generic_execute_operations(plugin_id: str) -> list[dict[str, Any]]:
+    return [
         _operation(
             "install-execute",
             "Install",
@@ -221,94 +254,150 @@ def _provider_operations(manifest: PluginManifest) -> list[dict[str, Any]]:
         return []
     plugin_id = manifest.plugin_id
     return [
-        _operation(
-            "status",
-            "CLI-Hub Status",
-            "report",
-            f"python -m cbn plugin status {plugin_id}",
-            api={"method": "GET", "path": f"/plugins/{plugin_id}/status"},
-        ),
-        _operation(
-            "market-list",
-            "Market List",
-            "report",
-            f"python -m cbn plugin market {plugin_id} list",
-            api={"method": "POST", "path": f"/plugins/{plugin_id}/market"},
-            payload_template={"command": "list"},
-        ),
-        _operation(
-            "candidates",
-            "Rank Candidates",
-            "report",
-            f"python -m cbn plugin candidates {plugin_id} --query file --limit 20 --compact",
-            api={"method": "POST", "path": f"/plugins/{plugin_id}/candidates"},
-            payload_template={"query": "file", "limit": 20, "compact": True},
-            input_schema={"query": "string", "limit": "integer", "compact": "boolean"},
-        ),
-        _operation(
-            "install-queue",
-            "Install Queue",
-            "gate",
-            f"python -m cbn plugin install-queue {plugin_id} --query file --limit 20 --max-installs 5",
-            api={"method": "POST", "path": f"/plugins/{plugin_id}/install-queue"},
-            payload_template={"query": "file", "limit": 20, "max_installs": 5, "include_blocked": True},
-        ),
-        _operation(
-            "blocked-plan",
-            "Blocked Plan",
-            "gate",
-            f"python -m cbn plugin blocked-plan {plugin_id} --query file --limit 20",
-            api={"method": "POST", "path": f"/plugins/{plugin_id}/blocked-plan"},
-            payload_template={"query": "file", "limit": 20},
-        ),
-        _operation(
-            "repair-plan",
-            "Repair Plan",
-            "report",
-            f"python -m cbn plugin repair-plan {plugin_id} <harness>",
-            api={"method": "POST", "path": f"/plugins/{plugin_id}/repair-plan"},
-            payload_template={"harness_name": "<harness>", "from_market": True},
-        ),
-        _operation(
-            "adapter-targets",
-            "Adapter Targets",
-            "report",
-            f"python -m cbn plugin adapter-targets {plugin_id} <harness> --from-market",
-            api={"method": "POST", "path": f"/plugins/{plugin_id}/adapter-targets"},
-            payload_template={"harness_name": "<harness>", "from_market": True, "limit": 20},
-        ),
-        _operation(
-            "adapter-smoke",
-            "Adapter Smoke",
-            "execute",
-            f"python -m cbn plugin adapter-smoke {plugin_id} <harness> --module <module> --run --yes",
-            api={"method": "POST", "path": f"/plugins/{plugin_id}/adapter-smoke"},
-            requires_confirmation=True,
-            side_effects=("subprocess", "runtime/artifacts"),
-            payload_template={
-                "harness_name": "<harness>",
-                "module": "<module>",
-                "run": True,
-                "confirmed": True,
-                "smoke_args": ["--help"],
-            },
-        ),
-        _operation(
-            "repair-entrypoint",
-            "Repair Entrypoint",
-            "write",
-            f"python -m cbn plugin repair-entrypoint {plugin_id} <harness> --module <module> --write --yes",
-            api={"method": "POST", "path": f"/plugins/{plugin_id}/repair-entrypoint"},
-            requires_confirmation=True,
-            side_effects=("external_plugins/entrypoints", "runtime/manifests", "audit", "events"),
-            payload_template={
-                "harness_name": "<harness>",
-                "module": "<module>",
-                "write": True,
-                "confirmed": True,
-                "smoke_args": ["--help"],
-            },
-        ),
+        *_provider_market_operations(plugin_id),
+        *_provider_repair_operations(plugin_id),
+        *_provider_adaptation_operations(plugin_id),
+        *_provider_mvp_operations(plugin_id),
+        *_provider_harness_operations(plugin_id),
+    ]
+
+
+def _provider_market_operations(plugin_id: str) -> list[dict[str, Any]]:
+    return [
+        _provider_status_operation(plugin_id),
+        _market_list_operation(plugin_id),
+        _candidate_ranking_operation(plugin_id),
+        _install_queue_operation(plugin_id),
+        _blocked_plan_operation(plugin_id),
+    ]
+
+
+def _provider_status_operation(plugin_id: str) -> dict[str, Any]:
+    return _operation(
+        "status",
+        "CLI-Hub Status",
+        "report",
+        f"python -m cbn plugin status {plugin_id}",
+        api={"method": "GET", "path": f"/plugins/{plugin_id}/status"},
+    )
+
+
+def _market_list_operation(plugin_id: str) -> dict[str, Any]:
+    return _operation(
+        "market-list",
+        "Market List",
+        "report",
+        f"python -m cbn plugin market {plugin_id} list",
+        api={"method": "POST", "path": f"/plugins/{plugin_id}/market"},
+        payload_template={"command": "list"},
+    )
+
+
+def _candidate_ranking_operation(plugin_id: str) -> dict[str, Any]:
+    return _operation(
+        "candidates",
+        "Rank Candidates",
+        "report",
+        f"python -m cbn plugin candidates {plugin_id} --query file --limit 20 --compact",
+        api={"method": "POST", "path": f"/plugins/{plugin_id}/candidates"},
+        payload_template={"query": "file", "limit": 20, "compact": True},
+        input_schema={"query": "string", "limit": "integer", "compact": "boolean"},
+    )
+
+
+def _install_queue_operation(plugin_id: str) -> dict[str, Any]:
+    return _operation(
+        "install-queue",
+        "Install Queue",
+        "gate",
+        f"python -m cbn plugin install-queue {plugin_id} --query file --limit 20 --max-installs 5",
+        api={"method": "POST", "path": f"/plugins/{plugin_id}/install-queue"},
+        payload_template={"query": "file", "limit": 20, "max_installs": 5, "include_blocked": True},
+    )
+
+
+def _blocked_plan_operation(plugin_id: str) -> dict[str, Any]:
+    return _operation(
+        "blocked-plan",
+        "Blocked Plan",
+        "gate",
+        f"python -m cbn plugin blocked-plan {plugin_id} --query file --limit 20",
+        api={"method": "POST", "path": f"/plugins/{plugin_id}/blocked-plan"},
+        payload_template={"query": "file", "limit": 20},
+    )
+
+
+def _provider_repair_operations(plugin_id: str) -> list[dict[str, Any]]:
+    return [
+        _repair_plan_operation(plugin_id),
+        _adapter_targets_operation(plugin_id),
+        _adapter_smoke_operation(plugin_id),
+        _repair_entrypoint_operation(plugin_id),
+    ]
+
+
+def _repair_plan_operation(plugin_id: str) -> dict[str, Any]:
+    return _operation(
+        "repair-plan",
+        "Repair Plan",
+        "report",
+        f"python -m cbn plugin repair-plan {plugin_id} <harness>",
+        api={"method": "POST", "path": f"/plugins/{plugin_id}/repair-plan"},
+        payload_template={"harness_name": "<harness>", "from_market": True},
+    )
+
+
+def _adapter_targets_operation(plugin_id: str) -> dict[str, Any]:
+    return _operation(
+        "adapter-targets",
+        "Adapter Targets",
+        "report",
+        f"python -m cbn plugin adapter-targets {plugin_id} <harness> --from-market",
+        api={"method": "POST", "path": f"/plugins/{plugin_id}/adapter-targets"},
+        payload_template={"harness_name": "<harness>", "from_market": True, "limit": 20},
+    )
+
+
+def _adapter_smoke_operation(plugin_id: str) -> dict[str, Any]:
+    return _operation(
+        "adapter-smoke",
+        "Adapter Smoke",
+        "execute",
+        f"python -m cbn plugin adapter-smoke {plugin_id} <harness> --module <module> --run --yes",
+        api={"method": "POST", "path": f"/plugins/{plugin_id}/adapter-smoke"},
+        requires_confirmation=True,
+        side_effects=("subprocess", "runtime/artifacts"),
+        payload_template={
+            "harness_name": "<harness>",
+            "module": "<module>",
+            "run": True,
+            "confirmed": True,
+            "smoke_args": ["--help"],
+        },
+    )
+
+
+def _repair_entrypoint_operation(plugin_id: str) -> dict[str, Any]:
+    return _operation(
+        "repair-entrypoint",
+        "Repair Entrypoint",
+        "write",
+        f"python -m cbn plugin repair-entrypoint {plugin_id} <harness> --module <module> --write --yes",
+        api={"method": "POST", "path": f"/plugins/{plugin_id}/repair-entrypoint"},
+        requires_confirmation=True,
+        side_effects=("external_plugins/entrypoints", "runtime/manifests", "audit", "events"),
+        payload_template={
+            "harness_name": "<harness>",
+            "module": "<module>",
+            "write": True,
+            "confirmed": True,
+            "smoke_args": ["--help"],
+        },
+    )
+
+
+def _provider_adaptation_operations(plugin_id: str) -> list[dict[str, Any]]:
+    return [
         _operation(
             "adaptation-gate",
             "Adaptation Gate",
@@ -341,6 +430,11 @@ def _provider_operations(manifest: PluginManifest) -> list[dict[str, Any]]:
             api={"method": "POST", "path": f"/plugins/{plugin_id}/live-verification"},
             payload_template={"harnesses": ["mermaid", "macrocli"], "candidate_query": "file"},
         ),
+    ]
+
+
+def _provider_mvp_operations(plugin_id: str) -> list[dict[str, Any]]:
+    return [
         _operation(
             "mvp-plan",
             "MVP Plan",
@@ -357,6 +451,11 @@ def _provider_operations(manifest: PluginManifest) -> list[dict[str, Any]]:
             api={"method": "POST", "path": f"/plugins/{plugin_id}/bootstrap-plan"},
             payload_template={"harness_name": "mermaid", "query": "file", "include_workflows": True},
         ),
+    ]
+
+
+def _provider_harness_operations(plugin_id: str) -> list[dict[str, Any]]:
+    return [
         _operation(
             "harness-verify-plan",
             "Harness Post-Operation Verification",
@@ -384,23 +483,24 @@ def _operation(
     title: str,
     kind: str,
     command: str,
-    api: dict[str, str] | None = None,
-    requires_confirmation: bool = False,
-    side_effects: tuple[str, ...] = (),
-    input_schema: dict[str, Any] | None = None,
-    payload_template: dict[str, Any] | None = None,
+    **options: Any,
 ) -> dict[str, Any]:
-    return _enrich_operation_descriptor({
-        "id": operation_id,
-        "title": title,
-        "kind": kind,
-        "command": command,
-        "api": api,
-        "requires_confirmation": requires_confirmation,
-        "side_effects": list(side_effects),
-        "input_schema": input_schema or {},
-        "payload_template": payload_template or {},
-    })
+    descriptor = OperationDescriptor(operation_id, title, kind, command, **options)
+    return _enrich_operation_descriptor(_operation_descriptor_payload(descriptor))
+
+
+def _operation_descriptor_payload(descriptor: OperationDescriptor) -> dict[str, Any]:
+    return {
+        "id": descriptor.operation_id,
+        "title": descriptor.title,
+        "kind": descriptor.kind,
+        "command": descriptor.command,
+        "api": descriptor.api,
+        "requires_confirmation": descriptor.requires_confirmation,
+        "side_effects": list(descriptor.side_effects),
+        "input_schema": descriptor.input_schema or {},
+        "payload_template": descriptor.payload_template or {},
+    }
 
 
 def _dedupe_operations(operations: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -469,49 +569,7 @@ def _validate_operation_catalog(manifest: PluginManifest, operations: list[dict[
         errors.append("provider is required")
     seen: set[str] = set()
     for index, operation in enumerate(operations):
-        prefix = f"operations[{index}]"
-        operation_id = operation.get("id")
-        if not isinstance(operation_id, str) or not operation_id:
-            errors.append(f"{prefix}.id is required")
-            operation_id = f"<missing:{index}>"
-        elif operation_id in seen:
-            errors.append(f"duplicate operation id: {operation_id}")
-        seen.add(str(operation_id))
-        kind = operation.get("kind")
-        if kind not in _OPERATION_KINDS:
-            errors.append(f"{prefix}.kind is invalid: {kind}")
-        required_inputs = operation.get("required_inputs", [])
-        input_schema = operation.get("input_schema", {})
-        if not isinstance(required_inputs, list) or not all(isinstance(item, str) for item in required_inputs):
-            errors.append(f"{prefix}.required_inputs must be a list of strings")
-            required_inputs = []
-        if not isinstance(input_schema, dict):
-            errors.append(f"{prefix}.input_schema must be an object")
-            input_schema = {}
-        for name in required_inputs:
-            if name not in input_schema:
-                errors.append(f"{prefix}.input_schema is missing required input: {name}")
-        command = operation.get("command")
-        api = operation.get("api")
-        if not isinstance(command, str) or not command:
-            errors.append(f"{prefix}.command is required")
-        if api is not None:
-            _validate_operation_api(prefix, api, kind, errors)
-        elif kind in {"execute", "write"}:
-            warnings.append(f"{prefix}.api is missing for side-effecting operation {operation_id}")
-        side_effects = operation.get("side_effects", [])
-        if kind in {"execute", "write"}:
-            if operation.get("requires_confirmation") is not True:
-                errors.append(f"{prefix}.requires_confirmation must be true for {kind}")
-            if not isinstance(side_effects, list) or not side_effects:
-                errors.append(f"{prefix}.side_effects must be non-empty for {kind}")
-            payload = operation.get("payload_template", {})
-            if isinstance(payload, dict) and payload.get("confirmed") is False:
-                errors.append(f"{prefix}.payload_template.confirmed cannot be false for {kind}")
-        elif operation.get("requires_confirmation"):
-            warnings.append(f"{prefix}.requires_confirmation is true for non-side-effect kind {kind}")
-        if not isinstance(operation.get("payload_template", {}), dict):
-            errors.append(f"{prefix}.payload_template must be an object")
+        _validate_operation_descriptor(index, operation, seen, errors, warnings)
     return {
         "ok": not errors,
         "error_count": len(errors),
@@ -519,6 +577,98 @@ def _validate_operation_catalog(manifest: PluginManifest, operations: list[dict[
         "errors": errors,
         "warnings": warnings,
     }
+
+
+def _validate_operation_descriptor(
+    index: int,
+    operation: dict[str, Any],
+    seen: set[str],
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    prefix = f"operations[{index}]"
+    operation_id = _validate_operation_id(prefix, index, operation, seen, errors)
+    kind = operation.get("kind")
+    if kind not in _OPERATION_KINDS:
+        errors.append(f"{prefix}.kind is invalid: {kind}")
+    _validate_operation_inputs(prefix, operation, errors)
+    _validate_operation_command_and_api(prefix, operation, operation_id, kind, errors, warnings)
+    _validate_operation_side_effects(prefix, operation, kind, errors, warnings)
+    if not isinstance(operation.get("payload_template", {}), dict):
+        errors.append(f"{prefix}.payload_template must be an object")
+
+
+def _validate_operation_id(
+    prefix: str,
+    index: int,
+    operation: dict[str, Any],
+    seen: set[str],
+    errors: list[str],
+) -> str:
+    operation_id = operation.get("id")
+    if not isinstance(operation_id, str) or not operation_id:
+        errors.append(f"{prefix}.id is required")
+        operation_id = f"<missing:{index}>"
+    elif operation_id in seen:
+        errors.append(f"duplicate operation id: {operation_id}")
+    seen.add(str(operation_id))
+    return str(operation_id)
+
+
+def _validate_operation_inputs(
+    prefix: str,
+    operation: dict[str, Any],
+    errors: list[str],
+) -> None:
+    required_inputs = operation.get("required_inputs", [])
+    input_schema = operation.get("input_schema", {})
+    if not isinstance(required_inputs, list) or not all(isinstance(item, str) for item in required_inputs):
+        errors.append(f"{prefix}.required_inputs must be a list of strings")
+        required_inputs = []
+    if not isinstance(input_schema, dict):
+        errors.append(f"{prefix}.input_schema must be an object")
+        input_schema = {}
+    for name in required_inputs:
+        if name not in input_schema:
+            errors.append(f"{prefix}.input_schema is missing required input: {name}")
+
+
+def _validate_operation_command_and_api(
+    prefix: str,
+    operation: dict[str, Any],
+    operation_id: str,
+    kind: Any,
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    command = operation.get("command")
+    api = operation.get("api")
+    if not isinstance(command, str) or not command:
+        errors.append(f"{prefix}.command is required")
+    if api is not None:
+        _validate_operation_api(prefix, api, kind, errors)
+    elif kind in {"execute", "write"}:
+        warnings.append(f"{prefix}.api is missing for side-effecting operation {operation_id}")
+
+
+def _validate_operation_side_effects(
+    prefix: str,
+    operation: dict[str, Any],
+    kind: Any,
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    side_effects = operation.get("side_effects", [])
+    if kind in {"execute", "write"}:
+        if operation.get("requires_confirmation") is not True:
+            errors.append(f"{prefix}.requires_confirmation must be true for {kind}")
+        if not isinstance(side_effects, list) or not side_effects:
+            errors.append(f"{prefix}.side_effects must be non-empty for {kind}")
+        payload = operation.get("payload_template", {})
+        if isinstance(payload, dict) and payload.get("confirmed") is False:
+            errors.append(f"{prefix}.payload_template.confirmed cannot be false for {kind}")
+    elif operation.get("requires_confirmation"):
+        warnings.append(f"{prefix}.requires_confirmation is true for non-side-effect kind {kind}")
 
 
 def _validate_operation_api(prefix: str, api: Any, kind: Any, errors: list[str]) -> None:

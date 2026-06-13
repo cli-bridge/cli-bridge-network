@@ -7,11 +7,23 @@ import os
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 
 DEFAULT_BASE_URL = "https://api.z.ai/api/coding/paas/v4"
 DEFAULT_MODEL = "GLM-5.1"
+DEFAULT_ENV_PATH = Path(__file__).resolve().parents[1] / ".env"
+ZAI_ENV_FILE_VAR = "CBN_ZAI_ENV_FILE"
+ZAI_LOAD_ENV_VAR = "CBN_ZAI_LOAD_ENV"
+
+
+@dataclass(frozen=True)
+class GlmConfig:
+    key: str | None
+    endpoint: str
+    model: str
 
 
 def validate_with_glm(
@@ -22,18 +34,11 @@ def validate_with_glm(
     api_key: str | None = None,
     timeout_seconds: int = 60,
 ) -> dict[str, Any]:
-    key = api_key or os.environ.get("ZAI_API_KEY")
-    if not key:
-        return {
-            "kind": "AdapterAgentLLMValidation",
-            "ok": False,
-            "skipped": True,
-            "reason": "ZAI_API_KEY is not set",
-        }
-    endpoint = _chat_endpoint(base_url or os.environ.get("ZAI_BASE_URL") or DEFAULT_BASE_URL)
-    model_name = model or os.environ.get("ZAI_MODEL") or DEFAULT_MODEL
+    config = _glm_config(base_url=base_url, model=model, api_key=api_key)
+    if not config.key:
+        return _missing_key_result("AdapterAgentLLMValidation")
     request_payload = _chat_payload(
-        model_name,
+        config.model,
         (
             "You validate CBN Adapter Agent drafts. Return compact JSON with keys "
             "ok, risks, missing_setup_guides, parser_contract_gaps, recommendation. "
@@ -41,40 +46,16 @@ def validate_with_glm(
         ),
         json.dumps(_bounded_payload(payload), ensure_ascii=False),
     )
-    request = _chat_request(endpoint, key, request_payload)
-    try:
-        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
-            raw = response.read().decode("utf-8", errors="replace")
-    except urllib.error.HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        return {
-            "kind": "AdapterAgentLLMValidation",
-            "ok": False,
-            "skipped": False,
-            "endpoint": endpoint,
-            "model": model_name,
-            "error_type": "http_error",
-            "status": exc.code,
-            "body_summary": body[:1000],
-        }
-    except OSError as exc:
-        return {
-            "kind": "AdapterAgentLLMValidation",
-            "ok": False,
-            "skipped": False,
-            "endpoint": endpoint,
-            "model": model_name,
-            "error_type": "request_error",
-            "error": str(exc),
-        }
-    parsed = json.loads(raw)
+    parsed = _request_json("AdapterAgentLLMValidation", config, request_payload, timeout_seconds)
+    if _is_llm_error_result(parsed, "AdapterAgentLLMValidation"):
+        return parsed
     content = _message_content(parsed)
     return {
         "kind": "AdapterAgentLLMValidation",
         "ok": True,
         "skipped": False,
-        "endpoint": endpoint,
-        "model": model_name,
+        "endpoint": config.endpoint,
+        "model": config.model,
         "content": content,
         "raw_response": parsed,
     }
@@ -89,56 +70,23 @@ def complete_with_glm(
     api_key: str | None = None,
     timeout_seconds: int = 60,
 ) -> dict[str, Any]:
-    key = api_key or os.environ.get("ZAI_API_KEY")
-    endpoint = _chat_endpoint(base_url or os.environ.get("ZAI_BASE_URL") or DEFAULT_BASE_URL)
-    model_name = model or os.environ.get("ZAI_MODEL") or DEFAULT_MODEL
-    if not key:
-        return {
-            "kind": "AdapterAgentGLMTurn",
-            "ok": False,
-            "skipped": True,
-            "endpoint": endpoint,
-            "model": model_name,
-            "reason": "ZAI_API_KEY is not set",
-        }
+    config = _glm_config(base_url=base_url, model=model, api_key=api_key)
+    if not config.key:
+        return _missing_key_result("AdapterAgentGLMTurn", config)
     request_payload = _chat_payload(
-        model_name,
+        config.model,
         system_prompt,
         json.dumps(_bounded_payload(payload), ensure_ascii=False),
     )
-    request = _chat_request(endpoint, key, request_payload)
-    try:
-        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
-            raw = response.read().decode("utf-8", errors="replace")
-    except urllib.error.HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        return {
-            "kind": "AdapterAgentGLMTurn",
-            "ok": False,
-            "skipped": False,
-            "endpoint": endpoint,
-            "model": model_name,
-            "error_type": "http_error",
-            "status": exc.code,
-            "body_summary": body[:1000],
-        }
-    except OSError as exc:
-        return {
-            "kind": "AdapterAgentGLMTurn",
-            "ok": False,
-            "skipped": False,
-            "endpoint": endpoint,
-            "model": model_name,
-            "error_type": "request_error",
-            "error": str(exc),
-        }
-    parsed = json.loads(raw)
+    parsed = _request_json("AdapterAgentGLMTurn", config, request_payload, timeout_seconds)
+    if _is_llm_error_result(parsed, "AdapterAgentGLMTurn"):
+        return parsed
     return {
         "kind": "AdapterAgentGLMTurn",
         "ok": True,
         "skipped": False,
-        "endpoint": endpoint,
-        "model": model_name,
+        "endpoint": config.endpoint,
+        "model": config.model,
         "content": _message_content(parsed),
         "raw_response": parsed,
     }
@@ -153,81 +101,176 @@ def stream_with_glm(
     api_key: str | None = None,
     timeout_seconds: int = 60,
 ) -> Iterator[dict[str, Any]]:
-    key = api_key or os.environ.get("ZAI_API_KEY")
-    endpoint = _chat_endpoint(base_url or os.environ.get("ZAI_BASE_URL") or DEFAULT_BASE_URL)
-    model_name = model or os.environ.get("ZAI_MODEL") or DEFAULT_MODEL
-    if not key:
-        yield {
-            "type": "error",
-            "kind": "AdapterAgentGLMStream",
-            "ok": False,
-            "skipped": True,
-            "endpoint": endpoint,
-            "model": model_name,
-            "reason": "ZAI_API_KEY is not set",
-        }
+    config = _glm_config(base_url=base_url, model=model, api_key=api_key)
+    if not config.key:
+        yield {"type": "error", **_missing_key_result("AdapterAgentGLMStream", config)}
         return
     request_payload = {
         **_chat_payload(
-            model_name,
+            config.model,
             system_prompt,
             json.dumps(_bounded_payload(payload), ensure_ascii=False),
         ),
         "stream": True,
     }
-    request = _chat_request(endpoint, key, request_payload)
+    request = _chat_request(config.endpoint, config.key, request_payload)
     try:
         with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
-            content_type = response.headers.get("Content-Type", "")
-            if "text/event-stream" not in content_type and "stream" not in content_type:
-                raw = response.read().decode("utf-8", errors="replace")
-                parsed = json.loads(raw)
-                content = _message_content(parsed)
-                if content:
-                    yield {"type": "delta", "text": content}
-                yield {"type": "done", "model": model_name, "endpoint": endpoint}
-                return
-            for raw_line in response:
-                line = raw_line.decode("utf-8", errors="replace").strip()
-                if not line or line.startswith(":"):
-                    continue
-                if line.startswith("data:"):
-                    line = line.removeprefix("data:").strip()
-                if line == "[DONE]":
-                    yield {"type": "done", "model": model_name, "endpoint": endpoint}
-                    return
-                try:
-                    event = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                delta = _stream_delta_content(event)
-                if delta:
-                    yield {"type": "delta", "text": delta}
-            yield {"type": "done", "model": model_name, "endpoint": endpoint}
+            yield from _stream_response_events(response, config)
     except urllib.error.HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        yield {
-            "type": "error",
-            "kind": "AdapterAgentGLMStream",
-            "ok": False,
-            "skipped": False,
-            "endpoint": endpoint,
-            "model": model_name,
-            "error_type": "http_error",
-            "status": exc.code,
-            "body_summary": body[:1000],
-        }
+        yield {"type": "error", **_http_error_result("AdapterAgentGLMStream", config, exc)}
     except OSError as exc:
-        yield {
-            "type": "error",
-            "kind": "AdapterAgentGLMStream",
-            "ok": False,
-            "skipped": False,
-            "endpoint": endpoint,
-            "model": model_name,
-            "error_type": "request_error",
-            "error": str(exc),
-        }
+        yield {"type": "error", **_request_error_result("AdapterAgentGLMStream", config, exc)}
+
+
+def _glm_config(*, base_url: str | None, model: str | None, api_key: str | None) -> GlmConfig:
+    env = _zai_env()
+    return GlmConfig(
+        key=api_key or env.get("ZAI_API_KEY"),
+        endpoint=_chat_endpoint(base_url or env.get("ZAI_BASE_URL") or DEFAULT_BASE_URL),
+        model=model or env.get("ZAI_MODEL") or DEFAULT_MODEL,
+    )
+
+
+def _zai_env() -> dict[str, str]:
+    values = _dotenv_values()
+    values.update(os.environ)
+    return values
+
+
+def _dotenv_values() -> dict[str, str]:
+    if _env_disabled(os.environ.get(ZAI_LOAD_ENV_VAR)):
+        return {}
+    env_path = Path(os.environ.get(ZAI_ENV_FILE_VAR) or DEFAULT_ENV_PATH)
+    if not env_path.exists() or not env_path.is_file():
+        return {}
+    return _parse_dotenv(env_path.read_text(encoding="utf-8"))
+
+
+def _env_disabled(value: str | None) -> bool:
+    return str(value or "").strip().casefold() in {"0", "false", "no", "off"}
+
+
+def _parse_dotenv(text: str) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        name, value = line.split("=", 1)
+        name = name.strip()
+        if not name:
+            continue
+        values[name] = _dotenv_value(value)
+    return values
+
+
+def _dotenv_value(value: str) -> str:
+    stripped = value.strip()
+    if len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in {'"', "'"}:
+        return stripped[1:-1]
+    return stripped
+
+
+def _missing_key_result(kind: str, config: GlmConfig | None = None) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "kind": kind,
+        "ok": False,
+        "skipped": True,
+        "reason": "ZAI_API_KEY is not set",
+    }
+    if config is not None:
+        result.update({"endpoint": config.endpoint, "model": config.model})
+    return result
+
+
+def _request_json(
+    kind: str,
+    config: GlmConfig,
+    request_payload: dict[str, Any],
+    timeout_seconds: int,
+) -> dict[str, Any]:
+    request = _chat_request(config.endpoint, config.key or "", request_payload)
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+            raw = response.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:
+        return _http_error_result(kind, config, exc)
+    except OSError as exc:
+        return _request_error_result(kind, config, exc)
+    return json.loads(raw)
+
+
+def _is_llm_error_result(result: dict[str, Any], kind: str) -> bool:
+    return result.get("kind") == kind and result.get("ok") is False
+
+
+def _http_error_result(kind: str, config: GlmConfig, exc: urllib.error.HTTPError) -> dict[str, Any]:
+    body = exc.read().decode("utf-8", errors="replace")
+    return {
+        "kind": kind,
+        "ok": False,
+        "skipped": False,
+        "endpoint": config.endpoint,
+        "model": config.model,
+        "error_type": "http_error",
+        "status": exc.code,
+        "body_summary": body[:1000],
+    }
+
+
+def _request_error_result(kind: str, config: GlmConfig, exc: OSError) -> dict[str, Any]:
+    return {
+        "kind": kind,
+        "ok": False,
+        "skipped": False,
+        "endpoint": config.endpoint,
+        "model": config.model,
+        "error_type": "request_error",
+        "error": str(exc),
+    }
+
+
+def _stream_response_events(response: Any, config: GlmConfig) -> Iterator[dict[str, Any]]:
+    content_type = response.headers.get("Content-Type", "")
+    if "text/event-stream" not in content_type and "stream" not in content_type:
+        yield from _single_response_events(response, config)
+        return
+    for event in _sse_json_events(response):
+        delta = _stream_delta_content(event)
+        if delta:
+            yield {"type": "delta", "text": delta}
+    yield {"type": "done", "model": config.model, "endpoint": config.endpoint}
+
+
+def _single_response_events(response: Any, config: GlmConfig) -> Iterator[dict[str, Any]]:
+    raw = response.read().decode("utf-8", errors="replace")
+    content = _message_content(json.loads(raw))
+    if content:
+        yield {"type": "delta", "text": content}
+    yield {"type": "done", "model": config.model, "endpoint": config.endpoint}
+
+
+def _sse_json_events(response: Any) -> Iterator[dict[str, Any]]:
+    for raw_line in response:
+        line = _sse_data_line(raw_line.decode("utf-8", errors="replace"))
+        if line is None:
+            continue
+        if line == "[DONE]":
+            return
+        try:
+            yield json.loads(line)
+        except json.JSONDecodeError:
+            continue
+
+
+def _sse_data_line(line: str) -> str | None:
+    stripped = line.strip()
+    if not stripped or stripped.startswith(":"):
+        return None
+    if stripped.startswith("data:"):
+        stripped = stripped.removeprefix("data:").strip()
+    return stripped
 
 
 def _chat_payload(model_name: str, system_prompt: str, user_content: str) -> dict[str, Any]:
@@ -301,54 +344,75 @@ def _bounded_payload(payload: dict[str, Any]) -> dict[str, Any]:
     text = json.dumps(payload, ensure_ascii=False)
     if len(text) <= 12000:
         return payload
-    if payload.get("kind") == "AdapterAgentDraftBatch":
-        return {
-            "kind": payload.get("kind"),
-            "apiVersion": payload.get("apiVersion"),
-            "summary": payload.get("summary"),
-            "drafts": [_compact_adapter_draft(draft) for draft in payload.get("drafts", [])],
-            "truncated": True,
-            "truncation_strategy": "adapter-draft-summary",
-        }
-    if payload.get("kind") == "AdapterAgentDraft":
-        return {
-            **_compact_adapter_draft(payload),
-            "truncated": True,
-            "truncation_strategy": "adapter-draft-summary",
-        }
-    if payload.get("kind") == "AdapterAgentOrchestrationContext":
-        return {
-            "kind": payload.get("kind"),
-            "apiVersion": payload.get("apiVersion"),
-            "user_message": payload.get("user_message"),
-            "workflow_initialization": _compact_workflow_initialization(
-                payload.get("workflow_initialization") or {}
-            ),
-            "coordination_plan": _compact_coordination_plan(payload.get("coordination_plan") or {}),
-            "cli_routes": payload.get("cli_routes", [])[:20],
-            "auth_fallbacks": _compact_auth_fallbacks(payload.get("auth_fallbacks", [])),
-            "recommended_next_action": payload.get("recommended_next_action"),
-            "truncated": True,
-            "truncation_strategy": "adapter-orchestration-context",
-        }
-    if payload.get("kind") == "AdapterAgentOrchestrationTurn":
-        return {
-            "kind": payload.get("kind"),
-            "apiVersion": payload.get("apiVersion"),
-            "ok": payload.get("ok"),
-            "status": payload.get("status"),
-            "workflow_path": payload.get("workflow_path"),
-            "recommended_next_action": payload.get("recommended_next_action"),
-            "workflow_initialization": _compact_workflow_initialization(
-                payload.get("workflow_initialization") or {}
-            ),
-            "coordination_plan": _compact_coordination_plan(payload.get("coordination_plan") or {}),
-            "cli_routes": payload.get("cli_routes", [])[:20],
-            "auth_fallbacks": _compact_auth_fallbacks(payload.get("auth_fallbacks", [])),
-            "continuation": payload.get("continuation"),
-            "truncated": True,
-            "truncation_strategy": "adapter-orchestration-turn",
-        }
+    kind = payload.get("kind")
+    if kind == "AdapterAgentDraftBatch":
+        return _bounded_adapter_draft_batch(payload)
+    if kind == "AdapterAgentDraft":
+        return _bounded_adapter_draft(payload)
+    if kind == "AdapterAgentOrchestrationContext":
+        return _bounded_orchestration_context(payload)
+    if kind == "AdapterAgentOrchestrationTurn":
+        return _bounded_orchestration_turn(payload)
+    return _bounded_workflow_initialization(payload)
+
+
+def _bounded_adapter_draft_batch(payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "kind": payload.get("kind"),
+        "apiVersion": payload.get("apiVersion"),
+        "summary": payload.get("summary"),
+        "drafts": [_compact_adapter_draft(draft) for draft in payload.get("drafts", [])],
+        "truncated": True,
+        "truncation_strategy": "adapter-draft-summary",
+    }
+
+
+def _bounded_adapter_draft(payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **_compact_adapter_draft(payload),
+        "truncated": True,
+        "truncation_strategy": "adapter-draft-summary",
+    }
+
+
+def _bounded_orchestration_context(payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "kind": payload.get("kind"),
+        "apiVersion": payload.get("apiVersion"),
+        "user_message": payload.get("user_message"),
+        "workflow_initialization": _compact_workflow_initialization(
+            payload.get("workflow_initialization") or {}
+        ),
+        "coordination_plan": _compact_coordination_plan(payload.get("coordination_plan") or {}),
+        "cli_routes": payload.get("cli_routes", [])[:20],
+        "auth_fallbacks": _compact_auth_fallbacks(payload.get("auth_fallbacks", [])),
+        "recommended_next_action": payload.get("recommended_next_action"),
+        "truncated": True,
+        "truncation_strategy": "adapter-orchestration-context",
+    }
+
+
+def _bounded_orchestration_turn(payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "kind": payload.get("kind"),
+        "apiVersion": payload.get("apiVersion"),
+        "ok": payload.get("ok"),
+        "status": payload.get("status"),
+        "workflow_path": payload.get("workflow_path"),
+        "recommended_next_action": payload.get("recommended_next_action"),
+        "workflow_initialization": _compact_workflow_initialization(
+            payload.get("workflow_initialization") or {}
+        ),
+        "coordination_plan": _compact_coordination_plan(payload.get("coordination_plan") or {}),
+        "cli_routes": payload.get("cli_routes", [])[:20],
+        "auth_fallbacks": _compact_auth_fallbacks(payload.get("auth_fallbacks", [])),
+        "continuation": payload.get("continuation"),
+        "truncated": True,
+        "truncation_strategy": "adapter-orchestration-turn",
+    }
+
+
+def _bounded_workflow_initialization(payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "kind": payload.get("kind"),
         "apiVersion": payload.get("apiVersion"),

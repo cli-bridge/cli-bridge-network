@@ -30,3 +30,13 @@ python -m cbn approvals list --status pending
 python -m cbn workflow run workflows/example.json --dry-run
 python -m cbn daemon routes
 ```
+
+## Desktop App
+
+Workflow Studio is delivered through the desktop app shell. The standalone
+frontend project lives under `frontend/`, combining the Vue/Vite renderer and
+Electron shell. It is the only user-facing UI entry.
+
+```powershell
+npm run app:dev
+```

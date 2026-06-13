@@ -13,7 +13,7 @@ from cbn_adapter_agent.compiler import (
     write_adapter_draft,
 )
 from cbn_adapter_agent.coordinator import build_multi_agent_coordination_plan
-from cbn_adapter_agent.llm_validation import _bounded_payload, stream_with_glm, validate_with_glm
+from cbn_adapter_agent.llm_validation import _bounded_payload, _glm_config, stream_with_glm, validate_with_glm
 from cbn_adapter_agent.manifest_bootstrap import build_manifest_bootstrap_plan
 from cbn_adapter_agent.nodes import build_adapter_agent_node_bundle
 from cbn_adapter_agent.orchestrator import build_orchestration_turn
@@ -285,6 +285,7 @@ class AdapterAgentHarnessTests(unittest.TestCase):
                 "workflows/auth-gated-first-run.example.json",
                 "--message",
                 "initialize",
+                "--no-glm",
             ],
             text=True,
             encoding="utf-8",
@@ -474,18 +475,38 @@ class AdapterAgentHarnessTests(unittest.TestCase):
         self.assertEqual(proc.stderr, "")
 
     def test_glm_validation_skips_without_key(self):
-        with patch.dict("os.environ", {}, clear=True):
+        with patch.dict("os.environ", {"CBN_ZAI_LOAD_ENV": "0"}, clear=True):
             result = validate_with_glm({"kind": "sample"})
         self.assertTrue(result["skipped"])
         self.assertFalse(result["ok"])
 
     def test_glm_stream_reports_missing_key_without_network(self):
-        with patch.dict("os.environ", {}, clear=True):
+        with patch.dict("os.environ", {"CBN_ZAI_LOAD_ENV": "0"}, clear=True):
             events = list(stream_with_glm({"kind": "sample"}, system_prompt="test"))
 
         self.assertEqual(events[0]["type"], "error")
         self.assertTrue(events[0]["skipped"])
         self.assertFalse(events[0]["ok"])
+
+    def test_glm_config_loads_zai_dotenv_without_network(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env_path = Path(tmp) / ".env"
+            env_path.write_text(
+                "\n".join(
+                    [
+                        "ZAI_BASE_URL=https://example.test/v4",
+                        "ZAI_MODEL=GLM-test",
+                        "ZAI_API_KEY=local-test-key",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            with patch.dict("os.environ", {"CBN_ZAI_ENV_FILE": str(env_path)}, clear=True):
+                config = _glm_config(base_url=None, model=None, api_key=None)
+
+        self.assertEqual(config.endpoint, "https://example.test/v4/chat/completions")
+        self.assertEqual(config.model, "GLM-test")
+        self.assertEqual(config.key, "local-test-key")
 
     def test_adapter_agent_tool_use_stores_secret_without_echoing_value(self):
         env_store = {}

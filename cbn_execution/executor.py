@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -22,24 +23,55 @@ from cbn_core.message import BridgeMessage
 from protocol import EventType
 
 
+@dataclass(frozen=True)
+class CompletedEventPayloadInput:
+    call_id: str
+    manifest: CapabilityManifest
+    result: ToolResult
+    parsed: dict[str, Any]
+    artifacts: list[dict[str, Any]]
+    authorization: dict[str, Any]
+    approval_id: str | None
+    ok: bool
+    dry_run: bool
+
+
+@dataclass(frozen=True)
+class BlockedEventPayloadInput:
+    call_id: str
+    manifest: CapabilityManifest
+    decision: Any
+    approval: dict[str, Any] | None
+    authorization: dict[str, Any]
+    approval_id: str | None
+    dry_run: bool
+
+
+@dataclass(frozen=True)
+class CapabilityExecutorDeps:
+    policy: PolicyEngine | None = None
+    approval_store: ApprovalStore | None = None
+    event_bus: EventBus | None = None
+    artifact_store: ArtifactStore | None = None
+    parser_registry: ParserRegistry | None = None
+
+
 class CapabilityExecutor:
     def __init__(
         self,
         registry: ManifestRegistry,
         audit_log: AuditLog,
-        policy: PolicyEngine | None = None,
-        approval_store: ApprovalStore | None = None,
-        event_bus: EventBus | None = None,
-        artifact_store: ArtifactStore | None = None,
-        parser_registry: ParserRegistry | None = None,
+        deps: CapabilityExecutorDeps | PolicyEngine | None = None,
+        **overrides: Any,
     ) -> None:
+        resolved = _executor_deps(deps, overrides)
         self.registry = registry
         self.audit_log = audit_log
-        self.policy = policy or PolicyEngine()
-        self.approval_store = approval_store
-        self.event_bus = event_bus
-        self.artifact_store = artifact_store
-        self.parser_registry = parser_registry or ParserRegistry.builtins()
+        self.policy = resolved.policy or PolicyEngine()
+        self.approval_store = resolved.approval_store
+        self.event_bus = resolved.event_bus
+        self.artifact_store = resolved.artifact_store
+        self.parser_registry = resolved.parser_registry or ParserRegistry.builtins()
         self.stdio = StdioAdapter()
         self.pty = PtyAdapter()
         self.session_env: dict[str, str] = {}
@@ -56,6 +88,43 @@ class CapabilityExecutor:
         call_id = str(uuid.uuid4())
         manifest = self.registry.require(capability_id)
         request = self._request_from_manifest(manifest, extra_args, cwd, dry_run)
+
+        authorization = self._authorize(manifest, request, confirmed, approval_id)
+        if not authorization["decision"].allowed:
+            return self._blocked_response(
+                call_id,
+                manifest,
+                request,
+                authorization,
+                approval_id,
+                dry_run,
+            )
+
+        self._record_started(
+            call_id,
+            manifest,
+            request,
+            authorization["approval_confirmed"],
+            approval_id,
+            dry_run,
+        )
+        result = self._dispatch(manifest, request)
+        return self._completed_response(
+            call_id,
+            manifest,
+            result,
+            authorization,
+            approval_id,
+            dry_run,
+        )
+
+    def _authorize(
+        self,
+        manifest: CapabilityManifest,
+        request: ToolCall,
+        confirmed: bool,
+        approval_id: str | None,
+    ) -> dict[str, Any]:
         approval_scope = _approval_scope(manifest, request)
         approval_confirmed = False
         approval_error = None
@@ -64,77 +133,111 @@ class CapabilityExecutor:
             try:
                 self.approval_store.use(
                     approval_id,
-                    capability_id,
+                    manifest.capability_id,
                     scope_hash=approval_scope["scope_hash"],
                 )
                 approval_confirmed = True
                 decision = self.policy.evaluate(manifest, confirmed=True)
             except (KeyError, ValueError) as exc:
                 approval_error = str(exc)
-        if not decision.allowed:
-            approval = None
-            if decision.requires_confirmation and self.approval_store is not None:
-                approval = self.approval_store.request(
-                    call_id=call_id,
-                    capability_id=capability_id,
-                    argv=request.argv,
-                    cwd=request.cwd,
-                    risk=decision.risk,
-                    reason=decision.reason,
-                    dry_run=dry_run,
-                    scope_hash=approval_scope["scope_hash"],
-                    scope=approval_scope["scope"],
-                )
-            event = self.audit_log.append(
-                {
-                    "type": "tool_call.blocked",
-                    "call_id": call_id,
-                    "capability_id": capability_id,
-                    "decision": decision.as_dict(),
-                    "approval_id": approval["approval_id"] if approval else None,
-                    "requested_approval_id": approval_id,
-                    "approval_error": approval_error,
-                    "dry_run": dry_run,
-                    "approval_scope_hash": approval_scope["scope_hash"],
-                }
-            )
-            if approval:
-                self._publish(
-                    EventType.APPROVAL_REQUESTED,
-                    capability_id,
-                    {"approval": approval},
-                    call_id,
-                )
-            self._publish(
-                EventType.TOOL_CALL_BLOCKED,
-                capability_id,
-                {
-                    "decision": decision.as_dict(),
-                    "approval_id": approval["approval_id"] if approval else None,
-                    "requested_approval_id": approval_id,
-                    "approval_error": approval_error,
-                    "dry_run": dry_run,
-                },
-                call_id,
-            )
-            return {
-                "call_id": call_id,
-                "capability_id": capability_id,
-                "ok": False,
-                "allowed": False,
-                "decision": decision.as_dict(),
-                "approval": approval,
-                "approval_error": approval_error,
-                "audit_event_id": event["event_id"],
-            }
+        return {
+            "decision": decision,
+            "approval_confirmed": approval_confirmed,
+            "approval_error": approval_error,
+            "approval_scope": approval_scope,
+        }
 
+    def _blocked_response(
+        self,
+        call_id: str,
+        manifest: CapabilityManifest,
+        request: ToolCall,
+        authorization: dict[str, Any],
+        approval_id: str | None,
+        dry_run: bool,
+    ) -> dict[str, Any]:
+        decision = authorization["decision"]
+        approval_scope = authorization["approval_scope"]
+        approval = self._request_approval(call_id, manifest, request, decision, approval_scope, dry_run)
+        blocked = BlockedEventPayloadInput(
+            call_id=call_id,
+            manifest=manifest,
+            decision=decision,
+            approval=approval,
+            authorization=authorization,
+            approval_id=approval_id,
+            dry_run=dry_run,
+        )
+        event = self.audit_log.append(_blocked_audit_record(blocked, approval_scope))
+        if approval:
+            self._publish_approval_requested(blocked)
+        self._publish_blocked(blocked)
+        return _blocked_call_result(blocked, event)
+
+    def _request_approval(
+        self,
+        call_id: str,
+        manifest: CapabilityManifest,
+        request: ToolCall,
+        decision: Any,
+        approval_scope: dict[str, Any],
+        dry_run: bool,
+    ) -> dict[str, Any] | None:
+        if not decision.requires_confirmation or self.approval_store is None:
+            return None
+        return self.approval_store.request(
+            call_id=call_id,
+            capability_id=manifest.capability_id,
+            argv=request.argv,
+            cwd=request.cwd,
+            risk=decision.risk,
+            reason=decision.reason,
+            dry_run=dry_run,
+            scope_hash=approval_scope["scope_hash"],
+            scope=approval_scope["scope"],
+        )
+
+    def _publish_blocked(self, payload: BlockedEventPayloadInput) -> None:
+        self._publish(
+            EventType.TOOL_CALL_BLOCKED,
+            payload.manifest.capability_id,
+            {
+                "decision": payload.decision.as_dict(),
+                "approval_id": payload.approval["approval_id"] if payload.approval else None,
+                "requested_approval_id": payload.approval_id,
+                "approval_error": payload.authorization["approval_error"],
+                "dry_run": payload.dry_run,
+            },
+            payload.call_id,
+        )
+
+    def _publish_approval_requested(self, payload: BlockedEventPayloadInput) -> None:
+        if payload.approval is None:
+            return
+        self._publish(
+            EventType.APPROVAL_REQUESTED,
+            payload.manifest.capability_id,
+            {"approval": payload.approval},
+            payload.call_id,
+        )
+
+    def _record_started(
+        self,
+        call_id: str,
+        manifest: CapabilityManifest,
+        request: ToolCall,
+        approval_confirmed: bool,
+        approval_id: str | None,
+        dry_run: bool,
+    ) -> None:
+        approval_scope = _approval_scope(manifest, request) if approval_confirmed else None
         self.audit_log.append(
             {
                 "type": "tool_call.started",
                 "call_id": call_id,
-                "capability_id": capability_id,
+                "capability_id": manifest.capability_id,
                 "approval_id": approval_id if approval_confirmed else None,
-                "approval_scope_hash": approval_scope["scope_hash"] if approval_confirmed else None,
+                "approval_scope_hash": approval_scope["scope_hash"] if approval_scope else None,
                 "argv": list(request.argv),
                 "cwd": request.cwd,
                 "dry_run": dry_run,
@@ -142,79 +245,122 @@ class CapabilityExecutor:
         )
         self._publish(
             EventType.TOOL_CALL_STARTED,
-            capability_id,
+            manifest.capability_id,
             {"argv": list(request.argv), "cwd": request.cwd, "dry_run": dry_run},
             call_id,
         )
-        result = self._dispatch(manifest, request)
-        artifacts = self._record_artifacts(capability_id, call_id, result)
+
+    def _completed_response(
+        self,
+        call_id: str,
+        manifest: CapabilityManifest,
+        result: ToolResult,
+        authorization: dict[str, Any],
+        approval_id: str | None,
+        dry_run: bool,
+    ) -> dict[str, Any]:
+        completion = self._completed_call(call_id, manifest, result)
+        self._publish_bridge_message(call_id, manifest, completion["message"])
+        event = self._record_completed_audit(call_id, manifest, result, completion, authorization, dry_run)
+        self._publish_completed(CompletedEventPayloadInput(
+            call_id=call_id,
+            manifest=manifest,
+            result=result,
+            parsed=completion["parsed_record"],
+            artifacts=completion["artifacts"],
+            authorization=authorization,
+            approval_id=approval_id,
+            ok=completion["ok"],
+            dry_run=dry_run,
+        ))
+        return _completed_response_payload(
+            call_id,
+            manifest,
+            result,
+            completion,
+            authorization,
+            approval_id,
+            event["event_id"],
+        )
+
+    def _completed_call(
+        self,
+        call_id: str,
+        manifest: CapabilityManifest,
+        result: ToolResult,
+    ) -> dict[str, Any]:
+        artifacts = self._record_artifacts(manifest.capability_id, call_id, result)
         parsed = self._parse_result(manifest, call_id, result, artifacts)
         if parsed["artifact"] is not None:
             artifacts.append(parsed["artifact"])
         ok = _tool_call_ok(result, parsed["payload"])
-        message = BridgeMessage(
-            producer=capability_id,
-            channel="capability.output",
-            correlation_id=call_id,
-            payload=parsed["payload"],
-            artifacts=tuple(artifacts),
-        ).as_dict()
-        self._publish(
-            EventType.BRIDGE_MESSAGE_CREATED,
-            capability_id,
-            {"message": message},
-            call_id,
-        )
-        event = self.audit_log.append(
+        return {
+            "ok": ok,
+            "parsed": parsed["payload"],
+            "parsed_record": parsed,
+            "artifacts": artifacts,
+            "message": _capability_output_message(call_id, manifest, parsed["payload"], artifacts),
+        }
+
+    def _record_completed_audit(
+        self,
+        call_id: str,
+        manifest: CapabilityManifest,
+        result: ToolResult,
+        completion: dict[str, Any],
+        authorization: dict[str, Any],
+        dry_run: bool,
+    ) -> dict[str, Any]:
+        return self.audit_log.append(
             {
                 "type": "tool_call.completed",
                 "call_id": call_id,
-                "capability_id": capability_id,
+                "capability_id": manifest.capability_id,
                 "allowed": result.allowed,
-                "ok": ok,
+                "ok": completion["ok"],
                 "exit_code": result.exit_code,
                 "reason": result.reason,
                 "stdout_summary": result.stdout[:500],
                 "stderr_summary": result.stderr[:500],
-                "parser_ref": parsed["payload"]["parser_ref"],
-                "parser_ok": parsed["payload"].get("ok"),
-                "artifact_ids": [artifact["artifact_id"] for artifact in artifacts],
+                "parser_ref": completion["parsed"]["parser_ref"],
+                "parser_ok": completion["parsed"].get("ok"),
+                "artifact_ids": _artifact_ids(completion["artifacts"]),
                 "dry_run": dry_run,
-                "approval_scope_hash": approval_scope["scope_hash"] if approval_confirmed else None,
+                "approval_scope_hash": _confirmed_scope_hash(authorization),
             }
         )
+
+    def _publish_bridge_message(
+        self,
+        call_id: str,
+        manifest: CapabilityManifest,
+        message: dict[str, Any],
+    ) -> None:
         self._publish(
-            EventType.TOOL_CALL_COMPLETED,
-            capability_id,
-            {
-                "allowed": result.allowed,
-                "ok": ok,
-                "exit_code": result.exit_code,
-                "reason": result.reason,
-                "approval_id": approval_id if approval_confirmed else None,
-                "parser_ref": parsed["payload"]["parser_ref"],
-                "parser_ok": parsed["payload"].get("ok"),
-                "artifact_ids": [artifact["artifact_id"] for artifact in artifacts],
-                "dry_run": dry_run,
-                "approval_scope_hash": approval_scope["scope_hash"] if approval_confirmed else None,
-            },
+            EventType.BRIDGE_MESSAGE_CREATED,
+            manifest.capability_id,
+            {"message": message},
             call_id,
         )
-        return {
-            "call_id": call_id,
-            "capability_id": capability_id,
-            "ok": ok,
-            "allowed": result.allowed,
-            "exit_code": result.exit_code,
-            "reason": result.reason,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-            "approval_id": approval_id if approval_confirmed else None,
-            "parsed": parsed["payload"],
-            "message": message,
-            "artifacts": artifacts,
-            "audit_event_id": event["event_id"],
-        }
+
+    def _publish_completed(self, data: CompletedEventPayloadInput) -> None:
+        self._publish(
+            EventType.TOOL_CALL_COMPLETED,
+            data.manifest.capability_id,
+            {
+                "allowed": data.result.allowed,
+                "ok": data.ok,
+                "exit_code": data.result.exit_code,
+                "reason": data.result.reason,
+                "approval_id": data.approval_id if data.authorization["approval_confirmed"] else None,
+                "parser_ref": data.parsed["payload"]["parser_ref"],
+                "parser_ok": data.parsed["payload"].get("ok"),
+                "artifact_ids": _artifact_ids(data.artifacts),
+                "dry_run": data.dry_run,
+                "approval_scope_hash": _confirmed_scope_hash(data.authorization),
+            },
+            data.call_id,
+        )
 
     def _request_from_manifest(
         self,
@@ -331,8 +477,112 @@ class CapabilityExecutor:
         )
 
 
+def _executor_deps(
+    deps: CapabilityExecutorDeps | PolicyEngine | None,
+    overrides: dict[str, Any],
+) -> CapabilityExecutorDeps:
+    if deps is not None and not isinstance(deps, CapabilityExecutorDeps):
+        if "policy" in overrides:
+            raise TypeError("CapabilityExecutor got policy both positionally and by keyword")
+        overrides = {**overrides, "policy": deps}
+        deps = None
+    unknown = sorted(set(overrides) - set(CapabilityExecutorDeps.__dataclass_fields__))
+    if unknown:
+        raise TypeError(f"unknown CapabilityExecutor dependency option(s): {', '.join(unknown)}")
+    values = {
+        name: getattr(deps, name) if deps is not None else None
+        for name in CapabilityExecutorDeps.__dataclass_fields__
+    }
+    values.update(overrides)
+    return CapabilityExecutorDeps(**values)
+
+
+def _blocked_audit_record(
+    payload: BlockedEventPayloadInput,
+    approval_scope: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "type": "tool_call.blocked",
+        "call_id": payload.call_id,
+        "capability_id": payload.manifest.capability_id,
+        "decision": payload.decision.as_dict(),
+        "approval_id": payload.approval["approval_id"] if payload.approval else None,
+        "requested_approval_id": payload.approval_id,
+        "approval_error": payload.authorization["approval_error"],
+        "dry_run": payload.dry_run,
+        "approval_scope_hash": approval_scope["scope_hash"],
+    }
+
+
+def _blocked_call_result(
+    payload: BlockedEventPayloadInput,
+    event: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "call_id": payload.call_id,
+        "capability_id": payload.manifest.capability_id,
+        "ok": False,
+        "allowed": False,
+        "decision": payload.decision.as_dict(),
+        "approval": payload.approval,
+        "approval_error": payload.authorization["approval_error"],
+        "audit_event_id": event["event_id"],
+    }
+
+
 def _tool_call_ok(result: ToolResult, parsed: dict[str, Any]) -> bool:
     return bool(result.allowed) and result.exit_code in (0, None) and parsed.get("ok") is True
+
+
+def _capability_output_message(
+    call_id: str,
+    manifest: CapabilityManifest,
+    parsed_payload: dict[str, Any],
+    artifacts: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return BridgeMessage(
+        producer=manifest.capability_id,
+        channel="capability.output",
+        correlation_id=call_id,
+        payload=parsed_payload,
+        artifacts=tuple(artifacts),
+    ).as_dict()
+
+
+def _completed_response_payload(
+    call_id: str,
+    manifest: CapabilityManifest,
+    result: ToolResult,
+    completion: dict[str, Any],
+    authorization: dict[str, Any],
+    approval_id: str | None,
+    audit_event_id: str,
+) -> dict[str, Any]:
+    return {
+        "call_id": call_id,
+        "capability_id": manifest.capability_id,
+        "ok": completion["ok"],
+        "allowed": result.allowed,
+        "exit_code": result.exit_code,
+        "reason": result.reason,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "approval_id": approval_id if authorization["approval_confirmed"] else None,
+        "parsed": completion["parsed"],
+        "message": completion["message"],
+        "artifacts": completion["artifacts"],
+        "audit_event_id": audit_event_id,
+    }
+
+
+def _artifact_ids(artifacts: list[dict[str, Any]]) -> list[str]:
+    return [artifact["artifact_id"] for artifact in artifacts]
+
+
+def _confirmed_scope_hash(authorization: dict[str, Any]) -> str | None:
+    if not authorization["approval_confirmed"]:
+        return None
+    return authorization["approval_scope"]["scope_hash"]
 
 
 def _approval_scope(manifest: CapabilityManifest, request: ToolCall) -> dict[str, Any]:

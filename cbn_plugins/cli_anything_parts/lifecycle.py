@@ -77,73 +77,167 @@ def lifecycle_report(
     blockers: list[str],
     install_candidate: bool,
 ) -> dict[str, Any]:
-    blocked = bool(blockers)
-    manifest_imported = bool(gates.get("manifest_imported", False))
-    installed = bool(gates.get("installed", False))
-    launch_ready = bool(gates.get("launch_ready", False))
-    runtime_transport_ready = bool(gates.get("runtime_transport_ready", True))
-    ready_for_install = bool(install_candidate and not installed and not blocked)
-    requires_override = blocked or not bool(gates.get("external_dependency_free", True))
-    if launch_ready:
-        state = "launch_ready"
-    elif installed and manifest_imported and not runtime_transport_ready:
-        state = "runtime_transport_missing"
-    elif blocked:
-        state = "blocked"
-    elif installed and not manifest_imported:
-        state = "installed_needs_manifest"
-    elif installed:
-        state = "installed"
-    elif manifest_imported and ready_for_install:
-        state = "manifest_ready"
-    elif install_candidate:
-        state = "market_candidate"
-    else:
-        state = "needs_review"
-
-    stages = [
-        {
-            "id": "evaluate",
-            "status": "completed",
-            "command": f"python -m cbn plugin evaluate-harness cli-anything {harness_name}",
-        },
-        {
-            "id": "write_manifest",
-            "status": stage_status(
-                done=manifest_imported,
-                ready=recommended_next_action == "write_manifest" and not blocked,
-                blocked=blocked,
-            ),
-            "command": f"python -m cbn plugin adapt-harness cli-anything {harness_name} --from-market --write",
-        },
-        {
-            "id": "install_harness",
-            "status": stage_status(
-                done=installed,
-                ready=recommended_next_action == "install_harness" and not blocked,
-                blocked=blocked,
-            ),
-            "command": f"python -m cbn plugin harness cli-anything install {harness_name} --yes",
-        },
-        {
-            "id": "dry_run_call",
-            "status": stage_status(
-                done=False,
-                ready=manifest_imported,
-                blocked=blocked or not capability_id,
-            ),
-            "command": f"python -m cbn call {capability_id} --dry-run" if capability_id else None,
-        },
-    ]
+    flags = lifecycle_report_flags(gates, blockers, install_candidate)
     return {
-        "state": state,
+        "state": lifecycle_state(
+            manifest_imported=flags["manifest_imported"],
+            installed=flags["installed"],
+            launch_ready=flags["launch_ready"],
+            runtime_transport_ready=flags["runtime_transport_ready"],
+            blocked=flags["blocked"],
+            ready_for_install=flags["ready_for_install"],
+            install_candidate=install_candidate,
+        ),
         "recommended_next_action": recommended_next_action,
-        "blocked": blocked,
-        "requires_override": requires_override,
-        "ready_for_install": ready_for_install,
-        "ready_for_call": launch_ready,
+        "blocked": flags["blocked"],
+        "requires_override": flags["requires_override"],
+        "ready_for_install": flags["ready_for_install"],
+        "ready_for_call": flags["launch_ready"],
         "blockers": blockers,
-        "stages": stages,
+        "stages": lifecycle_stages(
+            harness_name=harness_name,
+            capability_id=capability_id,
+            recommended_next_action=recommended_next_action,
+            manifest_imported=flags["manifest_imported"],
+            installed=flags["installed"],
+            blocked=flags["blocked"],
+        ),
+    }
+
+
+def lifecycle_report_flags(
+    gates: dict[str, Any],
+    blockers: list[str],
+    install_candidate: bool,
+) -> dict[str, bool]:
+    blocked = bool(blockers)
+    installed = bool(gates.get("installed", False))
+    return {
+        "blocked": blocked,
+        "manifest_imported": bool(gates.get("manifest_imported", False)),
+        "installed": installed,
+        "launch_ready": bool(gates.get("launch_ready", False)),
+        "runtime_transport_ready": bool(gates.get("runtime_transport_ready", True)),
+        "ready_for_install": bool(install_candidate and not installed and not blocked),
+        "requires_override": blocked or not bool(gates.get("external_dependency_free", True)),
+    }
+
+
+def lifecycle_state(
+    *,
+    manifest_imported: bool,
+    installed: bool,
+    launch_ready: bool,
+    runtime_transport_ready: bool,
+    blocked: bool,
+    ready_for_install: bool,
+    install_candidate: bool,
+) -> str:
+    rules = lifecycle_state_rules(
+        manifest_imported=manifest_imported,
+        installed=installed,
+        launch_ready=launch_ready,
+        runtime_transport_ready=runtime_transport_ready,
+        blocked=blocked,
+        ready_for_install=ready_for_install,
+        install_candidate=install_candidate,
+    )
+    return next((state for state, ready in rules if ready), "needs_review")
+
+
+def lifecycle_state_rules(
+    *,
+    manifest_imported: bool,
+    installed: bool,
+    launch_ready: bool,
+    runtime_transport_ready: bool,
+    blocked: bool,
+    ready_for_install: bool,
+    install_candidate: bool,
+) -> tuple[tuple[str, bool], ...]:
+    return (
+        ("launch_ready", launch_ready),
+        ("runtime_transport_missing", installed and manifest_imported and not runtime_transport_ready),
+        ("blocked", blocked),
+        ("installed_needs_manifest", installed and not manifest_imported),
+        ("installed", installed),
+        ("manifest_ready", manifest_imported and ready_for_install),
+        ("market_candidate", install_candidate),
+    )
+
+
+def lifecycle_stages(
+    *,
+    harness_name: str,
+    capability_id: str | None,
+    recommended_next_action: str,
+    manifest_imported: bool,
+    installed: bool,
+    blocked: bool,
+) -> list[dict[str, Any]]:
+    return [
+        lifecycle_evaluate_stage(harness_name),
+        lifecycle_write_manifest_stage(harness_name, recommended_next_action, manifest_imported, blocked),
+        lifecycle_install_stage(harness_name, recommended_next_action, installed, blocked),
+        lifecycle_dry_run_stage(capability_id, manifest_imported, blocked),
+    ]
+
+
+def lifecycle_evaluate_stage(harness_name: str) -> dict[str, Any]:
+    return {
+        "id": "evaluate",
+        "status": "completed",
+        "command": f"python -m cbn plugin evaluate-harness cli-anything {harness_name}",
+    }
+
+
+def lifecycle_write_manifest_stage(
+    harness_name: str,
+    recommended_next_action: str,
+    manifest_imported: bool,
+    blocked: bool,
+) -> dict[str, Any]:
+    return {
+        "id": "write_manifest",
+        "status": stage_status(
+            done=manifest_imported,
+            ready=recommended_next_action == "write_manifest" and not blocked,
+            blocked=blocked,
+        ),
+        "command": f"python -m cbn plugin adapt-harness cli-anything {harness_name} --from-market --write",
+    }
+
+
+def lifecycle_install_stage(
+    harness_name: str,
+    recommended_next_action: str,
+    installed: bool,
+    blocked: bool,
+) -> dict[str, Any]:
+    return {
+        "id": "install_harness",
+        "status": stage_status(
+            done=installed,
+            ready=recommended_next_action == "install_harness" and not blocked,
+            blocked=blocked,
+        ),
+        "command": f"python -m cbn plugin harness cli-anything install {harness_name} --yes",
+    }
+
+
+def lifecycle_dry_run_stage(
+    capability_id: str | None,
+    manifest_imported: bool,
+    blocked: bool,
+) -> dict[str, Any]:
+    return {
+        "id": "dry_run_call",
+        "status": stage_status(
+            done=False,
+            ready=manifest_imported,
+            blocked=blocked or not capability_id,
+        ),
+        "command": f"python -m cbn call {capability_id} --dry-run" if capability_id else None,
     }
 
 

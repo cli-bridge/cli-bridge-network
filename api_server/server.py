@@ -247,16 +247,29 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
         return env_store
 
     def _handle_adapter_agent_stream(self, payload: dict[str, Any]) -> None:
+        context = self._adapter_agent_stream_context(payload)
+        if context is None:
+            return
+        self._send_stream_headers()
+        self._write_adapter_agent_plan_event(context)
+        if not bool(payload.get("use_glm", True)):
+            self._write_adapter_agent_glm_disabled(context)
+            return
+        content, stream_meta = self._stream_adapter_agent_glm(context)
+        self._write_adapter_agent_final_turn(context, content, stream_meta)
+
+    def _adapter_agent_stream_context(self, payload: dict[str, Any]) -> dict[str, Any] | None:
         workflow_path = payload.get("workflow_path") or payload.get("path") or DEFAULT_WORKFLOW_PATH
         message = payload.get("message", "")
         if not isinstance(workflow_path, str) or not workflow_path:
             self._send_error(400, "bad_request", "workflow_path must be a non-empty string")
-            return
+            return None
         if not isinstance(message, str):
             self._send_error(400, "bad_request", "message must be a string")
-            return
-        context = build_orchestration_context(message=message, workflow_path=workflow_path)
-        self._send_stream_headers()
+            return None
+        return build_orchestration_context(message=message, workflow_path=workflow_path)
+
+    def _write_adapter_agent_plan_event(self, context: dict[str, Any]) -> None:
         plan_turn = _adapter_agent_turn_from_context(
             context,
             assistant_message="Preparing Adapter Agent turn...",
@@ -265,42 +278,57 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
         )
         self._write_stream_event({"type": "plan", "payload": plan_turn})
 
-        if not bool(payload.get("use_glm", True)):
-            fallback = fallback_message(context)
-            final_turn = _adapter_agent_turn_from_context(
-                context,
-                assistant_message=fallback,
-                glm={"ok": False, "skipped": True, "reason": "GLM disabled by request"},
-                glm_content_accepted=False,
-            )
-            self._write_stream_event({"type": "fallback", "text": fallback})
-            self._write_stream_event({"type": "turn", "payload": final_turn})
-            self._write_stream_event({"type": "done", "ok": True, "glm_content_accepted": False})
-            return
+    def _write_adapter_agent_glm_disabled(self, context: dict[str, Any]) -> None:
+        fallback = fallback_message(context)
+        final_turn = _adapter_agent_turn_from_context(
+            context,
+            assistant_message=fallback,
+            glm={"ok": False, "skipped": True, "reason": "GLM disabled by request"},
+            glm_content_accepted=False,
+        )
+        self._write_stream_event({"type": "fallback", "text": fallback})
+        self._write_stream_event({"type": "turn", "payload": final_turn})
+        self._write_stream_event({"type": "done", "ok": True, "glm_content_accepted": False})
 
+    def _stream_adapter_agent_glm(self, context: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         content_parts: list[str] = []
         stream_meta: dict[str, Any] = {"ok": True, "streaming": True}
         for event in stream_with_glm(context, system_prompt=ORCHESTRATION_SYSTEM_PROMPT):
-            event_type = event.get("type")
-            if event_type == "delta":
-                text = str(event.get("text", ""))
-                if text:
-                    content_parts.append(text)
-                    self._write_stream_event({"type": "delta", "text": text})
-            elif event_type == "error":
-                error_message = event.get("error") or event.get("reason") or event.get("body_summary")
-                stream_meta = {"ok": False, "streaming": True, "error": error_message}
-                self._write_stream_event({"type": "error", "error": error_message})
-            elif event_type == "done":
-                stream_meta.update(
-                    {
-                        "ok": stream_meta.get("ok", True),
-                        "model": event.get("model"),
-                        "endpoint": event.get("endpoint"),
-                    }
-                )
+            stream_meta = self._handle_adapter_agent_glm_event(event, content_parts, stream_meta)
+        return "".join(content_parts), stream_meta
 
-        content = "".join(content_parts)
+    def _handle_adapter_agent_glm_event(
+        self,
+        event: dict[str, Any],
+        content_parts: list[str],
+        stream_meta: dict[str, Any],
+    ) -> dict[str, Any]:
+        event_type = event.get("type")
+        if event_type == "delta":
+            text = str(event.get("text", ""))
+            if text:
+                content_parts.append(text)
+                self._write_stream_event({"type": "delta", "text": text})
+        elif event_type == "error":
+            error_message = event.get("error") or event.get("reason") or event.get("body_summary")
+            stream_meta = {"ok": False, "streaming": True, "error": error_message}
+            self._write_stream_event({"type": "error", "error": error_message})
+        elif event_type == "done":
+            stream_meta.update(
+                {
+                    "ok": stream_meta.get("ok", True),
+                    "model": event.get("model"),
+                    "endpoint": event.get("endpoint"),
+                }
+            )
+        return stream_meta
+
+    def _write_adapter_agent_final_turn(
+        self,
+        context: dict[str, Any],
+        content: str,
+        stream_meta: dict[str, Any],
+    ) -> None:
         accepted = llm_content_covers_fallbacks(content, context["auth_fallbacks"])
         assistant_message = content if accepted else fallback_message(context)
         if not accepted:
@@ -409,283 +437,145 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
     def _handle_GET(self) -> None:
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
-        if parsed.path == "/health":
-            token_required = _server_session_token(self.server) is not None
-            self._send(
-                200,
-                health_payload(
-                    session_token_required=token_required,
-                    session_token_supplied=bool(self._session_token_from_headers()),
-                    session_token_mode="required" if token_required else "local_default_disabled",
-                    session_token_source=_server_session_token_source(self.server),
-                    local_session_token_default=bool(getattr(self.server, "local_session_token_default", False)),
-                ),
-            )
-            return
-        if parsed.path == "/.well-known/agent-card.json":
-            self._send(200, agent_card(_base_url(self)))
-            return
-        if parsed.path == "/plugins":
-            self._send(200, PluginManager().list_plugins())
-            return
-        if parsed.path == "/plugins/operations":
-            plugin_id = query.get("plugin_id", [None])[0]
-            self._send(200, PluginManager().operation_catalog(plugin_id))
-            return
-        if parsed.path == "/plugins/operations/validate":
-            plugin_id = query.get("plugin_id", [None])[0]
-            result = PluginManager().validate_operation_catalog(plugin_id)
-            self._send(200 if result["ok"] else 422, result)
-            return
-        if parsed.path == "/plugins/cli-anything/status":
-            self._send(200, CliAnythingHub().status())
-            return
-        if parsed.path == "/plugins/cli-anything/preflight":
-            self._send(200, PluginManager().preflight("cli-anything"))
-            return
-        if parsed.path == "/plugins/cli-anything/provenance":
-            self._send(200, PluginManager().provenance("cli-anything"))
-            return
-        if parsed.path == "/plugins/cli-anything/update-check":
-            remote = _query_bool(query, "remote", default=False)
-            result = PluginManager().update_check("cli-anything", remote=remote)
-            self._send(200 if result["ready_for_update"] else 409, result)
-            return
-        if parsed.path == "/imports/catalog":
-            self._send(200, cli_registration_surface())
-            return
-        if parsed.path == "/runtime/transports":
-            kind = query.get("kind", ["pty"])[0]
-            status = PluginManager().runtime_transport_status(kind)
-            self._send(200, status)
-            return
-        if parsed.path == "/registry/validate":
-            path = Path(query.get("path", ["manifests"])[0])
-            result = validate_manifest_path(path, known_parser_refs=_known_parser_refs())
-            self._send(200 if result["valid"] else 422, result)
+        if self._handle_static_GET(parsed.path, query):
             return
         runtime = build_runtime()
-        if parsed.path == "/registry":
-            capability_id = query.get("capability_id", [None])[0]
-            search_query = query.get("q", [None])[0]
-            if capability_id:
-                self._send(200, runtime.registry.require(capability_id).as_record())
-            elif search_query is not None:
-                limit = int(query.get("limit", ["20"])[0])
-                self._send(200, runtime.registry.search(search_query, limit=limit))
-            else:
-                self._send(200, [manifest.as_record() for manifest in runtime.registry.list()])
+        if self._handle_runtime_GET(parsed.path, query, runtime):
             return
-        if parsed.path == "/audit":
-            self._send(200, runtime.audit_log.tail())
+        if self._handle_protocol_GET(parsed.path, query, runtime):
             return
-        if parsed.path == "/events":
-            limit = int(query.get("limit", ["50"])[0])
-            self._send(200, runtime.event_bus.tail(limit=limit))
+        if self._handle_demo_network_GET(parsed.path, query, runtime):
             return
-        if parsed.path == "/artifacts":
-            artifact_id = query.get("artifact_id", [None])[0]
-            if artifact_id:
-                self._send(200, runtime.artifact_store.inspect(artifact_id))
-            else:
-                limit = int(query.get("limit", ["50"])[0])
-                self._send(200, runtime.artifact_store.list(limit=limit))
-            return
-        if parsed.path == "/parsers":
-            parser_ref = query.get("parser_ref", [None])[0]
-            if parser_ref:
-                self._send(200, runtime.parser_registry.inspect(parser_ref))
-            else:
-                self._send(200, runtime.parser_registry.list())
-            return
-        if parsed.path == "/parsers/fixtures":
-            path = Path(query.get("path", ["parser_fixtures"])[0])
-            parser_ref = query.get("parser_ref", [None])[0]
-            result = run_parser_fixtures(path, parser_ref=parser_ref, registry=runtime.parser_registry)
-            self._send(200 if result["ok"] else 422, result)
-            return
-        if parsed.path == "/direct-cli/readiness":
-            path = Path(query.get("path", ["parser_fixtures"])[0])
-            result = direct_cli_readiness_report(runtime, fixture_path=path)
-            self._send(200 if result["ok"] else 422, result)
-            return
-        if parsed.path == "/protocols":
-            target = query.get("target", [None])[0]
-            capability_id = query.get("capability_id", [None])[0]
-            if target == "all":
-                self._send(200, export_all_protocols(runtime.registry, capability_id=capability_id))
-            elif target:
-                self._send(
-                    200,
-                    export_protocol(runtime.registry, target, capability_id=capability_id),
-                )
-            else:
-                self._send(200, list_protocol_exports())
-            return
-        if parsed.path == "/protocols/workflows":
-            target = query.get("target", ["all"])[0]
-            workflow_path = query.get("path", [None])[0]
-            if target == "all":
-                self._send(200, export_all_workflow_protocols(runtime.registry, workflow_path=workflow_path))
-            else:
-                self._send(200, export_workflow_protocol(runtime.registry, target, workflow_path=workflow_path))
-            return
-        if parsed.path == "/protocols/check":
-            target = query.get("target", ["all"])[0]
-            capability_id = query.get("capability_id", [None])[0]
-            workflow_path = query.get("path", query.get("workflow_path", [None]))[0]
-            self._send(
-                200,
-                check_protocol(
-                    runtime.registry,
-                    target,
-                    capability_id=capability_id,
-                    workflow_path=workflow_path,
-                ),
-            )
-            return
-        if parsed.path == "/protocols/matrix":
-            include_workflows = _query_bool(query, "include_workflows", default=False)
-            self._send(200, protocol_matrix(runtime.registry, include_workflows=include_workflows))
-            return
-        if parsed.path == "/protocols/readiness":
-            include_workflows = _query_bool(query, "include_workflows", default=True)
-            workflow_path = query.get("workflow_path", query.get("path", [None]))[0]
-            result = protocol_readiness_report(
-                runtime.registry,
-                workflow_path=workflow_path,
-                include_workflows=include_workflows,
-            )
-            self._send(200 if result["ok"] else 422, result)
-            return
-        if parsed.path == "/protocols/conformance-plan":
-            target = query.get("target", ["all"])[0]
-            capability_id = query.get("capability_id", [None])[0]
-            workflow_path = query.get("workflow_path", query.get("path", [None]))[0]
-            result = protocol_conformance_plan(
-                runtime.registry,
-                target=target,
-                capability_id=capability_id,
-                workflow_path=workflow_path,
-            )
-            self._send(200 if result["ok"] else 422, result)
-            return
-        if parsed.path == "/protocols/lifecycle-suite":
-            result = protocol_lifecycle_suite(
-                capability_id=query.get("capability_id", ["git.version"])[0],
-                workflow_path=query.get("workflow_path", query.get("path", ["workflows/example.json"]))[0],
-            )
-            self._send(200 if result["ok"] else 422, result)
-            return
-        if parsed.path == "/protocols/wire-conformance":
-            result = protocol_wire_conformance_suite(
-                target=query.get("target", ["all"])[0],
-                capability_id=query.get("capability_id", ["git.version"])[0],
-            )
-            self._send(200 if result["ok"] else 422, result)
-            return
-        if parsed.path == "/protocols/smoke-suite":
-            result = protocol_smoke_suite(
-                runtime.registry,
-                capability_ids=query.get("capability_id") or None,
-                workflow_paths=query.get("workflow_path") or query.get("path") or None,
-                extra_args=query.get("extra_arg", []),
-                dry_run=_query_bool(query, "dry_run", default=False),
-                workflow_dry_run=_query_bool(query, "workflow_dry_run", default=False),
-                workflow_confirmed=_query_bool(query, "confirmed", default=False),
-                include_payloads=_query_bool(query, "include_payloads", default=False),
-            )
-            self._send(200 if result["ok"] else 422, result)
-            return
-        if parsed.path == "/protocols/acceptance-queue":
-            result = cli_to_cli_acceptance_queue(
-                runtime.registry,
-                runtime.workflow_runner,
-                workflow_paths=query.get("workflow_path") or query.get("path") or None,
-                max_workflows=int(query.get("max_workflows", ["50"])[0]),
-                run=_query_bool(query, "run", default=False),
-                dry_run=_query_bool(query, "dry_run", default=False),
-                confirmed=_query_bool(query, "confirmed", default=False),
-                include_payloads=_query_bool(query, "include_payloads", default=False),
-            )
-            self._send(200 if result["ok"] else 422, result)
-            return
-        if parsed.path == "/protocols/bridge-lab":
-            result = bridge_lab_report(
-                runtime.registry,
-                runtime.workflow_runner,
-                workflow_paths=tuple(query.get("workflow_path") or query.get("path") or ()),
-                max_workflows=int(query.get("max_workflows", ["10"])[0]),
-                run=False,
-                dry_run=True,
-                confirmed=False,
-                include_payloads=False,
-                run_smoke_suite=_query_bool(query, "smoke_suite", default=False),
-            )
-            self._send(200 if result["ok"] else 422, result)
-            return
-        if parsed.path == "/demo/killer":
-            result = killer_demo_report(
-                runtime.registry,
-                runtime.workflow_runner,
-                workflow_path=query.get("workflow_path", query.get("path", [DEFAULT_KILLER_WORKFLOW_PATH]))[0],
-                run=_query_bool(query, "run", default=True),
-                dry_run=_query_bool(query, "dry_run", default=True),
-                confirmed=_query_bool(query, "confirmed", default=False),
-                include_payloads=_query_bool(query, "include_payloads", default=False),
-                run_smoke_suite=_query_bool(query, "smoke_suite", default=True),
-                event_tail=runtime.event_bus.tail(limit=30),
-                audit_tail=runtime.audit_log.tail(limit=30),
-                artifact_list=runtime.artifact_store.list(limit=30),
-            )
-            self._send(200 if result["ok"] else 422, result)
-            return
-        if parsed.path in NETWORK_PAYLOAD_ROUTES:
-            result = _network_connect_package_from_query(self, runtime, query)
-            payload, expected_kind = _network_payload(result, parsed.path)
-            self._send(200 if _network_payload_ok(result, payload, expected_kind) else 422, payload)
-            return
-        if parsed.path == "/approvals":
-            approval_id = query.get("approval_id", [None])[0]
-            if approval_id:
-                self._send(200, runtime.approval_store.inspect(approval_id))
-            else:
-                limit = int(query.get("limit", ["50"])[0])
-                status = query.get("status", [None])[0]
-                self._send(200, runtime.approval_store.list(status=status, limit=limit))
-            return
-        if parsed.path == "/workflows":
-            path = query.get("path", [None])[0]
-            if path:
-                result = inspect_workflow(Path(path), registry=runtime.registry)
-                self._send(200 if result["valid"] else 422, result)
-            else:
-                self._send(200, list_workflows(registry=runtime.registry))
-            return
-        if parsed.path == "/messages/contract":
-            workflow_path = query.get("workflow_path", query.get("path", [None]))[0]
-            result = workflow_bridge_contract_report(runtime.registry, workflow_path=workflow_path)
-            self._send(200 if result["ok"] else 422, result)
-            return
-        if parsed.path == "/adapter-agent/node-bundle":
-            workflow_path = query.get("workflow_path", query.get("path", [DEFAULT_WORKFLOW_PATH]))[0]
-            message = query.get("message", [""])[0]
-            if not workflow_path:
-                self._send_error(400, "bad_request", "workflow_path must be a non-empty string")
-                return
-            result = build_adapter_agent_node_bundle(
-                workflow_path=workflow_path,
-                message=message,
-                profiles=_query_profiles(query),
-            )
-            self._send(200, result)
+        if self._handle_misc_GET(parsed.path, query, runtime):
             return
         self._send(404, {"error": "not found", "routes": ROUTE_SUMMARY})
 
-    def _handle_POST(self) -> None:
-        runtime = build_runtime()
-        runtime.executor.session_env.update(self._adapter_agent_env())
-        payload = self._read_json()
+    def _handle_static_GET(self, path: str, query: dict[str, list[str]]) -> bool:
+        if path == "/health":
+            self._send_health()
+            return True
+        if path == "/.well-known/agent-card.json":
+            self._send(200, agent_card(_base_url(self)))
+            return True
+        if path in _STATIC_GET_ROUTES:
+            _STATIC_GET_ROUTES[path](self, query)
+            return True
+        return False
+
+    def _send_health(self) -> None:
+        token_required = _server_session_token(self.server) is not None
+        self._send(
+            200,
+            health_payload(
+                session_token_required=token_required,
+                session_token_supplied=bool(self._session_token_from_headers()),
+                session_token_mode="required" if token_required else "local_default_disabled",
+                session_token_source=_server_session_token_source(self.server),
+                local_session_token_default=bool(getattr(self.server, "local_session_token_default", False)),
+            ),
+        )
+
+    def _handle_runtime_GET(self, path: str, query: dict[str, list[str]], runtime: Any) -> bool:
+        if path == "/registry":
+            self._send_registry_GET(query, runtime)
+            return True
+        if path in _RUNTIME_GET_ROUTES:
+            _RUNTIME_GET_ROUTES[path](self, query, runtime)
+            return True
+        return False
+
+    def _send_registry_GET(self, query: dict[str, list[str]], runtime: Any) -> None:
+        capability_id = query.get("capability_id", [None])[0]
+        search_query = query.get("q", [None])[0]
+        if capability_id:
+            self._send(200, runtime.registry.require(capability_id).as_record())
+        elif search_query is not None:
+            self._send(200, runtime.registry.search(search_query, limit=int(query.get("limit", ["20"])[0])))
+        else:
+            self._send(200, [manifest.as_record() for manifest in runtime.registry.list()])
+
+    def _handle_protocol_GET(self, path: str, query: dict[str, list[str]], runtime: Any) -> bool:
+        if path in _PROTOCOL_GET_ROUTES:
+            _PROTOCOL_GET_ROUTES[path](self, query, runtime)
+            return True
+        return False
+
+    def _handle_demo_network_GET(self, path: str, query: dict[str, list[str]], runtime: Any) -> bool:
+        if path == "/demo/killer":
+            self._send_killer_demo_GET(query, runtime)
+            return True
+        if path in NETWORK_PAYLOAD_ROUTES:
+            result = _network_connect_package_from_query(self, runtime, query)
+            payload, expected_kind = _network_payload(result, path)
+            self._send(200 if _network_payload_ok(result, payload, expected_kind) else 422, payload)
+            return True
+        return False
+
+    def _send_killer_demo_GET(self, query: dict[str, list[str]], runtime: Any) -> None:
+        result = killer_demo_report(
+            runtime.registry,
+            runtime.workflow_runner,
+            workflow_path=query.get("workflow_path", query.get("path", [DEFAULT_KILLER_WORKFLOW_PATH]))[0],
+            run=_query_bool(query, "run", default=True),
+            dry_run=_query_bool(query, "dry_run", default=True),
+            confirmed=_query_bool(query, "confirmed", default=False),
+            include_payloads=_query_bool(query, "include_payloads", default=False),
+            run_smoke_suite=_query_bool(query, "smoke_suite", default=True),
+            event_tail=runtime.event_bus.tail(limit=30),
+            audit_tail=runtime.audit_log.tail(limit=30),
+            artifact_list=runtime.artifact_store.list(limit=30),
+        )
+        self._send(200 if result["ok"] else 422, result)
+
+    def _handle_misc_GET(self, path: str, query: dict[str, list[str]], runtime: Any) -> bool:
+        if path == "/approvals":
+            self._send_approvals_GET(query, runtime)
+            return True
+        if path == "/workflows":
+            self._send_workflows_GET(query, runtime)
+            return True
+        if path == "/messages/contract":
+            workflow_path = query.get("workflow_path", query.get("path", [None]))[0]
+            result = workflow_bridge_contract_report(runtime.registry, workflow_path=workflow_path)
+            self._send(200 if result["ok"] else 422, result)
+            return True
+        if path == "/adapter-agent/node-bundle":
+            self._send_adapter_agent_node_bundle_GET(query)
+            return True
+        return False
+
+    def _send_approvals_GET(self, query: dict[str, list[str]], runtime: Any) -> None:
+        approval_id = query.get("approval_id", [None])[0]
+        if approval_id:
+            self._send(200, runtime.approval_store.inspect(approval_id))
+        else:
+            limit = int(query.get("limit", ["50"])[0])
+            status = query.get("status", [None])[0]
+            self._send(200, runtime.approval_store.list(status=status, limit=limit))
+
+    def _send_workflows_GET(self, query: dict[str, list[str]], runtime: Any) -> None:
+        path = query.get("path", [None])[0]
+        if path:
+            result = inspect_workflow(Path(path), registry=runtime.registry)
+            self._send(200 if result["valid"] else 422, result)
+        else:
+            self._send(200, list_workflows(registry=runtime.registry))
+
+    def _send_adapter_agent_node_bundle_GET(self, query: dict[str, list[str]]) -> None:
+        workflow_path = query.get("workflow_path", query.get("path", [DEFAULT_WORKFLOW_PATH]))[0]
+        if not workflow_path:
+            self._send_error(400, "bad_request", "workflow_path must be a non-empty string")
+            return
+        self._send(
+            200,
+            build_adapter_agent_node_bundle(
+                workflow_path=workflow_path,
+                message=query.get("message", [""])[0],
+                profiles=_query_profiles(query),
+            ),
+        )
+
+    def _handle_core_POST(self, payload: dict[str, Any], runtime: Any) -> bool:
         if self.path == "/call":
             result = runtime.executor.call(
                 payload["capability_id"],
@@ -696,672 +586,1060 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
             )
             status = 200 if result.get("ok") else 403 if not result.get("allowed") else 502
             self._send(status, result)
-            return
+            return True
         if self.path == "/a2a":
             self._send(200, handle_a2a_jsonrpc_request(payload))
-            return
-        if self.path == "/messages/validate":
-            result = validate_bridge_message(payload["message"])
-            self._send(200 if result["valid"] else 422, result)
-            return
-        if self.path == "/messages/select":
-            try:
-                self._send(200, select_bridge_value(payload["message"], payload["selector"]))
-            except (KeyError, IndexError, ValueError) as exc:
-                self._send(400, {"error": str(exc), "selector": payload.get("selector")})
-            return
-        if self.path == "/messages/args":
-            try:
-                selectors = payload["selectors"]
-                if not isinstance(selectors, list) or not all(isinstance(item, str) for item in selectors):
-                    self._send(400, {"error": "selectors must be a list of strings"})
-                    return
-                result = bridge_args_from_selectors(payload["message"], selectors)
-                self._send(200 if result["valid"] else 422, result)
-            except (KeyError, IndexError, TypeError, ValueError) as exc:
-                self._send(400, {"error": str(exc), "selectors": payload.get("selectors")})
-            return
-        if self.path == "/protocols/accept-workflow":
-            result = cli_to_cli_acceptance_report(
-                runtime.registry,
-                runtime.workflow_runner,
-                payload["workflow_path"],
-                run=bool(payload.get("run", False)),
-                dry_run=bool(payload.get("dry_run", False)),
-                confirmed=bool(payload.get("confirmed", False)),
-                include_payloads=bool(payload.get("include_payloads", False)),
-            )
-            self._send(200 if result["ok"] else 422, result)
-            return
-        if self.path == "/protocols/acceptance-queue":
-            workflow_paths = payload.get("workflow_paths", payload.get("workflow_path", []))
-            if isinstance(workflow_paths, str):
-                workflow_paths = [workflow_paths]
-            if not isinstance(workflow_paths, list) or not all(isinstance(item, str) for item in workflow_paths):
-                self._send(400, {"error": "workflow_paths must be a list of strings"})
-                return
-            result = cli_to_cli_acceptance_queue(
-                runtime.registry,
-                runtime.workflow_runner,
-                workflow_paths=tuple(workflow_paths) or None,
-                max_workflows=int(payload.get("max_workflows", 50)),
-                run=bool(payload.get("run", False)),
-                dry_run=bool(payload.get("dry_run", False)),
-                confirmed=bool(payload.get("confirmed", False)),
-                include_payloads=bool(payload.get("include_payloads", False)),
-            )
-            self._send(200 if result["ok"] else 422, result)
-            return
-        if self.path == "/protocols/bridge-lab":
-            workflow_paths = payload.get("workflow_paths", payload.get("workflow_path", []))
-            if isinstance(workflow_paths, str):
-                workflow_paths = [workflow_paths]
-            if not isinstance(workflow_paths, list) or not all(isinstance(item, str) for item in workflow_paths):
-                self._send(400, {"error": "workflow_paths must be a list of strings"})
-                return
-            result = bridge_lab_report(
-                runtime.registry,
-                runtime.workflow_runner,
-                workflow_paths=tuple(workflow_paths),
-                max_workflows=int(payload.get("max_workflows", 10)),
-                run=bool(payload.get("run", False)),
-                dry_run=bool(payload.get("dry_run", True)),
-                confirmed=bool(payload.get("confirmed", False)),
-                include_payloads=bool(payload.get("include_payloads", False)),
-                run_smoke_suite=bool(payload.get("smoke_suite", payload.get("run_smoke_suite", False))),
-            )
-            self._send(200 if result["ok"] else 422, result)
-            return
-        if self.path == "/demo/killer":
-            result = killer_demo_report(
-                runtime.registry,
-                runtime.workflow_runner,
-                workflow_path=str(payload.get("workflow_path") or payload.get("path") or DEFAULT_KILLER_WORKFLOW_PATH),
-                run=bool(payload.get("run", True)),
-                dry_run=bool(payload.get("dry_run", True)),
-                confirmed=bool(payload.get("confirmed", False)),
-                include_payloads=bool(payload.get("include_payloads", False)),
-                run_smoke_suite=bool(payload.get("smoke_suite", payload.get("run_smoke_suite", True))),
-                event_tail=runtime.event_bus.tail(limit=30),
-                audit_tail=runtime.audit_log.tail(limit=30),
-                artifact_list=runtime.artifact_store.list(limit=30),
-            )
-            self._send(200 if result["ok"] else 422, result)
-            return
-        if self.path == "/network/verify":
-            session_token = (
-                payload.get("session_token")
-                or payload.get("sessionToken")
-                or self.headers.get("X-CBN-Session")
-            )
-            result = network_acceptance_report(
-                runtime.registry,
-                workflow_path=payload.get("workflow_path") or payload.get("path") or DEFAULT_KILLER_WORKFLOW_PATH,
-                base_url=payload.get("base_url") or payload.get("daemon_url") or _base_url(self),
-                studio_url=payload.get("studio_url") or "http://127.0.0.1:5177",
-                dashboard_url=payload.get("dashboard_url") or payload.get("dashboardUrl") or "http://127.0.0.1:5173",
-                session_token=str(session_token) if session_token else None,
-                agent_message=payload.get("message") or DEFAULT_AGENT_CONNECT_MESSAGE,
-                timeout_seconds=float(payload.get("timeout_seconds", 8.0)),
-            )
-            self._send(200 if result["ok"] else 422, result)
-            return
+            return True
+        if self.path in _MESSAGE_POST_ROUTES:
+            _MESSAGE_POST_ROUTES[self.path](self, payload)
+            return True
         if self.path == "/approvals/decide":
-            approval = runtime.approval_store.decide(
-                payload["approval_id"],
-                payload["decision"],
-                actor=payload.get("actor", "api"),
-                reason=payload.get("reason", ""),
-            )
-            runtime.event_bus.publish(
-                "approval.decided",
-                approval["capability_id"],
-                {"approval": approval},
-                correlation_id=approval["call_id"],
-            )
-            self._send(200, approval)
-            return
-        if self.path in {"/workflows/validate", "/workflows/plan", "/workflows/run"}:
-            if "workflow" in payload:
-                graph = WorkflowGraph.from_dict(payload["workflow"])
-            else:
-                graph = WorkflowGraph.from_file(Path(payload["path"]))
-            if self.path == "/workflows/validate":
-                graph.validate()
-                self._send(200, {"valid": True, "workflow_id": graph.workflow_id})
-                return
-            if self.path == "/workflows/plan":
-                self._send(200, runtime.workflow_runner.plan(graph))
-                return
+            self._send_approval_decision_POST(payload, runtime)
+            return True
+        return False
+
+    def _send_approval_decision_POST(self, payload: dict[str, Any], runtime: Any) -> None:
+        approval = runtime.approval_store.decide(
+            payload["approval_id"],
+            payload["decision"],
+            actor=payload.get("actor", "api"),
+            reason=payload.get("reason", ""),
+        )
+        runtime.event_bus.publish(
+            "approval.decided",
+            approval["capability_id"],
+            {"approval": approval},
+            correlation_id=approval["call_id"],
+        )
+        self._send(200, approval)
+
+    def _handle_protocol_demo_POST(self, payload: dict[str, Any], runtime: Any) -> bool:
+        if self.path in _PROTOCOL_POST_ROUTES:
+            _PROTOCOL_POST_ROUTES[self.path](self, payload, runtime)
+            return True
+        if self.path == "/demo/killer":
+            self._send_killer_demo_POST(payload, runtime)
+            return True
+        if self.path == "/network/verify":
+            self._send_network_verify_POST(payload, runtime)
+            return True
+        return False
+
+    def _send_killer_demo_POST(self, payload: dict[str, Any], runtime: Any) -> None:
+        result = killer_demo_report(
+            runtime.registry,
+            runtime.workflow_runner,
+            workflow_path=str(payload.get("workflow_path") or payload.get("path") or DEFAULT_KILLER_WORKFLOW_PATH),
+            run=bool(payload.get("run", True)),
+            dry_run=bool(payload.get("dry_run", True)),
+            confirmed=bool(payload.get("confirmed", False)),
+            include_payloads=bool(payload.get("include_payloads", False)),
+            run_smoke_suite=bool(payload.get("smoke_suite", payload.get("run_smoke_suite", True))),
+            event_tail=runtime.event_bus.tail(limit=30),
+            audit_tail=runtime.audit_log.tail(limit=30),
+            artifact_list=runtime.artifact_store.list(limit=30),
+        )
+        self._send(200 if result["ok"] else 422, result)
+
+    def _send_network_verify_POST(self, payload: dict[str, Any], runtime: Any) -> None:
+        result = network_acceptance_report(
+            runtime.registry,
+            **self._network_verify_POST_params(payload),
+        )
+        self._send(200 if result["ok"] else 422, result)
+
+    def _network_verify_POST_params(self, payload: dict[str, Any]) -> dict[str, Any]:
+        session_token = _payload_alias(payload, "session_token", "sessionToken") or self.headers.get("X-CBN-Session")
+        return {
+            "workflow_path": _payload_alias(payload, "workflow_path", "path", default=DEFAULT_KILLER_WORKFLOW_PATH),
+            "base_url": _payload_alias(payload, "base_url", "daemon_url", default=_base_url(self)),
+            "studio_url": _payload_alias(payload, "studio_url", default="http://127.0.0.1:5177"),
+            "dashboard_url": _payload_alias(payload, "dashboard_url", "dashboardUrl", default="http://127.0.0.1:5173"),
+            "session_token": str(session_token) if session_token else None,
+            "agent_message": _payload_alias(payload, "message", default=DEFAULT_AGENT_CONNECT_MESSAGE),
+            "timeout_seconds": float(payload.get("timeout_seconds", 8.0)),
+        }
+
+    def _handle_workflow_POST(self, payload: dict[str, Any], runtime: Any) -> bool:
+        if self.path not in {"/workflows/validate", "/workflows/plan", "/workflows/run"}:
+            return False
+        graph = WorkflowGraph.from_dict(payload["workflow"]) if "workflow" in payload else WorkflowGraph.from_file(Path(payload["path"]))
+        if self.path == "/workflows/validate":
+            graph.validate()
+            self._send(200, {"valid": True, "workflow_id": graph.workflow_id})
+        elif self.path == "/workflows/plan":
+            self._send(200, runtime.workflow_runner.plan(graph))
+        else:
             result = runtime.workflow_runner.run(
                 graph,
                 dry_run=bool(payload.get("dry_run", False)),
                 confirmed=bool(payload.get("confirmed", False)),
             )
             self._send(200 if result["status"] == "completed" else 409, result)
+        return True
+
+    def _handle_adapter_runtime_POST(self, payload: dict[str, Any], runtime: Any) -> bool:
+        if self.path in _ADAPTER_AGENT_POST_ROUTES:
+            _ADAPTER_AGENT_POST_ROUTES[self.path](self, payload)
+            return True
+        if self.path in _RUNTIME_TRANSPORT_POST_ROUTES:
+            _RUNTIME_TRANSPORT_POST_ROUTES[self.path](self, payload, runtime)
+            return True
+        return False
+
+    def _handle_plugin_manager_POST(self, payload: dict[str, Any], runtime: Any) -> bool:
+        if self.path in _PLUGIN_MANAGER_POST_ROUTES:
+            _PLUGIN_MANAGER_POST_ROUTES[self.path](self, payload, runtime)
+            return True
+        return False
+
+    def _handle_POST(self) -> None:
+        runtime = build_runtime()
+        runtime.executor.session_env.update(self._adapter_agent_env())
+        payload = self._read_json()
+        if self._handle_core_POST(payload, runtime):
             return
-        if self.path == "/adapter-agent/orchestrate":
-            workflow_path = payload.get("workflow_path") or payload.get("path") or DEFAULT_WORKFLOW_PATH
-            message = payload.get("message", "")
-            if not isinstance(workflow_path, str) or not workflow_path:
-                self._send_error(400, "bad_request", "workflow_path must be a non-empty string")
-                return
-            if not isinstance(message, str):
-                self._send_error(400, "bad_request", "message must be a string")
-                return
-            result = build_orchestration_turn(
-                message=message,
-                workflow_path=workflow_path,
-                use_glm=bool(payload.get("use_glm", True)),
-            )
-            self._send(200, result)
+        if self._handle_protocol_demo_POST(payload, runtime):
             return
-        if self.path == "/adapter-agent/orchestrate-stream":
-            self._handle_adapter_agent_stream(payload)
+        if self._handle_workflow_POST(payload, runtime):
             return
-        if self.path == "/adapter-agent/tool-call-plan":
-            workflow_path = payload.get("workflow_path") or payload.get("path") or DEFAULT_WORKFLOW_PATH
-            message = payload.get("message", "")
-            if not isinstance(workflow_path, str) or not workflow_path:
-                self._send_error(400, "bad_request", "workflow_path must be a non-empty string")
-                return
-            if not isinstance(message, str):
-                self._send_error(400, "bad_request", "message must be a string")
-                return
-            self._send(200, build_agent_tool_call_plan(workflow_path=workflow_path, message=message))
+        if self._handle_adapter_runtime_POST(payload, runtime):
             return
-        if self.path == "/adapter-agent/workflow-request-plan":
-            workflow_path = payload.get("workflow_path") or payload.get("path") or DEFAULT_KILLER_WORKFLOW_PATH
-            message = payload.get("message", "")
-            if not isinstance(workflow_path, str) or not workflow_path:
-                self._send_error(400, "bad_request", "workflow_path must be a non-empty string")
-                return
-            if not isinstance(message, str):
-                self._send_error(400, "bad_request", "message must be a string")
-                return
-            result = build_agent_workflow_request_plan(
-                workflow_path=workflow_path,
-                message=message,
-                base_url=_base_url(self),
-                dry_run=bool(payload.get("dry_run", True)),
-                confirmed=bool(payload.get("confirmed", False)),
-            )
-            self._send(200, result)
+        if self._handle_plugin_manager_POST(payload, runtime):
             return
-        if self.path == "/adapter-agent/tool-use":
-            self._handle_adapter_agent_tool_use(payload)
-            return
-        if self.path == "/runtime/transports/gate":
-            manager = PluginManager()
-            result = manager.runtime_transport_gate(payload.get("kind", "pty"))
-            self._send(200, result)
-            return
-        if self.path == "/runtime/transports/plan":
-            manager = PluginManager()
-            plan = manager.runtime_transport_plan(payload.get("kind", "pty"))
-            self._send(200, plan.as_dict())
-            return
-        if self.path == "/runtime/transports/install":
-            if not bool(payload.get("confirmed", False)):
-                self._send(403, {"error": "runtime transport install requires confirmed=true"})
-                return
-            manager = PluginManager()
-            kind = payload.get("kind", "pty")
-            gate = manager.runtime_transport_gate(kind)
-            if not gate["ok"]:
-                self._send(409, gate)
-                return
-            plan = manager.runtime_transport_plan(kind)
-            result = runtime.plugin_runner.execute(plan)
-            self._send(200 if result["status"] == "completed" else 409, result)
-            return
-        if self.path == "/plugins/plan":
-            manager = PluginManager()
-            plan = manager.plan(
-                payload["plugin_id"],
-                action=payload.get("action", "install"),
-                include_codex_skill=bool(payload.get("include_codex_skill", False)),
-            )
-            self._send(200, plan.as_dict())
-            return
-        if self.path == "/plugins/gate":
-            manager = PluginManager()
-            result = manager.operation_gate(
-                payload["plugin_id"],
-                action=payload.get("action", "install"),
-            )
-            self._send(200, result)
-            return
-        if self.path == "/plugins/check-update":
-            manager = PluginManager()
-            result = manager.update_check(
-                payload["plugin_id"],
-                remote=bool(payload.get("remote", False)),
-            )
-            self._send(200 if result["ready_for_update"] else 409, result)
-            return
-        if self.path == "/plugins/operation-plan":
-            inputs = payload.get("inputs", {})
-            if not isinstance(inputs, dict):
-                self._send(400, {"error": "inputs must be an object"})
-                return
-            manager = PluginManager()
-            result = manager.operation_plan(
-                payload["plugin_id"],
-                payload["operation_id"],
-                inputs=inputs,
-                confirmed=bool(payload.get("confirmed", False)),
-            )
-            self._send(200 if result["ok"] else 409, result)
-            return
-        if self.path == "/plugins/verify-plan":
-            manager = PluginManager()
-            result = manager.verify_plan(
-                payload["plugin_id"],
-                action=payload.get("action", "install"),
-                include_codex_skill=bool(payload.get("include_codex_skill", False)),
-                run=bool(payload.get("run", False)),
-                timeout_seconds=int(payload.get("timeout_seconds", 60)),
-            )
-            self._send(200 if result["ok"] else 409, result)
-            return
-        if self.path == "/plugins/execute":
-            if not bool(payload.get("confirmed", False)):
-                self._send(403, {"error": "plugin execution requires confirmed=true"})
-                return
-            manager = PluginManager()
-            action = payload.get("action", "install")
-            if not bool(payload.get("allow_failed_preflight", False)):
-                gate = manager.operation_gate(payload["plugin_id"], action=action)
-                if not gate["ok"]:
-                    self._send(409, gate)
-                    return
-            plan = manager.plan(
-                payload["plugin_id"],
-                action=action,
-                include_codex_skill=bool(payload.get("include_codex_skill", False)),
-            )
-            result = runtime.plugin_runner.execute(plan)
-            self._send(200 if result["status"] == "completed" else 409, result)
-            return
-        if self.path == "/plugins/cli-anything/market":
-            hub = CliAnythingHub()
-            command = payload.get("command", "list")
-            if command == "list":
-                result = hub.list_market()
-            elif command == "search":
-                result = hub.search_market(payload["query"])
-            elif command == "info":
-                result = hub.info(payload["harness_name"])
-            else:
-                self._send(400, {"error": f"unsupported market command: {command}"})
-                return
-            self._send(200 if result.exit_code == 0 else 502, result.as_dict())
-            return
-        if self.path == "/plugins/cli-anything/import-harness":
-            hub = CliAnythingHub()
-            market_record = None
-            if bool(payload.get("from_market", False)):
-                market_record = hub.market_record_for_harness(payload["harness_name"])
-                if market_record is None:
-                    self._send(
-                        502,
-                        {
-                            "error": "CLI-Anything market record not found",
-                            "plugin_id": "cli-anything",
-                            "harness_name": payload["harness_name"],
-                        },
-                    )
-                    return
-            manifest = hub.manifest_for_harness(
-                payload["harness_name"],
-                title=payload.get("title"),
-                market_record=market_record,
-            )
-            if bool(payload.get("write", False)):
-                if not bool(payload.get("confirmed", False)):
-                    self._send(403, {"error": "manifest write requires confirmed=true"})
-                    return
-                path = hub.write_harness_manifest(
-                    payload["harness_name"],
-                    title=payload.get("title"),
-                    market_record=market_record,
-                )
-                self._send(200, {"written": str(path), "manifest": manifest})
-            else:
-                self._send(200, manifest)
-            return
-        if self.path == "/plugins/cli-anything/adapt-harness":
-            hub = CliAnythingHub()
-            write = bool(payload.get("write", False))
-            if write and not bool(payload.get("confirmed", False)):
-                self._send(403, {"error": "manifest write requires confirmed=true"})
-                return
-            result = hub.adapt_harness(
-                payload["harness_name"],
-                title=payload.get("title"),
-                from_market=bool(payload.get("from_market", False)),
-                write=write,
-            )
-            self._send(200 if result["ok"] else 502, result)
-            return
-        if self.path == "/plugins/cli-anything/prepare-harness":
-            result = CliAnythingHub().prepare_harness(
-                payload["harness_name"],
-                title=payload.get("title"),
-                from_market=bool(payload.get("from_market", False)),
-            )
-            self._send(200 if result["ok"] else 502, result)
-            return
-        if self.path == "/plugins/cli-anything/evaluate-harness":
-            result = CliAnythingHub().evaluate_harness(
-                payload["harness_name"],
-                title=payload.get("title"),
-                from_market=bool(payload.get("from_market", True)),
-            )
-            self._send(200 if result["ok"] else 502, result)
-            return
-        if self.path == "/plugins/cli-anything/probe-harness":
-            result = CliAnythingHub().probe_harness(
-                payload["harness_name"],
-                title=payload.get("title"),
-                from_market=bool(payload.get("from_market", True)),
-            )
-            self._send(200 if result["ok"] else 502, result)
-            return
-        if self.path == "/plugins/cli-anything/verify-harness":
-            result = CliAnythingHub().verify_harness(
-                payload["harness_name"],
-                title=payload.get("title"),
-                from_market=bool(payload.get("from_market", True)),
-                include_workflows=bool(payload.get("include_workflows", True)),
-                run_smoke_suite=bool(payload.get("run_smoke_suite", False)),
-                smoke_extra_args=tuple(payload.get("smoke_extra_args", [])),
-            )
-            self._send(200 if result["ok"] else 502, result)
-            return
-        if self.path == "/plugins/cli-anything/verify-harness-plan":
-            extra_args_raw = payload.get("extra_args", [])
-            if not isinstance(extra_args_raw, list) or not all(isinstance(item, str) for item in extra_args_raw):
-                self._send(400, {"error": "extra_args must be a list of strings"})
-                return
-            result = CliAnythingHub().verify_harness_plan(
-                payload.get("action", "install"),
-                payload["harness_name"],
-                extra_args=tuple(extra_args_raw),
-                run=bool(payload.get("run", False)),
-                timeout_seconds=int(payload.get("timeout_seconds", 60)),
-            )
-            self._send(200 if result["ok"] else 409, result)
-            return
-        if self.path == "/plugins/cli-anything/onboard-harness":
-            result = CliAnythingHub().onboard_harness(
-                payload["harness_name"],
-                title=payload.get("title"),
-                from_market=bool(payload.get("from_market", True)),
-                write=bool(payload.get("write", False)),
-                confirmed=bool(payload.get("confirmed", False)),
-                install=bool(payload.get("install", False)),
-                allow_blocked=bool(payload.get("allow_blocked", False)),
-                include_workflows=bool(payload.get("include_workflows", True)),
-                run_smoke_suite=bool(payload.get("run_smoke_suite", False)),
-                smoke_extra_args=tuple(payload.get("smoke_extra_args", [])),
-                operation_runner=runtime.plugin_runner
-                if bool(payload.get("install", False)) and bool(payload.get("confirmed", False))
-                else None,
-            )
-            self._send(200 if result["ok"] else 502, result)
-            return
-        if self.path == "/plugins/cli-anything/live-verification":
-            harnesses = payload.get("harnesses", ["mermaid", "macrocli"])
-            if not isinstance(harnesses, list) or not all(isinstance(item, str) for item in harnesses):
-                self._send(400, {"error": "harnesses must be a list of strings"})
-                return
-            result = CliAnythingHub().live_verification(
-                harnesses=tuple(harnesses),
-                candidate_query=payload.get("candidate_query", "image"),
-                candidate_limit=int(payload.get("candidate_limit", 10)),
-                include_candidates=bool(payload.get("include_candidates", True)),
-                include_workflows=bool(payload.get("include_workflows", True)),
-                run_smoke_suite=bool(payload.get("run_smoke_suite", False)),
-                smoke_extra_args=tuple(payload.get("smoke_extra_args", [])),
-            )
-            self._send(200 if result["ok"] else 502, result)
-            return
-        if self.path == "/plugins/cli-anything/mvp-plan":
-            workflow_paths = payload.get("workflow_paths", payload.get("workflow_path", []))
-            if isinstance(workflow_paths, str):
-                workflow_paths = [workflow_paths]
-            if not isinstance(workflow_paths, list) or not all(isinstance(item, str) for item in workflow_paths):
-                self._send(400, {"error": "workflow_paths must be a list of strings"})
-                return
-            result = CliAnythingHub().mvp_plan(
-                query=payload.get("query", "file"),
-                limit=int(payload.get("limit", 20)),
-                max_harnesses=int(payload.get("max_harnesses", 5)),
-                include_blocked=bool(payload.get("include_blocked", True)),
-                workflow_paths=tuple(workflow_paths),
-                max_workflows=int(payload.get("max_workflows", 10)),
-                registry=runtime.registry,
-                workflow_runner=runtime.workflow_runner,
-            )
-            self._send(200 if result["ok"] else 502, result)
-            return
-        if self.path == "/plugins/cli-anything/bootstrap-plan":
-            result = CliAnythingHub().bootstrap_plan(
-                harness_name=payload.get("harness_name", payload.get("harness", "mermaid")),
-                query=payload.get("query", "file"),
-                include_workflows=bool(payload.get("include_workflows", True)),
-                workflow_path=payload.get(
-                    "workflow_path",
-                    "workflows/cli-anything-macrocli-mermaid-routing.example.json",
-                ),
-            )
-            self._send(200 if result["ok"] else 502, result)
-            return
-        if self.path == "/plugins/cli-anything/candidates":
-            result = CliAnythingHub().candidate_harnesses(
-                query=payload.get("query"),
-                limit=int(payload.get("limit", 50)),
-                with_probes=bool(payload.get("with_probes", False)),
-                compact=bool(payload.get("compact", False)),
-            )
-            self._send(200 if result["ok"] else 502, result)
-            return
-        if self.path == "/plugins/cli-anything/install-queue":
-            result = CliAnythingHub().market_install_queue(
-                query=payload.get("query"),
-                limit=int(payload.get("limit", 50)),
-                max_installs=int(payload.get("max_installs", 10)),
-                include_blocked=bool(payload.get("include_blocked", True)),
-            )
-            self._send(200 if result["ok"] else 502, result)
-            return
-        if self.path == "/plugins/cli-anything/blocked-plan":
-            harnesses = payload.get("harnesses", [])
-            if not isinstance(harnesses, list) or not all(isinstance(item, str) for item in harnesses):
-                self._send(400, {"error": "harnesses must be a list of strings"})
-                return
-            result = CliAnythingHub().blocked_harness_plan(
-                harnesses=tuple(harnesses),
-                query=payload.get("query"),
-                limit=int(payload.get("limit", 50)),
-            )
-            self._send(200, result)
-            return
-        if self.path == "/plugins/cli-anything/repair-plan":
-            result = CliAnythingHub().entrypoint_repair_plan(
-                _required_string(payload, "harness_name"),
-                from_market=bool(payload.get("from_market", True)),
-            )
-            self._send(200 if result.get("ok") else 502, result)
-            return
-        if self.path == "/plugins/cli-anything/repair-entrypoint":
-            write = bool(payload.get("write", False))
-            if write and not bool(payload.get("confirmed", False)):
-                self._send_error(403, "confirmation_required", "entrypoint repair writes require confirmed=true")
-                return
-            smoke_args_raw = payload.get("smoke_args", ["--help"])
-            if not isinstance(smoke_args_raw, list) or not all(isinstance(item, str) for item in smoke_args_raw):
-                self._send(400, {"error": "smoke_args must be a list of strings"})
-                return
-            result = CliAnythingHub().repair_entrypoint(
-                _required_string(payload, "harness_name"),
-                from_market=bool(payload.get("from_market", True)),
-                module=payload.get("module"),
-                write=write,
-                confirmed=bool(payload.get("confirmed", False)),
-                require_smoke=bool(payload.get("require_smoke", False)),
-                smoke_args=tuple(smoke_args_raw),
-                smoke_timeout_seconds=int(payload.get("smoke_timeout_seconds", 10)),
-            )
-            self._send(_operation_execution_status(result), result)
-            return
-        if self.path == "/plugins/cli-anything/promotion-gate":
-            smoke_args_raw = payload.get("smoke_extra_args", [])
-            if not isinstance(smoke_args_raw, list) or not all(isinstance(item, str) for item in smoke_args_raw):
-                self._send(400, {"error": "smoke_extra_args must be a list of strings"})
-                return
-            result = CliAnythingHub().promotion_gate(
-                payload["harness_name"],
-                title=payload.get("title"),
-                from_market=bool(payload.get("from_market", True)),
-                include_workflows=bool(payload.get("include_workflows", True)),
-                run_smoke_suite=bool(payload.get("run_smoke_suite", False)),
-                smoke_extra_args=tuple(smoke_args_raw),
-            )
-            self._send(200 if result["ok"] else 502, result)
-            return
-        if self.path == "/plugins/cli-anything/adapter-targets":
-            result = CliAnythingHub().adapter_targets(
-                _required_string(payload, "harness_name"),
-                from_market=bool(payload.get("from_market", True)),
-                package=payload.get("package"),
-                limit=int(payload.get("limit", 20)),
-            )
-            self._send(200 if result.get("ok") else 502, result)
-            return
-        if self.path == "/plugins/cli-anything/adapter-smoke":
-            run = bool(payload.get("run", False))
-            if run and not bool(payload.get("confirmed", False)):
-                self._send_error(403, "confirmation_required", "adapter smoke execution requires confirmed=true")
-                return
-            smoke_args_raw = payload.get("smoke_args", ["--help"])
-            if not isinstance(smoke_args_raw, list) or not all(isinstance(item, str) for item in smoke_args_raw):
-                self._send(400, {"error": "smoke_args must be a list of strings"})
-                return
-            result = CliAnythingHub().adapter_target_smoke(
-                _required_string(payload, "harness_name"),
-                module=_required_string(payload, "module"),
-                from_market=bool(payload.get("from_market", True)),
-                smoke_args=tuple(smoke_args_raw),
-                timeout_seconds=int(payload.get("timeout_seconds", 10)),
-                run=run,
-                confirmed=bool(payload.get("confirmed", False)),
-            )
-            self._send(_operation_execution_status(result), result)
-            return
-        if self.path == "/plugins/cli-anything/adaptation-gate":
-            run_smoke = bool(payload.get("run_smoke", False))
-            if run_smoke and not bool(payload.get("confirmed", False)):
-                self._send_error(403, "confirmation_required", "adaptation gate smoke execution requires confirmed=true")
-                return
-            smoke_args_raw = payload.get("smoke_args", ["--help"])
-            if not isinstance(smoke_args_raw, list) or not all(isinstance(item, str) for item in smoke_args_raw):
-                self._send(400, {"error": "smoke_args must be a list of strings"})
-                return
-            result = CliAnythingHub().adaptation_gate(
-                _required_string(payload, "harness_name"),
-                from_market=bool(payload.get("from_market", True)),
-                module=payload.get("module"),
-                require_smoke=bool(payload.get("require_smoke", True)),
-                run_smoke=run_smoke,
-                confirmed=bool(payload.get("confirmed", False)),
-                smoke_args=tuple(smoke_args_raw),
-                smoke_timeout_seconds=int(payload.get("smoke_timeout_seconds", 10)),
-            )
-            self._send(200, result)
-            return
-        if self.path == "/plugins/cli-anything/adaptation-queue":
-            run_smoke = bool(payload.get("run_smoke", False))
-            confirmed = bool(payload.get("confirmed", False))
-            if run_smoke and not confirmed:
-                self._send_error(403, "confirmation_required", "adaptation queue smoke execution requires confirmed=true")
-                return
-            smoke_args_raw = payload.get("smoke_args", ["--help"])
-            if not isinstance(smoke_args_raw, list) or not all(isinstance(item, str) for item in smoke_args_raw):
-                self._send(400, {"error": "smoke_args must be a list of strings"})
-                return
-            harnesses = payload.get("harnesses", [])
-            if not isinstance(harnesses, list) or not all(isinstance(item, str) for item in harnesses):
-                self._send(400, {"error": "harnesses must be a list of strings"})
-                return
-            include_blocked = bool(payload.get("include_blocked", True))
-            if run_smoke and not harnesses and include_blocked:
-                self._send_error(
-                    409,
-                    "blocked",
-                    "adaptation queue smoke execution requires explicit harnesses or include_blocked=false",
-                )
-                return
-            result = CliAnythingHub().adaptation_queue(
-                harnesses=tuple(harnesses),
-                query=payload.get("query"),
-                limit=int(payload.get("limit", 20)),
-                max_harnesses=int(payload.get("max_harnesses", 5)),
-                include_blocked=include_blocked,
-                require_smoke=bool(payload.get("require_smoke", True)),
-                run_smoke=run_smoke,
-                confirmed=confirmed,
-                smoke_args=tuple(smoke_args_raw),
-                smoke_timeout_seconds=int(payload.get("smoke_timeout_seconds", 10)),
-            )
-            self._send(200, result)
-            return
-        if self.path == "/plugins/cli-anything/sync-market":
-            write = bool(payload.get("write", False))
-            if write and not bool(payload.get("confirmed", False)):
-                self._send(403, {"error": "manifest write requires confirmed=true"})
-                return
-            result = CliAnythingHub().sync_market(
-                query=payload.get("query"),
-                limit=int(payload.get("limit", 50)),
-                write=write,
-            )
-            self._send(200 if result["ok"] else 502, result)
-            return
-        if self.path == "/plugins/cli-anything/harness":
-            hub = CliAnythingHub()
-            if payload["action"] == "status":
-                self._send(
-                    200,
-                    hub.harness_status(
-                        payload["harness_name"],
-                        from_market=bool(payload.get("from_market", False)),
-                    ),
-                )
-                return
-            plan = hub.harness_plan(
-                payload["action"],
-                payload["harness_name"],
-                extra_args=tuple(payload.get("extra_args", [])),
-            )
-            if not bool(payload.get("confirmed", False)):
-                self._send(200, plan.as_dict())
-                return
-            if payload["action"] in {"install", "update"} and not bool(payload.get("allow_blocked", False)):
-                gate = hub.harness_operation_gate(
-                    payload["action"],
-                    payload["harness_name"],
-                    from_market=not bool(payload.get("offline", False)),
-                )
-                if not gate["ok"]:
-                    self._send(409, gate)
-                    return
-            result = runtime.plugin_runner.execute(plan)
-            self._send(200 if result["status"] == "completed" else 409, result)
+        if self.path in _CLI_ANYTHING_POST_ROUTES:
+            _CLI_ANYTHING_POST_ROUTES[self.path](self, payload, runtime)
             return
         self._send(404, {"error": "not found", "routes": ROUTE_SUMMARY})
+
+
+def _get_plugins(handler: CbnRequestHandler, query: dict[str, list[str]]) -> None:
+    handler._send(200, PluginManager().list_plugins())
+
+
+def _get_plugin_operations(handler: CbnRequestHandler, query: dict[str, list[str]]) -> None:
+    handler._send(200, PluginManager().operation_catalog(query.get("plugin_id", [None])[0]))
+
+
+def _get_plugin_operations_validate(handler: CbnRequestHandler, query: dict[str, list[str]]) -> None:
+    result = PluginManager().validate_operation_catalog(query.get("plugin_id", [None])[0])
+    handler._send(200 if result["ok"] else 422, result)
+
+
+def _get_cli_anything_status(handler: CbnRequestHandler, query: dict[str, list[str]]) -> None:
+    handler._send(200, CliAnythingHub().status())
+
+
+def _get_cli_anything_preflight(handler: CbnRequestHandler, query: dict[str, list[str]]) -> None:
+    handler._send(200, PluginManager().preflight("cli-anything"))
+
+
+def _get_cli_anything_provenance(handler: CbnRequestHandler, query: dict[str, list[str]]) -> None:
+    handler._send(200, PluginManager().provenance("cli-anything"))
+
+
+def _get_cli_anything_update_check(handler: CbnRequestHandler, query: dict[str, list[str]]) -> None:
+    result = PluginManager().update_check("cli-anything", remote=_query_bool(query, "remote", default=False))
+    handler._send(200 if result["ready_for_update"] else 409, result)
+
+
+def _get_imports_catalog(handler: CbnRequestHandler, query: dict[str, list[str]]) -> None:
+    handler._send(200, cli_registration_surface())
+
+
+def _get_runtime_transports(handler: CbnRequestHandler, query: dict[str, list[str]]) -> None:
+    kind = query.get("kind", ["pty"])[0]
+    handler._send(200, PluginManager().runtime_transport_status(kind))
+
+
+def _get_registry_validate(handler: CbnRequestHandler, query: dict[str, list[str]]) -> None:
+    result = validate_manifest_path(Path(query.get("path", ["manifests"])[0]), known_parser_refs=_known_parser_refs())
+    handler._send(200 if result["valid"] else 422, result)
+
+
+_STATIC_GET_ROUTES = {
+    "/plugins": _get_plugins,
+    "/plugins/operations": _get_plugin_operations,
+    "/plugins/operations/validate": _get_plugin_operations_validate,
+    "/plugins/cli-anything/status": _get_cli_anything_status,
+    "/plugins/cli-anything/preflight": _get_cli_anything_preflight,
+    "/plugins/cli-anything/provenance": _get_cli_anything_provenance,
+    "/plugins/cli-anything/update-check": _get_cli_anything_update_check,
+    "/imports/catalog": _get_imports_catalog,
+    "/runtime/transports": _get_runtime_transports,
+    "/registry/validate": _get_registry_validate,
+}
+
+
+def _get_audit(handler: CbnRequestHandler, query: dict[str, list[str]], runtime: Any) -> None:
+    handler._send(200, runtime.audit_log.tail())
+
+
+def _get_events(handler: CbnRequestHandler, query: dict[str, list[str]], runtime: Any) -> None:
+    handler._send(200, runtime.event_bus.tail(limit=int(query.get("limit", ["50"])[0])))
+
+
+def _get_artifacts(handler: CbnRequestHandler, query: dict[str, list[str]], runtime: Any) -> None:
+    artifact_id = query.get("artifact_id", [None])[0]
+    if artifact_id:
+        handler._send(200, runtime.artifact_store.inspect(artifact_id))
+    else:
+        handler._send(200, runtime.artifact_store.list(limit=int(query.get("limit", ["50"])[0])))
+
+
+def _get_parsers(handler: CbnRequestHandler, query: dict[str, list[str]], runtime: Any) -> None:
+    parser_ref = query.get("parser_ref", [None])[0]
+    if parser_ref:
+        handler._send(200, runtime.parser_registry.inspect(parser_ref))
+    else:
+        handler._send(200, runtime.parser_registry.list())
+
+
+def _get_parser_fixtures(handler: CbnRequestHandler, query: dict[str, list[str]], runtime: Any) -> None:
+    result = run_parser_fixtures(
+        Path(query.get("path", ["parser_fixtures"])[0]),
+        parser_ref=query.get("parser_ref", [None])[0],
+        registry=runtime.parser_registry,
+    )
+    handler._send(200 if result["ok"] else 422, result)
+
+
+def _get_direct_cli_readiness(handler: CbnRequestHandler, query: dict[str, list[str]], runtime: Any) -> None:
+    result = direct_cli_readiness_report(runtime, fixture_path=Path(query.get("path", ["parser_fixtures"])[0]))
+    handler._send(200 if result["ok"] else 422, result)
+
+
+_RUNTIME_GET_ROUTES = {
+    "/audit": _get_audit,
+    "/events": _get_events,
+    "/artifacts": _get_artifacts,
+    "/parsers": _get_parsers,
+    "/parsers/fixtures": _get_parser_fixtures,
+    "/direct-cli/readiness": _get_direct_cli_readiness,
+}
+
+
+def _get_protocols(handler: CbnRequestHandler, query: dict[str, list[str]], runtime: Any) -> None:
+    target = query.get("target", [None])[0]
+    capability_id = query.get("capability_id", [None])[0]
+    if target == "all":
+        handler._send(200, export_all_protocols(runtime.registry, capability_id=capability_id))
+    elif target:
+        handler._send(200, export_protocol(runtime.registry, target, capability_id=capability_id))
+    else:
+        handler._send(200, list_protocol_exports())
+
+
+def _get_protocol_workflows(handler: CbnRequestHandler, query: dict[str, list[str]], runtime: Any) -> None:
+    target = query.get("target", ["all"])[0]
+    workflow_path = query.get("path", [None])[0]
+    if target == "all":
+        handler._send(200, export_all_workflow_protocols(runtime.registry, workflow_path=workflow_path))
+    else:
+        handler._send(200, export_workflow_protocol(runtime.registry, target, workflow_path=workflow_path))
+
+
+def _get_protocol_check(handler: CbnRequestHandler, query: dict[str, list[str]], runtime: Any) -> None:
+    handler._send(
+        200,
+        check_protocol(
+            runtime.registry,
+            query.get("target", ["all"])[0],
+            capability_id=query.get("capability_id", [None])[0],
+            workflow_path=query.get("path", query.get("workflow_path", [None]))[0],
+        ),
+    )
+
+
+def _get_protocol_matrix(handler: CbnRequestHandler, query: dict[str, list[str]], runtime: Any) -> None:
+    handler._send(200, protocol_matrix(runtime.registry, include_workflows=_query_bool(query, "include_workflows", default=False)))
+
+
+def _get_protocol_readiness(handler: CbnRequestHandler, query: dict[str, list[str]], runtime: Any) -> None:
+    result = protocol_readiness_report(
+        runtime.registry,
+        workflow_path=query.get("workflow_path", query.get("path", [None]))[0],
+        include_workflows=_query_bool(query, "include_workflows", default=True),
+    )
+    handler._send(200 if result["ok"] else 422, result)
+
+
+def _get_protocol_conformance_plan(handler: CbnRequestHandler, query: dict[str, list[str]], runtime: Any) -> None:
+    result = protocol_conformance_plan(
+        runtime.registry,
+        target=query.get("target", ["all"])[0],
+        capability_id=query.get("capability_id", [None])[0],
+        workflow_path=query.get("workflow_path", query.get("path", [None]))[0],
+    )
+    handler._send(200 if result["ok"] else 422, result)
+
+
+def _get_protocol_lifecycle_suite(handler: CbnRequestHandler, query: dict[str, list[str]], runtime: Any) -> None:
+    result = protocol_lifecycle_suite(
+        capability_id=query.get("capability_id", ["git.version"])[0],
+        workflow_path=query.get("workflow_path", query.get("path", ["workflows/example.json"]))[0],
+    )
+    handler._send(200 if result["ok"] else 422, result)
+
+
+def _get_protocol_wire_conformance(handler: CbnRequestHandler, query: dict[str, list[str]], runtime: Any) -> None:
+    result = protocol_wire_conformance_suite(
+        target=query.get("target", ["all"])[0],
+        capability_id=query.get("capability_id", ["git.version"])[0],
+    )
+    handler._send(200 if result["ok"] else 422, result)
+
+
+def _get_protocol_smoke_suite(handler: CbnRequestHandler, query: dict[str, list[str]], runtime: Any) -> None:
+    result = protocol_smoke_suite(
+        runtime.registry,
+        capability_ids=query.get("capability_id") or None,
+        workflow_paths=query.get("workflow_path") or query.get("path") or None,
+        extra_args=query.get("extra_arg", []),
+        dry_run=_query_bool(query, "dry_run", default=False),
+        workflow_dry_run=_query_bool(query, "workflow_dry_run", default=False),
+        workflow_confirmed=_query_bool(query, "confirmed", default=False),
+        include_payloads=_query_bool(query, "include_payloads", default=False),
+    )
+    handler._send(200 if result["ok"] else 422, result)
+
+
+def _get_protocol_acceptance_queue(handler: CbnRequestHandler, query: dict[str, list[str]], runtime: Any) -> None:
+    result = cli_to_cli_acceptance_queue(
+        runtime.registry,
+        runtime.workflow_runner,
+        workflow_paths=query.get("workflow_path") or query.get("path") or None,
+        max_workflows=int(query.get("max_workflows", ["50"])[0]),
+        run=_query_bool(query, "run", default=False),
+        dry_run=_query_bool(query, "dry_run", default=False),
+        confirmed=_query_bool(query, "confirmed", default=False),
+        include_payloads=_query_bool(query, "include_payloads", default=False),
+    )
+    handler._send(200 if result["ok"] else 422, result)
+
+
+def _get_protocol_bridge_lab(handler: CbnRequestHandler, query: dict[str, list[str]], runtime: Any) -> None:
+    result = bridge_lab_report(
+        runtime.registry,
+        runtime.workflow_runner,
+        workflow_paths=tuple(query.get("workflow_path") or query.get("path") or ()),
+        max_workflows=int(query.get("max_workflows", ["10"])[0]),
+        run=False,
+        dry_run=True,
+        confirmed=False,
+        include_payloads=False,
+        run_smoke_suite=_query_bool(query, "smoke_suite", default=False),
+    )
+    handler._send(200 if result["ok"] else 422, result)
+
+
+_PROTOCOL_GET_ROUTES = {
+    "/protocols": _get_protocols,
+    "/protocols/workflows": _get_protocol_workflows,
+    "/protocols/check": _get_protocol_check,
+    "/protocols/matrix": _get_protocol_matrix,
+    "/protocols/readiness": _get_protocol_readiness,
+    "/protocols/conformance-plan": _get_protocol_conformance_plan,
+    "/protocols/lifecycle-suite": _get_protocol_lifecycle_suite,
+    "/protocols/wire-conformance": _get_protocol_wire_conformance,
+    "/protocols/smoke-suite": _get_protocol_smoke_suite,
+    "/protocols/acceptance-queue": _get_protocol_acceptance_queue,
+    "/protocols/bridge-lab": _get_protocol_bridge_lab,
+}
+
+
+def _post_message_validate(handler: CbnRequestHandler, payload: dict[str, Any]) -> None:
+    result = validate_bridge_message(payload["message"])
+    handler._send(200 if result["valid"] else 422, result)
+
+
+def _post_message_select(handler: CbnRequestHandler, payload: dict[str, Any]) -> None:
+    try:
+        handler._send(200, select_bridge_value(payload["message"], payload["selector"]))
+    except (KeyError, IndexError, ValueError) as exc:
+        handler._send(400, {"error": str(exc), "selector": payload.get("selector")})
+
+
+def _post_message_args(handler: CbnRequestHandler, payload: dict[str, Any]) -> None:
+    try:
+        selectors = payload["selectors"]
+        if not isinstance(selectors, list) or not all(isinstance(item, str) for item in selectors):
+            handler._send(400, {"error": "selectors must be a list of strings"})
+            return
+        result = bridge_args_from_selectors(payload["message"], selectors)
+        handler._send(200 if result["valid"] else 422, result)
+    except (KeyError, IndexError, TypeError, ValueError) as exc:
+        handler._send(400, {"error": str(exc), "selectors": payload.get("selectors")})
+
+
+_MESSAGE_POST_ROUTES = {
+    "/messages/validate": _post_message_validate,
+    "/messages/select": _post_message_select,
+    "/messages/args": _post_message_args,
+}
+
+
+def _payload_workflow_paths(payload: dict[str, Any]) -> tuple[str, ...] | None:
+    workflow_paths = payload.get("workflow_paths", payload.get("workflow_path", []))
+    if isinstance(workflow_paths, str):
+        workflow_paths = [workflow_paths]
+    if not isinstance(workflow_paths, list) or not all(isinstance(item, str) for item in workflow_paths):
+        raise ValueError("workflow_paths must be a list of strings")
+    return tuple(workflow_paths) or None
+
+
+def _post_protocol_accept_workflow(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    result = cli_to_cli_acceptance_report(
+        runtime.registry,
+        runtime.workflow_runner,
+        payload["workflow_path"],
+        run=bool(payload.get("run", False)),
+        dry_run=bool(payload.get("dry_run", False)),
+        confirmed=bool(payload.get("confirmed", False)),
+        include_payloads=bool(payload.get("include_payloads", False)),
+    )
+    handler._send(200 if result["ok"] else 422, result)
+
+
+def _post_protocol_acceptance_queue(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    try:
+        workflow_paths = _payload_workflow_paths(payload)
+    except ValueError as exc:
+        handler._send(400, {"error": str(exc)})
+        return
+    result = cli_to_cli_acceptance_queue(
+        runtime.registry,
+        runtime.workflow_runner,
+        workflow_paths=workflow_paths,
+        max_workflows=int(payload.get("max_workflows", 50)),
+        run=bool(payload.get("run", False)),
+        dry_run=bool(payload.get("dry_run", False)),
+        confirmed=bool(payload.get("confirmed", False)),
+        include_payloads=bool(payload.get("include_payloads", False)),
+    )
+    handler._send(200 if result["ok"] else 422, result)
+
+
+def _post_protocol_bridge_lab(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    try:
+        workflow_paths = _payload_workflow_paths(payload)
+    except ValueError as exc:
+        handler._send(400, {"error": str(exc)})
+        return
+    result = bridge_lab_report(
+        runtime.registry,
+        runtime.workflow_runner,
+        workflow_paths=workflow_paths or (),
+        max_workflows=int(payload.get("max_workflows", 10)),
+        run=bool(payload.get("run", False)),
+        dry_run=bool(payload.get("dry_run", True)),
+        confirmed=bool(payload.get("confirmed", False)),
+        include_payloads=bool(payload.get("include_payloads", False)),
+        run_smoke_suite=bool(payload.get("smoke_suite", payload.get("run_smoke_suite", False))),
+    )
+    handler._send(200 if result["ok"] else 422, result)
+
+
+_PROTOCOL_POST_ROUTES = {
+    "/protocols/accept-workflow": _post_protocol_accept_workflow,
+    "/protocols/acceptance-queue": _post_protocol_acceptance_queue,
+    "/protocols/bridge-lab": _post_protocol_bridge_lab,
+}
+
+
+def _payload_workflow_and_message(
+    handler: CbnRequestHandler,
+    payload: dict[str, Any],
+    *,
+    default_workflow: str,
+) -> tuple[str, str] | None:
+    workflow_path = payload.get("workflow_path") or payload.get("path") or default_workflow
+    message = payload.get("message", "")
+    if not isinstance(workflow_path, str) or not workflow_path:
+        handler._send_error(400, "bad_request", "workflow_path must be a non-empty string")
+        return None
+    if not isinstance(message, str):
+        handler._send_error(400, "bad_request", "message must be a string")
+        return None
+    return workflow_path, message
+
+
+def _post_adapter_orchestrate(handler: CbnRequestHandler, payload: dict[str, Any]) -> None:
+    values = _payload_workflow_and_message(handler, payload, default_workflow=DEFAULT_WORKFLOW_PATH)
+    if values is None:
+        return
+    workflow_path, message = values
+    result = build_orchestration_turn(
+        message=message,
+        workflow_path=workflow_path,
+        use_glm=bool(payload.get("use_glm", True)),
+    )
+    handler._send(200, result)
+
+
+def _post_adapter_orchestrate_stream(handler: CbnRequestHandler, payload: dict[str, Any]) -> None:
+    handler._handle_adapter_agent_stream(payload)
+
+
+def _post_adapter_tool_call_plan(handler: CbnRequestHandler, payload: dict[str, Any]) -> None:
+    values = _payload_workflow_and_message(handler, payload, default_workflow=DEFAULT_WORKFLOW_PATH)
+    if values is None:
+        return
+    workflow_path, message = values
+    handler._send(200, build_agent_tool_call_plan(workflow_path=workflow_path, message=message))
+
+
+def _post_adapter_workflow_request_plan(handler: CbnRequestHandler, payload: dict[str, Any]) -> None:
+    values = _payload_workflow_and_message(handler, payload, default_workflow=DEFAULT_KILLER_WORKFLOW_PATH)
+    if values is None:
+        return
+    workflow_path, message = values
+    result = build_agent_workflow_request_plan(
+        workflow_path=workflow_path,
+        message=message,
+        base_url=_base_url(handler),
+        dry_run=bool(payload.get("dry_run", True)),
+        confirmed=bool(payload.get("confirmed", False)),
+    )
+    handler._send(200, result)
+
+
+def _post_adapter_tool_use(handler: CbnRequestHandler, payload: dict[str, Any]) -> None:
+    handler._handle_adapter_agent_tool_use(payload)
+
+
+_ADAPTER_AGENT_POST_ROUTES = {
+    "/adapter-agent/orchestrate": _post_adapter_orchestrate,
+    "/adapter-agent/orchestrate-stream": _post_adapter_orchestrate_stream,
+    "/adapter-agent/tool-call-plan": _post_adapter_tool_call_plan,
+    "/adapter-agent/workflow-request-plan": _post_adapter_workflow_request_plan,
+    "/adapter-agent/tool-use": _post_adapter_tool_use,
+}
+
+
+def _post_runtime_transport_gate(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    handler._send(200, PluginManager().runtime_transport_gate(payload.get("kind", "pty")))
+
+
+def _post_runtime_transport_plan(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    handler._send(200, PluginManager().runtime_transport_plan(payload.get("kind", "pty")).as_dict())
+
+
+def _post_runtime_transport_install(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    if not bool(payload.get("confirmed", False)):
+        handler._send(403, {"error": "runtime transport install requires confirmed=true"})
+        return
+    manager = PluginManager()
+    kind = payload.get("kind", "pty")
+    gate = manager.runtime_transport_gate(kind)
+    if not gate["ok"]:
+        handler._send(409, gate)
+        return
+    result = runtime.plugin_runner.execute(manager.runtime_transport_plan(kind))
+    handler._send(200 if result["status"] == "completed" else 409, result)
+
+
+_RUNTIME_TRANSPORT_POST_ROUTES = {
+    "/runtime/transports/gate": _post_runtime_transport_gate,
+    "/runtime/transports/plan": _post_runtime_transport_plan,
+    "/runtime/transports/install": _post_runtime_transport_install,
+}
+
+
+def _post_plugin_plan(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    plan = PluginManager().plan(
+        payload["plugin_id"],
+        action=payload.get("action", "install"),
+        include_codex_skill=bool(payload.get("include_codex_skill", False)),
+    )
+    handler._send(200, plan.as_dict())
+
+
+def _post_plugin_gate(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    result = PluginManager().operation_gate(payload["plugin_id"], action=payload.get("action", "install"))
+    handler._send(200, result)
+
+
+def _post_plugin_check_update(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    result = PluginManager().update_check(payload["plugin_id"], remote=bool(payload.get("remote", False)))
+    handler._send(200 if result["ready_for_update"] else 409, result)
+
+
+def _post_plugin_operation_plan(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    inputs = payload.get("inputs", {})
+    if not isinstance(inputs, dict):
+        handler._send(400, {"error": "inputs must be an object"})
+        return
+    result = PluginManager().operation_plan(
+        payload["plugin_id"],
+        payload["operation_id"],
+        inputs=inputs,
+        confirmed=bool(payload.get("confirmed", False)),
+    )
+    handler._send(200 if result["ok"] else 409, result)
+
+
+def _post_plugin_verify_plan(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    result = PluginManager().verify_plan(
+        payload["plugin_id"],
+        action=payload.get("action", "install"),
+        include_codex_skill=bool(payload.get("include_codex_skill", False)),
+        run=bool(payload.get("run", False)),
+        timeout_seconds=int(payload.get("timeout_seconds", 60)),
+    )
+    handler._send(200 if result["ok"] else 409, result)
+
+
+def _post_plugin_execute(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    if not bool(payload.get("confirmed", False)):
+        handler._send(403, {"error": "plugin execution requires confirmed=true"})
+        return
+    manager = PluginManager()
+    action = payload.get("action", "install")
+    if not bool(payload.get("allow_failed_preflight", False)):
+        gate = manager.operation_gate(payload["plugin_id"], action=action)
+        if not gate["ok"]:
+            handler._send(409, gate)
+            return
+    plan = manager.plan(
+        payload["plugin_id"],
+        action=action,
+        include_codex_skill=bool(payload.get("include_codex_skill", False)),
+    )
+    result = runtime.plugin_runner.execute(plan)
+    handler._send(200 if result["status"] == "completed" else 409, result)
+
+
+_PLUGIN_MANAGER_POST_ROUTES = {
+    "/plugins/plan": _post_plugin_plan,
+    "/plugins/gate": _post_plugin_gate,
+    "/plugins/check-update": _post_plugin_check_update,
+    "/plugins/operation-plan": _post_plugin_operation_plan,
+    "/plugins/verify-plan": _post_plugin_verify_plan,
+    "/plugins/execute": _post_plugin_execute,
+}
+
+
+def _string_list_payload(payload: dict[str, Any], field: str, default: list[str] | None = None) -> list[str]:
+    value = payload.get(field, default or [])
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ValueError(f"{field} must be a list of strings")
+    return value
+
+
+def _post_cli_anything_market(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    hub = CliAnythingHub()
+    command = payload.get("command", "list")
+    if command == "list":
+        result = hub.list_market()
+    elif command == "search":
+        result = hub.search_market(payload["query"])
+    elif command == "info":
+        result = hub.info(payload["harness_name"])
+    else:
+        handler._send(400, {"error": f"unsupported market command: {command}"})
+        return
+    handler._send(200 if result.exit_code == 0 else 502, result.as_dict())
+
+
+def _post_cli_anything_import_harness(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    hub = CliAnythingHub()
+    market_record = None
+    if bool(payload.get("from_market", False)):
+        market_record = hub.market_record_for_harness(payload["harness_name"])
+        if market_record is None:
+            handler._send(
+                502,
+                {
+                    "error": "CLI-Anything market record not found",
+                    "plugin_id": "cli-anything",
+                    "harness_name": payload["harness_name"],
+                },
+            )
+            return
+    manifest = hub.manifest_for_harness(payload["harness_name"], title=payload.get("title"), market_record=market_record)
+    if bool(payload.get("write", False)):
+        if not bool(payload.get("confirmed", False)):
+            handler._send(403, {"error": "manifest write requires confirmed=true"})
+            return
+        path = hub.write_harness_manifest(payload["harness_name"], title=payload.get("title"), market_record=market_record)
+        handler._send(200, {"written": str(path), "manifest": manifest})
+    else:
+        handler._send(200, manifest)
+
+
+def _post_cli_anything_adapt_harness(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    write = bool(payload.get("write", False))
+    if write and not bool(payload.get("confirmed", False)):
+        handler._send(403, {"error": "manifest write requires confirmed=true"})
+        return
+    result = CliAnythingHub().adapt_harness(
+        payload["harness_name"],
+        title=payload.get("title"),
+        from_market=bool(payload.get("from_market", False)),
+        write=write,
+    )
+    handler._send(200 if result["ok"] else 502, result)
+
+
+def _post_cli_anything_prepare_harness(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    result = CliAnythingHub().prepare_harness(
+        payload["harness_name"],
+        title=payload.get("title"),
+        from_market=bool(payload.get("from_market", False)),
+    )
+    handler._send(200 if result["ok"] else 502, result)
+
+
+def _post_cli_anything_evaluate_harness(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    result = CliAnythingHub().evaluate_harness(
+        payload["harness_name"],
+        title=payload.get("title"),
+        from_market=bool(payload.get("from_market", True)),
+    )
+    handler._send(200 if result["ok"] else 502, result)
+
+
+def _post_cli_anything_probe_harness(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    result = CliAnythingHub().probe_harness(
+        payload["harness_name"],
+        title=payload.get("title"),
+        from_market=bool(payload.get("from_market", True)),
+    )
+    handler._send(200 if result["ok"] else 502, result)
+
+
+def _post_cli_anything_verify_harness(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    result = CliAnythingHub().verify_harness(
+        payload["harness_name"],
+        title=payload.get("title"),
+        from_market=bool(payload.get("from_market", True)),
+        include_workflows=bool(payload.get("include_workflows", True)),
+        run_smoke_suite=bool(payload.get("run_smoke_suite", False)),
+        smoke_extra_args=tuple(payload.get("smoke_extra_args", [])),
+    )
+    handler._send(200 if result["ok"] else 502, result)
+
+
+def _post_cli_anything_verify_harness_plan(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    try:
+        extra_args = _string_list_payload(payload, "extra_args")
+    except ValueError as exc:
+        handler._send(400, {"error": str(exc)})
+        return
+    result = CliAnythingHub().verify_harness_plan(
+        payload.get("action", "install"),
+        payload["harness_name"],
+        extra_args=tuple(extra_args),
+        run=bool(payload.get("run", False)),
+        timeout_seconds=int(payload.get("timeout_seconds", 60)),
+    )
+    handler._send(200 if result["ok"] else 409, result)
+
+
+def _post_cli_anything_onboard_harness(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    installing = bool(payload.get("install", False)) and bool(payload.get("confirmed", False))
+    result = CliAnythingHub().onboard_harness(
+        payload["harness_name"],
+        title=payload.get("title"),
+        from_market=bool(payload.get("from_market", True)),
+        write=bool(payload.get("write", False)),
+        confirmed=bool(payload.get("confirmed", False)),
+        install=bool(payload.get("install", False)),
+        allow_blocked=bool(payload.get("allow_blocked", False)),
+        include_workflows=bool(payload.get("include_workflows", True)),
+        run_smoke_suite=bool(payload.get("run_smoke_suite", False)),
+        smoke_extra_args=tuple(payload.get("smoke_extra_args", [])),
+        operation_runner=runtime.plugin_runner if installing else None,
+    )
+    handler._send(200 if result["ok"] else 502, result)
+
+
+def _post_cli_anything_live_verification(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    try:
+        harnesses = _string_list_payload(payload, "harnesses", ["mermaid", "macrocli"])
+    except ValueError as exc:
+        handler._send(400, {"error": str(exc)})
+        return
+    result = CliAnythingHub().live_verification(
+        harnesses=tuple(harnesses),
+        candidate_query=payload.get("candidate_query", "image"),
+        candidate_limit=int(payload.get("candidate_limit", 10)),
+        include_candidates=bool(payload.get("include_candidates", True)),
+        include_workflows=bool(payload.get("include_workflows", True)),
+        run_smoke_suite=bool(payload.get("run_smoke_suite", False)),
+        smoke_extra_args=tuple(payload.get("smoke_extra_args", [])),
+    )
+    handler._send(200 if result["ok"] else 502, result)
+
+
+def _post_cli_anything_mvp_plan(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    try:
+        workflow_paths = _string_list_payload(payload, "workflow_paths", [])
+    except ValueError as exc:
+        handler._send(400, {"error": str(exc)})
+        return
+    result = CliAnythingHub().mvp_plan(
+        query=payload.get("query", "file"),
+        limit=int(payload.get("limit", 20)),
+        max_harnesses=int(payload.get("max_harnesses", 5)),
+        include_blocked=bool(payload.get("include_blocked", True)),
+        workflow_paths=tuple(workflow_paths),
+        max_workflows=int(payload.get("max_workflows", 10)),
+        registry=runtime.registry,
+        workflow_runner=runtime.workflow_runner,
+    )
+    handler._send(200 if result["ok"] else 502, result)
+
+
+def _post_cli_anything_bootstrap_plan(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    result = CliAnythingHub().bootstrap_plan(
+        harness_name=payload.get("harness_name", payload.get("harness", "mermaid")),
+        query=payload.get("query", "file"),
+        include_workflows=bool(payload.get("include_workflows", True)),
+        workflow_path=payload.get("workflow_path", "workflows/cli-anything-macrocli-mermaid-routing.example.json"),
+    )
+    handler._send(200 if result["ok"] else 502, result)
+
+
+def _post_cli_anything_candidates(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    result = CliAnythingHub().candidate_harnesses(
+        query=payload.get("query"),
+        limit=int(payload.get("limit", 50)),
+        with_probes=bool(payload.get("with_probes", False)),
+        compact=bool(payload.get("compact", False)),
+    )
+    handler._send(200 if result["ok"] else 502, result)
+
+
+def _post_cli_anything_install_queue(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    result = CliAnythingHub().market_install_queue(
+        query=payload.get("query"),
+        limit=int(payload.get("limit", 50)),
+        max_installs=int(payload.get("max_installs", 10)),
+        include_blocked=bool(payload.get("include_blocked", True)),
+    )
+    handler._send(200 if result["ok"] else 502, result)
+
+
+def _post_cli_anything_blocked_plan(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    try:
+        harnesses = _string_list_payload(payload, "harnesses")
+    except ValueError as exc:
+        handler._send(400, {"error": str(exc)})
+        return
+    result = CliAnythingHub().blocked_harness_plan(
+        harnesses=tuple(harnesses),
+        query=payload.get("query"),
+        limit=int(payload.get("limit", 50)),
+    )
+    handler._send(200, result)
+
+
+def _post_cli_anything_repair_plan(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    result = CliAnythingHub().entrypoint_repair_plan(
+        _required_string(payload, "harness_name"),
+        from_market=bool(payload.get("from_market", True)),
+    )
+    handler._send(200 if result.get("ok") else 502, result)
+
+
+def _post_cli_anything_repair_entrypoint(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    write = bool(payload.get("write", False))
+    if write and not bool(payload.get("confirmed", False)):
+        handler._send_error(403, "confirmation_required", "entrypoint repair writes require confirmed=true")
+        return
+    try:
+        smoke_args = _string_list_payload(payload, "smoke_args", ["--help"])
+    except ValueError as exc:
+        handler._send(400, {"error": str(exc)})
+        return
+    result = CliAnythingHub().repair_entrypoint(
+        _required_string(payload, "harness_name"),
+        from_market=bool(payload.get("from_market", True)),
+        module=payload.get("module"),
+        write=write,
+        confirmed=bool(payload.get("confirmed", False)),
+        require_smoke=bool(payload.get("require_smoke", False)),
+        smoke_args=tuple(smoke_args),
+        smoke_timeout_seconds=int(payload.get("smoke_timeout_seconds", 10)),
+    )
+    handler._send(_operation_execution_status(result), result)
+
+
+def _post_cli_anything_promotion_gate(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    try:
+        smoke_extra_args = _string_list_payload(payload, "smoke_extra_args")
+    except ValueError as exc:
+        handler._send(400, {"error": str(exc)})
+        return
+    result = CliAnythingHub().promotion_gate(
+        payload["harness_name"],
+        title=payload.get("title"),
+        from_market=bool(payload.get("from_market", True)),
+        include_workflows=bool(payload.get("include_workflows", True)),
+        run_smoke_suite=bool(payload.get("run_smoke_suite", False)),
+        smoke_extra_args=tuple(smoke_extra_args),
+    )
+    handler._send(200 if result["ok"] else 502, result)
+
+
+def _post_cli_anything_adapter_targets(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    result = CliAnythingHub().adapter_targets(
+        _required_string(payload, "harness_name"),
+        from_market=bool(payload.get("from_market", True)),
+        package=payload.get("package"),
+        limit=int(payload.get("limit", 20)),
+    )
+    handler._send(200 if result.get("ok") else 502, result)
+
+
+def _post_cli_anything_adapter_smoke(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    run = bool(payload.get("run", False))
+    if run and not bool(payload.get("confirmed", False)):
+        handler._send_error(403, "confirmation_required", "adapter smoke execution requires confirmed=true")
+        return
+    try:
+        smoke_args = _string_list_payload(payload, "smoke_args", ["--help"])
+    except ValueError as exc:
+        handler._send(400, {"error": str(exc)})
+        return
+    result = CliAnythingHub().adapter_target_smoke(
+        _required_string(payload, "harness_name"),
+        module=_required_string(payload, "module"),
+        from_market=bool(payload.get("from_market", True)),
+        smoke_args=tuple(smoke_args),
+        timeout_seconds=int(payload.get("timeout_seconds", 10)),
+        run=run,
+        confirmed=bool(payload.get("confirmed", False)),
+    )
+    handler._send(_operation_execution_status(result), result)
+
+
+def _post_cli_anything_adaptation_gate(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    run_smoke = bool(payload.get("run_smoke", False))
+    if run_smoke and not bool(payload.get("confirmed", False)):
+        handler._send_error(403, "confirmation_required", "adaptation gate smoke execution requires confirmed=true")
+        return
+    try:
+        smoke_args = _string_list_payload(payload, "smoke_args", ["--help"])
+    except ValueError as exc:
+        handler._send(400, {"error": str(exc)})
+        return
+    result = CliAnythingHub().adaptation_gate(
+        _required_string(payload, "harness_name"),
+        from_market=bool(payload.get("from_market", True)),
+        module=payload.get("module"),
+        require_smoke=bool(payload.get("require_smoke", True)),
+        run_smoke=run_smoke,
+        confirmed=bool(payload.get("confirmed", False)),
+        smoke_args=tuple(smoke_args),
+        smoke_timeout_seconds=int(payload.get("smoke_timeout_seconds", 10)),
+    )
+    handler._send(200, result)
+
+
+def _post_cli_anything_adaptation_queue(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    run_smoke = bool(payload.get("run_smoke", False))
+    confirmed = bool(payload.get("confirmed", False))
+    if run_smoke and not confirmed:
+        handler._send_error(403, "confirmation_required", "adaptation queue smoke execution requires confirmed=true")
+        return
+    try:
+        smoke_args = _string_list_payload(payload, "smoke_args", ["--help"])
+        harnesses = _string_list_payload(payload, "harnesses")
+    except ValueError as exc:
+        handler._send(400, {"error": str(exc)})
+        return
+    include_blocked = bool(payload.get("include_blocked", True))
+    if run_smoke and not harnesses and include_blocked:
+        handler._send_error(
+            409,
+            "blocked",
+            "adaptation queue smoke execution requires explicit harnesses or include_blocked=false",
+        )
+        return
+    result = CliAnythingHub().adaptation_queue(
+        harnesses=tuple(harnesses),
+        query=payload.get("query"),
+        limit=int(payload.get("limit", 20)),
+        max_harnesses=int(payload.get("max_harnesses", 5)),
+        include_blocked=include_blocked,
+        require_smoke=bool(payload.get("require_smoke", True)),
+        run_smoke=run_smoke,
+        confirmed=confirmed,
+        smoke_args=tuple(smoke_args),
+        smoke_timeout_seconds=int(payload.get("smoke_timeout_seconds", 10)),
+    )
+    handler._send(200, result)
+
+
+def _post_cli_anything_sync_market(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    write = bool(payload.get("write", False))
+    if write and not bool(payload.get("confirmed", False)):
+        handler._send(403, {"error": "manifest write requires confirmed=true"})
+        return
+    result = CliAnythingHub().sync_market(
+        query=payload.get("query"),
+        limit=int(payload.get("limit", 50)),
+        write=write,
+    )
+    handler._send(200 if result["ok"] else 502, result)
+
+
+def _post_cli_anything_harness(handler: CbnRequestHandler, payload: dict[str, Any], runtime: Any) -> None:
+    hub = CliAnythingHub()
+    if payload["action"] == "status":
+        handler._send(
+            200,
+            hub.harness_status(payload["harness_name"], from_market=bool(payload.get("from_market", False))),
+        )
+        return
+    plan = hub.harness_plan(payload["action"], payload["harness_name"], extra_args=tuple(payload.get("extra_args", [])))
+    if not bool(payload.get("confirmed", False)):
+        handler._send(200, plan.as_dict())
+        return
+    if payload["action"] in {"install", "update"} and not bool(payload.get("allow_blocked", False)):
+        gate = hub.harness_operation_gate(
+            payload["action"],
+            payload["harness_name"],
+            from_market=not bool(payload.get("offline", False)),
+        )
+        if not gate["ok"]:
+            handler._send(409, gate)
+            return
+    result = runtime.plugin_runner.execute(plan)
+    handler._send(200 if result["status"] == "completed" else 409, result)
+
+
+_CLI_ANYTHING_POST_ROUTES = {
+    "/plugins/cli-anything/market": _post_cli_anything_market,
+    "/plugins/cli-anything/import-harness": _post_cli_anything_import_harness,
+    "/plugins/cli-anything/adapt-harness": _post_cli_anything_adapt_harness,
+    "/plugins/cli-anything/prepare-harness": _post_cli_anything_prepare_harness,
+    "/plugins/cli-anything/evaluate-harness": _post_cli_anything_evaluate_harness,
+    "/plugins/cli-anything/probe-harness": _post_cli_anything_probe_harness,
+    "/plugins/cli-anything/verify-harness": _post_cli_anything_verify_harness,
+    "/plugins/cli-anything/verify-harness-plan": _post_cli_anything_verify_harness_plan,
+    "/plugins/cli-anything/onboard-harness": _post_cli_anything_onboard_harness,
+    "/plugins/cli-anything/live-verification": _post_cli_anything_live_verification,
+    "/plugins/cli-anything/mvp-plan": _post_cli_anything_mvp_plan,
+    "/plugins/cli-anything/bootstrap-plan": _post_cli_anything_bootstrap_plan,
+    "/plugins/cli-anything/candidates": _post_cli_anything_candidates,
+    "/plugins/cli-anything/install-queue": _post_cli_anything_install_queue,
+    "/plugins/cli-anything/blocked-plan": _post_cli_anything_blocked_plan,
+    "/plugins/cli-anything/repair-plan": _post_cli_anything_repair_plan,
+    "/plugins/cli-anything/repair-entrypoint": _post_cli_anything_repair_entrypoint,
+    "/plugins/cli-anything/promotion-gate": _post_cli_anything_promotion_gate,
+    "/plugins/cli-anything/adapter-targets": _post_cli_anything_adapter_targets,
+    "/plugins/cli-anything/adapter-smoke": _post_cli_anything_adapter_smoke,
+    "/plugins/cli-anything/adaptation-gate": _post_cli_anything_adaptation_gate,
+    "/plugins/cli-anything/adaptation-queue": _post_cli_anything_adaptation_queue,
+    "/plugins/cli-anything/sync-market": _post_cli_anything_sync_market,
+    "/plugins/cli-anything/harness": _post_cli_anything_harness,
+}
 
 
 def _adapter_agent_turn_from_context(
@@ -1495,6 +1773,14 @@ def _base_url(handler: BaseHTTPRequestHandler) -> str:
         return f"http://{host}"
     bound_host, bound_port = handler.server.server_address[:2]
     return f"http://{bound_host}:{bound_port}"
+
+
+def _payload_alias(payload: dict[str, Any], *keys: str, default: Any = None) -> Any:
+    for key in keys:
+        value = payload.get(key)
+        if value:
+            return value
+    return default
 
 
 def _network_connect_package_from_query(

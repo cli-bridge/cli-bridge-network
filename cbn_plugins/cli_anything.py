@@ -331,30 +331,12 @@ class CliAnythingHub:
     def onboard_harness(
         self,
         harness_name: str,
-        title: str | None = None,
-        from_market: bool = True,
-        write: bool = False,
-        confirmed: bool = False,
-        install: bool = False,
-        allow_blocked: bool = False,
-        include_workflows: bool = True,
-        run_smoke_suite: bool = False,
-        smoke_extra_args: tuple[str, ...] = (),
-        operation_runner: Any | None = None,
+        **options: Any,
     ) -> dict[str, Any]:
         return _onboarding_parts_onboard_harness(
             self,
-            title=title,
             harness_name=harness_name,
-            from_market=from_market,
-            include_workflows=include_workflows,
-            run_smoke_suite=run_smoke_suite,
-            smoke_extra_args=smoke_extra_args,
-            write=write,
-            confirmed=confirmed,
-            install=install,
-            allow_blocked=allow_blocked,
-            operation_runner=operation_runner,
+            **options,
         )
 
     def candidate_harnesses(
@@ -414,24 +396,12 @@ class CliAnythingHub:
     def repair_entrypoint(
         self,
         harness_name: str,
-        from_market: bool = True,
-        module: str | None = None,
-        write: bool = False,
-        confirmed: bool = False,
-        require_smoke: bool = False,
-        smoke_args: tuple[str, ...] = ("--help",),
-        smoke_timeout_seconds: int = 10,
+        **options: Any,
     ) -> dict[str, Any]:
         return _repair_parts_repair_entrypoint(
             self,
             harness_name=harness_name,
-            from_market=from_market,
-            module=module,
-            write=write,
-            confirmed=confirmed,
-            require_smoke=require_smoke,
-            smoke_args=smoke_args,
-            smoke_timeout_seconds=smoke_timeout_seconds,
+            **options,
         )
 
     def adapter_targets(
@@ -453,119 +423,57 @@ class CliAnythingHub:
         self,
         harness_name: str,
         module: str,
-        from_market: bool = True,
-        smoke_args: tuple[str, ...] = ("--help",),
-        timeout_seconds: int = 10,
-        run: bool = False,
-        confirmed: bool = False,
+        **options: Any,
     ) -> dict[str, Any]:
         return _adapter_targets_parts_adapter_target_smoke(
             self,
             harness_name=harness_name,
             module=module,
-            from_market=from_market,
-            smoke_args=smoke_args,
-            timeout_seconds=timeout_seconds,
-            run=run,
-            confirmed=confirmed,
+            **options,
         )
 
     def adaptation_gate(
         self,
         harness_name: str,
-        from_market: bool = True,
-        module: str | None = None,
-        require_smoke: bool = True,
-        run_smoke: bool = False,
-        confirmed: bool = False,
-        smoke_args: tuple[str, ...] = ("--help",),
-        smoke_timeout_seconds: int = 10,
+        **options: Any,
     ) -> dict[str, Any]:
         return _adaptation_parts_adaptation_gate(
             self,
             harness_name=harness_name,
-            from_market=from_market,
-            module=module,
-            require_smoke=require_smoke,
-            run_smoke=run_smoke,
-            confirmed=confirmed,
-            smoke_args=smoke_args,
-            smoke_timeout_seconds=smoke_timeout_seconds,
+            **options,
         )
 
     def adaptation_queue(
         self,
         harnesses: tuple[str, ...] = (),
-        query: str | None = None,
-        limit: int = 20,
-        max_harnesses: int = 5,
-        include_blocked: bool = True,
-        require_smoke: bool = True,
-        run_smoke: bool = False,
-        confirmed: bool = False,
-        smoke_args: tuple[str, ...] = ("--help",),
-        smoke_timeout_seconds: int = 10,
+        **options: Any,
     ) -> dict[str, Any]:
         return _adaptation_parts_adaptation_queue(
             self,
             harnesses=harnesses,
-            query=query,
-            limit=limit,
-            max_harnesses=max_harnesses,
-            include_blocked=include_blocked,
-            require_smoke=require_smoke,
-            run_smoke=run_smoke,
-            confirmed=confirmed,
-            smoke_args=smoke_args,
-            smoke_timeout_seconds=smoke_timeout_seconds,
+            **options,
         )
 
     def live_verification(
         self,
-        harnesses: tuple[str, ...] = ("mermaid", "macrocli"),
-        candidate_query: str | None = "image",
-        candidate_limit: int = 10,
-        include_candidates: bool = True,
-        include_workflows: bool = True,
-        run_smoke_suite: bool = False,
-        smoke_extra_args: tuple[str, ...] = (),
+        **options: Any,
     ) -> dict[str, Any]:
         """Return a repeatable read-only verification snapshot for CLI-Anything."""
 
         return _live_parts_live_verification(
             self,
-            harnesses=harnesses,
-            candidate_query=candidate_query,
-            candidate_limit=candidate_limit,
-            include_candidates=include_candidates,
-            include_workflows=include_workflows,
-            run_smoke_suite=run_smoke_suite,
-            smoke_extra_args=smoke_extra_args,
+            **options,
         )
 
     def mvp_plan(
         self,
-        query: str | None = "file",
-        limit: int = 20,
-        max_harnesses: int = 5,
-        include_blocked: bool = True,
-        workflow_paths: tuple[str, ...] = (),
-        max_workflows: int = 10,
-        registry: ManifestRegistry | None = None,
-        workflow_runner: Any | None = None,
+        **options: Any,
     ) -> dict[str, Any]:
         """Return the read-only MVP control plan for the next CLI-Anything work."""
 
         return _planning_mvp_plan(
             self,
-            query=query,
-            limit=limit,
-            max_harnesses=max_harnesses,
-            include_blocked=include_blocked,
-            workflow_paths=workflow_paths,
-            max_workflows=max_workflows,
-            registry=registry,
-            workflow_runner=workflow_runner,
+            **options,
         )
 
     def bootstrap_plan(

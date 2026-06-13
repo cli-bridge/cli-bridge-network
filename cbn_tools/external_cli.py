@@ -44,31 +44,46 @@ class ExternalCliAction:
 
 def main(argv: list[str] | None = None) -> int:
     _configure_utf8_stdio()
+    parser = _parser()
+    args = parser.parse_args(argv)
+    if args.list:
+        print(json.dumps(list_actions(), ensure_ascii=False, indent=2))
+        return 0
+    if not args.profile or not args.action:
+        parser.error("profile and action are required unless --list is used")
+    command = _resolve_command(args)
+    if command is None:
+        return 2
+    if args.print_plan:
+        print(json.dumps(_plan_payload(args, command), ensure_ascii=False, indent=2))
+        return 0
+    return _run_resolved_command(command)
+
+
+def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m cbn_tools.external_cli")
     parser.add_argument("profile", nargs="?", help="Profile id such as feishu, jimeng, caw, obsidian-cli.")
     parser.add_argument("action", nargs="?", help="Action id within the profile.")
     parser.add_argument("extra_args", nargs=argparse.REMAINDER, help="Arguments passed to the resolved CLI.")
     parser.add_argument("--list", action="store_true", help="List known profile actions as JSON.")
     parser.add_argument("--print-plan", action="store_true", help="Print the resolved argv without executing it.")
-    args = parser.parse_args(argv)
+    return parser
 
-    if args.list:
-        print(json.dumps(list_actions(), ensure_ascii=False, indent=2))
-        return 0
-    if not args.profile or not args.action:
-        parser.error("profile and action are required unless --list is used")
 
+def _resolve_command(args: argparse.Namespace) -> list[str] | None:
     try:
         action = require_action(args.profile, args.action)
-        command = action.argv() + list(args.extra_args)
     except KeyError as exc:
         print(str(exc), file=sys.stderr)
-        return 2
+        return None
+    return action.argv() + list(args.extra_args)
 
-    if args.print_plan:
-        print(json.dumps({"profile": action.profile, "action": action.action, "argv": command}, ensure_ascii=False, indent=2))
-        return 0
 
+def _plan_payload(args: argparse.Namespace, command: list[str]) -> dict[str, object]:
+    return {"profile": args.profile, "action": args.action, "argv": command}
+
+
+def _run_resolved_command(command: list[str]) -> int:
     try:
         proc = subprocess.run(
             command,
@@ -102,10 +117,24 @@ def require_action(profile: str, action: str) -> ExternalCliAction:
 
 def _actions() -> tuple[ExternalCliAction, ...]:
     return (
+        *_feishu_actions(),
+        *_obsidian_actions(),
+        *_jimeng_actions(),
+        *_caw_actions(),
+    )
+
+
+def _feishu_actions() -> tuple[ExternalCliAction, ...]:
+    return (
         ExternalCliAction("feishu", "version", "Feishu/Lark CLI version", lambda root: [_lark_cli(root), "--version"]),
         ExternalCliAction("feishu", "help", "Feishu/Lark CLI help", lambda root: [_lark_cli(root), "--help"]),
         ExternalCliAction("feishu", "doctor", "Feishu/Lark CLI doctor", lambda root: [_lark_cli(root), "doctor"]),
         ExternalCliAction("feishu", "schema-help", "Feishu/Lark CLI schema help", lambda root: [_lark_cli(root), "schema", "--help"]),
+    )
+
+
+def _obsidian_actions() -> tuple[ExternalCliAction, ...]:
+    return (
         ExternalCliAction("obsidian-cli", "official-help", "Obsidian official CLI help", lambda root: [_obsidian_cli(), "--help"]),
         ExternalCliAction("obsidian-cli", "local-rest-help", "Obsidian Local REST harness help", lambda root: [_obsidian_rest_cli(root), "--help"]),
         ExternalCliAction(
@@ -120,6 +149,11 @@ def _actions() -> tuple[ExternalCliAction, ...]:
             "Obsidian Local REST note read",
             lambda root: [_obsidian_rest_cli(root), "--json", "note", "get"],
         ),
+    )
+
+
+def _jimeng_actions() -> tuple[ExternalCliAction, ...]:
+    return (
         ExternalCliAction("jimeng", "version", "Jimeng/Dreamina CLI version", lambda root: _dreamina(root) + ["version"]),
         ExternalCliAction("jimeng", "help", "Jimeng/Dreamina CLI help", lambda root: _dreamina(root) + ["--help"]),
         ExternalCliAction("jimeng", "login", "Jimeng/Dreamina OAuth login", lambda root: _dreamina(root) + ["login"]),
@@ -139,6 +173,11 @@ def _actions() -> tuple[ExternalCliAction, ...]:
         ExternalCliAction("jimeng", "list-task", "Jimeng/Dreamina task list", lambda root: _dreamina(root) + ["list_task"]),
         ExternalCliAction("jimeng", "query-result", "Jimeng/Dreamina query result", lambda root: _dreamina(root) + ["query_result"]),
         ExternalCliAction("jimeng", "text2image-submit", "Jimeng/Dreamina text2image submit", lambda root: _dreamina(root) + ["text2image"]),
+    )
+
+
+def _caw_actions() -> tuple[ExternalCliAction, ...]:
+    return (
         ExternalCliAction("caw", "version", "Cobo Agentic Wallet version", lambda root: _caw(root) + ["--version"]),
         ExternalCliAction("caw", "help", "Cobo Agentic Wallet help", lambda root: _caw(root) + ["--help"]),
         ExternalCliAction("caw", "status", "Cobo Agentic Wallet status", lambda root: _caw(root) + ["status"]),

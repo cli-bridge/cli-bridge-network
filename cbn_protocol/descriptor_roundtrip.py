@@ -2,11 +2,24 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
 
 from cbn_core.manifest import ManifestRegistry
 from cbn_protocol.workflow_calls import resolve_workflow_path
+
+
+@dataclass(frozen=True)
+class RoundtripResolutionRequest:
+    registry: ManifestRegistry
+    protocol: str
+    cbn: Any
+    input_descriptor: Any
+    generated_call: dict[str, Any]
+    cbn_meta: dict[str, Any]
+    workflow_tool: Any
+    declared_handle: str
 
 
 def workflow_descriptor_roundtrip(
@@ -46,7 +59,7 @@ def _mcp_workflow_roundtrip(registry: ManifestRegistry, descriptor: dict[str, An
             "arguments": arguments,
         },
     }
-    return _resolve_roundtrip(
+    return _resolve_roundtrip(RoundtripResolutionRequest(
         registry=registry,
         protocol="mcp",
         cbn=cbn,
@@ -55,7 +68,7 @@ def _mcp_workflow_roundtrip(registry: ManifestRegistry, descriptor: dict[str, An
         cbn_meta=arguments,
         workflow_tool=tool_name,
         declared_handle="workflow_id",
-    )
+    ))
 
 
 def _a2a_workflow_roundtrip(registry: ManifestRegistry, descriptor: dict[str, Any]) -> dict[str, Any]:
@@ -85,7 +98,7 @@ def _a2a_workflow_roundtrip(registry: ManifestRegistry, descriptor: dict[str, An
             "metadata": {"cbn": cbn_meta},
         },
     }
-    return _resolve_roundtrip(
+    return _resolve_roundtrip(RoundtripResolutionRequest(
         registry=registry,
         protocol="a2a",
         cbn=cbn,
@@ -94,7 +107,7 @@ def _a2a_workflow_roundtrip(registry: ManifestRegistry, descriptor: dict[str, An
         cbn_meta=cbn_meta,
         workflow_tool=skill_id,
         declared_handle="metadata.cbn.workflow_id",
-    )
+    ))
 
 
 def _acp_workflow_roundtrip(registry: ManifestRegistry, descriptor: dict[str, Any]) -> dict[str, Any]:
@@ -118,7 +131,7 @@ def _acp_workflow_roundtrip(registry: ManifestRegistry, descriptor: dict[str, An
             "_meta": {"cbn": cbn_meta},
         },
     }
-    return _resolve_roundtrip(
+    return _resolve_roundtrip(RoundtripResolutionRequest(
         registry=registry,
         protocol="acp",
         cbn=cbn,
@@ -127,53 +140,72 @@ def _acp_workflow_roundtrip(registry: ManifestRegistry, descriptor: dict[str, An
         cbn_meta=cbn_meta,
         workflow_tool=None,
         declared_handle="workflow_id",
-    )
+    ))
 
 
-def _resolve_roundtrip(
-    registry: ManifestRegistry,
-    protocol: str,
-    cbn: Any,
-    input_descriptor: Any,
-    generated_call: dict[str, Any],
-    cbn_meta: dict[str, Any],
-    workflow_tool: Any,
-    declared_handle: str,
-) -> dict[str, Any]:
-    expected_path = cbn.get("path") if isinstance(cbn, dict) else None
-    workflow_id = cbn.get("workflow_id") if isinstance(cbn, dict) else None
-    try:
-        resolved_path = resolve_workflow_path(
-            SimpleNamespace(registry=registry),
-            cbn_meta,
-            workflow_tool=workflow_tool if isinstance(workflow_tool, str) else None,
-        )
-        error = None
-    except Exception as exc:
-        resolved_path = None
-        error = str(exc)
-    uses_path = bool(cbn_meta.get("workflow_path"))
-    ok = (
-        isinstance(workflow_id, str)
-        and bool(workflow_id)
-        and not uses_path
-        and _descriptor_declares(input_descriptor, declared_handle)
-        and isinstance(expected_path, str)
-        and resolved_path == expected_path
-        and error is None
-    )
+def _resolve_roundtrip(request: RoundtripResolutionRequest) -> dict[str, Any]:
+    expected_path = request.cbn.get("path") if isinstance(request.cbn, dict) else None
+    workflow_id = request.cbn.get("workflow_id") if isinstance(request.cbn, dict) else None
+    resolved_path, error = _resolve_descriptor_path(request.registry, request.cbn_meta, request.workflow_tool)
+    uses_path = bool(request.cbn_meta.get("workflow_path"))
+    input_declares_handle = _descriptor_declares(request.input_descriptor, request.declared_handle)
     return {
-        "ok": ok,
-        "protocol": protocol,
-        "declared_handle": declared_handle,
+        "ok": _roundtrip_ok(
+            workflow_id=workflow_id,
+            uses_path=uses_path,
+            input_declares_handle=input_declares_handle,
+            expected_path=expected_path,
+            resolved_path=resolved_path,
+            error=error,
+        ),
+        "protocol": request.protocol,
+        "declared_handle": request.declared_handle,
         "workflow_id": workflow_id,
         "expected_path": expected_path,
         "resolved_path": resolved_path,
         "uses_workflow_path": uses_path,
-        "input_declares_handle": _descriptor_declares(input_descriptor, declared_handle),
-        "generated_call": generated_call,
+        "input_declares_handle": input_declares_handle,
+        "generated_call": request.generated_call,
         "error": error,
     }
+
+
+def _resolve_descriptor_path(
+    registry: ManifestRegistry,
+    cbn_meta: dict[str, Any],
+    workflow_tool: Any,
+) -> tuple[str | None, str | None]:
+    try:
+        return (
+            resolve_workflow_path(
+                SimpleNamespace(registry=registry),
+                cbn_meta,
+                workflow_tool=workflow_tool if isinstance(workflow_tool, str) else None,
+            ),
+            None,
+        )
+    except Exception as exc:
+        return None, str(exc)
+
+
+def _roundtrip_ok(
+    *,
+    workflow_id: Any,
+    uses_path: bool,
+    input_declares_handle: bool,
+    expected_path: Any,
+    resolved_path: Any,
+    error: str | None,
+) -> bool:
+    return (
+        isinstance(workflow_id, str)
+        and bool(workflow_id)
+        and not uses_path
+        and input_declares_handle
+        and isinstance(expected_path, str)
+        and resolved_path == expected_path
+        and error is None
+    )
 
 
 def _descriptor_declares(input_descriptor: Any, handle: str) -> bool:

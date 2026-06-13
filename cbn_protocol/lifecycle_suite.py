@@ -47,21 +47,34 @@ def protocol_lifecycle_suite(
 def _mcp_lifecycle(capability_id: str) -> dict[str, Any]:
     server = McpStdioServer()
     initialized = server.handle_line(_json({"jsonrpc": "2.0", "method": "notifications/initialized"}))
-    checks = [
+    checks = _mcp_lifecycle_checks(server, capability_id, initialized)
+    return _report("mcp", checks)
+
+
+def _mcp_lifecycle_checks(
+    server: McpStdioServer,
+    capability_id: str,
+    initialized: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    initialize = _result(server.handle_line(_json(_mcp_initialize_request())))
+    tools = _result(server.handle_line(_json(_mcp_tools_list_request()))).get("tools", [])
+    return [
+        *_mcp_happy_path_checks(server, capability_id, initialized, initialize, tools),
+        *_mcp_error_checks(server),
+    ]
+
+
+def _mcp_happy_path_checks(
+    server: McpStdioServer,
+    capability_id: str,
+    initialized: dict[str, Any] | None,
+    initialize: dict[str, Any],
+    tools: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    return [
         _check(
             "mcp.initialize",
-            _result(server.handle_line(_json(
-                {
-                    "jsonrpc": "2.0",
-                    "id": "mcp-init",
-                    "method": "initialize",
-                    "params": {
-                        "protocolVersion": MCP_PROTOCOL_VERSION,
-                        "capabilities": {},
-                        "clientInfo": {"name": "cbn-lifecycle", "version": __version__},
-                    },
-                }
-            ))),
+            initialize,
             "initialize returns serverInfo and protocolVersion",
         ),
         _check(
@@ -76,14 +89,14 @@ def _mcp_lifecycle(capability_id: str) -> dict[str, Any]:
         ),
         _check(
             "mcp.tools_list",
-            any(
-                tool.get("name") == capability_id
-                for tool in _result(
-                    server.handle_line(_json({"jsonrpc": "2.0", "id": "mcp-tools", "method": "tools/list", "params": {}}))
-                ).get("tools", [])
-            ),
+            any(tool.get("name") == capability_id for tool in tools),
             "tools/list includes the selected capability",
         ),
+    ]
+
+
+def _mcp_error_checks(server: McpStdioServer) -> list[dict[str, Any]]:
+    return [
         _check(
             "mcp.unknown_method_error",
             _error_code(server.handle_line(_json({"jsonrpc": "2.0", "id": "mcp-missing", "method": "missing/method"}))) == -32601,
@@ -95,32 +108,82 @@ def _mcp_lifecycle(capability_id: str) -> dict[str, Any]:
             "invalid tools/call params return JSON-RPC invalid-params",
         ),
     ]
-    return _report("mcp", checks)
+
+
+def _mcp_initialize_request() -> dict[str, Any]:
+    return {
+        "jsonrpc": "2.0",
+        "id": "mcp-init",
+        "method": "initialize",
+        "params": {
+            "protocolVersion": MCP_PROTOCOL_VERSION,
+            "capabilities": {},
+            "clientInfo": {"name": "cbn-lifecycle", "version": __version__},
+        },
+    }
+
+
+def _mcp_tools_list_request() -> dict[str, Any]:
+    return {"jsonrpc": "2.0", "id": "mcp-tools", "method": "tools/list", "params": {}}
 
 
 def _a2a_lifecycle(capability_id: str) -> dict[str, Any]:
     card = agent_card("http://127.0.0.1:8787")
-    message_response = handle_a2a_jsonrpc_request(
-        {
-            "jsonrpc": "2.0",
-            "id": "a2a-message",
-            "method": "SendMessage",
-            "params": {
-                "message": {
-                    "messageId": str(uuid.uuid4()),
-                    "role": "ROLE_USER",
-                    "parts": [{"text": "Run CBN capability"}],
-                },
-                "metadata": {
-                    "cbn": {
-                        "capability_id": capability_id,
-                        "dry_run": True,
-                    }
-                },
-            },
-        }
+    message_response = handle_a2a_jsonrpc_request(_a2a_send_message_request(capability_id))
+    checks = _a2a_lifecycle_checks(
+        capability_id=capability_id,
+        card=card,
+        message_response=message_response,
     )
-    checks = [
+    return _report("a2a", checks)
+
+
+def _a2a_send_message_request(capability_id: str) -> dict[str, Any]:
+    return {
+        "jsonrpc": "2.0",
+        "id": "a2a-message",
+        "method": "SendMessage",
+        "params": {
+            "message": {
+                "messageId": str(uuid.uuid4()),
+                "role": "ROLE_USER",
+                "parts": [{"text": "Run CBN capability"}],
+            },
+            "metadata": {
+                "cbn": {
+                    "capability_id": capability_id,
+                    "dry_run": True,
+                }
+            },
+        },
+    }
+
+
+def _a2a_get_task_request(message_response: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "jsonrpc": "2.0",
+        "id": "a2a-get",
+        "method": "GetTask",
+        "params": {"id": message_response.get("result", {}).get("id")},
+    }
+
+
+def _a2a_cancel_request(message_response: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "jsonrpc": "2.0",
+        "id": "a2a-cancel",
+        "method": "CancelTask",
+        "params": {"id": message_response.get("result", {}).get("id")},
+    }
+
+
+def _a2a_lifecycle_checks(
+    *,
+    capability_id: str,
+    card: dict[str, Any],
+    message_response: dict[str, Any],
+) -> list[dict[str, Any]]:
+    return [
         _check(
             "a2a.agent_card",
             card.get("protocolVersion") == A2A_PROTOCOL_VERSION
@@ -134,32 +197,13 @@ def _a2a_lifecycle(capability_id: str) -> dict[str, Any]:
         ),
         _check(
             "a2a.get_task",
-            _result(
-                handle_a2a_jsonrpc_request(
-                    {
-                        "jsonrpc": "2.0",
-                        "id": "a2a-get",
-                        "method": "GetTask",
-                        "params": {"id": message_response.get("result", {}).get("id")},
-                    }
-                )
-            ).get("id")
+            _result(handle_a2a_jsonrpc_request(_a2a_get_task_request(message_response))).get("id")
             == message_response.get("result", {}).get("id"),
             "GetTask returns a previously created task",
         ),
         _check(
             "a2a.task_not_cancelable_error",
-            _error_code(
-                handle_a2a_jsonrpc_request(
-                    {
-                        "jsonrpc": "2.0",
-                        "id": "a2a-cancel",
-                        "method": "CancelTask",
-                        "params": {"id": message_response.get("result", {}).get("id")},
-                    }
-                )
-            )
-            == -32002,
+            _error_code(handle_a2a_jsonrpc_request(_a2a_cancel_request(message_response))) == -32002,
             "CancelTask maps completed task cancellation to A2A TaskNotCancelableError",
         ),
         _check(
@@ -168,65 +212,109 @@ def _a2a_lifecycle(capability_id: str) -> dict[str, Any]:
             "invalid params return JSON-RPC invalid-params",
         ),
     ]
-    return _report("a2a", checks)
 
 
 def _acp_lifecycle(capability_id: str, workflow_path: str) -> dict[str, Any]:
     agent = AcpStdioAgent()
-    initialize = agent.handle_line(
-        _json(
-            {
-                "jsonrpc": "2.0",
-                "id": "acp-init",
-                "method": "initialize",
-                "params": {
-                    "protocolVersion": ACP_PROTOCOL_VERSION,
-                    "clientCapabilities": {"fs": {"readTextFile": True}, "terminal": False},
-                    "clientInfo": {"name": "cbn-lifecycle", "version": __version__},
-                },
-            }
-        )
-    )
-    session = agent.handle_line(
-        _json(
-            {
-                "jsonrpc": "2.0",
-                "id": "acp-session",
-                "method": "session/new",
-                "params": {
-                    "cwd": str(Path.cwd()),
-                    "mcpServers": [],
-                    "additionalDirectories": [],
-                },
-            }
-        )
-    )
+    initialize = agent.handle_line(_json(_acp_initialize_request()))
+    session = agent.handle_line(_json(_acp_session_new_request()))
     session_id = _result(session).get("sessionId")
-    prompt = agent.handle_line(
-        _json(
-            {
-                "jsonrpc": "2.0",
-                "id": "acp-prompt",
-                "method": "session/prompt",
-                "params": {
-                    "sessionId": session_id,
-                    "prompt": [{"type": "text", "text": "Run CBN capability"}],
-                    "_meta": {"cbn": {"capability_id": capability_id, "dry_run": True}},
-                },
-            }
-        )
+    prompt = agent.handle_line(_json(_acp_prompt_request(session_id, capability_id)))
+    cancel = agent.handle_line(_json(_acp_cancel_request(session_id)))
+    checks = _acp_lifecycle_checks(
+        agent=agent,
+        capability_id=capability_id,
+        initialize=initialize,
+        session_id=session_id,
+        prompt=prompt,
+        cancel=cancel,
     )
-    cancel = agent.handle_line(
-        _json(
-            {
-                "jsonrpc": "2.0",
-                "id": "acp-cancel",
-                "method": "session/cancel",
-                "params": {"sessionId": session_id},
-            }
-        )
-    )
-    checks = [
+    return {
+        **_report("acp", checks),
+        "workflow_path": workflow_path,
+    }
+
+
+def _acp_initialize_request() -> dict[str, Any]:
+    return {
+        "jsonrpc": "2.0",
+        "id": "acp-init",
+        "method": "initialize",
+        "params": {
+            "protocolVersion": ACP_PROTOCOL_VERSION,
+            "clientCapabilities": {"fs": {"readTextFile": True}, "terminal": False},
+            "clientInfo": {"name": "cbn-lifecycle", "version": __version__},
+        },
+    }
+
+
+def _acp_session_new_request() -> dict[str, Any]:
+    return {
+        "jsonrpc": "2.0",
+        "id": "acp-session",
+        "method": "session/new",
+        "params": {
+            "cwd": str(Path.cwd()),
+            "mcpServers": [],
+            "additionalDirectories": [],
+        },
+    }
+
+
+def _acp_prompt_request(session_id: Any, capability_id: str) -> dict[str, Any]:
+    return {
+        "jsonrpc": "2.0",
+        "id": "acp-prompt",
+        "method": "session/prompt",
+        "params": {
+            "sessionId": session_id,
+            "prompt": [{"type": "text", "text": "Run CBN capability"}],
+            "_meta": {"cbn": {"capability_id": capability_id, "dry_run": True}},
+        },
+    }
+
+
+def _acp_cancel_request(session_id: Any) -> dict[str, Any]:
+    return {
+        "jsonrpc": "2.0",
+        "id": "acp-cancel",
+        "method": "session/cancel",
+        "params": {"sessionId": session_id},
+    }
+
+
+def _acp_invalid_prompt_request() -> dict[str, Any]:
+    return {
+        "jsonrpc": "2.0",
+        "id": "acp-bad-prompt",
+        "method": "session/prompt",
+        "params": {"sessionId": "missing", "prompt": []},
+    }
+
+
+def _acp_lifecycle_checks(
+    *,
+    agent: AcpStdioAgent,
+    capability_id: str,
+    initialize: dict[str, Any] | None,
+    session_id: Any,
+    prompt: dict[str, Any] | None,
+    cancel: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    return [
+        *_acp_happy_path_checks(capability_id, initialize, session_id, prompt, cancel),
+        *_acp_error_checks(agent),
+    ]
+
+
+def _acp_happy_path_checks(
+    capability_id: str,
+    initialize: dict[str, Any] | None,
+    session_id: Any,
+    prompt: dict[str, Any] | None,
+    cancel: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    return [
         _check(
             "acp.initialize",
             _result(initialize).get("agentInfo", {}).get("name") == "CLI Bridge Network",
@@ -248,6 +336,11 @@ def _acp_lifecycle(capability_id: str, workflow_path: str) -> dict[str, Any]:
             _result(cancel) == {},
             "session/cancel returns an empty result object",
         ),
+    ]
+
+
+def _acp_error_checks(agent: AcpStdioAgent) -> list[dict[str, Any]]:
+    return [
         _check(
             "acp.unknown_method_error",
             _error_code(agent.handle_line(_json({"jsonrpc": "2.0", "id": "acp-missing", "method": "session/load"}))) == -32601,
@@ -255,26 +348,10 @@ def _acp_lifecycle(capability_id: str, workflow_path: str) -> dict[str, Any]:
         ),
         _check(
             "acp.invalid_params_error",
-            _error_code(
-                agent.handle_line(
-                    _json(
-                        {
-                            "jsonrpc": "2.0",
-                            "id": "acp-bad-prompt",
-                            "method": "session/prompt",
-                            "params": {"sessionId": "missing", "prompt": []},
-                        }
-                    )
-                )
-            )
-            == -32602,
+            _error_code(agent.handle_line(_json(_acp_invalid_prompt_request()))) == -32602,
             "invalid session references return JSON-RPC invalid-params",
         ),
     ]
-    return {
-        **_report("acp", checks),
-        "workflow_path": workflow_path,
-    }
 
 
 def _json(value: dict[str, Any]) -> str:

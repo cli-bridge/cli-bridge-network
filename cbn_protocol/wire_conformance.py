@@ -30,12 +30,7 @@ def protocol_wire_conformance_suite(
         raise KeyError(f"unknown protocol conformance target: {unknown[0]}")
     protocols: dict[str, Any] = {}
     for protocol in targets:
-        if protocol == "mcp":
-            protocols[protocol] = _mcp_checks(capability_id)
-        elif protocol == "a2a":
-            protocols[protocol] = _a2a_checks(capability_id)
-        elif protocol == "acp":
-            protocols[protocol] = _acp_checks(capability_id)
+        protocols[protocol] = _wire_conformance_protocol(protocol, capability_id)
     check_count = sum(item["summary"]["check_count"] for item in protocols.values())
     failed_count = sum(item["summary"]["failed_count"] for item in protocols.values())
     wire_count = sum(1 for item in protocols.values() if item["wire_compatible"])
@@ -66,10 +61,33 @@ def protocol_wire_conformance_suite(
     }
 
 
+def _wire_conformance_protocol(protocol: str, capability_id: str) -> dict[str, Any]:
+    checkers = {
+        "mcp": _mcp_checks,
+        "a2a": _a2a_checks,
+        "acp": _acp_checks,
+    }
+    return checkers[protocol](capability_id)
+
+
 def _mcp_checks(capability_id: str) -> dict[str, Any]:
     server = McpStdioServer()
     checks: list[dict[str, Any]] = []
-    init = server.handle_line(
+    init = _mcp_initialize(server)
+    checks.append(_mcp_initialize_check(init))
+    checks.append(_mcp_initialized_notification_check(server))
+    listed = _mcp_list_tools(server)
+    tools = listed.get("result", {}).get("tools", []) if isinstance(listed, dict) else []
+    checks.append(_mcp_tools_list_shape_check(listed, tools, capability_id))
+    called = _mcp_call_tool(server, capability_id)
+    result = called.get("result", {}) if isinstance(called, dict) else {}
+    checks.append(_mcp_tools_call_result_shape_check(called, result))
+    checks.append(_mcp_error_boundaries_check(server))
+    return _protocol_report("mcp", checks)
+
+
+def _mcp_initialize(server: McpStdioServer) -> Any:
+    return server.handle_line(
         _json(
             {
                 "jsonrpc": "2.0",
@@ -83,36 +101,48 @@ def _mcp_checks(capability_id: str) -> dict[str, Any]:
             }
         )
     )
-    checks.append(
-        _check(
-            "mcp.initialize",
-            _is_result(init)
-            and init["result"].get("protocolVersion") == MCP_PROTOCOL_VERSION
-            and isinstance(init["result"].get("serverInfo"), dict)
-            and isinstance(init["result"].get("capabilities", {}).get("tools"), dict),
-            {"response": init},
-        )
+
+
+def _mcp_initialize_check(init: Any) -> dict[str, Any]:
+    return _check(
+        "mcp.initialize",
+        _is_result(init)
+        and init["result"].get("protocolVersion") == MCP_PROTOCOL_VERSION
+        and isinstance(init["result"].get("serverInfo"), dict)
+        and isinstance(init["result"].get("capabilities", {}).get("tools"), dict),
+        {"response": init},
     )
-    checks.append(
-        _check(
-            "mcp.initialized_notification",
-            server.handle_line(_json({"jsonrpc": "2.0", "method": "notifications/initialized"})) is None,
-            {},
-        )
+
+
+def _mcp_initialized_notification_check(server: McpStdioServer) -> dict[str, Any]:
+    return _check(
+        "mcp.initialized_notification",
+        server.handle_line(_json({"jsonrpc": "2.0", "method": "notifications/initialized"})) is None,
+        {},
     )
-    listed = server.handle_line(_json({"jsonrpc": "2.0", "id": "mcp-list", "method": "tools/list", "params": {}}))
-    tools = listed.get("result", {}).get("tools", []) if isinstance(listed, dict) else []
-    checks.append(
-        _check(
-            "mcp.tools_list_shape",
-            _is_result(listed)
-            and isinstance(tools, list)
-            and any(tool.get("name") == capability_id for tool in tools)
-            and all(isinstance(tool.get("inputSchema"), dict) for tool in tools),
-            {"tool_count": len(tools)},
-        )
+
+
+def _mcp_list_tools(server: McpStdioServer) -> Any:
+    return server.handle_line(_json({"jsonrpc": "2.0", "id": "mcp-list", "method": "tools/list", "params": {}}))
+
+
+def _mcp_tools_list_shape_check(
+    listed: Any,
+    tools: list[Any],
+    capability_id: str,
+) -> dict[str, Any]:
+    return _check(
+        "mcp.tools_list_shape",
+        _is_result(listed)
+        and isinstance(tools, list)
+        and any(tool.get("name") == capability_id for tool in tools)
+        and all(isinstance(tool.get("inputSchema"), dict) for tool in tools),
+        {"tool_count": len(tools)},
     )
-    called = server.handle_line(
+
+
+def _mcp_call_tool(server: McpStdioServer, capability_id: str) -> Any:
+    return server.handle_line(
         _json(
             {
                 "jsonrpc": "2.0",
@@ -122,43 +152,59 @@ def _mcp_checks(capability_id: str) -> dict[str, Any]:
             }
         )
     )
-    result = called.get("result", {}) if isinstance(called, dict) else {}
-    checks.append(
-        _check(
-            "mcp.tools_call_result_shape",
-            _is_result(called)
-            and isinstance(result.get("content"), list)
-            and isinstance(result.get("structuredContent"), dict)
-            and isinstance(result.get("isError"), bool),
-            {"isError": result.get("isError")},
-        )
+
+
+def _mcp_tools_call_result_shape_check(called: Any, result: dict[str, Any]) -> dict[str, Any]:
+    return _check(
+        "mcp.tools_call_result_shape",
+        _is_result(called)
+        and isinstance(result.get("content"), list)
+        and isinstance(result.get("structuredContent"), dict)
+        and isinstance(result.get("isError"), bool),
+        {"isError": result.get("isError")},
     )
-    checks.append(
-        _check(
-            "mcp.error_boundaries",
-            _error_code(server.handle_line("{")) == -32700
-            and _error_code(server.handle_line(_json({"jsonrpc": "2.0", "id": "bad", "method": "missing"}))) == -32601
-            and _error_code(server.handle_line(_json({"jsonrpc": "2.0", "id": "bad", "method": "tools/call", "params": {}}))) == -32602,
-            {},
+
+
+def _mcp_error_boundaries_check(server: McpStdioServer) -> dict[str, Any]:
+    return _check(
+        "mcp.error_boundaries",
+        _error_code(server.handle_line("{")) == -32700
+        and _error_code(server.handle_line(_json({"jsonrpc": "2.0", "id": "bad", "method": "missing"}))) == -32601
+        and _error_code(
+            server.handle_line(_json({"jsonrpc": "2.0", "id": "bad", "method": "tools/call", "params": {}}))
         )
+        == -32602,
+        {},
     )
-    return _protocol_report("mcp", checks)
 
 
 def _a2a_checks(capability_id: str) -> dict[str, Any]:
     checks: list[dict[str, Any]] = []
     card = agent_card("http://127.0.0.1:8787")
-    checks.append(
-        _check(
-            "a2a.agent_card_shape",
-            card.get("protocolVersion") == A2A_PROTOCOL_VERSION
-            and card.get("supportedInterfaces", [{}])[0].get("protocolBinding") == "HTTP+JSON"
-            and isinstance(card.get("capabilities"), dict)
-            and any(skill.get("id") == capability_id for skill in card.get("skills", [])),
-            {"protocolVersion": card.get("protocolVersion")},
-        )
+    checks.append(_a2a_agent_card_shape_check(card, capability_id))
+    send = _a2a_send_message(capability_id)
+    task = send.get("result", {}) if isinstance(send, dict) else {}
+    task_id = task.get("id")
+    checks.append(_a2a_send_message_task_shape_check(send, task, task_id))
+    fetched = _a2a_get_task(task_id)
+    checks.append(_a2a_get_task_check(fetched, task_id))
+    checks.append(_a2a_error_mappings_check(task_id))
+    return _protocol_report("a2a", checks)
+
+
+def _a2a_agent_card_shape_check(card: dict[str, Any], capability_id: str) -> dict[str, Any]:
+    return _check(
+        "a2a.agent_card_shape",
+        card.get("protocolVersion") == A2A_PROTOCOL_VERSION
+        and card.get("supportedInterfaces", [{}])[0].get("protocolBinding") == "HTTP+JSON"
+        and isinstance(card.get("capabilities"), dict)
+        and any(skill.get("id") == capability_id for skill in card.get("skills", [])),
+        {"protocolVersion": card.get("protocolVersion")},
     )
-    send = handle_a2a_jsonrpc_request(
+
+
+def _a2a_send_message(capability_id: str) -> Any:
+    return handle_a2a_jsonrpc_request(
         {
             "jsonrpc": "2.0",
             "id": "a2a-send",
@@ -173,49 +219,64 @@ def _a2a_checks(capability_id: str) -> dict[str, Any]:
             },
         }
     )
-    task = send.get("result", {}) if isinstance(send, dict) else {}
-    task_id = task.get("id")
-    checks.append(
-        _check(
-            "a2a.send_message_task_shape",
-            _is_result(send)
-            and isinstance(task_id, str)
-            and task.get("taskId") == task_id
-            and task.get("status", {}).get("state") == "TASK_STATE_COMPLETED"
-            and task.get("status", {}).get("message", {}).get("role") == "ROLE_AGENT",
-            {"task_id": task_id, "state": task.get("status", {}).get("state")},
-        )
+
+
+def _a2a_send_message_task_shape_check(send: Any, task: dict[str, Any], task_id: Any) -> dict[str, Any]:
+    return _check(
+        "a2a.send_message_task_shape",
+        _is_result(send)
+        and isinstance(task_id, str)
+        and task.get("taskId") == task_id
+        and task.get("status", {}).get("state") == "TASK_STATE_COMPLETED"
+        and task.get("status", {}).get("message", {}).get("role") == "ROLE_AGENT",
+        {"task_id": task_id, "state": task.get("status", {}).get("state")},
     )
-    fetched = handle_a2a_jsonrpc_request(
+
+
+def _a2a_get_task(task_id: Any) -> Any:
+    return handle_a2a_jsonrpc_request(
         {"jsonrpc": "2.0", "id": "a2a-get", "method": "GetTask", "params": {"id": task_id}}
     )
-    checks.append(
-        _check(
-            "a2a.get_task",
-            _is_result(fetched) and fetched.get("result", {}).get("id") == task_id,
-            {"task_id": task_id},
-        )
+
+
+def _a2a_get_task_check(fetched: Any, task_id: Any) -> dict[str, Any]:
+    return _check(
+        "a2a.get_task",
+        _is_result(fetched) and fetched.get("result", {}).get("id") == task_id,
+        {"task_id": task_id},
     )
+
+
+def _a2a_error_mappings_check(task_id: Any) -> dict[str, Any]:
     missing = handle_a2a_jsonrpc_request(
         {"jsonrpc": "2.0", "id": "a2a-missing", "method": "GetTask", "params": {"id": "missing"}}
     )
     cancel = handle_a2a_jsonrpc_request(
         {"jsonrpc": "2.0", "id": "a2a-cancel", "method": "CancelTask", "params": {"id": task_id}}
     )
-    checks.append(
-        _check(
-            "a2a.error_mappings",
-            _error_code(missing) == -32001 and _error_code(cancel) == -32002,
-            {"missing": missing, "cancel": cancel},
-        )
+    return _check(
+        "a2a.error_mappings",
+        _error_code(missing) == -32001 and _error_code(cancel) == -32002,
+        {"missing": missing, "cancel": cancel},
     )
-    return _protocol_report("a2a", checks)
 
 
 def _acp_checks(capability_id: str) -> dict[str, Any]:
     agent = AcpStdioAgent()
     checks: list[dict[str, Any]] = []
-    init = agent.handle_line(
+    init = _acp_initialize(agent)
+    checks.append(_acp_initialize_shape_check(init))
+    session = _acp_new_session(agent)
+    session_id = session.get("result", {}).get("sessionId") if isinstance(session, dict) else None
+    checks.append(_acp_session_new_shape_check(session, session_id))
+    prompt = _acp_prompt(agent, session_id, capability_id)
+    checks.append(_acp_session_prompt_shape_check(prompt))
+    checks.append(_acp_error_boundaries_check(agent, session_id))
+    return _protocol_report("acp", checks)
+
+
+def _acp_initialize(agent: AcpStdioAgent) -> Any:
+    return agent.handle_line(
         _json(
             {
                 "jsonrpc": "2.0",
@@ -229,18 +290,22 @@ def _acp_checks(capability_id: str) -> dict[str, Any]:
             }
         )
     )
-    checks.append(
-        _check(
-            "acp.initialize_shape",
-            _is_result(init)
-            and init["result"].get("protocolVersion") == ACP_PROTOCOL_VERSION
-            and isinstance(init["result"].get("agentCapabilities"), dict)
-            and isinstance(init["result"].get("authMethods"), list)
-            and isinstance(init["result"].get("agentInfo"), dict),
-            {"response": init},
-        )
+
+
+def _acp_initialize_shape_check(init: Any) -> dict[str, Any]:
+    return _check(
+        "acp.initialize_shape",
+        _is_result(init)
+        and init["result"].get("protocolVersion") == ACP_PROTOCOL_VERSION
+        and isinstance(init["result"].get("agentCapabilities"), dict)
+        and isinstance(init["result"].get("authMethods"), list)
+        and isinstance(init["result"].get("agentInfo"), dict),
+        {"response": init},
     )
-    session = agent.handle_line(
+
+
+def _acp_new_session(agent: AcpStdioAgent) -> Any:
+    return agent.handle_line(
         _json(
             {
                 "jsonrpc": "2.0",
@@ -250,15 +315,18 @@ def _acp_checks(capability_id: str) -> dict[str, Any]:
             }
         )
     )
-    session_id = session.get("result", {}).get("sessionId") if isinstance(session, dict) else None
-    checks.append(
-        _check(
-            "acp.session_new_shape",
-            _is_result(session) and isinstance(session_id, str),
-            {"session_id": session_id},
-        )
+
+
+def _acp_session_new_shape_check(session: Any, session_id: Any) -> dict[str, Any]:
+    return _check(
+        "acp.session_new_shape",
+        _is_result(session) and isinstance(session_id, str),
+        {"session_id": session_id},
     )
-    prompt = agent.handle_line(
+
+
+def _acp_prompt(agent: AcpStdioAgent, session_id: Any, capability_id: str) -> Any:
+    return agent.handle_line(
         _json(
             {
                 "jsonrpc": "2.0",
@@ -272,30 +340,31 @@ def _acp_checks(capability_id: str) -> dict[str, Any]:
             }
         )
     )
-    checks.append(
-        _check(
-            "acp.session_prompt_shape",
-            _is_result(prompt)
-            and prompt.get("result", {}).get("stopReason") == "end_turn"
-            and isinstance(prompt.get("result", {}).get("_meta", {}).get("cbn"), dict),
-            {"stopReason": prompt.get("result", {}).get("stopReason") if isinstance(prompt, dict) else None},
-        )
+
+
+def _acp_session_prompt_shape_check(prompt: Any) -> dict[str, Any]:
+    return _check(
+        "acp.session_prompt_shape",
+        _is_result(prompt)
+        and prompt.get("result", {}).get("stopReason") == "end_turn"
+        and isinstance(prompt.get("result", {}).get("_meta", {}).get("cbn"), dict),
+        {"stopReason": prompt.get("result", {}).get("stopReason") if isinstance(prompt, dict) else None},
     )
-    checks.append(
-        _check(
-            "acp.notification_and_error_boundaries",
-            agent.handle_line(_json({"jsonrpc": "2.0", "method": "session/cancel", "params": {"sessionId": session_id}})) is None
-            and _error_code(
-                agent.handle_line(
-                    _json({"jsonrpc": "2.0", "id": "bad-session", "method": "session/new", "params": {"cwd": "relative"}})
-                )
+
+
+def _acp_error_boundaries_check(agent: AcpStdioAgent, session_id: Any) -> dict[str, Any]:
+    return _check(
+        "acp.notification_and_error_boundaries",
+        agent.handle_line(_json({"jsonrpc": "2.0", "method": "session/cancel", "params": {"sessionId": session_id}})) is None
+        and _error_code(
+            agent.handle_line(
+                _json({"jsonrpc": "2.0", "id": "bad-session", "method": "session/new", "params": {"cwd": "relative"}})
             )
-            == -32602
-            and _error_code(agent.handle_line("{")) == -32700,
-            {},
         )
+        == -32602
+        and _error_code(agent.handle_line("{")) == -32700,
+        {},
     )
-    return _protocol_report("acp", checks)
 
 
 def _protocol_report(protocol: str, checks: list[dict[str, Any]]) -> dict[str, Any]:

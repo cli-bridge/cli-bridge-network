@@ -6,6 +6,7 @@ import json
 import re
 import time
 import hashlib
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,42 @@ from cbn_execution.graph import WorkflowGraph
 
 PACKAGE_API_VERSION = "bridge.dev/v1alpha1"
 PACKAGE_KIND = "WorkflowPackage"
+
+
+@dataclass(frozen=True)
+class CompileReportInput:
+    workflow_path: Path
+    package_dir: Path
+    package_files: list[Path]
+    graph: WorkflowGraph
+    bindings: dict[str, Any]
+    schema_records: list[dict[str, Any]]
+    contract: dict[str, Any]
+    registry: ManifestRegistry
+
+
+@dataclass(frozen=True)
+class RunStateInput:
+    package_dir: Path
+    graph: WorkflowGraph
+    run_result: dict[str, Any] | None
+    status: str
+    schema_validation: list[dict[str, Any]]
+    blockers: list[str]
+    event_count: int
+    dry_run: bool
+
+
+@dataclass(frozen=True)
+class PackageRunResultInput:
+    package_dir: Path
+    lock_status: dict[str, Any]
+    schema_validation: list[dict[str, Any]]
+    state_path: Path
+    run_result: dict[str, Any]
+    golden_path: Path | None
+    golden_events: list[dict[str, Any]]
+    status: str
 
 
 def now_iso() -> str:
@@ -35,59 +72,82 @@ def compile_workflow_package(
     graph = WorkflowGraph.from_file(workflow_path)
     graph.validate()
     _require_capabilities(graph, registry)
-
-    package_dir = output_dir or default_package_dir(graph.workflow_id)
-    schema_dir = package_dir / "artifact_schemas"
-    package_dir.mkdir(parents=True, exist_ok=True)
-    schema_dir.mkdir(parents=True, exist_ok=True)
-
-    canonical_workflow = _workflow_dict(graph)
+    package_dir, schema_dir = _prepare_package_dirs(graph, output_dir)
     bindings = _tool_bindings_lock(graph, registry)
     policy_profile = _policy_profile(graph, registry)
     schema_records = _write_artifact_schemas(graph, registry, schema_dir)
     contract = workflow_bridge_contract_report(registry, workflow_path=str(workflow_path))
+    files = _package_files(package_dir, schema_records)
 
-    workflow_file = package_dir / "workflow.yaml"
-    lock_file = package_dir / "tool_bindings.lock"
-    policy_file = package_dir / "policy_profile.yaml"
-    report_file = package_dir / "compile_report.json"
-    golden_file = package_dir / "golden_run.jsonl"
+    _write_package_files(files, graph, bindings, policy_profile)
+    report = _compile_report(CompileReportInput(
+        workflow_path=workflow_path,
+        package_dir=package_dir,
+        package_files=files["all"],
+        graph=graph,
+        bindings=bindings,
+        schema_records=schema_records,
+        contract=contract,
+        registry=registry,
+    ))
+    _write_json(files["report"], report)
+    return report
 
-    _write_json_subset_yaml(workflow_file, canonical_workflow)
-    _write_json(lock_file, bindings)
-    _write_json_subset_yaml(policy_file, policy_profile)
-    if not golden_file.exists():
-        golden_file.write_text("", encoding="utf-8")
 
-    package_files = [
-        workflow_file,
-        lock_file,
-        policy_file,
-        report_file,
-        golden_file,
-        *[Path(record["path"]) for record in schema_records],
-    ]
-    report = {
+def _prepare_package_dirs(graph: WorkflowGraph, output_dir: Path | None) -> tuple[Path, Path]:
+    package_dir = output_dir or default_package_dir(graph.workflow_id)
+    schema_dir = package_dir / "artifact_schemas"
+    package_dir.mkdir(parents=True, exist_ok=True)
+    schema_dir.mkdir(parents=True, exist_ok=True)
+    return package_dir, schema_dir
+
+
+def _package_files(package_dir: Path, schema_records: list[dict[str, Any]]) -> dict[str, Any]:
+    files = {
+        "workflow": package_dir / "workflow.yaml",
+        "lock": package_dir / "tool_bindings.lock",
+        "policy": package_dir / "policy_profile.yaml",
+        "report": package_dir / "compile_report.json",
+        "golden": package_dir / "golden_run.jsonl",
+    }
+    files["schemas"] = [Path(record["path"]) for record in schema_records]
+    files["all"] = [files["workflow"], files["lock"], files["policy"], files["report"], files["golden"], *files["schemas"]]
+    return files
+
+
+def _write_package_files(
+    files: dict[str, Any],
+    graph: WorkflowGraph,
+    bindings: dict[str, Any],
+    policy_profile: dict[str, Any],
+) -> None:
+    _write_json_subset_yaml(files["workflow"], _workflow_dict(graph))
+    _write_json(files["lock"], bindings)
+    _write_json_subset_yaml(files["policy"], policy_profile)
+    if not files["golden"].exists():
+        files["golden"].write_text("", encoding="utf-8")
+
+
+def _compile_report(params: CompileReportInput) -> dict[str, Any]:
+    return {
         "apiVersion": PACKAGE_API_VERSION,
         "kind": PACKAGE_KIND,
         "compiled_at": now_iso(),
-        "workflow_id": graph.workflow_id,
-        "title": graph.title,
-        "source_workflow_path": str(workflow_path),
-        "package_dir": str(package_dir),
-        "package_files": [str(path) for path in package_files],
-        "task_count": len(graph.tasks),
-        "artifact_schema_count": len(schema_records),
-        "tool_binding_count": len(bindings["bindings"]),
-        "lock_status": verify_tool_bindings(package_dir, registry, bindings=bindings),
+        "workflow_id": params.graph.workflow_id,
+        "title": params.graph.title,
+        "source_workflow_path": str(params.workflow_path),
+        "package_dir": str(params.package_dir),
+        "package_files": [str(path) for path in params.package_files],
+        "task_count": len(params.graph.tasks),
+        "artifact_schema_count": len(params.schema_records),
+        "tool_binding_count": len(params.bindings["bindings"]),
+        "lock_status": verify_tool_bindings(params.package_dir, params.registry, bindings=params.bindings),
         "bridge_contract": {
-            "ok": contract.get("ok"),
-            "summary": contract.get("summary", {}),
+            "ok": params.contract.get("ok"),
+            "summary": params.contract.get("summary", {}),
         },
-        "warnings": _compile_warnings(contract, bindings),
+        "warnings": _compile_warnings(params.contract, params.bindings),
     }
-    _write_json(report_file, report)
-    return report
 
 
 def load_packaged_workflow(package_dir: Path) -> WorkflowGraph:
@@ -107,62 +167,93 @@ def run_workflow_package(
     graph = load_packaged_workflow(package_dir)
     lock_status = verify_tool_bindings(package_dir, registry)
     if not lock_status["ok"]:
-        state_path = write_run_state(
-            package_dir,
-            graph,
-            run_result=None,
-            status="blocked",
-            schema_validation=[],
-            blockers=["tool binding lock mismatch"],
-            event_count=0,
-            dry_run=dry_run,
-        )
-        return {
-            "ok": False,
-            "status": "lock-mismatch",
-            "package_dir": str(package_dir),
-            "lock_status": lock_status,
-            "run_result": None,
-            "schema_validation": [],
-            "run_state_path": str(state_path),
-            "golden_run_path": None,
-        }
+        return _lock_mismatch_result(package_dir, graph, lock_status, dry_run)
 
     result = workflow_runner.run(graph, dry_run=dry_run, confirmed=confirmed)
     schema_validation = validate_run_against_artifact_schemas(package_dir, result)
-    status = str(result.get("status"))
-    if status == "completed" and not _schema_validation_ok(schema_validation):
-        status = "schema-failed"
-    golden_events = normalize_golden_run(
-        result,
-        dry_run=dry_run,
-        schema_validation=schema_validation,
-        status=status,
-    )
-    state_path = write_run_state(
-        package_dir,
-        graph,
+    status = _package_run_status(result, schema_validation)
+    golden_events = normalize_golden_run(result, dry_run=dry_run, schema_validation=schema_validation, status=status)
+    state_path = write_run_state(RunStateInput(
+        package_dir=package_dir,
+        graph=graph,
         run_result=result,
         status=status,
         schema_validation=schema_validation,
         blockers=[],
         event_count=len(golden_events),
         dry_run=dry_run,
-    )
-    golden_path = None
-    if write_golden:
-        golden_path = package_dir / "golden_run.jsonl"
-        write_golden_run(golden_path, golden_events)
+    ))
+    golden_path = _maybe_write_golden_run(package_dir, golden_events, write_golden)
+    return _package_run_result(PackageRunResultInput(
+        package_dir=package_dir,
+        lock_status=lock_status,
+        schema_validation=schema_validation,
+        state_path=state_path,
+        run_result=result,
+        golden_path=golden_path,
+        golden_events=golden_events,
+        status=status,
+    ))
+
+
+def _maybe_write_golden_run(
+    package_dir: Path,
+    golden_events: list[dict[str, Any]],
+    write_golden: bool,
+) -> Path | None:
+    if not write_golden:
+        return None
+    golden_path = package_dir / "golden_run.jsonl"
+    write_golden_run(golden_path, golden_events)
+    return golden_path
+
+
+def _lock_mismatch_result(
+    package_dir: Path,
+    graph: WorkflowGraph,
+    lock_status: dict[str, Any],
+    dry_run: bool,
+) -> dict[str, Any]:
+    state_path = write_run_state(RunStateInput(
+        package_dir=package_dir,
+        graph=graph,
+        run_result=None,
+        status="blocked",
+        schema_validation=[],
+        blockers=["tool binding lock mismatch"],
+        event_count=0,
+        dry_run=dry_run,
+    ))
     return {
-        "ok": status == "completed",
-        "status": status,
+        "ok": False,
+        "status": "lock-mismatch",
         "package_dir": str(package_dir),
         "lock_status": lock_status,
-        "schema_validation": schema_validation,
+        "run_result": None,
+        "schema_validation": [],
         "run_state_path": str(state_path),
-        "run_result": result,
-        "golden_run_path": str(golden_path) if golden_path else None,
-        "golden_events": golden_events,
+        "golden_run_path": None,
+    }
+
+
+def _package_run_status(run_result: dict[str, Any], schema_validation: list[dict[str, Any]]) -> str:
+    status = str(run_result.get("status"))
+    if status == "completed" and not _schema_validation_ok(schema_validation):
+        return "schema-failed"
+    return status
+
+
+def _package_run_result(result: PackageRunResultInput) -> dict[str, Any]:
+    return {
+        "ok": result.status == "completed",
+        "status": result.status,
+        "package_dir": str(result.package_dir),
+        "lock_status": result.lock_status,
+        "schema_validation": result.schema_validation,
+        "run_state_path": str(result.state_path),
+        "run_result": result.run_result,
+        "golden_run_path": str(result.golden_path) if result.golden_path else None,
+        "golden_events": result.golden_events,
     }
 
 
@@ -170,42 +261,12 @@ def inspect_workflow_package(
     package_dir: Path,
     registry: ManifestRegistry | None = None,
 ) -> dict[str, Any]:
-    required_files = [
-        "workflow.yaml",
-        "tool_bindings.lock",
-        "policy_profile.yaml",
-        "compile_report.json",
-        "golden_run.jsonl",
-    ]
-    file_status = [
-        {
-            "path": str(package_dir / name),
-            "kind": name,
-            "exists": (package_dir / name).exists(),
-        }
-        for name in required_files
-    ]
-    schema_dir = package_dir / "artifact_schemas"
-    schemas = [
-        {
-            "path": str(path),
-            "exists": True,
-            "task_id": (_read_json(path).get("x-cbn") or {}).get("task_id"),
-            "capability_id": (_read_json(path).get("x-cbn") or {}).get("capability_id"),
-        }
-        for path in sorted(schema_dir.glob("*.schema.json"))
-    ] if schema_dir.exists() else []
-
+    file_status = _package_file_status(package_dir)
+    schemas = _package_schema_status(package_dir)
     workflow = _read_optional_json(package_dir / "workflow.yaml")
     compile_report = _read_optional_json(package_dir / "compile_report.json")
     policy_profile = _read_optional_json(package_dir / "policy_profile.yaml")
     lock = _read_optional_json(package_dir / "tool_bindings.lock")
-    run_state = _read_optional_json(package_dir / "run_state.json")
-    golden_summary = _golden_run_summary(package_dir / "golden_run.jsonl")
-    lock_status = None
-    if registry is not None and lock is not None:
-        lock_status = verify_tool_bindings(package_dir, registry, bindings=lock)
-
     return {
         "apiVersion": PACKAGE_API_VERSION,
         "kind": "WorkflowPackageInspection",
@@ -217,10 +278,59 @@ def inspect_workflow_package(
         "artifact_schemas": schemas,
         "compile_report": _compact_compile_report(compile_report),
         "policy_summary": (policy_profile or {}).get("summary"),
-        "lock_status": lock_status,
-        "run_state": run_state,
-        "golden_run": golden_summary,
+        "lock_status": _optional_lock_status(package_dir, registry, lock),
+        "run_state": _read_optional_json(package_dir / "run_state.json"),
+        "golden_run": _golden_run_summary(package_dir / "golden_run.jsonl"),
     }
+
+
+def _package_file_status(package_dir: Path) -> list[dict[str, Any]]:
+    return [
+        {
+            "path": str(package_dir / name),
+            "kind": name,
+            "exists": (package_dir / name).exists(),
+        }
+        for name in _required_package_files()
+    ]
+
+
+def _required_package_files() -> list[str]:
+    return [
+        "workflow.yaml",
+        "tool_bindings.lock",
+        "policy_profile.yaml",
+        "compile_report.json",
+        "golden_run.jsonl",
+    ]
+
+
+def _package_schema_status(package_dir: Path) -> list[dict[str, Any]]:
+    schema_dir = package_dir / "artifact_schemas"
+    if not schema_dir.exists():
+        return []
+    return [_schema_status(path) for path in sorted(schema_dir.glob("*.schema.json"))]
+
+
+def _schema_status(path: Path) -> dict[str, Any]:
+    schema = _read_json(path)
+    metadata = schema.get("x-cbn") or {}
+    return {
+        "path": str(path),
+        "exists": True,
+        "task_id": metadata.get("task_id"),
+        "capability_id": metadata.get("capability_id"),
+    }
+
+
+def _optional_lock_status(
+    package_dir: Path,
+    registry: ManifestRegistry | None,
+    lock: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if registry is None or lock is None:
+        return None
+    return verify_tool_bindings(package_dir, registry, bindings=lock)
 
 
 def verify_tool_bindings(
@@ -232,45 +342,63 @@ def verify_tool_bindings(
     mismatches = []
     checked = []
     for binding in lock.get("bindings", []):
-        task_id = binding.get("task_id")
-        capability_id = binding.get("capability_id")
-        try:
-            manifest = registry.require(str(capability_id))
-        except KeyError as exc:
-            mismatches.append(
-                {
-                    "task_id": task_id,
-                    "capability_id": capability_id,
-                    "type": "missing-capability",
-                    "error": str(exc),
-                }
-            )
-            continue
-        current = manifest_binding_record(task_id=str(task_id), manifest=manifest)
-        checked.append(
-            {
-                "task_id": task_id,
-                "capability_id": capability_id,
-                "locked_digest": binding.get("manifest_digest"),
-                "current_digest": current["manifest_digest"],
-            }
-        )
-        if binding.get("manifest_digest") != current["manifest_digest"]:
-            mismatches.append(
-                {
-                    "task_id": task_id,
-                    "capability_id": capability_id,
-                    "type": "manifest-digest-mismatch",
-                    "locked_digest": binding.get("manifest_digest"),
-                    "current_digest": current["manifest_digest"],
-                }
-            )
+        check, mismatch = _tool_binding_check(binding, registry)
+        if check is not None:
+            checked.append(check)
+        if mismatch is not None:
+            mismatches.append(mismatch)
     return {
         "ok": not mismatches,
         "checked_count": len(lock.get("bindings", [])),
         "mismatch_count": len(mismatches),
         "checked": checked,
         "mismatches": mismatches,
+    }
+
+
+def _tool_binding_check(
+    binding: dict[str, Any],
+    registry: ManifestRegistry,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    task_id = binding.get("task_id")
+    capability_id = binding.get("capability_id")
+    try:
+        manifest = registry.require(str(capability_id))
+    except KeyError as exc:
+        return None, _missing_capability_mismatch(task_id, capability_id, exc)
+    current = manifest_binding_record(task_id=str(task_id), manifest=manifest)
+    check = {
+        "task_id": task_id,
+        "capability_id": capability_id,
+        "locked_digest": binding.get("manifest_digest"),
+        "current_digest": current["manifest_digest"],
+    }
+    if binding.get("manifest_digest") != current["manifest_digest"]:
+        return check, _digest_mismatch(task_id, capability_id, binding, current)
+    return check, None
+
+
+def _missing_capability_mismatch(task_id: Any, capability_id: Any, error: Exception) -> dict[str, Any]:
+    return {
+        "task_id": task_id,
+        "capability_id": capability_id,
+        "type": "missing-capability",
+        "error": str(error),
+    }
+
+
+def _digest_mismatch(
+    task_id: Any,
+    capability_id: Any,
+    binding: dict[str, Any],
+    current: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "task_id": task_id,
+        "capability_id": capability_id,
+        "type": "manifest-digest-mismatch",
+        "locked_digest": binding.get("manifest_digest"),
+        "current_digest": current["manifest_digest"],
     }
 
 
@@ -311,47 +439,84 @@ def validate_run_against_artifact_schemas(
     return results
 
 
-def write_run_state(
-    package_dir: Path,
+def write_run_state(params: RunStateInput) -> Path:
+    schema_by_task = {item.get("task_id"): item for item in params.schema_validation}
+    run_tasks = _run_tasks_by_id(params.run_result)
+    tasks = _run_state_tasks(params.graph, run_tasks, schema_by_task, run_started=params.run_result is not None)
+    state = _run_state_payload(
+        params.graph,
+        params.run_result,
+        params.status,
+        params.dry_run,
+        params.blockers,
+        params.event_count,
+        tasks,
+    )
+    path = params.package_dir / "run_state.json"
+    _write_json(path, state)
+    return path
+
+
+def _run_tasks_by_id(run_result: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    if not run_result:
+        return {}
+    return {
+        task.get("task_id"): task
+        for task in run_result.get("tasks", [])
+        if isinstance(task, dict)
+    }
+
+
+def _run_state_tasks(
     graph: WorkflowGraph,
-    run_result: dict[str, Any] | None,
-    status: str,
-    schema_validation: list[dict[str, Any]],
-    blockers: list[str],
-    event_count: int,
-    dry_run: bool,
-) -> Path:
-    schema_by_task = {item.get("task_id"): item for item in schema_validation}
-    run_tasks = {}
-    if run_result:
-        run_tasks = {
-            task.get("task_id"): task
-            for task in run_result.get("tasks", [])
-            if isinstance(task, dict)
-        }
+    run_tasks: dict[str, dict[str, Any]],
+    schema_by_task: dict[str, dict[str, Any]],
+    run_started: bool,
+) -> list[dict[str, Any]]:
     tasks = []
     completed_by_task: dict[str, bool] = {}
     for task in graph.topological_order():
-        run_task = run_tasks.get(task.task_id)
-        task_schema = schema_by_task.get(task.task_id)
-        task_status = _task_state(
-            run_task,
-            task_schema,
-            run_started=run_result is not None,
-            dependency_completed=all(completed_by_task.get(dep, False) for dep in task.needs),
-        )
-        completed_by_task[task.task_id] = task_status == "completed"
-        tasks.append(
-            {
-                "task_id": task.task_id,
-                "uses": task.uses,
-                "needs": list(task.needs),
-                "status": task_status,
-                "attempts": 1 if run_task else 0,
-                "schema_valid": task_schema.get("valid") if task_schema else None,
-            }
-        )
-    state = {
+        item = _run_state_task(task, run_tasks, schema_by_task, completed_by_task, run_started)
+        completed_by_task[task.task_id] = item["status"] == "completed"
+        tasks.append(item)
+    return tasks
+
+
+def _run_state_task(
+    task: Any,
+    run_tasks: dict[str, dict[str, Any]],
+    schema_by_task: dict[str, dict[str, Any]],
+    completed_by_task: dict[str, bool],
+    run_started: bool,
+) -> dict[str, Any]:
+    run_task = run_tasks.get(task.task_id)
+    task_schema = schema_by_task.get(task.task_id)
+    task_status = _task_state(
+        run_task,
+        task_schema,
+        run_started=run_started,
+        dependency_completed=all(completed_by_task.get(dep, False) for dep in task.needs),
+    )
+    return {
+        "task_id": task.task_id,
+        "uses": task.uses,
+        "needs": list(task.needs),
+        "status": task_status,
+        "attempts": 1 if run_task else 0,
+        "schema_valid": task_schema.get("valid") if task_schema else None,
+    }
+
+
+def _run_state_payload(
+    graph: WorkflowGraph,
+    run_result: dict[str, Any] | None,
+    status: str,
+    dry_run: bool,
+    blockers: list[str],
+    event_count: int,
+    tasks: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
         "apiVersion": PACKAGE_API_VERSION,
         "kind": "WorkflowRunState",
         "updated_at": now_iso(),
@@ -370,9 +535,6 @@ def write_run_state(
         "not_started_task_count": sum(1 for task in tasks if task["status"] == "not_started"),
         "tasks": tasks,
     }
-    path = package_dir / "run_state.json"
-    _write_json(path, state)
-    return path
 
 
 def normalize_golden_run(
@@ -383,68 +545,101 @@ def normalize_golden_run(
 ) -> list[dict[str, Any]]:
     workflow_id = run_result.get("workflow_id")
     schema_by_task = {item.get("task_id"): item for item in schema_validation or []}
-    events: list[dict[str, Any]] = [
-        {
-            "type": "workflow.started",
-            "workflow_id": workflow_id,
-            "dry_run": dry_run,
-        }
-    ]
+    events: list[dict[str, Any]] = [_golden_workflow_started(workflow_id, dry_run)]
     for task in run_result.get("tasks", []):
         if not isinstance(task, dict):
             continue
-        result = task.get("result") or {}
-        parsed = result.get("parsed") or {}
-        message = result.get("message") or {}
-        message_metadata = message.get("metadata") or {}
-        artifacts = result.get("artifacts") or []
-        events.append(
-            {
-                "type": "task.started",
-                "workflow_id": workflow_id,
-                "task_id": task.get("task_id"),
-                "uses": task.get("uses"),
-                "resolved_args": task.get("resolved_args", []),
-            }
-        )
-        events.append(
-            {
-                "type": "bridge.message.created",
-                "workflow_id": workflow_id,
-                "task_id": task.get("task_id"),
-                "producer": message_metadata.get("producer"),
-                "channel": message_metadata.get("channel"),
-                "parser_ref": parsed.get("parser_ref"),
-                "parser_ok": parsed.get("ok"),
-                "artifact_kinds": _artifact_kinds(artifacts),
-            }
-        )
-        events.append(
-            {
-                "type": "task.completed",
-                "workflow_id": workflow_id,
-                "task_id": task.get("task_id"),
-                "uses": task.get("uses"),
-                "allowed": result.get("allowed"),
-                "ok": result.get("ok"),
-                "exit_code": result.get("exit_code"),
-                "reason": result.get("reason"),
-                "parser_ref": parsed.get("parser_ref"),
-                "parser_ok": parsed.get("ok"),
-                "artifact_count": len(artifacts),
-                "artifact_kinds": _artifact_kinds(artifacts),
-                "schema_valid": (schema_by_task.get(task.get("task_id")) or {}).get("valid"),
-            }
-        )
-    events.append(
-        {
-            "type": "workflow.completed",
-            "workflow_id": workflow_id,
-            "status": status or run_result.get("status"),
-            "task_count": len(run_result.get("tasks", [])),
-        }
-    )
+        events.extend(_golden_task_events(workflow_id, task, schema_by_task))
+    events.append(_golden_workflow_completed(workflow_id, run_result, status))
     return events
+
+
+def _golden_workflow_started(workflow_id: Any, dry_run: bool) -> dict[str, Any]:
+    return {"type": "workflow.started", "workflow_id": workflow_id, "dry_run": dry_run}
+
+
+def _golden_task_events(
+    workflow_id: Any,
+    task: dict[str, Any],
+    schema_by_task: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    result = task.get("result") or {}
+    parsed = result.get("parsed") or {}
+    message = result.get("message") or {}
+    artifacts = result.get("artifacts") or []
+    return [
+        _golden_task_started(workflow_id, task),
+        _golden_bridge_message_created(workflow_id, task, parsed, message, artifacts),
+        _golden_task_completed(workflow_id, task, result, parsed, artifacts, schema_by_task),
+    ]
+
+
+def _golden_task_started(workflow_id: Any, task: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "type": "task.started",
+        "workflow_id": workflow_id,
+        "task_id": task.get("task_id"),
+        "uses": task.get("uses"),
+        "resolved_args": task.get("resolved_args", []),
+    }
+
+
+def _golden_bridge_message_created(
+    workflow_id: Any,
+    task: dict[str, Any],
+    parsed: dict[str, Any],
+    message: dict[str, Any],
+    artifacts: list[dict[str, Any]],
+) -> dict[str, Any]:
+    message_metadata = message.get("metadata") or {}
+    return {
+        "type": "bridge.message.created",
+        "workflow_id": workflow_id,
+        "task_id": task.get("task_id"),
+        "producer": message_metadata.get("producer"),
+        "channel": message_metadata.get("channel"),
+        "parser_ref": parsed.get("parser_ref"),
+        "parser_ok": parsed.get("ok"),
+        "artifact_kinds": _artifact_kinds(artifacts),
+    }
+
+
+def _golden_task_completed(
+    workflow_id: Any,
+    task: dict[str, Any],
+    result: dict[str, Any],
+    parsed: dict[str, Any],
+    artifacts: list[dict[str, Any]],
+    schema_by_task: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "type": "task.completed",
+        "workflow_id": workflow_id,
+        "task_id": task.get("task_id"),
+        "uses": task.get("uses"),
+        "allowed": result.get("allowed"),
+        "ok": result.get("ok"),
+        "exit_code": result.get("exit_code"),
+        "reason": result.get("reason"),
+        "parser_ref": parsed.get("parser_ref"),
+        "parser_ok": parsed.get("ok"),
+        "artifact_count": len(artifacts),
+        "artifact_kinds": _artifact_kinds(artifacts),
+        "schema_valid": (schema_by_task.get(task.get("task_id")) or {}).get("valid"),
+    }
+
+
+def _golden_workflow_completed(
+    workflow_id: Any,
+    run_result: dict[str, Any],
+    status: str | None,
+) -> dict[str, Any]:
+    return {
+        "type": "workflow.completed",
+        "workflow_id": workflow_id,
+        "status": status or run_result.get("status"),
+        "task_count": len(run_result.get("tasks", [])),
+    }
 
 
 def write_golden_run(path: Path, events: list[dict[str, Any]]) -> None:
@@ -609,24 +804,37 @@ def _task_output_schema(task_id: str, manifest: CapabilityManifest) -> dict[str,
 
 
 def _validate_task_payload(schema: dict[str, Any], payload: dict[str, Any]) -> list[str]:
-    errors = []
-    required = schema.get("required", [])
-    for key in required:
-        if key not in payload:
-            errors.append(f"payload.{key} is required")
+    return [
+        *_required_payload_errors(schema, payload),
+        *_parser_ref_payload_errors(schema, payload),
+        *_typed_payload_errors(payload),
+    ]
+
+
+def _required_payload_errors(schema: dict[str, Any], payload: dict[str, Any]) -> list[str]:
+    return [f"payload.{key} is required" for key in schema.get("required", []) if key not in payload]
+
+
+def _parser_ref_payload_errors(schema: dict[str, Any], payload: dict[str, Any]) -> list[str]:
     parser_ref = ((schema.get("properties") or {}).get("parser_ref") or {}).get("const")
     dry_run_raw = payload.get("dry_run") is True and payload.get("parser_ref") == "raw.text"
     if parser_ref is not None and payload.get("parser_ref") != parser_ref and not dry_run_raw:
-        errors.append(f"payload.parser_ref expected {parser_ref!r}, got {payload.get('parser_ref')!r}")
-    if "ok" in payload and not isinstance(payload.get("ok"), bool):
-        errors.append("payload.ok must be a boolean")
-    if "data" in payload and not isinstance(payload.get("data"), dict):
-        errors.append("payload.data must be an object")
-    if "dry_run" in payload and not isinstance(payload.get("dry_run"), bool):
-        errors.append("payload.dry_run must be a boolean")
-    if "error" in payload and not isinstance(payload.get("error"), str):
-        errors.append("payload.error must be a string")
-    return errors
+        return [f"payload.parser_ref expected {parser_ref!r}, got {payload.get('parser_ref')!r}"]
+    return []
+
+
+def _typed_payload_errors(payload: dict[str, Any]) -> list[str]:
+    checks = (
+        ("ok", bool, "boolean"),
+        ("data", dict, "object"),
+        ("dry_run", bool, "boolean"),
+        ("error", str, "string"),
+    )
+    return [
+        f"payload.{field} must be a {label}"
+        for field, expected_type, label in checks
+        if field in payload and not isinstance(payload.get(field), expected_type)
+    ]
 
 
 def _schema_validation_ok(schema_validation: list[dict[str, Any]]) -> bool:

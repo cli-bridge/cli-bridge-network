@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import dataclass
 from typing import Any
 
 from cbn_core.manifest import ManifestRegistry
@@ -12,22 +13,101 @@ from cbn_workflow.runner import WorkflowRunner
 
 
 DEFAULT_MAX_WORKFLOWS = 50
+_ACCEPTANCE_QUEUE_OPTION_NAMES = (
+    "workflow_paths",
+    "max_workflows",
+    "run",
+    "dry_run",
+    "confirmed",
+    "include_payloads",
+)
+
+
+@dataclass(frozen=True)
+class AcceptanceQueueRequest:
+    workflow_paths: Iterable[str] | None = None
+    max_workflows: int = DEFAULT_MAX_WORKFLOWS
+    run: bool = False
+    dry_run: bool = False
+    confirmed: bool = False
+    include_payloads: bool = False
+
+
+@dataclass(frozen=True)
+class AcceptanceQueuePayloadInput:
+    selected_paths: list[str]
+    max_workflows: int
+    run: bool
+    dry_run: bool
+    confirmed: bool
+    include_payloads: bool
+    explicit_selection: bool
+    rows: list[dict[str, Any]]
+    reports: list[dict[str, Any]]
+    summary: dict[str, Any]
 
 
 def cli_to_cli_acceptance_queue(
     registry: ManifestRegistry,
     workflow_runner: WorkflowRunner,
-    workflow_paths: Iterable[str] | None = None,
-    max_workflows: int = DEFAULT_MAX_WORKFLOWS,
-    run: bool = False,
-    dry_run: bool = False,
-    confirmed: bool = False,
-    include_payloads: bool = False,
+    *args: Any,
+    **options: Any,
 ) -> dict[str, Any]:
     """Return a bounded acceptance matrix for multiple BridgeMessage workflows."""
 
-    selected_paths = _select_workflow_paths(registry, workflow_paths, max_workflows=max_workflows)
-    reports = [
+    request = _acceptance_queue_request(args, options)
+    selected_paths = _select_workflow_paths(registry, request.workflow_paths, max_workflows=request.max_workflows)
+    reports = _acceptance_reports(
+        registry,
+        workflow_runner,
+        selected_paths,
+        run=request.run,
+        dry_run=request.dry_run,
+        confirmed=request.confirmed,
+        include_payloads=request.include_payloads,
+    )
+    rows = [_matrix_row(report) for report in reports]
+    summary = _summary(rows)
+    return _acceptance_queue_payload(AcceptanceQueuePayloadInput(
+        selected_paths=selected_paths,
+        max_workflows=request.max_workflows,
+        run=request.run,
+        dry_run=request.dry_run,
+        confirmed=request.confirmed,
+        include_payloads=request.include_payloads,
+        explicit_selection=request.workflow_paths is not None,
+        rows=rows,
+        reports=reports,
+        summary=summary,
+    ))
+
+
+def _acceptance_queue_request(args: tuple[Any, ...], options: dict[str, Any]) -> AcceptanceQueueRequest:
+    if len(args) > len(_ACCEPTANCE_QUEUE_OPTION_NAMES):
+        raise TypeError(f"cli_to_cli_acceptance_queue expected at most {len(_ACCEPTANCE_QUEUE_OPTION_NAMES) + 2} arguments")
+    values = {}
+    for name, value in zip(_ACCEPTANCE_QUEUE_OPTION_NAMES, args):
+        if name in options:
+            raise TypeError(f"cli_to_cli_acceptance_queue got multiple values for argument '{name}'")
+        values[name] = value
+    unknown = sorted(set(options) - set(_ACCEPTANCE_QUEUE_OPTION_NAMES))
+    if unknown:
+        raise TypeError(f"unknown acceptance queue option(s): {', '.join(unknown)}")
+    values.update(options)
+    return AcceptanceQueueRequest(**values)
+
+
+def _acceptance_reports(
+    registry: ManifestRegistry,
+    workflow_runner: WorkflowRunner,
+    selected_paths: list[str],
+    *,
+    run: bool,
+    dry_run: bool,
+    confirmed: bool,
+    include_payloads: bool,
+) -> list[dict[str, Any]]:
+    return [
         cli_to_cli_acceptance_report(
             registry,
             workflow_runner,
@@ -39,30 +119,31 @@ def cli_to_cli_acceptance_queue(
         )
         for workflow_path in selected_paths
     ]
-    rows = [_matrix_row(report) for report in reports]
-    summary = _summary(rows)
-    ok = bool(rows and summary["blocked_workflow_count"] == 0)
+
+
+def _acceptance_queue_payload(data: AcceptanceQueuePayloadInput) -> dict[str, Any]:
+    ok = bool(data.rows and data.summary["blocked_workflow_count"] == 0)
     return {
         "ok": ok,
         "apiVersion": "bridge.dev/v1alpha1",
         "kind": "CliToCliAcceptanceQueue",
-        "scope": "selected" if workflow_paths else "project",
-        "workflow_paths": selected_paths,
-        "max_workflows": max_workflows,
-        "run": run,
-        "dry_run": dry_run,
-        "confirmed": confirmed,
-        "include_payloads": include_payloads,
+        "scope": "selected" if data.explicit_selection else "project",
+        "workflow_paths": data.selected_paths,
+        "max_workflows": data.max_workflows,
+        "run": data.run,
+        "dry_run": data.dry_run,
+        "confirmed": data.confirmed,
+        "include_payloads": data.include_payloads,
         "wire_compatible": False,
         "external_protocol_boundary": (
             "This queue accepts internal BridgeMessage workflow routing only; "
             "MCP/A2A/ACP wire conformance remains a separate smoke/conformance gate."
         ),
-        "summary": summary,
-        "rows": rows,
-        "reports": reports,
-        "failures": [row for row in rows if not row["ok"]],
-        "next_steps": _next_steps(ok, rows, run),
+        "summary": data.summary,
+        "rows": data.rows,
+        "reports": data.reports,
+        "failures": [row for row in data.rows if not row["ok"]],
+        "next_steps": _next_steps(ok, data.rows, data.run),
     }
 
 

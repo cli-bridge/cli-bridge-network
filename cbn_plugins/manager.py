@@ -12,6 +12,7 @@ import os
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -41,6 +42,34 @@ from cbn_plugins.manager_parts.verification import (
     run_command as _run_command,
     verification_report_for_plan,
 )
+
+
+@dataclass(frozen=True)
+class OperationPlanPayloadInput:
+    catalog: dict[str, Any]
+    plugin_id: str
+    operation_id: str
+    operation: dict[str, Any]
+    provided_inputs: dict[str, Any]
+    resolution: dict[str, Any]
+    payload: Any
+    api_request: dict[str, Any] | None
+    blockers: list[str]
+    validation: dict[str, Any]
+    confirmed: bool
+
+
+@dataclass(frozen=True)
+class PluginProvenancePayloadInput:
+    manifest: PluginManifest
+    plugin_dir: Path
+    repo_dir: Path
+    repository: dict[str, Any]
+    packages: list[dict[str, Any]]
+    entrypoints: list[dict[str, Any]]
+    warnings: list[str]
+    blockers: list[str]
+    installed: bool
 
 
 class PluginManager:
@@ -136,53 +165,27 @@ class PluginManager:
         confirmed: bool = False,
     ) -> dict[str, Any]:
         catalog = self.operation_catalog(plugin_id)
-        operation = next(
-            (item for item in catalog["operations"] if item.get("id") == operation_id),
-            None,
-        )
-        if operation is None:
-            raise KeyError(f"unknown plugin operation: {plugin_id}/{operation_id}")
+        operation = _require_catalog_operation(catalog, plugin_id, operation_id)
         provided_inputs = dict(inputs or {})
-        command, command_missing = _resolve_string_template(str(operation.get("command") or ""), provided_inputs)
-        payload, payload_missing = _resolve_value_template(operation.get("payload_template", {}), provided_inputs)
-        missing_inputs = sorted(set([*command_missing, *payload_missing]))
-        blockers = [f"missing input: {name}" for name in missing_inputs]
-        validation = catalog["validation"]
-        if not validation["ok"]:
-            blockers.extend(f"catalog invalid: {error}" for error in validation["errors"])
-        side_effecting = operation.get("kind") in {"execute", "write"}
-        if side_effecting and not confirmed:
-            blockers.append("operation requires confirmed=true before dispatch")
-        if side_effecting and confirmed and isinstance(payload, dict):
-            payload.setdefault("confirmed", True)
+        resolution = _resolve_operation_inputs(operation, provided_inputs)
+        validation = dict(catalog["validation"])
+        blockers = _operation_plan_blockers(operation, validation, resolution["missing_inputs"], confirmed)
+        payload = _operation_payload(operation, resolution["payload"], confirmed)
         api = operation.get("api") if isinstance(operation.get("api"), dict) else None
         api_request = _operation_api_request(api, payload)
-        return {
-            "ok": not blockers,
-            "kind": "PluginProviderOperationPlan",
-            "plugin_api_version": catalog["plugin_api_version"],
-            "plugin_id": plugin_id,
-            "provider": catalog["provider"],
-            "operation_id": operation_id,
-            "operation_kind": operation.get("kind"),
-            "confirmed": confirmed,
-            "dispatch_ready": not blockers,
-            "requires_confirmation": bool(operation.get("requires_confirmation")),
-            "side_effects": operation.get("side_effects", []),
-            "inputs": provided_inputs,
-            "required_inputs": operation.get("required_inputs", []),
-            "missing_inputs": missing_inputs,
-            "blockers": blockers,
-            "operation": operation,
-            "resolved_command": command,
-            "resolved_payload": payload,
-            "api_request": api_request,
-            "validation": validation,
-            "next_commands": [
-                f"python -m cbn plugin operation-plan {plugin_id} {operation_id}",
-                command,
-            ],
-        }
+        return _operation_plan_payload(OperationPlanPayloadInput(
+            catalog=catalog,
+            plugin_id=plugin_id,
+            operation_id=operation_id,
+            operation=operation,
+            provided_inputs=provided_inputs,
+            resolution=resolution,
+            payload=payload,
+            api_request=api_request,
+            blockers=blockers,
+            validation=validation,
+            confirmed=confirmed,
+        ))
 
     def provenance(self, plugin_id: str) -> dict[str, Any]:
         manifest = self.load_manifest(plugin_id)
@@ -191,109 +194,26 @@ class PluginManager:
         repository = _repo_provenance(repo_dir, expected_remote=manifest.repository)
         packages = [_pip_package_provenance(package) for package in manifest.pip_packages]
         entrypoints = [_entrypoint_provenance(entrypoint) for entrypoint in manifest.entrypoints]
-        warnings: list[str] = []
-        blockers: list[str] = []
-
-        if repository["exists"] and not repository["is_git"]:
-            blockers.append("plugin repo directory exists but is not a git checkout")
-        if repository.get("remote_url") and not repository.get("remote_matches_expected"):
-            blockers.append("plugin repo remote does not match registry source")
-        if repository.get("dirty"):
-            warnings.append("plugin source checkout has uncommitted changes")
-        for package in packages:
-            if not package["installed"]:
-                warnings.append(f"pip package is not installed: {package['package']}")
-        for entrypoint in entrypoints:
-            if not entrypoint["available"]:
-                warnings.append(f"entrypoint is not available on PATH: {entrypoint['entrypoint']}")
-
-        return {
-            "plugin_id": manifest.plugin_id,
-            "title": manifest.title,
-            "installed": self._is_installed(manifest),
-            "plugin_dir": str(plugin_dir),
-            "repo_dir": str(repo_dir),
-            "expected_repository": manifest.repository,
-            "repository": repository,
-            "pip_packages": packages,
-            "entrypoints": entrypoints,
-            "ready_for_entrypoints": all(item["available"] for item in entrypoints),
-            "ready_for_cli_hub": all(item["available"] for item in entrypoints),
-            "source_downloaded": bool(repository["exists"] and repository["is_git"]),
-            "source_trusted": (
-                None
-                if not repository["exists"]
-                else bool(repository["is_git"] and repository.get("remote_matches_expected"))
-            ),
-            "warnings": warnings,
-            "blockers": blockers,
-            "next_commands": [
-                f"python -m cbn plugin preflight {manifest.plugin_id}",
-                f"python -m cbn plugin install {manifest.plugin_id} --yes",
-                f"python -m cbn plugin provenance {manifest.plugin_id}",
-                f"python -m cbn plugin update {manifest.plugin_id} --yes",
-            ],
-        }
+        warnings, blockers = _provenance_issues(repository, packages, entrypoints)
+        return _provenance_payload(PluginProvenancePayloadInput(
+            manifest=manifest,
+            plugin_dir=plugin_dir,
+            repo_dir=repo_dir,
+            repository=repository,
+            packages=packages,
+            entrypoints=entrypoints,
+            warnings=warnings,
+            blockers=blockers,
+            installed=self._is_installed(manifest),
+        ))
 
     def update_check(self, plugin_id: str, remote: bool = False) -> dict[str, Any]:
         manifest = self.load_manifest(plugin_id)
         provenance = self.provenance(plugin_id)
         repository = dict(provenance["repository"])
-        remote_probe: dict[str, Any] = {
-            "requested": remote,
-            "checked": False,
-            "available": None,
-            "head": None,
-            "exit_code": None,
-            "stderr": "",
-        }
-        update_available: bool | None = None
-        blockers: list[str] = []
-        warnings = list(provenance["warnings"])
-
-        if not repository["exists"]:
-            blockers.append("plugin source repository is not downloaded")
-        elif not repository["is_git"]:
-            blockers.append("plugin repo directory exists but is not a git checkout")
-        elif repository.get("remote_matches_expected") is False:
-            blockers.append("plugin source repository is not trusted")
-
-        if remote and repository["exists"] and repository["is_git"]:
-            repo_dir = manifest.repo_dir(self.paths.external_plugins)
-            probe = _run_command(("git", "-C", str(repo_dir), "ls-remote", "origin", "HEAD"), timeout_seconds=30)
-            remote_probe["checked"] = True
-            remote_probe["exit_code"] = probe["exit_code"]
-            remote_probe["stderr"] = probe["stderr"]
-            if probe["exit_code"] == 0:
-                remote_head = _parse_ls_remote_head(probe["stdout"])
-                remote_probe["head"] = remote_head
-                remote_probe["available"] = remote_head is not None
-                if remote_head and repository.get("head"):
-                    update_available = remote_head != repository["head"]
-            else:
-                remote_probe["available"] = False
-                warnings.append("remote update check failed")
-
-        package_checks = [
-            {
-                "package": package["package"],
-                "installed": package["installed"],
-                "current_version": package.get("version"),
-                "latest_version": None,
-                "update_available": None,
-                "note": "PyPI latest-version probing is intentionally not performed by default.",
-            }
-            for package in provenance["pip_packages"]
-        ]
-        entrypoint_checks = [
-            {
-                "entrypoint": entrypoint["entrypoint"],
-                "available": entrypoint["available"],
-                "path": entrypoint.get("path"),
-                "version": entrypoint.get("version"),
-            }
-            for entrypoint in provenance["entrypoints"]
-        ]
+        remote_probe, update_available, probe_warnings = self._remote_update_probe(manifest, repository, remote)
+        blockers = _update_repository_blockers(repository)
+        warnings = [*provenance["warnings"], *probe_warnings]
         ready_for_update = len(blockers) == 0
         return {
             "plugin_id": manifest.plugin_id,
@@ -312,16 +232,39 @@ class PluginManager:
                 "remote_probe": remote_probe,
                 "update_available": update_available,
             },
-            "packages": package_checks,
-            "entrypoints": entrypoint_checks,
+            "packages": _package_update_checks(provenance["pip_packages"]),
+            "entrypoints": _entrypoint_update_checks(provenance["entrypoints"]),
             "blockers": blockers,
             "warnings": warnings,
-            "next_commands": [
-                f"python -m cbn plugin check-update {manifest.plugin_id} --remote",
-                f"python -m cbn plugin gate {manifest.plugin_id} --action update",
-                f"python -m cbn plugin update {manifest.plugin_id} --yes",
-            ],
+            "next_commands": _update_check_next_commands(manifest.plugin_id),
         }
+
+    def _remote_update_probe(
+        self,
+        manifest: PluginManifest,
+        repository: dict[str, Any],
+        remote: bool,
+    ) -> tuple[dict[str, Any], bool | None, list[str]]:
+        remote_probe = _empty_remote_probe(remote)
+        update_available: bool | None = None
+        warnings: list[str] = []
+        if not (remote and repository["exists"] and repository["is_git"]):
+            return remote_probe, update_available, warnings
+        repo_dir = manifest.repo_dir(self.paths.external_plugins)
+        probe = _run_command(("git", "-C", str(repo_dir), "ls-remote", "origin", "HEAD"), timeout_seconds=30)
+        remote_probe["checked"] = True
+        remote_probe["exit_code"] = probe["exit_code"]
+        remote_probe["stderr"] = probe["stderr"]
+        if probe["exit_code"] == 0:
+            remote_head = _parse_ls_remote_head(probe["stdout"])
+            remote_probe["head"] = remote_head
+            remote_probe["available"] = remote_head is not None
+            if remote_head and repository.get("head"):
+                update_available = remote_head != repository["head"]
+        else:
+            remote_probe["available"] = False
+            warnings.append("remote update check failed")
+        return remote_probe, update_available, warnings
 
     def preflight(self, plugin_id: str) -> dict[str, Any]:
         manifest = self.load_manifest(plugin_id)
@@ -451,76 +394,21 @@ class PluginManager:
         action: str,
         include_codex_skill: bool = False,
     ) -> PluginPlan:
+        _ensure_plugin_action(action)
         manifest = self.load_manifest(plugin_id)
         plugin_dir = self.paths.external_plugins / manifest.plugin_id
         repo_dir = manifest.repo_dir(self.paths.external_plugins)
-        commands: list[PluginCommand] = []
-
-        if action not in {"install", "update"}:
-            raise ValueError(f"unsupported plugin action: {action}")
-
-        for package in manifest.pip_packages:
-            commands.append(
-                PluginCommand(
-                    label=f"Install or upgrade {package}",
-                    argv=(sys.executable, "-m", "pip", "install", "--upgrade", package),
-                )
-            )
-
-        if action == "install":
-            commands.append(
-                PluginCommand(
-                    label="Clone plugin source repository",
-                    argv=("git", "clone", "--depth", "1", manifest.repository, str(repo_dir)),
-                )
-            )
-        else:
-            commands.append(
-                PluginCommand(
-                    label="Update plugin source repository",
-                    argv=("git", "-C", str(repo_dir), "pull", "--ff-only"),
-                )
-            )
-
-        if include_codex_skill and manifest.optional_codex_skill_script:
-            script_path = repo_dir / manifest.optional_codex_skill_script
-            if script_path.suffix.lower() == ".ps1":
-                argv = (
-                    "powershell",
-                    "-NoProfile",
-                    "-ExecutionPolicy",
-                    "Bypass",
-                    "-File",
-                    str(script_path),
-                )
-            else:
-                argv = ("bash", str(script_path))
-            commands.append(
-                PluginCommand(
-                    label="Install optional Codex skill",
-                    argv=argv,
-                    optional=True,
-                )
-            )
-
-        verification_commands = [
-            f"python -m cbn plugin provenance {manifest.plugin_id}",
-            f"python -m cbn plugin status {manifest.plugin_id}",
-            f"python -m cbn plugin check-update {manifest.plugin_id}",
+        commands = [
+            *_pip_install_commands(manifest),
+            _source_command(manifest, repo_dir, action),
+            *_optional_codex_skill_commands(manifest, repo_dir, include_codex_skill),
         ]
-        if manifest.plugin_id == "cli-anything":
-            verification_commands.extend(
-                [
-                    "python -m cbn plugin market cli-anything list",
-                    "python -m cbn plugin bootstrap-plan cli-anything --no-workflows",
-                ]
-            )
         return PluginPlan(
             plugin_id=manifest.plugin_id,
             action=action,
             plugin_dir=str(plugin_dir),
             commands=tuple(commands),
-            verification_commands=tuple(verification_commands),
+            verification_commands=tuple(_plugin_verification_commands(manifest.plugin_id)),
         )
 
     def verify_plan(
@@ -589,6 +477,291 @@ class PluginManager:
         repo_exists = manifest.repo_dir(self.paths.external_plugins).exists()
         entrypoints_exist = all(shutil.which(entrypoint) for entrypoint in manifest.entrypoints)
         return repo_exists or entrypoints_exist
+
+
+def _require_catalog_operation(
+    catalog: dict[str, Any],
+    plugin_id: str,
+    operation_id: str,
+) -> dict[str, Any]:
+    operation = next(
+        (item for item in catalog["operations"] if item.get("id") == operation_id),
+        None,
+    )
+    if operation is None:
+        raise KeyError(f"unknown plugin operation: {plugin_id}/{operation_id}")
+    return operation
+
+
+def _resolve_operation_inputs(
+    operation: dict[str, Any],
+    provided_inputs: dict[str, Any],
+) -> dict[str, Any]:
+    command, command_missing = _resolve_string_template(str(operation.get("command") or ""), provided_inputs)
+    payload, payload_missing = _resolve_value_template(operation.get("payload_template", {}), provided_inputs)
+    return {
+        "command": command,
+        "payload": payload,
+        "missing_inputs": sorted(set([*command_missing, *payload_missing])),
+    }
+
+
+def _operation_plan_blockers(
+    operation: dict[str, Any],
+    validation: dict[str, Any],
+    missing_inputs: list[str],
+    confirmed: bool,
+) -> list[str]:
+    blockers = [f"missing input: {name}" for name in missing_inputs]
+    if not validation["ok"]:
+        blockers.extend(f"catalog invalid: {error}" for error in validation["errors"])
+    if _operation_has_side_effects(operation) and not confirmed:
+        blockers.append("operation requires confirmed=true before dispatch")
+    return blockers
+
+
+def _operation_has_side_effects(operation: dict[str, Any]) -> bool:
+    return operation.get("kind") in {"execute", "write"}
+
+
+def _operation_payload(
+    operation: dict[str, Any],
+    payload: Any,
+    confirmed: bool,
+) -> Any:
+    if _operation_has_side_effects(operation) and confirmed and isinstance(payload, dict):
+        payload.setdefault("confirmed", True)
+    return payload
+
+
+def _operation_plan_payload(data: OperationPlanPayloadInput) -> dict[str, Any]:
+    command = data.resolution["command"]
+    return {
+        "ok": not data.blockers,
+        "kind": "PluginProviderOperationPlan",
+        "plugin_api_version": data.catalog["plugin_api_version"],
+        "plugin_id": data.plugin_id,
+        "provider": data.catalog["provider"],
+        "operation_id": data.operation_id,
+        "operation_kind": data.operation.get("kind"),
+        "confirmed": data.confirmed,
+        "dispatch_ready": not data.blockers,
+        "requires_confirmation": bool(data.operation.get("requires_confirmation")),
+        "side_effects": data.operation.get("side_effects", []),
+        "inputs": data.provided_inputs,
+        "required_inputs": data.operation.get("required_inputs", []),
+        "missing_inputs": data.resolution["missing_inputs"],
+        "blockers": data.blockers,
+        "operation": data.operation,
+        "resolved_command": command,
+        "resolved_payload": data.payload,
+        "api_request": data.api_request,
+        "validation": data.validation,
+        "next_commands": [
+            f"python -m cbn plugin operation-plan {data.plugin_id} {data.operation_id}",
+            command,
+        ],
+    }
+
+
+def _provenance_issues(
+    repository: dict[str, Any],
+    packages: list[dict[str, Any]],
+    entrypoints: list[dict[str, Any]],
+) -> tuple[list[str], list[str]]:
+    warnings: list[str] = []
+    blockers: list[str] = []
+    if repository["exists"] and not repository["is_git"]:
+        blockers.append("plugin repo directory exists but is not a git checkout")
+    if repository.get("remote_url") and not repository.get("remote_matches_expected"):
+        blockers.append("plugin repo remote does not match registry source")
+    if repository.get("dirty"):
+        warnings.append("plugin source checkout has uncommitted changes")
+    warnings.extend(_missing_package_warnings(packages))
+    warnings.extend(_missing_entrypoint_warnings(entrypoints))
+    return warnings, blockers
+
+
+def _missing_package_warnings(packages: list[dict[str, Any]]) -> list[str]:
+    return [
+        f"pip package is not installed: {package['package']}"
+        for package in packages
+        if not package["installed"]
+    ]
+
+
+def _missing_entrypoint_warnings(entrypoints: list[dict[str, Any]]) -> list[str]:
+    return [
+        f"entrypoint is not available on PATH: {entrypoint['entrypoint']}"
+        for entrypoint in entrypoints
+        if not entrypoint["available"]
+    ]
+
+
+def _provenance_payload(report: PluginProvenancePayloadInput) -> dict[str, Any]:
+    manifest = report.manifest
+    return {
+        "plugin_id": manifest.plugin_id,
+        "title": manifest.title,
+        "installed": report.installed,
+        "plugin_dir": str(report.plugin_dir),
+        "repo_dir": str(report.repo_dir),
+        "expected_repository": manifest.repository,
+        "repository": report.repository,
+        "pip_packages": report.packages,
+        "entrypoints": report.entrypoints,
+        "ready_for_entrypoints": all(item["available"] for item in report.entrypoints),
+        "ready_for_cli_hub": all(item["available"] for item in report.entrypoints),
+        "source_downloaded": bool(report.repository["exists"] and report.repository["is_git"]),
+        "source_trusted": _source_trusted(report.repository),
+        "warnings": report.warnings,
+        "blockers": report.blockers,
+        "next_commands": _provenance_next_commands(manifest.plugin_id),
+    }
+
+
+def _source_trusted(repository: dict[str, Any]) -> bool | None:
+    if not repository["exists"]:
+        return None
+    return bool(repository["is_git"] and repository.get("remote_matches_expected"))
+
+
+def _provenance_next_commands(plugin_id: str) -> list[str]:
+    return [
+        f"python -m cbn plugin preflight {plugin_id}",
+        f"python -m cbn plugin install {plugin_id} --yes",
+        f"python -m cbn plugin provenance {plugin_id}",
+        f"python -m cbn plugin update {plugin_id} --yes",
+    ]
+
+
+def _empty_remote_probe(remote: bool) -> dict[str, Any]:
+    return {
+        "requested": remote,
+        "checked": False,
+        "available": None,
+        "head": None,
+        "exit_code": None,
+        "stderr": "",
+    }
+
+
+def _update_repository_blockers(repository: dict[str, Any]) -> list[str]:
+    if not repository["exists"]:
+        return ["plugin source repository is not downloaded"]
+    if not repository["is_git"]:
+        return ["plugin repo directory exists but is not a git checkout"]
+    if repository.get("remote_matches_expected") is False:
+        return ["plugin source repository is not trusted"]
+    return []
+
+
+def _package_update_checks(packages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "package": package["package"],
+            "installed": package["installed"],
+            "current_version": package.get("version"),
+            "latest_version": None,
+            "update_available": None,
+            "note": "PyPI latest-version probing is intentionally not performed by default.",
+        }
+        for package in packages
+    ]
+
+
+def _entrypoint_update_checks(entrypoints: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "entrypoint": entrypoint["entrypoint"],
+            "available": entrypoint["available"],
+            "path": entrypoint.get("path"),
+            "version": entrypoint.get("version"),
+        }
+        for entrypoint in entrypoints
+    ]
+
+
+def _update_check_next_commands(plugin_id: str) -> list[str]:
+    return [
+        f"python -m cbn plugin check-update {plugin_id} --remote",
+        f"python -m cbn plugin gate {plugin_id} --action update",
+        f"python -m cbn plugin update {plugin_id} --yes",
+    ]
+
+
+def _ensure_plugin_action(action: str) -> None:
+    if action not in {"install", "update"}:
+        raise ValueError(f"unsupported plugin action: {action}")
+
+
+def _pip_install_commands(manifest: PluginManifest) -> list[PluginCommand]:
+    return [
+        PluginCommand(
+            label=f"Install or upgrade {package}",
+            argv=(sys.executable, "-m", "pip", "install", "--upgrade", package),
+        )
+        for package in manifest.pip_packages
+    ]
+
+
+def _source_command(manifest: PluginManifest, repo_dir: Path, action: str) -> PluginCommand:
+    if action == "install":
+        return PluginCommand(
+            label="Clone plugin source repository",
+            argv=("git", "clone", "--depth", "1", manifest.repository, str(repo_dir)),
+        )
+    return PluginCommand(
+        label="Update plugin source repository",
+        argv=("git", "-C", str(repo_dir), "pull", "--ff-only"),
+    )
+
+
+def _optional_codex_skill_commands(
+    manifest: PluginManifest,
+    repo_dir: Path,
+    include_codex_skill: bool,
+) -> list[PluginCommand]:
+    if not (include_codex_skill and manifest.optional_codex_skill_script):
+        return []
+    script_path = repo_dir / manifest.optional_codex_skill_script
+    return [
+        PluginCommand(
+            label="Install optional Codex skill",
+            argv=_codex_skill_argv(script_path),
+            optional=True,
+        )
+    ]
+
+
+def _codex_skill_argv(script_path: Path) -> tuple[str, ...]:
+    if script_path.suffix.lower() != ".ps1":
+        return ("bash", str(script_path))
+    return (
+        "powershell",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        str(script_path),
+    )
+
+
+def _plugin_verification_commands(plugin_id: str) -> list[str]:
+    commands = [
+        f"python -m cbn plugin provenance {plugin_id}",
+        f"python -m cbn plugin status {plugin_id}",
+        f"python -m cbn plugin check-update {plugin_id}",
+    ]
+    if plugin_id == "cli-anything":
+        commands.extend(
+            [
+                "python -m cbn plugin market cli-anything list",
+                "python -m cbn plugin bootstrap-plan cli-anything --no-workflows",
+            ]
+        )
+    return commands
+
 
 def _runtime_transport_dependency(kind: str) -> str | None:
     if kind == "pty" and os.name == "nt":

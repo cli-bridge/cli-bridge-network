@@ -145,45 +145,29 @@ class AgentBridgeMessage:
     artifacts: tuple[dict[str, Any], ...] = ()
 
     def as_bridge_message(self) -> dict[str, Any]:
-        return agent_bridge_message(
-            agent_id=self.agent_id,
-            session_id=self.session_id,
-            task_id=self.task_id,
-            channel=self.channel,
-            data=self.data,
-            ok=self.ok,
-            error=self.error,
-            artifacts=self.artifacts,
-        )
+        return agent_bridge_message(self)
 
 
-def agent_bridge_message(
-    *,
-    agent_id: str,
-    session_id: str,
-    task_id: str,
-    channel: str,
-    data: dict[str, Any],
-    ok: bool = True,
-    error: str | None = None,
-    artifacts: tuple[dict[str, Any], ...] = (),
-) -> dict[str, Any]:
+def agent_bridge_message(message: AgentBridgeMessage | None = None, **fields: Any) -> dict[str, Any]:
+    if message is not None and fields:
+        raise TypeError("agent_bridge_message accepts either an AgentBridgeMessage or keyword fields, not both")
+    bridge = message if message is not None else AgentBridgeMessage(**fields)
     payload: dict[str, Any] = {
         "parser_ref": AGENT_BRIDGE_PARSER_REF,
-        "ok": ok,
+        "ok": bridge.ok,
         "data": {
-            "agent_id": agent_id,
-            "session_id": session_id,
-            "task_id": task_id,
-            **data,
+            "agent_id": bridge.agent_id,
+            "session_id": bridge.session_id,
+            "task_id": bridge.task_id,
+            **bridge.data,
         },
     }
-    if error:
-        payload["error"] = error
+    if bridge.error:
+        payload["error"] = bridge.error
     return BridgeMessage(
-        producer=f"agent:{agent_id}",
-        channel=channel,
-        correlation_id=f"{session_id}:{task_id}",
+        producer=f"agent:{bridge.agent_id}",
+        channel=bridge.channel,
+        correlation_id=f"{bridge.session_id}:{bridge.task_id}",
         payload=payload,
-        artifacts=artifacts,
+        artifacts=bridge.artifacts,
     ).as_dict()

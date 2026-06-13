@@ -4,9 +4,13 @@
   "version": "0.1.0",
   "description": "Monorepo foundation for CLI Bridge Network packages.",
   "workspaces": [
+    "frontend",
     "packages/*"
   ],
   "scripts": {
+    "app:build": "npm --workspace frontend run app:build",
+    "app:dev": "npm --workspace frontend run app:dev",
+    "app:start": "npm --workspace frontend run app:start",
     "check:python": "python -m unittest discover tests-unit",
     "check:cbn": "python -m cbn health"
   }

@@ -34,36 +34,52 @@ def agent_cli_contract_package_boundary(root: Path | None = None) -> dict[str, A
         "python_name": "agent-cli-contract",
         "version": "0.1.0",
         "root": str(contract_root),
-        "schemas": {
-            "AgentCliCard": str(contract_root / "schemas" / "agent-cli-card.schema.json"),
-            "RunReceipt": str(contract_root / "schemas" / "run-receipt.schema.json"),
-        },
+        "schemas": agent_cli_contract_schema_paths(contract_root),
         "typescript_types": str(contract_root / "ts" / "index.ts"),
         "python_validator": str(contract_root / "python" / "agent_cli_contract" / "validator.py"),
-        "fixtures": {
-            "AgentCliCard": str(contract_root / "fixtures" / "agent-cli-card.valid.json"),
-            "RunReceipt": str(contract_root / "fixtures" / "run-receipt.valid.json"),
-        },
-        "conformance_smoke": {
-            "command": "python external_protocols/agent-cli-contract/scripts/conformance_smoke.py",
-            "script": str(contract_root / "scripts" / "conformance_smoke.py"),
-        },
-        "dependency_boundary": {
-            "standalone": True,
-            "forbidden_cbn_modules": _forbidden_cbn_modules(),
-            "allowed_scope": [
-                "AgentCliCard schema",
-                "RunReceipt schema",
-                "TypeScript types",
-                "Python validation CLI",
-                "fixtures",
-                "conformance smoke",
-            ],
-        },
+        "fixtures": agent_cli_contract_fixture_paths(contract_root),
+        "conformance_smoke": agent_cli_contract_smoke_paths(contract_root),
+        "dependency_boundary": agent_cli_contract_dependency_boundary(),
         "cbn_mapping_responsibility": {
             "AgentCliCard": "CBN maps external command declarations to ToolManifest records.",
             "RunReceipt": "CBN maps run receipts to BridgeMessage, Artifact records, Audit evidence, and Events.",
         },
+    }
+
+
+def agent_cli_contract_schema_paths(contract_root: Path) -> dict[str, str]:
+    return {
+        "AgentCliCard": str(contract_root / "schemas" / "agent-cli-card.schema.json"),
+        "RunReceipt": str(contract_root / "schemas" / "run-receipt.schema.json"),
+    }
+
+
+def agent_cli_contract_fixture_paths(contract_root: Path) -> dict[str, str]:
+    return {
+        "AgentCliCard": str(contract_root / "fixtures" / "agent-cli-card.valid.json"),
+        "RunReceipt": str(contract_root / "fixtures" / "run-receipt.valid.json"),
+    }
+
+
+def agent_cli_contract_smoke_paths(contract_root: Path) -> dict[str, str]:
+    return {
+        "command": "python external_protocols/agent-cli-contract/scripts/conformance_smoke.py",
+        "script": str(contract_root / "scripts" / "conformance_smoke.py"),
+    }
+
+
+def agent_cli_contract_dependency_boundary() -> dict[str, Any]:
+    return {
+        "standalone": True,
+        "forbidden_cbn_modules": _forbidden_cbn_modules(),
+        "allowed_scope": [
+            "AgentCliCard schema",
+            "RunReceipt schema",
+            "TypeScript types",
+            "Python validation CLI",
+            "fixtures",
+            "conformance smoke",
+        ],
     }
 
 
@@ -104,54 +120,77 @@ def agent_cli_card_to_tool_manifests(card: dict[str, Any]) -> list[dict[str, Any
     spec = card["spec"]
     runtime = spec.get("runtime") if isinstance(spec.get("runtime"), dict) else {}
     card_id = metadata["id"]
-    manifests = []
-    for command in spec["commands"]:
-        command_id = command["id"]
-        argv = list(command["argv"])
-        policy = command.get("policy") if isinstance(command.get("policy"), dict) else {}
-        output = command.get("output") if isinstance(command.get("output"), dict) else {}
-        capability_id = f"{card_id}.{command_id}"
-        manifests.append(
-            {
-                "apiVersion": MANIFEST_API_VERSION,
-                "kind": "ToolManifest",
-                "metadata": {
-                    "id": capability_id,
-                    "title": command.get("title", capability_id),
-                    "labels": {
-                        "adapter": "agent-cli-contract",
-                        "agent_cli_card": card_id,
-                        **_string_labels(metadata.get("labels", {})),
-                    },
-                    "annotations": {
-                        "cbn.external_protocol": "agent-cli-contract",
-                        "cbn.agent_cli.card_id": card_id,
-                        "cbn.agent_cli.command_id": command_id,
-                        "cbn.agent_cli.runtime_kind": str(runtime.get("kind", "stdio")),
-                        "cbn.agent_cli.card_version": str(metadata.get("version", "")),
-                    },
-                },
-                "spec": {
-                    "transport": {
-                        "kind": _cbn_transport_kind(runtime.get("kind")),
-                        "command": argv[0],
-                        "argsTemplate": argv[1:],
-                        "cwdPolicy": str(runtime.get("cwdPolicy", "workspace")),
-                        "timeoutSeconds": int(command.get("timeoutSeconds", 30)),
-                    },
-                    "policy": {
-                        "risk": str(policy.get("risk", "read")),
-                        "requiresConfirmation": bool(policy.get("requiresConfirmation", False)),
-                        "network": str(policy.get("network", "deny")),
-                    },
-                    "output": {
-                        "parserRef": str(output.get("parser", "raw.text")),
-                        "verified": False,
-                    },
-                },
-            }
-        )
-    return manifests
+    return [_agent_cli_command_manifest(card_id, metadata, runtime, command) for command in spec["commands"]]
+
+
+def _agent_cli_command_manifest(
+    card_id: str,
+    card_metadata: dict[str, Any],
+    runtime: dict[str, Any],
+    command: dict[str, Any],
+) -> dict[str, Any]:
+    command_id = command["id"]
+    argv = list(command["argv"])
+    capability_id = f"{card_id}.{command_id}"
+    return {
+        "apiVersion": MANIFEST_API_VERSION,
+        "kind": "ToolManifest",
+        "metadata": _agent_cli_manifest_metadata(capability_id, card_id, card_metadata, runtime, command),
+        "spec": _agent_cli_manifest_spec(runtime, command, argv),
+    }
+
+
+def _agent_cli_manifest_metadata(
+    capability_id: str,
+    card_id: str,
+    card_metadata: dict[str, Any],
+    runtime: dict[str, Any],
+    command: dict[str, Any],
+) -> dict[str, Any]:
+    command_id = command["id"]
+    return {
+        "id": capability_id,
+        "title": command.get("title", capability_id),
+        "labels": {
+            "adapter": "agent-cli-contract",
+            "agent_cli_card": card_id,
+            **_string_labels(card_metadata.get("labels", {})),
+        },
+        "annotations": {
+            "cbn.external_protocol": "agent-cli-contract",
+            "cbn.agent_cli.card_id": card_id,
+            "cbn.agent_cli.command_id": command_id,
+            "cbn.agent_cli.runtime_kind": str(runtime.get("kind", "stdio")),
+            "cbn.agent_cli.card_version": str(card_metadata.get("version", "")),
+        },
+    }
+
+
+def _agent_cli_manifest_spec(
+    runtime: dict[str, Any],
+    command: dict[str, Any],
+    argv: list[str],
+) -> dict[str, Any]:
+    policy = command.get("policy") if isinstance(command.get("policy"), dict) else {}
+    output = command.get("output") if isinstance(command.get("output"), dict) else {}
+    return {
+        "transport": {
+            "kind": _cbn_transport_kind(runtime.get("kind")),
+            "command": argv[0],
+            "argsTemplate": argv[1:],
+            "cwdPolicy": str(runtime.get("cwdPolicy", "workspace")),
+            "timeoutSeconds": int(command.get("timeoutSeconds", 30)),
+        },
+        "policy": {
+            "risk": str(policy.get("risk", "read")),
+            "requiresConfirmation": bool(policy.get("requiresConfirmation", False)),
+            "network": str(policy.get("network", "deny")),
+        },
+        "output": {
+            "parserRef": str(output.get("parser", "raw.text")),
+            "verified": False,
+        },
+    }
 
 
 def run_receipt_to_cbn_records(receipt: dict[str, Any]) -> dict[str, Any]:
@@ -162,6 +201,33 @@ def run_receipt_to_cbn_records(receipt: dict[str, Any]) -> dict[str, Any]:
     run_id = receipt["runId"]
     producer = f"{receipt['cardId']}.{receipt['commandId']}"
     artifacts = tuple(_receipt_artifact_to_cbn(item) for item in receipt.get("artifacts", []))
+    status = receipt["status"]
+    return {
+        "kind": "AgentCliRunReceiptMapping",
+        "apiVersion": MANIFEST_API_VERSION,
+        "message": _receipt_bridge_message(receipt, producer, run_id, artifacts),
+        "artifacts": list(artifacts),
+        "audit_event": _receipt_audit_event(receipt, producer, run_id, status),
+        "event": _receipt_event(producer, run_id, status, artifacts),
+    }
+
+
+def _receipt_bridge_message(
+    receipt: dict[str, Any],
+    producer: str,
+    run_id: str,
+    artifacts: tuple[dict[str, Any], ...],
+) -> dict[str, Any]:
+    return BridgeMessage(
+        producer=producer,
+        channel="agent-cli.run.receipt",
+        correlation_id=run_id,
+        payload=_receipt_payload(receipt),
+        artifacts=artifacts,
+    ).as_dict()
+
+
+def _receipt_payload(receipt: dict[str, Any]) -> dict[str, Any]:
     status = receipt["status"]
     payload = {
         "parser_ref": _receipt_parser_ref(receipt),
@@ -177,34 +243,38 @@ def run_receipt_to_cbn_records(receipt: dict[str, Any]) -> dict[str, Any]:
     if status != "completed":
         error = receipt.get("error") if isinstance(receipt.get("error"), dict) else {}
         payload["error"] = str(error.get("message") or status)
-    message = BridgeMessage(
-        producer=producer,
-        channel="agent-cli.run.receipt",
-        correlation_id=run_id,
-        payload=payload,
-        artifacts=artifacts,
-    ).as_dict()
+    return payload
+
+
+def _receipt_audit_event(
+    receipt: dict[str, Any],
+    producer: str,
+    run_id: str,
+    status: str,
+) -> dict[str, Any]:
     return {
-        "kind": "AgentCliRunReceiptMapping",
-        "apiVersion": MANIFEST_API_VERSION,
-        "message": message,
-        "artifacts": list(artifacts),
-        "audit_event": {
-            "type": "agent_cli.run_receipt",
-            "call_id": run_id,
-            "capability_id": producer,
+        "type": "agent_cli.run_receipt",
+        "call_id": run_id,
+        "capability_id": producer,
+        "status": status,
+        "exit_code": receipt.get("exitCode"),
+        "correlation": receipt.get("correlation", {}),
+    }
+
+
+def _receipt_event(
+    producer: str,
+    run_id: str,
+    status: str,
+    artifacts: tuple[dict[str, Any], ...],
+) -> dict[str, Any]:
+    return {
+        "type": "agent_cli.run.completed" if status == "completed" else "agent_cli.run.stopped",
+        "subject": producer,
+        "correlation_id": run_id,
+        "payload": {
             "status": status,
-            "exit_code": receipt.get("exitCode"),
-            "correlation": receipt.get("correlation", {}),
-        },
-        "event": {
-            "type": "agent_cli.run.completed" if status == "completed" else "agent_cli.run.stopped",
-            "subject": producer,
-            "correlation_id": run_id,
-            "payload": {
-                "status": status,
-                "artifact_count": len(artifacts),
-            },
+            "artifact_count": len(artifacts),
         },
     }
 
@@ -241,20 +311,35 @@ def _require_agent_cli_card(card: dict[str, Any]) -> None:
         raise ValueError(f"unsupported AgentCliCard apiVersion: {card.get('apiVersion')}")
     if card.get("kind") != AGENT_CLI_CARD_KIND:
         raise ValueError(f"unsupported AgentCliCard kind: {card.get('kind')}")
+    commands = _require_agent_cli_card_spec(card)
+    _require_agent_cli_card_metadata(card)
+    for index, command in enumerate(commands):
+        _require_agent_cli_command(command, index)
+
+
+def _require_agent_cli_card_metadata(card: dict[str, Any]) -> dict[str, Any]:
     metadata = card.get("metadata")
+    if isinstance(metadata, dict) and isinstance(metadata.get("id"), str):
+        return metadata
+    raise ValueError("AgentCliCard metadata.id is required")
+
+
+def _require_agent_cli_card_spec(card: dict[str, Any]) -> list[Any]:
     spec = card.get("spec")
-    if not isinstance(metadata, dict) or not isinstance(metadata.get("id"), str):
-        raise ValueError("AgentCliCard metadata.id is required")
-    if not isinstance(spec, dict) or not isinstance(spec.get("commands"), list):
-        raise ValueError("AgentCliCard spec.commands is required")
-    for index, command in enumerate(spec["commands"]):
-        if not isinstance(command, dict):
-            raise ValueError(f"AgentCliCard spec.commands[{index}] must be an object")
-        if not isinstance(command.get("id"), str) or not command["id"]:
-            raise ValueError(f"AgentCliCard spec.commands[{index}].id is required")
-        argv = command.get("argv")
-        if not isinstance(argv, list) or not argv or not all(isinstance(item, str) for item in argv):
-            raise ValueError(f"AgentCliCard spec.commands[{index}].argv must be a non-empty string array")
+    if isinstance(spec, dict) and isinstance(spec.get("commands"), list):
+        return spec["commands"]
+    raise ValueError("AgentCliCard spec.commands is required")
+
+
+def _require_agent_cli_command(command: Any, index: int) -> dict[str, Any]:
+    if not isinstance(command, dict):
+        raise ValueError(f"AgentCliCard spec.commands[{index}] must be an object")
+    if not isinstance(command.get("id"), str) or not command["id"]:
+        raise ValueError(f"AgentCliCard spec.commands[{index}].id is required")
+    argv = command.get("argv")
+    if not isinstance(argv, list) or not argv or not all(isinstance(item, str) for item in argv):
+        raise ValueError(f"AgentCliCard spec.commands[{index}].argv must be a non-empty string array")
+    return command
 
 
 def _require_run_receipt(receipt: dict[str, Any]) -> None:

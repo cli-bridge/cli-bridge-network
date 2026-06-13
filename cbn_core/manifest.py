@@ -152,41 +152,15 @@ class ManifestRegistry:
         limit = max(0, min(limit, 100))
         tokens = [token for token in query.casefold().split() if token]
         if not tokens:
-            return [
-                {"manifest": manifest.as_record(), "match": {"score": 0, "fields": []}}
-                for manifest in self.list()[:limit]
-            ]
+            return _empty_search_results(self.list(), limit)
         matches = []
         for manifest in self.list():
             fields = manifest.search_text()
             haystack = {field: value.casefold() for field, value in fields.items()}
-            if not all(any(token in value for value in haystack.values()) for token in tokens):
+            if not _haystack_matches_tokens(haystack, tokens):
                 continue
-            matched_fields = sorted(
-                field
-                for field, value in haystack.items()
-                if any(token in value for token in tokens)
-            )
-            score = sum(
-                3 if value.startswith(token) else value.count(token)
-                for value in haystack.values()
-                for token in tokens
-            )
-            matches.append(
-                {
-                    "manifest": manifest.as_record(),
-                    "match": {
-                        "score": score,
-                        "fields": matched_fields,
-                    },
-                }
-            )
-        matches.sort(
-            key=lambda item: (
-                -item["match"]["score"],
-                item["manifest"]["capability_id"],
-            )
-        )
+            matches.append(_search_match(manifest, haystack, tokens))
+        matches.sort(key=_search_sort_key)
         return matches[:limit]
 
     def get(self, capability_id: str) -> CapabilityManifest | None:
@@ -248,28 +222,8 @@ def validate_manifest_dict(
     if raw.get("kind") != "ToolManifest":
         errors.append(f"unsupported kind: {raw.get('kind')}")
 
-    metadata = raw.get("metadata")
-    if not isinstance(metadata, dict):
-        errors.append("metadata must be an object")
-        metadata = {}
-    capability_id = metadata.get("id")
-    if not isinstance(capability_id, str) or not capability_id.strip():
-        errors.append("metadata.id is required")
-        capability_id = None
-    if "title" in metadata and not isinstance(metadata.get("title"), str):
-        errors.append("metadata.title must be a string when present")
-    for field in ("labels", "annotations"):
-        value = metadata.get(field, {})
-        if not isinstance(value, dict):
-            errors.append(f"metadata.{field} must be an object when present")
-
-    spec = raw.get("spec")
-    if not isinstance(spec, dict):
-        errors.append("spec must be an object")
-        spec = {}
-    _validate_transport(spec.get("transport"), errors, warnings)
-    _validate_policy(spec.get("policy"), errors)
-    _validate_output(spec.get("output", {}), errors, warnings, known_parser_refs)
+    capability_id = _validate_metadata(raw.get("metadata"), errors)
+    _validate_manifest_spec(raw.get("spec"), errors, warnings, known_parser_refs)
 
     if not errors:
         try:
@@ -279,27 +233,114 @@ def validate_manifest_dict(
     return _manifest_report(source_path, capability_id, errors, warnings)
 
 
+def _empty_search_results(manifests: list[CapabilityManifest], limit: int) -> list[dict[str, Any]]:
+    return [
+        {"manifest": manifest.as_record(), "match": {"score": 0, "fields": []}}
+        for manifest in manifests[:limit]
+    ]
+
+
+def _haystack_matches_tokens(haystack: dict[str, str], tokens: list[str]) -> bool:
+    return all(any(token in value for value in haystack.values()) for token in tokens)
+
+
+def _matched_fields(haystack: dict[str, str], tokens: list[str]) -> list[str]:
+    return sorted(field for field, value in haystack.items() if any(token in value for token in tokens))
+
+
+def _match_score(haystack: dict[str, str], tokens: list[str]) -> int:
+    return sum(
+        3 if value.startswith(token) else value.count(token)
+        for value in haystack.values()
+        for token in tokens
+    )
+
+
+def _search_match(
+    manifest: CapabilityManifest,
+    haystack: dict[str, str],
+    tokens: list[str],
+) -> dict[str, Any]:
+    return {
+        "manifest": manifest.as_record(),
+        "match": {
+            "score": _match_score(haystack, tokens),
+            "fields": _matched_fields(haystack, tokens),
+        },
+    }
+
+
+def _search_sort_key(item: dict[str, Any]) -> tuple[int, str]:
+    return (-item["match"]["score"], item["manifest"]["capability_id"])
+
+
+def _validate_metadata(raw: Any, errors: list[str]) -> str | None:
+    if not isinstance(raw, dict):
+        errors.append("metadata must be an object")
+        raw = {}
+    capability_id = raw.get("id")
+    if not isinstance(capability_id, str) or not capability_id.strip():
+        errors.append("metadata.id is required")
+        capability_id = None
+    if "title" in raw and not isinstance(raw.get("title"), str):
+        errors.append("metadata.title must be a string when present")
+    for field in ("labels", "annotations"):
+        value = raw.get(field, {})
+        if not isinstance(value, dict):
+            errors.append(f"metadata.{field} must be an object when present")
+    return capability_id
+
+
+def _validate_manifest_spec(
+    raw: Any,
+    errors: list[str],
+    warnings: list[str],
+    known_parser_refs: set[str] | None,
+) -> None:
+    if not isinstance(raw, dict):
+        errors.append("spec must be an object")
+        raw = {}
+    _validate_transport(raw.get("transport"), errors, warnings)
+    _validate_policy(raw.get("policy"), errors)
+    _validate_output(raw.get("output", {}), errors, warnings, known_parser_refs)
+
+
 def _validate_transport(raw: Any, errors: list[str], warnings: list[str]) -> None:
     if not isinstance(raw, dict):
         errors.append("spec.transport must be an object")
         return
-    kind = raw.get("kind")
+    _validate_transport_kind(raw.get("kind"), errors, warnings)
+    _validate_transport_command(raw.get("command"), errors)
+    _validate_transport_args_template(raw.get("argsTemplate", []), errors)
+    _validate_transport_cwd_policy(raw.get("cwdPolicy", "workspace"), errors)
+    _validate_transport_timeout(raw.get("timeoutSeconds", 30), errors)
+
+
+def _validate_transport_kind(kind: Any, errors: list[str], warnings: list[str]) -> None:
     if not isinstance(kind, str) or not kind:
         errors.append("spec.transport.kind is required")
     elif kind not in KNOWN_TRANSPORT_KINDS:
         errors.append(f"unsupported spec.transport.kind: {kind}")
     elif kind not in CURRENT_EXECUTOR_TRANSPORTS:
         warnings.append(f"transport kind is recognized but not executable in current MVP: {kind}")
-    command = raw.get("command")
+
+
+def _validate_transport_command(command: Any, errors: list[str]) -> None:
     if not isinstance(command, str) or not command.strip():
         errors.append("spec.transport.command is required")
-    args_template = raw.get("argsTemplate", [])
+
+
+def _validate_transport_args_template(args_template: Any, errors: list[str]) -> None:
     if not isinstance(args_template, list) or not all(isinstance(item, str) for item in args_template):
         errors.append("spec.transport.argsTemplate must be a list of strings when present")
-    cwd_policy = raw.get("cwdPolicy", "workspace")
+
+
+def _validate_transport_cwd_policy(cwd_policy: Any, errors: list[str]) -> None:
     if not isinstance(cwd_policy, str) or not cwd_policy:
         errors.append("spec.transport.cwdPolicy must be a string when present")
-    timeout = raw.get("timeoutSeconds", 30)
+
+
+def _validate_transport_timeout(timeout: Any, errors: list[str]) -> None:
     if not isinstance(timeout, int) or isinstance(timeout, bool) or timeout <= 0:
         errors.append("spec.transport.timeoutSeconds must be a positive integer when present")
 
@@ -335,13 +376,25 @@ def _validate_output(
     if not isinstance(raw, dict):
         errors.append("spec.output must be an object when present")
         return
-    parser_ref = raw.get("parserRef")
+    _validate_output_parser_ref(raw.get("parserRef"), errors, warnings, known_parser_refs)
+    _validate_output_verified(raw, errors, warnings)
+
+
+def _validate_output_parser_ref(
+    parser_ref: Any,
+    errors: list[str],
+    warnings: list[str],
+    known_parser_refs: set[str] | None,
+) -> None:
     if parser_ref is not None and not isinstance(parser_ref, str):
         errors.append("spec.output.parserRef must be a string when present")
     if isinstance(parser_ref, str) and known_parser_refs is not None and parser_ref not in known_parser_refs:
         errors.append(f"unknown spec.output.parserRef: {parser_ref}")
     if parser_ref is None:
         warnings.append("spec.output.parserRef is missing; raw.text parser will be used")
+
+
+def _validate_output_verified(raw: dict[str, Any], errors: list[str], warnings: list[str]) -> None:
     if "verified" in raw and not isinstance(raw.get("verified"), bool):
         errors.append("spec.output.verified must be a boolean when present")
     if raw.get("verified") is False:

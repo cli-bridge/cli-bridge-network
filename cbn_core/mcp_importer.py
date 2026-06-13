@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -11,112 +12,150 @@ from cbn.paths import resolve_project_paths
 from cbn_core.manifest import MANIFEST_API_VERSION, validate_manifest_dict
 
 
-def mcp_import_report(
-    tool_descriptor: dict[str, Any],
-    server_id: str,
-    adapter_command: str,
-    adapter_args: tuple[str, ...] = (),
-    capability_id: str | None = None,
-    title: str | None = None,
-    parser_ref: str = "raw.text",
-    verified: bool = False,
-    risk: str = "read",
-    requires_confirmation: bool = False,
-    network: str = "localhost",
-    timeout_seconds: int = 60,
-    write: bool = False,
-    output_path: Path | None = None,
-    known_parser_refs: set[str] | None = None,
-) -> dict[str, Any]:
+@dataclass(frozen=True)
+class McpManifestSpec:
+    tool: dict[str, Any]
+    server_id: str
+    adapter_command: str
+    adapter_args: tuple[str, ...] = ()
+    capability_id: str | None = None
+    title: str | None = None
+    parser_ref: str = "raw.text"
+    verified: bool = False
+    risk: str = "read"
+    requires_confirmation: bool = False
+    network: str = "localhost"
+    timeout_seconds: int = 60
+
+
+@dataclass(frozen=True)
+class McpImportRequest:
+    manifest: McpManifestSpec
+    write: bool = False
+    output_path: Path | None = None
+    known_parser_refs: set[str] | None = None
+
+
+def mcp_import_report(tool_descriptor: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
     """Return a ToolManifest import report for one external MCP tool."""
 
-    tool = normalize_mcp_tool_descriptor(tool_descriptor)
-    manifest = build_mcp_tool_manifest(
-        tool,
-        server_id=server_id,
-        adapter_command=adapter_command,
-        adapter_args=adapter_args,
-        capability_id=capability_id,
-        title=title,
-        parser_ref=parser_ref,
-        verified=verified,
-        risk=risk,
-        requires_confirmation=requires_confirmation,
-        network=network,
-        timeout_seconds=timeout_seconds,
-    )
-    target = output_path or _default_manifest_path(manifest["metadata"]["id"])
-    validation = validate_manifest_dict(manifest, source_path=target, known_parser_refs=known_parser_refs)
-    written = False
-    if write:
-        if not validation["valid"]:
-            return _report(manifest, target, validation, written=False, error="manifest validation failed")
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        written = True
-    return _report(manifest, target, validation, written=written)
+    request = mcp_import_request(tool_descriptor, **kwargs)
+    manifest = build_mcp_tool_manifest(request.manifest)
+    target = request.output_path or _default_manifest_path(manifest["metadata"]["id"])
+    validation = validate_manifest_dict(manifest, source_path=target, known_parser_refs=request.known_parser_refs)
+    written, error = _write_manifest(manifest, target, write=request.write, valid=bool(validation["valid"]))
+    return _report(manifest, target, validation, written=written, error=error)
 
 
-def build_mcp_tool_manifest(
-    tool: dict[str, Any],
-    server_id: str,
-    adapter_command: str,
-    adapter_args: tuple[str, ...],
-    capability_id: str | None,
-    title: str | None,
-    parser_ref: str,
-    verified: bool,
-    risk: str,
-    requires_confirmation: bool,
-    network: str,
-    timeout_seconds: int,
-) -> dict[str, Any]:
-    tool_name = tool["name"]
-    resolved_capability_id = capability_id or f"mcp.{_safe_id(server_id)}.{_safe_id(tool_name)}"
-    resolved_args = tuple(
-        arg.format(server_id=server_id, tool_name=tool_name, capability_id=resolved_capability_id)
-        for arg in adapter_args
+def mcp_import_request(tool_descriptor: dict[str, Any], **kwargs: Any) -> McpImportRequest:
+    manifest_keys = set(McpManifestSpec.__dataclass_fields__) - {"tool"}
+    request_keys = {"write", "output_path", "known_parser_refs"}
+    unknown = sorted(set(kwargs) - manifest_keys - request_keys)
+    if unknown:
+        raise TypeError(f"unknown MCP import option(s): {', '.join(unknown)}")
+    manifest_values = {key: kwargs[key] for key in manifest_keys if key in kwargs}
+    manifest_values["tool"] = normalize_mcp_tool_descriptor(tool_descriptor)
+    manifest_values["adapter_args"] = tuple(manifest_values.get("adapter_args", ()))
+    return McpImportRequest(
+        manifest=McpManifestSpec(**manifest_values),
+        write=bool(kwargs.get("write", False)),
+        output_path=kwargs.get("output_path"),
+        known_parser_refs=kwargs.get("known_parser_refs"),
     )
-    input_schema = tool.get("inputSchema", {})
+
+
+def build_mcp_tool_manifest(spec: McpManifestSpec) -> dict[str, Any]:
+    tool_name = spec.tool["name"]
+    resolved_capability_id = spec.capability_id or f"mcp.{_safe_id(spec.server_id)}.{_safe_id(tool_name)}"
     return {
         "apiVersion": MANIFEST_API_VERSION,
         "kind": "ToolManifest",
-        "metadata": {
-            "id": resolved_capability_id,
-            "title": title or str(tool.get("description") or tool_name),
-            "labels": {
-                "protocol": "mcp",
-                "mcp_server": server_id,
-                "mcp_tool": tool_name,
-            },
-            "annotations": {
-                "cbn.import.kind": "mcp-tool",
-                "cbn.external_protocol": "mcp",
-                "cbn.mcp.server_id": server_id,
-                "cbn.mcp.tool_name": tool_name,
-                "cbn.mcp.input_schema": json.dumps(input_schema, ensure_ascii=False, sort_keys=True),
-                "cbn.mcp.adapter_contract": "stdio/pty adapter command receives static argsTemplate plus cbn call extra_args",
-            },
+        "metadata": _mcp_metadata(
+            spec.tool,
+            server_id=spec.server_id,
+            capability_id=resolved_capability_id,
+            title=spec.title,
+        ),
+        "spec": _mcp_spec(spec, tool_name, resolved_capability_id),
+    }
+
+
+def _write_manifest(manifest: dict[str, Any], target: Path, *, write: bool, valid: bool) -> tuple[bool, str | None]:
+    if not write:
+        return False, None
+    if not valid:
+        return False, "manifest validation failed"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return True, None
+
+
+def _mcp_metadata(
+    tool: dict[str, Any],
+    *,
+    server_id: str,
+    capability_id: str,
+    title: str | None,
+) -> dict[str, Any]:
+    tool_name = tool["name"]
+    return {
+        "id": capability_id,
+        "title": title or str(tool.get("description") or tool_name),
+        "labels": {
+            "protocol": "mcp",
+            "mcp_server": server_id,
+            "mcp_tool": tool_name,
         },
-        "spec": {
-            "transport": {
-                "kind": "stdio",
-                "command": adapter_command,
-                "argsTemplate": list(resolved_args),
-                "cwdPolicy": "workspace",
-                "timeoutSeconds": timeout_seconds,
-            },
-            "policy": {
-                "risk": risk,
-                "requiresConfirmation": requires_confirmation,
-                "network": network,
-            },
-            "output": {
-                "parserRef": parser_ref,
-                "verified": verified,
-            },
+        "annotations": _mcp_annotations(tool, server_id=server_id),
+    }
+
+
+def _mcp_annotations(tool: dict[str, Any], *, server_id: str) -> dict[str, str]:
+    return {
+        "cbn.import.kind": "mcp-tool",
+        "cbn.external_protocol": "mcp",
+        "cbn.mcp.server_id": server_id,
+        "cbn.mcp.tool_name": tool["name"],
+        "cbn.mcp.input_schema": json.dumps(tool.get("inputSchema", {}), ensure_ascii=False, sort_keys=True),
+        "cbn.mcp.adapter_contract": "stdio/pty adapter command receives static argsTemplate plus cbn call extra_args",
+    }
+
+
+def _mcp_spec(spec: McpManifestSpec, tool_name: str, capability_id: str) -> dict[str, Any]:
+    return {
+        "transport": _mcp_transport(spec, tool_name, capability_id),
+        "policy": {
+            "risk": spec.risk,
+            "requiresConfirmation": spec.requires_confirmation,
+            "network": spec.network,
+        },
+        "output": {
+            "parserRef": spec.parser_ref,
+            "verified": spec.verified,
         },
     }
+
+
+def _mcp_transport(spec: McpManifestSpec, tool_name: str, capability_id: str) -> dict[str, Any]:
+    return {
+        "kind": "stdio",
+        "command": spec.adapter_command,
+        "argsTemplate": list(_resolved_adapter_args(spec.adapter_args, spec.server_id, tool_name, capability_id)),
+        "cwdPolicy": "workspace",
+        "timeoutSeconds": spec.timeout_seconds,
+    }
+
+
+def _resolved_adapter_args(
+    adapter_args: tuple[str, ...],
+    server_id: str,
+    tool_name: str,
+    capability_id: str,
+) -> tuple[str, ...]:
+    return tuple(
+        arg.format(server_id=server_id, tool_name=tool_name, capability_id=capability_id)
+        for arg in adapter_args
+    )
 
 
 def normalize_mcp_tool_descriptor(raw: dict[str, Any]) -> dict[str, Any]:

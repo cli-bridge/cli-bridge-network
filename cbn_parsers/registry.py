@@ -178,38 +178,47 @@ def parse_cli_anything_macrocli_backends(stdout: str, stderr: str) -> dict[str, 
     payload = json.loads(stdout)
     if not isinstance(payload, dict):
         raise ValueError("MacroCLI backends output must be a JSON object")
-    backends: list[dict[str, Any]] = []
-    available = 0
-    for key, value in sorted(payload.items()):
-        if not isinstance(value, dict):
-            raise ValueError(f"MacroCLI backend {key} must be an object")
-        name = value.get("name")
-        priority = value.get("priority")
-        is_available = value.get("available")
-        if not isinstance(name, str) or not name:
-            raise ValueError(f"MacroCLI backend {key} name must be a string")
-        if not isinstance(priority, int) or isinstance(priority, bool):
-            raise ValueError(f"MacroCLI backend {key} priority must be an integer")
-        if not isinstance(is_available, bool):
-            raise ValueError(f"MacroCLI backend {key} available must be a boolean")
-        if is_available:
-            available += 1
-        backends.append(
-            {
-                "id": key,
-                "name": name,
-                "priority": priority,
-                "available": is_available,
-            }
-        )
+    backends = [macrocli_backend_record(key, value) for key, value in sorted(payload.items())]
     data: dict[str, Any] = {
         "backend_count": len(backends),
-        "available_count": available,
+        "available_count": sum(1 for backend in backends if backend["available"]),
         "backends": backends,
     }
     if stderr.strip():
         data["stderr"] = stderr
     return data
+
+
+def macrocli_backend_record(key: str, value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError(f"MacroCLI backend {key} must be an object")
+    return {
+        "id": key,
+        "name": _macrocli_backend_name(key, value),
+        "priority": _macrocli_backend_priority(key, value),
+        "available": _macrocli_backend_available(key, value),
+    }
+
+
+def _macrocli_backend_name(key: str, value: dict[str, Any]) -> str:
+    name = value.get("name")
+    if isinstance(name, str) and name:
+        return name
+    raise ValueError(f"MacroCLI backend {key} name must be a string")
+
+
+def _macrocli_backend_priority(key: str, value: dict[str, Any]) -> int:
+    priority = value.get("priority")
+    if isinstance(priority, int) and not isinstance(priority, bool):
+        return priority
+    raise ValueError(f"MacroCLI backend {key} priority must be an integer")
+
+
+def _macrocli_backend_available(key: str, value: dict[str, Any]) -> bool:
+    is_available = value.get("available")
+    if isinstance(is_available, bool):
+        return is_available
+    raise ValueError(f"MacroCLI backend {key} available must be a boolean")
 
 
 def parse_direct_cli_typed(stdout: str, stderr: str) -> dict[str, Any]:
@@ -247,12 +256,7 @@ def parse_direct_cli_typed(stdout: str, stderr: str) -> dict[str, Any]:
 def _parse_direct_cli_json(payload: dict[str, Any]) -> dict[str, Any]:
     data: dict[str, Any] = {"json": payload}
     if isinstance(payload.get("version"), str):
-        data["profile"] = "jimeng" if "commit" in payload else "unknown"
-        data["version"] = payload["version"]
-        if isinstance(payload.get("commit"), str):
-            data["commit"] = payload["commit"]
-        if isinstance(payload.get("build_time"), str):
-            data["build_time"] = payload["build_time"]
+        data.update(_parse_direct_cli_version_payload(payload))
         return data
 
     if _looks_like_jimeng_task_payload(payload):
@@ -260,58 +264,77 @@ def _parse_direct_cli_json(payload: dict[str, Any]) -> dict[str, Any]:
         return data
 
     if "healthy" in payload:
-        healthy = bool(payload.get("healthy"))
-        data.update(
-            {
-                "profile": "caw",
-                "action": "status",
-                "healthy": healthy,
-                "ready": healthy,
-                "setup_required": not healthy,
-                "error_type": None if healthy else "service_unhealthy",
-                "next_action": None if healthy else "configure Cobo Agentic Wallet API URL/key or local service pairing",
-            }
-        )
-        if isinstance(payload.get("healthy_error"), str):
-            data["healthy_error"] = payload["healthy_error"]
+        data.update(_parse_caw_status_payload(payload))
         return data
 
     if any(key in payload for key in ("cli_version", "cli_update", "config_file")):
-        checks = _doctor_checks_from_json(payload)
-        failed = [item for item in checks if item["status"] != "pass"]
-        config_missing = any(item["name"] == "config_file" and "not configured" in item.get("message", "") for item in failed)
-        data.update(
-            {
-                "profile": "feishu",
-                "action": "doctor",
-                "checks": checks,
-                "ready": not failed,
-                "setup_required": bool(failed),
-                "error_type": "config_missing" if config_missing else "doctor_failed" if failed else None,
-                "next_action": None
-                if not failed
-                else "run lark-cli config init --new and complete Feishu/Lark CLI configuration",
-            }
-        )
+        data.update(_parse_feishu_doctor_payload(payload))
         return data
 
     if "ok" in payload or "status" in payload:
-        ok = payload.get("ok")
-        status = payload.get("status")
-        ready = bool(ok) if isinstance(ok, bool) else status in {"ok", "running", "ready", "healthy"}
-        data.update(
-            {
-                "profile": "obsidian-cli",
-                "action": "local-rest-server-status",
-                "ready": ready,
-                "setup_required": not ready,
-                "error_type": None if ready else "local_rest_unavailable",
-                "next_action": None if ready else "start Obsidian and configure the Local REST API plugin/API key",
-            }
-        )
+        data.update(_parse_obsidian_status_payload(payload))
         return data
 
     return data
+
+
+def _parse_direct_cli_version_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    data: dict[str, Any] = {
+        "profile": "jimeng" if "commit" in payload else "unknown",
+        "version": payload["version"],
+    }
+    if isinstance(payload.get("commit"), str):
+        data["commit"] = payload["commit"]
+    if isinstance(payload.get("build_time"), str):
+        data["build_time"] = payload["build_time"]
+    return data
+
+
+def _parse_caw_status_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    healthy = bool(payload.get("healthy"))
+    data: dict[str, Any] = {
+        "profile": "caw",
+        "action": "status",
+        "healthy": healthy,
+        "ready": healthy,
+        "setup_required": not healthy,
+        "error_type": None if healthy else "service_unhealthy",
+        "next_action": None if healthy else "configure Cobo Agentic Wallet API URL/key or local service pairing",
+    }
+    if isinstance(payload.get("healthy_error"), str):
+        data["healthy_error"] = payload["healthy_error"]
+    return data
+
+
+def _parse_feishu_doctor_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    checks = _doctor_checks_from_json(payload)
+    failed = [item for item in checks if item["status"] != "pass"]
+    config_missing = any(item["name"] == "config_file" and "not configured" in item.get("message", "") for item in failed)
+    return {
+        "profile": "feishu",
+        "action": "doctor",
+        "checks": checks,
+        "ready": not failed,
+        "setup_required": bool(failed),
+        "error_type": "config_missing" if config_missing else "doctor_failed" if failed else None,
+        "next_action": None
+        if not failed
+        else "run lark-cli config init --new and complete Feishu/Lark CLI configuration",
+    }
+
+
+def _parse_obsidian_status_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    ok = payload.get("ok")
+    status = payload.get("status")
+    ready = bool(ok) if isinstance(ok, bool) else status in {"ok", "running", "ready", "healthy"}
+    return {
+        "profile": "obsidian-cli",
+        "action": "local-rest-server-status",
+        "ready": ready,
+        "setup_required": not ready,
+        "error_type": None if ready else "local_rest_unavailable",
+        "next_action": None if ready else "start Obsidian and configure the Local REST API plugin/API key",
+    }
 
 
 def _looks_like_jimeng_task_payload(payload: dict[str, Any]) -> bool:
@@ -332,15 +355,9 @@ def _looks_like_jimeng_task_payload(payload: dict[str, Any]) -> bool:
 def _parse_jimeng_task_payload(payload: dict[str, Any]) -> dict[str, Any]:
     submit_id = _first_string(payload, ("submit_id", "task_id", "id"))
     status = _first_string(payload, ("task_status", "status", "state"))
-    result_urls = _string_list(
-        payload.get("result_urls")
-        or payload.get("image_urls")
-        or payload.get("video_urls")
-        or payload.get("outputs")
-        or payload.get("urls")
-    )
-    failed = status.lower() in {"failed", "failure", "error", "canceled", "cancelled"}
-    finished = status.lower() in {"succeeded", "success", "done", "completed", "finished"}
+    result_urls = _jimeng_result_urls(payload)
+    failed = _jimeng_status_failed(status)
+    finished = _jimeng_status_finished(status)
     action = "query-result" if status or result_urls else "text2image-submit"
     data: dict[str, Any] = {
         "profile": "jimeng",
@@ -357,6 +374,26 @@ def _parse_jimeng_task_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if submit_id:
         data["submit_id"] = submit_id
     return data
+
+
+def _jimeng_result_urls(payload: dict[str, Any]) -> list[str]:
+    return _string_list(_first_present(payload, ("result_urls", "image_urls", "video_urls", "outputs", "urls")))
+
+
+def _first_present(payload: dict[str, Any], keys: tuple[str, ...]) -> Any:
+    for key in keys:
+        value = payload.get(key)
+        if value:
+            return value
+    return None
+
+
+def _jimeng_status_failed(status: str) -> bool:
+    return status.lower() in {"failed", "failure", "error", "canceled", "cancelled"}
+
+
+def _jimeng_status_finished(status: str) -> bool:
+    return status.lower() in {"succeeded", "success", "done", "completed", "finished"}
 
 
 def _first_string(payload: dict[str, Any], keys: tuple[str, ...]) -> str:
@@ -377,56 +414,74 @@ def _string_list(value: Any) -> list[str]:
 
 def _parse_direct_cli_text(text: str) -> dict[str, Any]:
     lower = text.lower()
-    data: dict[str, Any] = {}
+    for parser in (
+        _parse_feishu_text,
+        _parse_jimeng_text,
+        _parse_caw_text,
+        _parse_obsidian_text,
+    ):
+        data = parser(text, lower)
+        if data:
+            return data
+    return {}
+
+
+def _parse_feishu_text(text: str, lower: str) -> dict[str, Any]:
     if "lark-cli version" in lower:
-        data.update({"profile": "feishu", "action": "version", "version": text.splitlines()[0].strip()})
-    elif "lark/feishu cli tool" in lower:
-        data.update({"profile": "feishu", "action": "help", "commands": _extract_command_names(text)})
-    elif "lark-cli" in lower and "schema" in lower:
-        data.update({"profile": "feishu", "action": "schema-help", "commands": _extract_command_names(text)})
-    elif "cli version" in lower and "config_file" in lower:
-        data.update(
-            {
-                "profile": "feishu",
-                "action": "doctor",
-                "ready": False,
-                "setup_required": True,
-                "error_type": "config_missing" if "not configured" in lower else "doctor_failed",
-                "next_action": "run lark-cli config init --new and complete Feishu/Lark CLI configuration",
-                "checks": _extract_feishu_doctor_checks(text),
-            }
-        )
-    elif "dreamina official aigc cli tool" in lower:
-        data.update({"profile": "jimeng", "action": "help", "commands": _extract_command_names(text)})
-    elif "未检测到有效登录态" in text or "dreamina login" in lower:
-        data.update(
-            {
-                "profile": "jimeng",
-                "ready": False,
-                "setup_required": True,
-                "error_type": "auth_required",
-                "next_action": "run dreamina login and complete OAuth/device login before live API calls",
-            }
-        )
-    elif "cobo agentic wallet" in lower:
+        return {"profile": "feishu", "action": "version", "version": text.splitlines()[0].strip()}
+    if "lark/feishu cli tool" in lower:
+        return {"profile": "feishu", "action": "help", "commands": _extract_command_names(text)}
+    if "lark-cli" in lower and "schema" in lower:
+        return {"profile": "feishu", "action": "schema-help", "commands": _extract_command_names(text)}
+    if "cli version" in lower and "config_file" in lower:
+        return {
+            "profile": "feishu",
+            "action": "doctor",
+            "ready": False,
+            "setup_required": True,
+            "error_type": "config_missing" if "not configured" in lower else "doctor_failed",
+            "next_action": "run lark-cli config init --new and complete Feishu/Lark CLI configuration",
+            "checks": _extract_feishu_doctor_checks(text),
+        }
+    return {}
+
+
+def _parse_jimeng_text(text: str, lower: str) -> dict[str, Any]:
+    if "dreamina official aigc cli tool" in lower:
+        return {"profile": "jimeng", "action": "help", "commands": _extract_command_names(text)}
+    if "未检测到有效登录态" in text or "dreamina login" in lower:
+        return {
+            "profile": "jimeng",
+            "ready": False,
+            "setup_required": True,
+            "error_type": "auth_required",
+            "next_action": "run dreamina login and complete OAuth/device login before live API calls",
+        }
+    return {}
+
+
+def _parse_caw_text(text: str, lower: str) -> dict[str, Any]:
+    if "cobo agentic wallet" in lower:
         action = "schema-help" if "schema" in lower and "available commands" not in lower else "help"
-        data.update({"profile": "caw", "action": action, "commands": _extract_command_names(text)})
-    elif text.strip().startswith("v") and any(ch.isdigit() for ch in text):
-        data.update({"profile": "caw", "action": "version", "version": text.splitlines()[0].strip()})
-    elif "cli-anything-obsidian" in lower or "usage:" in lower and "obsidian" in lower:
+        return {"profile": "caw", "action": action, "commands": _extract_command_names(text)}
+    if text.strip().startswith("v") and any(ch.isdigit() for ch in text):
+        return {"profile": "caw", "action": "version", "version": text.splitlines()[0].strip()}
+    return {}
+
+
+def _parse_obsidian_text(text: str, lower: str) -> dict[str, Any]:
+    if "cli-anything-obsidian" in lower or "usage:" in lower and "obsidian" in lower:
         action = "official-help" if "cli-anything-obsidian" not in lower else "help"
-        data.update({"profile": "obsidian-cli", "action": action, "commands": _extract_command_names(text)})
-    elif "obsidian" in lower and ("not running" in lower or "connection" in lower or "api key" in lower):
-        data.update(
-            {
-                "profile": "obsidian-cli",
-                "ready": False,
-                "setup_required": True,
-                "error_type": "local_rest_unavailable",
-                "next_action": "start Obsidian and configure the Local REST API plugin/API key",
-            }
-        )
-    return data
+        return {"profile": "obsidian-cli", "action": action, "commands": _extract_command_names(text)}
+    if "obsidian" in lower and ("not running" in lower or "connection" in lower or "api key" in lower):
+        return {
+            "profile": "obsidian-cli",
+            "ready": False,
+            "setup_required": True,
+            "error_type": "local_rest_unavailable",
+            "next_action": "start Obsidian and configure the Local REST API plugin/API key",
+        }
+    return {}
 
 
 def _extract_command_names(text: str) -> list[str]:

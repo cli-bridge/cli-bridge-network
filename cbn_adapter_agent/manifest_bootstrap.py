@@ -25,34 +25,47 @@ def build_manifest_bootstrap_plan(
         "apiVersion": "bridge.dev/v1alpha1",
         "ok": batch["ok"],
         "agent_role": get_agent_role("manifest-bootstrap-agent"),
-        "agent_policy": {
-            "role": "manifest-bootstrap-agent",
-            "plans_probes_only": True,
-            "installs_tools": False,
-            "runs_workflow_tasks": False,
-            "writes_adapter_lock": False,
-            "acceptance_required_before_promotion": True,
-        },
+        "agent_policy": _manifest_bootstrap_policy(),
         "profile_scope": list(profile_ids),
-        "summary": {
-            **batch["summary"],
-            "setup_guide_count": sum(item["setup_guide_count"] for item in profile_summaries),
-            "unverified_capability_count": sum(
-                len(item["unverified_capabilities"]) for item in profile_summaries
-            ),
-        },
+        "summary": _manifest_bootstrap_summary(batch["summary"], profile_summaries),
         "profile_summaries": profile_summaries,
-        "handoff": {
-            "from": "manifest-bootstrap-agent",
-            "to": "workflow-setup-agent",
-            "artifact": "accepted CapabilityManifest registry plus adapter.lock preview",
-            "requires_user_acceptance": True,
-        },
+        "handoff": _manifest_bootstrap_handoff(),
         "next_actions": _next_actions(profile_summaries),
     }
     if include_drafts:
         payload["drafts"] = batch["drafts"]
     return payload
+
+
+def _manifest_bootstrap_policy() -> dict[str, Any]:
+    return {
+        "role": "manifest-bootstrap-agent",
+        "plans_probes_only": True,
+        "installs_tools": False,
+        "runs_workflow_tasks": False,
+        "writes_adapter_lock": False,
+        "acceptance_required_before_promotion": True,
+    }
+
+
+def _manifest_bootstrap_summary(
+    batch_summary: dict[str, Any],
+    profile_summaries: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        **batch_summary,
+        "setup_guide_count": sum(item["setup_guide_count"] for item in profile_summaries),
+        "unverified_capability_count": sum(len(item["unverified_capabilities"]) for item in profile_summaries),
+    }
+
+
+def _manifest_bootstrap_handoff() -> dict[str, Any]:
+    return {
+        "from": "manifest-bootstrap-agent",
+        "to": "workflow-setup-agent",
+        "artifact": "accepted CapabilityManifest registry plus adapter.lock preview",
+        "requires_user_acceptance": True,
+    }
 
 
 def _profile_summary(draft: dict[str, Any]) -> dict[str, Any]:

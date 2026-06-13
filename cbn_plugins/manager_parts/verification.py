@@ -54,34 +54,36 @@ def verification_report_for_plan(
         _verification_check(command, run=run, timeout_seconds=timeout_seconds)
         for command in plan.verification_commands
     ]
-    unsafe_count = sum(1 for check in checks if not check["safe_to_run"])
-    executed_count = sum(1 for check in checks if check["status"] == "completed")
-    failed_count = sum(1 for check in checks if check["status"] == "failed")
-    blocked_count = sum(1 for check in checks if check["status"] == "blocked")
+    summary = verification_check_summary(checks)
     report = {
-        "ok": unsafe_count == 0 and failed_count == 0 and blocked_count == 0,
+        "ok": summary["unsafe_count"] == 0 and summary["failed_count"] == 0 and summary["blocked_count"] == 0,
         "kind": report_kind,
         "plugin_api_version": "cbn.plugin.v1",
         "plugin_id": plan.plugin_id,
         "action": plan.action,
         "run": run,
         "timeout_seconds": timeout_seconds,
-        "ready_to_run": unsafe_count == 0,
+        "ready_to_run": summary["unsafe_count"] == 0,
         "plan": plan.as_dict(),
-        "summary": {
-            "check_count": len(checks),
-            "safe_count": len(checks) - unsafe_count,
-            "unsafe_count": unsafe_count,
-            "executed_count": executed_count,
-            "failed_count": failed_count,
-            "blocked_count": blocked_count,
-        },
+        "summary": summary,
         "checks": checks,
         "next_commands": list(next_commands),
     }
     if extra:
         report.update(extra)
     return report
+
+
+def verification_check_summary(checks: list[dict[str, Any]]) -> dict[str, int]:
+    unsafe_count = sum(1 for check in checks if not check["safe_to_run"])
+    return {
+        "check_count": len(checks),
+        "safe_count": len(checks) - unsafe_count,
+        "unsafe_count": unsafe_count,
+        "executed_count": sum(1 for check in checks if check["status"] == "completed"),
+        "failed_count": sum(1 for check in checks if check["status"] == "failed"),
+        "blocked_count": sum(1 for check in checks if check["status"] == "blocked"),
+    }
 
 
 def _verification_check(command: str, run: bool, timeout_seconds: int) -> dict[str, Any]:
@@ -147,13 +149,20 @@ def _is_read_only_cbn_verification(argv: tuple[str, ...]) -> tuple[bool, str]:
     tail = argv[4:]
     if command == "plugin":
         return _is_read_only_plugin_verification(tail)
+    read_only = _read_only_cbn_subcommand(command, tail)
+    if read_only:
+        return read_only
+    return False, f"unsupported verification subcommand: {command}"
+
+
+def _read_only_cbn_subcommand(command: str, tail: tuple[str, ...]) -> tuple[bool, str] | None:
     if command == "runtime" and len(tail) >= 2 and tail[0] == "transport":
         return True, "runtime transport status is read-only"
     if command == "protocol" and tail and tail[0] in {"smoke-suite", "readiness", "wire-conformance"}:
         return True, "protocol verification is read-only"
     if command == "call" and "--dry-run" in tail:
         return True, "capability dry-run is read-only"
-    return False, f"unsupported verification subcommand: {command}"
+    return None
 
 
 def _is_read_only_plugin_verification(tail: tuple[str, ...]) -> tuple[bool, str]:

@@ -57,6 +57,33 @@ def _build_workflow_setup_payload(
     kind: str,
     compatibility: dict[str, str] | None,
 ) -> dict[str, Any]:
+    graph, registry, root_path = _load_workflow_setup_context(workflow_path, root)
+    tasks, setup_guides = _workflow_setup_rows(graph, registry, workflow_path, root_path)
+    blocking_tasks = [task for task in tasks if task["auth_setup_required"]]
+    input_blocking_tasks = [task for task in tasks if task["missing_runtime_inputs"]]
+    payload: dict[str, Any] = {
+        "kind": kind,
+        "apiVersion": "bridge.dev/v1alpha1",
+        "agent_role": get_agent_role("workflow-setup-agent"),
+        "agent_policy": _agent_policy(),
+        "workflow": _workflow_summary(graph, workflow_path, len(tasks)),
+        "ok": not blocking_tasks and not input_blocking_tasks,
+        "status": _plan_status(blocking_tasks, input_blocking_tasks),
+        "tasks": tasks,
+        "setup_guides": setup_guides,
+        "summary": _setup_summary(tasks, setup_guides, blocking_tasks, input_blocking_tasks),
+        "handoff": _handoff(),
+        "continuation": _continuation(workflow_path, blocking_tasks, input_blocking_tasks),
+    }
+    if compatibility is not None:
+        payload["compatibility"] = compatibility
+    return payload
+
+
+def _load_workflow_setup_context(
+    workflow_path: Path,
+    root: Path | None,
+) -> tuple[WorkflowGraph, ManifestRegistry, Path]:
     paths = resolve_project_paths(root)
     source_path = workflow_path if workflow_path.is_absolute() else paths.root / workflow_path
     graph = WorkflowGraph.from_file(source_path)
@@ -64,12 +91,20 @@ def _build_workflow_setup_payload(
     registry = ManifestRegistry()
     registry.load_dir(paths.manifests)
     registry.load_dir(paths.local_manifests, replace=True)
+    return graph, registry, paths.root
 
+
+def _workflow_setup_rows(
+    graph: WorkflowGraph,
+    registry: ManifestRegistry,
+    workflow_path: Path,
+    root_path: Path,
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     tasks = []
     setup_by_id: dict[str, dict[str, object]] = {}
     for task in graph.topological_order():
         manifest = registry.require(task.uses)
-        guide = build_auth_setup_guide(manifest, workflow_path=workflow_path, root=paths.root)
+        guide = build_auth_setup_guide(manifest, workflow_path=workflow_path, root=root_path)
         runtime_inputs = runtime_input_requirements(manifest)
         missing_runtime_inputs = _missing_runtime_inputs(task, runtime_inputs)
         setup_id = None
@@ -77,70 +112,87 @@ def _build_workflow_setup_payload(
             setup = guide.as_dict()
             setup_id = str(setup["setup_id"])
             setup_by_id.setdefault(setup_id, setup)
-        tasks.append(
-            {
-                "task_id": task.task_id,
-                "uses": task.uses,
-                "title": manifest.title,
-                "risk": manifest.policy.risk,
-                "network": manifest.policy.network,
-                "requires_confirmation": manifest.policy.requires_confirmation,
-                "auth_setup_required": auth_setup_required(manifest),
-                "auth_setup_id": setup_id,
-                "auth_gate": manifest.annotations.get("cbn.auth_gate"),
-                "runtime_inputs": runtime_inputs,
-                "missing_runtime_inputs": missing_runtime_inputs,
-                "status": _task_status(setup_id=setup_id, missing_runtime_inputs=missing_runtime_inputs),
-            }
-        )
+        tasks.append(_task_row(task, manifest, runtime_inputs, missing_runtime_inputs, setup_id))
+    return tasks, list(setup_by_id.values())
 
-    setup_guides = list(setup_by_id.values())
-    blocking_tasks = [task for task in tasks if task["auth_setup_required"]]
-    input_blocking_tasks = [task for task in tasks if task["missing_runtime_inputs"]]
-    payload: dict[str, Any] = {
-        "kind": kind,
-        "apiVersion": "bridge.dev/v1alpha1",
-        "agent_role": get_agent_role("workflow-setup-agent"),
-        "agent_policy": {
-            "role": "workflow-setup-agent",
-            "drafts_manifests": False,
-            "installs_tools": False,
-            "runs_workflow_tasks": False,
-            "collects_secrets_in_chat": False,
-            "requires_accepted_manifests": True,
-        },
-        "workflow": {
-            "workflow_id": graph.workflow_id,
-            "title": graph.title,
-            "path": str(workflow_path),
-            "task_count": len(tasks),
-        },
-        "ok": not blocking_tasks and not input_blocking_tasks,
-        "status": _plan_status(blocking_tasks, input_blocking_tasks),
-        "tasks": tasks,
-        "setup_guides": setup_guides,
-        "summary": {
-            "task_count": len(tasks),
-            "setup_count": len(setup_guides),
-            "blocking_task_count": len(blocking_tasks),
-            "input_blocking_task_count": len(input_blocking_tasks),
-            "requires_confirmation_count": sum(1 for task in tasks if task["requires_confirmation"]),
-        },
-        "handoff": {
-            "from": "manifest-bootstrap-agent",
-            "to": "workflow-setup-agent",
-            "requires": "accepted CapabilityManifest registry",
-            "produces": "setup gates and resume command for orchestration-coordinator-agent",
-        },
-        "continuation": {
-            "mode": "manual_resume_after_setup" if blocking_tasks or input_blocking_tasks else "ready_to_run",
-            "command": ["python", "-m", "cbn", "workflow", "run", str(workflow_path), "--yes"],
-            "note": "Complete setup_guides and missing_runtime_inputs first; then resume with the command above.",
-        },
+
+def _task_row(
+    task: object,
+    manifest: object,
+    runtime_inputs: list[dict[str, object]],
+    missing_runtime_inputs: list[dict[str, object]],
+    setup_id: str | None,
+) -> dict[str, object]:
+    return {
+        "task_id": task.task_id,  # type: ignore[attr-defined]
+        "uses": task.uses,  # type: ignore[attr-defined]
+        "title": manifest.title,  # type: ignore[attr-defined]
+        "risk": manifest.policy.risk,  # type: ignore[attr-defined]
+        "network": manifest.policy.network,  # type: ignore[attr-defined]
+        "requires_confirmation": manifest.policy.requires_confirmation,  # type: ignore[attr-defined]
+        "auth_setup_required": auth_setup_required(manifest),  # type: ignore[arg-type]
+        "auth_setup_id": setup_id,
+        "auth_gate": manifest.annotations.get("cbn.auth_gate"),  # type: ignore[attr-defined]
+        "runtime_inputs": runtime_inputs,
+        "missing_runtime_inputs": missing_runtime_inputs,
+        "status": _task_status(setup_id=setup_id, missing_runtime_inputs=missing_runtime_inputs),
     }
-    if compatibility is not None:
-        payload["compatibility"] = compatibility
-    return payload
+
+
+def _agent_policy() -> dict[str, object]:
+    return {
+        "role": "workflow-setup-agent",
+        "drafts_manifests": False,
+        "installs_tools": False,
+        "runs_workflow_tasks": False,
+        "collects_secrets_in_chat": False,
+        "requires_accepted_manifests": True,
+    }
+
+
+def _workflow_summary(graph: WorkflowGraph, workflow_path: Path, task_count: int) -> dict[str, object]:
+    return {
+        "workflow_id": graph.workflow_id,
+        "title": graph.title,
+        "path": str(workflow_path),
+        "task_count": task_count,
+    }
+
+
+def _setup_summary(
+    tasks: list[dict[str, object]],
+    setup_guides: list[dict[str, object]],
+    blocking_tasks: list[dict[str, object]],
+    input_blocking_tasks: list[dict[str, object]],
+) -> dict[str, object]:
+    return {
+        "task_count": len(tasks),
+        "setup_count": len(setup_guides),
+        "blocking_task_count": len(blocking_tasks),
+        "input_blocking_task_count": len(input_blocking_tasks),
+        "requires_confirmation_count": sum(1 for task in tasks if task["requires_confirmation"]),
+    }
+
+
+def _handoff() -> dict[str, str]:
+    return {
+        "from": "manifest-bootstrap-agent",
+        "to": "workflow-setup-agent",
+        "requires": "accepted CapabilityManifest registry",
+        "produces": "setup gates and resume command for orchestration-coordinator-agent",
+    }
+
+
+def _continuation(
+    workflow_path: Path,
+    blocking_tasks: list[dict[str, object]],
+    input_blocking_tasks: list[dict[str, object]],
+) -> dict[str, object]:
+    return {
+        "mode": "manual_resume_after_setup" if blocking_tasks or input_blocking_tasks else "ready_to_run",
+        "command": ["python", "-m", "cbn", "workflow", "run", str(workflow_path), "--yes"],
+        "note": "Complete setup_guides and missing_runtime_inputs first; then resume with the command above.",
+    }
 
 
 def _missing_runtime_inputs(task: object, requirements: list[dict[str, object]]) -> list[dict[str, object]]:

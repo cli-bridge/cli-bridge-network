@@ -35,88 +35,107 @@ class WorkflowRunner:
     ) -> dict[str, Any]:
         graph.validate()
         run_id = str(uuid.uuid4())
-        self._audit("workflow.started", run_id, graph.workflow_id, {"dry_run": dry_run})
-        self._publish(EventType.WORKFLOW_STARTED, graph.workflow_id, {"dry_run": dry_run}, run_id)
+        self._start_run(run_id, graph.workflow_id, dry_run)
+        tasks, status, stopped_by = self._run_tasks(
+            run_id,
+            graph,
+            graph.topological_order(),
+            dry_run,
+            confirmed,
+        )
+        payload = _workflow_payload(run_id, graph.workflow_id, status, stopped_by, tasks)
+        self._complete_run(run_id, graph.workflow_id, payload)
+        return payload
+
+    def _start_run(self, run_id: str, workflow_id: str, dry_run: bool) -> None:
+        payload = {"dry_run": dry_run}
+        self._audit("workflow.started", run_id, workflow_id, payload)
+        self._publish(EventType.WORKFLOW_STARTED, workflow_id, payload, run_id)
+
+    def _complete_run(
+        self,
+        run_id: str,
+        workflow_id: str,
+        payload: dict[str, Any],
+    ) -> None:
+        self._audit("workflow.completed", run_id, workflow_id, payload)
+        self._publish(EventType.WORKFLOW_COMPLETED, workflow_id, payload, run_id)
+
+    def _run_tasks(
+        self,
+        run_id: str,
+        graph: WorkflowGraph,
+        ordered_tasks: list[TaskNode],
+        dry_run: bool,
+        confirmed: bool,
+    ) -> tuple[list[dict[str, Any]], str, str | None]:
         task_results: list[dict[str, Any]] = []
         results_by_task: dict[str, dict[str, Any]] = {}
-        status = "completed"
-        stopped_by: str | None = None
-
-        ordered_tasks = graph.topological_order()
         for index, task in enumerate(ordered_tasks):
             try:
-                resolved_args = self._resolve_args(task, results_by_task)
-            except (KeyError, ValueError, TypeError) as exc:
-                status = "failed"
-                stopped_by = task.task_id
-                task_result = _failed_task_result(
-                    task,
-                    error_kind="args_resolution_failed",
-                    error=str(exc),
-                    recovery_action="fix_args_from_selector",
-                )
-                task_results.append(task_result)
-                results_by_task[task.task_id] = task_result
-                self._publish(
-                    EventType.WORKFLOW_TASK_COMPLETED,
-                    graph.workflow_id,
-                    task_result,
+                task_result = self._execute_task(
                     run_id,
+                    graph.workflow_id,
+                    task,
+                    results_by_task,
+                    dry_run,
+                    confirmed,
                 )
-                task_results.extend(_skipped_downstream_tasks(ordered_tasks[index + 1 :], stopped_by))
-                break
-            self._publish(
-                EventType.WORKFLOW_TASK_STARTED,
-                graph.workflow_id,
-                {"task": task.as_dict(), "resolved_args": list(resolved_args)},
-                run_id,
-            )
-            result = self.executor.call(
-                task.uses,
-                extra_args=resolved_args,
-                dry_run=dry_run or task.dry_run,
-                confirmed=confirmed,
-                approval_id=task.approval_id,
-            )
-            task_result = {
-                "task_id": task.task_id,
-                "uses": task.uses,
-                "status": _task_status(result),
-                "attempt": 1,
-                "resolved_args": list(resolved_args),
-                "result": result,
-                "recovery": _task_recovery(result),
-            }
+            except (KeyError, ValueError, TypeError) as exc:
+                failed = self._args_failure_task(run_id, graph.workflow_id, task, exc)
+                task_results.append(failed)
+                task_results.extend(_skipped_downstream_tasks(ordered_tasks[index + 1 :], task.task_id))
+                return task_results, "failed", task.task_id
             task_results.append(task_result)
             results_by_task[task.task_id] = task_result
-            self._publish(
-                EventType.WORKFLOW_TASK_COMPLETED,
-                graph.workflow_id,
-                task_result,
-                run_id,
-            )
-            if not result.get("allowed"):
-                status = "blocked"
-                stopped_by = task.task_id
-                task_results.extend(_skipped_downstream_tasks(ordered_tasks[index + 1 :], stopped_by))
-                break
-            if not result.get("ok"):
-                status = "failed"
-                stopped_by = task.task_id
-                task_results.extend(_skipped_downstream_tasks(ordered_tasks[index + 1 :], stopped_by))
-                break
+            stop_status = _workflow_stop_status(task_result["result"])
+            if stop_status is not None:
+                task_results.extend(_skipped_downstream_tasks(ordered_tasks[index + 1 :], task.task_id))
+                return task_results, stop_status, task.task_id
+        return task_results, "completed", None
 
-        payload = {
-            "run_id": run_id,
-            "workflow_id": graph.workflow_id,
-            "status": status,
-            "summary": _workflow_summary(task_results),
-            "recovery": _workflow_recovery(status, stopped_by, task_results),
-            "tasks": task_results,
-        }
-        self._audit("workflow.completed", run_id, graph.workflow_id, payload)
-        self._publish(EventType.WORKFLOW_COMPLETED, graph.workflow_id, payload, run_id)
-        return payload
+    def _execute_task(
+        self,
+        run_id: str,
+        workflow_id: str,
+        task: TaskNode,
+        results_by_task: dict[str, dict[str, Any]],
+        dry_run: bool,
+        confirmed: bool,
+    ) -> dict[str, Any]:
+        resolved_args = self._resolve_args(task, results_by_task)
+        self._publish(
+            EventType.WORKFLOW_TASK_STARTED,
+            workflow_id,
+            {"task": task.as_dict(), "resolved_args": list(resolved_args)},
+            run_id,
+        )
+        result = self.executor.call(
+            task.uses,
+            extra_args=resolved_args,
+            dry_run=dry_run or task.dry_run,
+            confirmed=confirmed,
+            approval_id=task.approval_id,
+        )
+        task_result = _task_result(task, resolved_args, result)
+        self._publish(EventType.WORKFLOW_TASK_COMPLETED, workflow_id, task_result, run_id)
+        return task_result
+
+    def _args_failure_task(
+        self,
+        run_id: str,
+        workflow_id: str,
+        task: TaskNode,
+        error: Exception,
+    ) -> dict[str, Any]:
+        task_result = _failed_task_result(
+            task,
+            error_kind="args_resolution_failed",
+            error=str(error),
+            recovery_action="fix_args_from_selector",
+        )
+        self._publish(EventType.WORKFLOW_TASK_COMPLETED, workflow_id, task_result, run_id)
+        return task_result
 
     def _resolve_args(
         self,
@@ -171,6 +190,30 @@ def _task_status(result: dict[str, Any]) -> str:
         if isinstance(data, dict) and data.get("setup_required"):
             return "setup_required"
     return "failed"
+
+
+def _task_result(
+    task: TaskNode,
+    resolved_args: tuple[str, ...],
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "task_id": task.task_id,
+        "uses": task.uses,
+        "status": _task_status(result),
+        "attempt": 1,
+        "resolved_args": list(resolved_args),
+        "result": result,
+        "recovery": _task_recovery(result),
+    }
+
+
+def _workflow_stop_status(result: dict[str, Any]) -> str | None:
+    if not result.get("allowed"):
+        return "blocked"
+    if not result.get("ok"):
+        return "failed"
+    return None
 
 
 def _task_recovery(result: dict[str, Any]) -> dict[str, Any]:
@@ -294,6 +337,23 @@ def _workflow_summary(task_results: list[dict[str, Any]]) -> dict[str, int]:
     for status in statuses:
         summary[f"{status}_count"] = sum(1 for task in task_results if task.get("status") == status)
     return summary
+
+
+def _workflow_payload(
+    run_id: str,
+    workflow_id: str,
+    status: str,
+    stopped_by: str | None,
+    task_results: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "run_id": run_id,
+        "workflow_id": workflow_id,
+        "status": status,
+        "summary": _workflow_summary(task_results),
+        "recovery": _workflow_recovery(status, stopped_by, task_results),
+        "tasks": task_results,
+    }
 
 
 def _workflow_recovery(

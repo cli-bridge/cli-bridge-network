@@ -22,6 +22,22 @@ def protocol_readiness_report(
 ) -> dict[str, Any]:
     """Return a bounded readiness report for CLI-to-CLI protocol work."""
 
+    context = _readiness_context(registry, workflow_path, include_workflows)
+    gates = _readiness_gates(
+        context["parser_summary"],
+        context["source_summary"],
+        context["route_summary"],
+        context["protocol_summary"],
+        context["contract"],
+    )
+    return _readiness_payload(workflow_path, include_workflows, context, gates)
+
+
+def _readiness_context(
+    registry: ManifestRegistry,
+    workflow_path: str | None,
+    include_workflows: bool,
+) -> dict[str, Any]:
     manifests = registry.list()
     matrix = protocol_matrix(
         registry,
@@ -41,13 +57,45 @@ def protocol_readiness_report(
     source_summary = _manifest_source_summary(manifests)
     routes = _flatten_routes(contract) if contract else []
     route_summary = _route_summary(contract, routes)
-    protocol_summary = _protocol_summary(matrix, selected_workflow_protocols)
     wire_conformance = protocol_wire_conformance_suite()
-    protocol_summary["wire_compatible_protocol_count"] = wire_conformance["summary"]["wire_compatible_protocol_count"]
-    protocol_summary["wire_conformance_failed_count"] = wire_conformance["summary"]["failed_count"]
-    gates = _readiness_gates(parser_summary, source_summary, route_summary, protocol_summary, contract)
-    next_steps = _next_steps(parser_summary, source_summary, route_summary, protocol_summary)
+    protocol_summary = _readiness_protocol_summary(matrix, selected_workflow_protocols, wire_conformance)
+    return {
+        "manifests": manifests,
+        "matrix": matrix,
+        "contract": contract,
+        "selected_workflow_protocols": selected_workflow_protocols,
+        "parser_summary": parser_summary,
+        "source_summary": source_summary,
+        "routes": routes,
+        "route_summary": route_summary,
+        "protocol_summary": protocol_summary,
+        "wire_conformance": wire_conformance,
+    }
 
+
+def _readiness_protocol_summary(
+    matrix: dict[str, Any],
+    selected_workflow_protocols: list[dict[str, Any]] | None,
+    wire_conformance: dict[str, Any],
+) -> dict[str, Any]:
+    summary = _protocol_summary(matrix, selected_workflow_protocols)
+    summary["wire_compatible_protocol_count"] = wire_conformance["summary"]["wire_compatible_protocol_count"]
+    summary["wire_conformance_failed_count"] = wire_conformance["summary"]["failed_count"]
+    return summary
+
+
+def _readiness_payload(
+    workflow_path: str | None,
+    include_workflows: bool,
+    context: dict[str, Any],
+    gates: dict[str, Any],
+) -> dict[str, Any]:
+    matrix = context["matrix"]
+    parser_summary = context["parser_summary"]
+    source_summary = context["source_summary"]
+    route_summary = context["route_summary"]
+    protocol_summary = context["protocol_summary"]
+    wire_conformance = context["wire_conformance"]
     return {
         "ok": bool(gates["internal_bridge_ready"]),
         "kind": "ProtocolReadinessReport",
@@ -55,22 +103,12 @@ def protocol_readiness_report(
         "workflow_path": workflow_path,
         "include_workflows": include_workflows,
         "wire_compatible": bool(wire_conformance["wire_compatible"]),
-        "summary": {
-            "capability_count": len(manifests),
-            "workflow_count": route_summary["workflow_count"],
-            "routed_workflow_count": route_summary["routed_workflow_count"],
-            "route_count": route_summary["route_count"],
-            "portable_manifest_count": source_summary["portable_manifest_count"],
-            "runtime_local_overlay_count": source_summary["runtime_local_overlay_count"],
-            "verified_output_count": parser_summary["verified_output_count"],
-            "unverified_output_count": parser_summary["unverified_output_count"],
-            "wire_compatible_protocol_count": protocol_summary["wire_compatible_protocol_count"],
-        },
+        "summary": _readiness_summary(context),
         "readiness": gates,
         "parser_coverage": parser_summary,
         "manifest_sources": source_summary,
-        "bridge_contract": _contract_summary(contract),
-        "routes": routes,
+        "bridge_contract": _contract_summary(context["contract"]),
+        "routes": context["routes"],
         "protocol_matrix": {
             "protocols": matrix["protocols"],
             "row_count": matrix["summary"]["row_count"],
@@ -79,9 +117,27 @@ def protocol_readiness_report(
             "summary": matrix["summary"],
         },
         "wire_conformance": wire_conformance,
-        "selected_workflow_protocols": selected_workflow_protocols,
+        "selected_workflow_protocols": context["selected_workflow_protocols"],
         "protocol_gaps": protocol_summary["gaps"],
-        "next_steps": next_steps,
+        "next_steps": _next_steps(parser_summary, source_summary, route_summary, protocol_summary),
+    }
+
+
+def _readiness_summary(context: dict[str, Any]) -> dict[str, Any]:
+    parser_summary = context["parser_summary"]
+    source_summary = context["source_summary"]
+    route_summary = context["route_summary"]
+    protocol_summary = context["protocol_summary"]
+    return {
+        "capability_count": len(context["manifests"]),
+        "workflow_count": route_summary["workflow_count"],
+        "routed_workflow_count": route_summary["routed_workflow_count"],
+        "route_count": route_summary["route_count"],
+        "portable_manifest_count": source_summary["portable_manifest_count"],
+        "runtime_local_overlay_count": source_summary["runtime_local_overlay_count"],
+        "verified_output_count": parser_summary["verified_output_count"],
+        "unverified_output_count": parser_summary["unverified_output_count"],
+        "wire_compatible_protocol_count": protocol_summary["wire_compatible_protocol_count"],
     }
 
 
@@ -153,15 +209,21 @@ def _manifest_source_kind(source_path: Any) -> str:
     if source_path is None:
         return "in_memory"
     parts = [part.casefold() for part in getattr(source_path, "parts", ())]
-    if len(parts) >= 2 and parts[-2:] == ["runtime", "manifests"]:
+    if _is_runtime_manifest_path(parts):
         return "runtime_local_overlay"
-    if "runtime" in parts and "manifests" in parts:
-        return "runtime_local_overlay"
-    if parts and parts[-1] == "manifests":
-        return "portable_manifest"
-    if "manifests" in parts and "runtime" not in parts:
+    if _is_portable_manifest_path(parts):
         return "portable_manifest"
     return "other"
+
+
+def _is_runtime_manifest_path(parts: list[str]) -> bool:
+    return (len(parts) >= 2 and parts[-2:] == ["runtime", "manifests"]) or (
+        "runtime" in parts and "manifests" in parts
+    )
+
+
+def _is_portable_manifest_path(parts: list[str]) -> bool:
+    return (bool(parts) and parts[-1] == "manifests") or ("manifests" in parts and "runtime" not in parts)
 
 
 def _flatten_routes(contract: dict[str, Any] | None) -> list[dict[str, Any]]:
@@ -217,56 +279,79 @@ def _protocol_summary(
     matrix: dict[str, Any],
     selected_workflow_protocols: dict[str, dict[str, Any]] | None,
 ) -> dict[str, Any]:
+    if selected_workflow_protocols is not None:
+        return _selected_workflow_protocol_summary(selected_workflow_protocols)
+    return _project_protocol_summary(matrix)
+
+
+def _selected_workflow_protocol_summary(
+    selected_workflow_protocols: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
     gaps = {}
     wire_compatible_count = 0
-    if selected_workflow_protocols is not None:
-        for protocol in PROTOCOLS:
-            report = selected_workflow_protocols[protocol]
-            if report.get("wire_compatible"):
-                wire_compatible_count += 1
-            gaps[protocol] = {
-                "scope": report["scope"],
-                "status_counts": report["status_counts"],
-                "missing": [
-                    item["requirement"]
-                    for item in report["checks"]
-                    if item["status"] == "missing"
-                ],
-                "partial": [
-                    item["requirement"]
-                    for item in report["checks"]
-                    if item["status"] == "partial"
-                ],
-                "next_steps": report["next_steps"],
-            }
-        return {
-            "wire_compatible_protocol_count": wire_compatible_count,
-            "gaps": gaps,
-        }
-
-    by_protocol = matrix.get("summary", {}).get("by_protocol", {})
     for protocol in PROTOCOLS:
-        report = by_protocol.get(protocol, {})
-        protocol_wire_compatible_rows = int(report.get("wire_compatible", 0))
-        missing_count = int(report.get("missing", 0))
-        partial_count = int(report.get("partial", 0))
-        if protocol_wire_compatible_rows > 0 and missing_count == 0 and partial_count == 0:
+        report = selected_workflow_protocols[protocol]
+        if report.get("wire_compatible"):
             wire_compatible_count += 1
-        gaps[protocol] = {
-            "scope": "project",
-            "status_counts": {
-                "present": int(report.get("present", 0)),
-                "partial": partial_count,
-                "missing": missing_count,
-            },
-            "missing_count": missing_count,
-            "partial_count": partial_count,
-            "wire_compatible_row_count": protocol_wire_compatible_rows,
-        }
+        gaps[protocol] = _selected_protocol_gap(report)
     return {
         "wire_compatible_protocol_count": wire_compatible_count,
         "gaps": gaps,
     }
+
+
+def _selected_protocol_gap(report: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "scope": report["scope"],
+        "status_counts": report["status_counts"],
+        "missing": _requirements_by_status(report, "missing"),
+        "partial": _requirements_by_status(report, "partial"),
+        "next_steps": report["next_steps"],
+    }
+
+
+def _requirements_by_status(report: dict[str, Any], status: str) -> list[str]:
+    return [item["requirement"] for item in report["checks"] if item["status"] == status]
+
+
+def _project_protocol_summary(matrix: dict[str, Any]) -> dict[str, Any]:
+    gaps = {}
+    wire_compatible_count = 0
+    by_protocol = matrix.get("summary", {}).get("by_protocol", {})
+    for protocol in PROTOCOLS:
+        report = by_protocol.get(protocol, {})
+        gap = _project_protocol_gap(report)
+        if _project_protocol_wire_ready(gap):
+            wire_compatible_count += 1
+        gaps[protocol] = gap
+    return {
+        "wire_compatible_protocol_count": wire_compatible_count,
+        "gaps": gaps,
+    }
+
+
+def _project_protocol_gap(report: dict[str, Any]) -> dict[str, Any]:
+    missing_count = int(report.get("missing", 0))
+    partial_count = int(report.get("partial", 0))
+    return {
+        "scope": "project",
+        "status_counts": {
+            "present": int(report.get("present", 0)),
+            "partial": partial_count,
+            "missing": missing_count,
+        },
+        "missing_count": missing_count,
+        "partial_count": partial_count,
+        "wire_compatible_row_count": int(report.get("wire_compatible", 0)),
+    }
+
+
+def _project_protocol_wire_ready(gap: dict[str, Any]) -> bool:
+    return (
+        gap["wire_compatible_row_count"] > 0
+        and gap["missing_count"] == 0
+        and gap["partial_count"] == 0
+    )
 
 
 def _readiness_gates(

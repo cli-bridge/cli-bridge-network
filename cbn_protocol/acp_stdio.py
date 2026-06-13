@@ -7,8 +7,9 @@ import subprocess
 import sys
 import uuid
 from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, TextIO
+from typing import Any, Callable, TextIO
 
 from cbn.version import __version__
 from cbn_protocol.workflow_calls import run_workflow_from_metadata, workflow_messages, workflow_run_ok
@@ -16,6 +17,13 @@ from cbn_runtime.context import build_runtime
 
 
 ACP_PROTOCOL_VERSION = 1
+
+
+@dataclass(frozen=True)
+class _AcpRequest:
+    request_id: Any
+    method: str
+    params: Any
 
 
 class AcpStdioAgent:
@@ -39,30 +47,20 @@ class AcpStdioAgent:
 
     def handle_line(self, line: str) -> dict[str, Any] | None:
         try:
-            message = json.loads(line)
-        except json.JSONDecodeError as exc:
-            return _error_response(None, -32700, f"parse error: {exc.msg}")
-        if not isinstance(message, dict):
-            return _error_response(None, -32600, "JSON-RPC message must be an object")
-        if message.get("jsonrpc") != "2.0":
-            return _error_response(message.get("id"), -32600, "jsonrpc must be 2.0")
-        request_id = message.get("id")
-        method = message.get("method")
-        if not isinstance(method, str):
-            return _error_response(request_id, -32600, "method is required")
+            request = _acp_request_from_line(line)
+        except _AcpMessageError as exc:
+            return _error_response(exc.request_id, exc.code, str(exc))
         try:
-            result = self._dispatch(method, message.get("params", {}), request_id=request_id)
+            result = self._dispatch(request.method, request.params, request_id=request.request_id)
         except KeyError as exc:
-            return _error_response(request_id, -32602, str(exc))
+            return _error_response(request.request_id, -32602, str(exc))
         except ValueError as exc:
-            return _error_response(request_id, -32602, str(exc))
+            return _error_response(request.request_id, -32602, str(exc))
         except NotImplementedError:
-            return _error_response(request_id, -32601, f"method not found: {method}")
+            return _error_response(request.request_id, -32601, f"method not found: {request.method}")
         except Exception as exc:
-            return _error_response(request_id, -32603, str(exc))
-        if request_id is None:
-            return None
-        return {"jsonrpc": "2.0", "id": request_id, "result": result}
+            return _error_response(request.request_id, -32603, str(exc))
+        return _acp_success_response(request, result)
 
     def _dispatch(self, method: str, params: Any, request_id: Any) -> dict[str, Any]:
         if method == "initialize":
@@ -105,6 +103,12 @@ class AcpStdioAgent:
         }
 
     def _prompt(self, params: Any) -> dict[str, Any]:
+        cbn_meta = self._validated_prompt_metadata(params)
+        if _is_workflow_prompt(cbn_meta):
+            return self._prompt_workflow(cbn_meta)
+        return self._prompt_capability(cbn_meta)
+
+    def _validated_prompt_metadata(self, params: Any) -> dict[str, Any]:
         if not isinstance(params, dict):
             raise ValueError("session/prompt params must be an object")
         session_id = params.get("sessionId")
@@ -113,11 +117,9 @@ class AcpStdioAgent:
         prompt = params.get("prompt")
         if not isinstance(prompt, list):
             raise ValueError("session/prompt params.prompt must be a list")
-        cbn_meta = _cbn_metadata(params)
-        workflow_path = cbn_meta.get("workflow_path")
-        workflow_id = cbn_meta.get("workflow_id")
-        if (isinstance(workflow_path, str) and workflow_path) or (isinstance(workflow_id, str) and workflow_id):
-            return self._prompt_workflow(cbn_meta)
+        return _cbn_metadata(params)
+
+    def _prompt_capability(self, cbn_meta: dict[str, Any]) -> dict[str, Any]:
         capability_id = cbn_meta.get("capability_id")
         if not isinstance(capability_id, str) or not capability_id:
             raise ValueError("params._meta.cbn.capability_id is required")
@@ -167,11 +169,93 @@ class AcpStdioAgent:
         }
 
 
+def _acp_request_from_line(line: str) -> _AcpRequest:
+    try:
+        message = json.loads(line)
+    except json.JSONDecodeError as exc:
+        raise _AcpMessageError(None, -32700, f"parse error: {exc.msg}") from exc
+    if not isinstance(message, dict):
+        raise _AcpMessageError(None, -32600, "JSON-RPC message must be an object")
+    request_id = message.get("id")
+    if message.get("jsonrpc") != "2.0":
+        raise _AcpMessageError(request_id, -32600, "jsonrpc must be 2.0")
+    method = message.get("method")
+    if not isinstance(method, str):
+        raise _AcpMessageError(request_id, -32600, "method is required")
+    return _AcpRequest(request_id=request_id, method=method, params=message.get("params", {}))
+
+
+def _acp_success_response(request: _AcpRequest, result: dict[str, Any]) -> dict[str, Any] | None:
+    if request.request_id is None:
+        return None
+    return {"jsonrpc": "2.0", "id": request.request_id, "result": result}
+
+
+class _AcpMessageError(ValueError):
+    def __init__(self, request_id: Any, code: int, message: str) -> None:
+        super().__init__(message)
+        self.request_id = request_id
+        self.code = code
+
+
 def serve_stdio() -> int:
     return AcpStdioAgent().serve()
 
 
 def smoke_acp_stdio(capability_id: str, extra_args: Iterable[str] = (), dry_run: bool = False) -> dict[str, Any]:
+    run = _run_acp_prompt_smoke(
+        client_name="cbn-smoke",
+        prompt_factory=lambda session_id: _capability_prompt_request(
+            session_id,
+            capability_id,
+            extra_args,
+            dry_run,
+        ),
+        timeout=30,
+    )
+    responses = run["responses"]
+    prompt_result = responses[2].get("result", {}) if len(responses) > 2 else {}
+    cbn = prompt_result.get("_meta", {}).get("cbn", {})
+    return {
+        "ok": _capability_smoke_ok(run, prompt_result, cbn, capability_id),
+        "command": run["command"],
+        "return_code": run["return_code"],
+        "capability_id": capability_id,
+        "responses": responses,
+        "stderr": run["stderr"],
+    }
+
+
+def smoke_acp_workflow_stdio(workflow_path: str, dry_run: bool = False, confirmed: bool = False) -> dict[str, Any]:
+    workflow_id = _workflow_id_from_path(workflow_path)
+    run = _run_acp_prompt_smoke(
+        client_name="cbn-workflow-smoke",
+        prompt_factory=lambda session_id: _workflow_prompt_request(
+            session_id,
+            workflow_id,
+            dry_run,
+            confirmed,
+        ),
+        timeout=60,
+    )
+    responses = run["responses"]
+    prompt_result = responses[2].get("result", {}) if len(responses) > 2 else {}
+    cbn = prompt_result.get("_meta", {}).get("cbn", {})
+    return {
+        "ok": _workflow_smoke_ok(run, prompt_result, cbn, workflow_path, workflow_id),
+        "command": run["command"],
+        "return_code": run["return_code"],
+        "workflow_path": workflow_path,
+        "responses": responses,
+        "stderr": run["stderr"],
+    }
+
+
+def _run_acp_prompt_smoke(
+    client_name: str,
+    prompt_factory: Callable[[Any], dict[str, Any]],
+    timeout: int,
+) -> dict[str, Any]:
     command = [sys.executable, "-m", "cbn", "acp", "serve", "--stdio"]
     proc = subprocess.Popen(
         command,
@@ -183,172 +267,145 @@ def smoke_acp_stdio(capability_id: str, extra_args: Iterable[str] = (), dry_run:
     )
     assert proc.stdin is not None
     assert proc.stdout is not None
-    cwd = str(Path.cwd())
-    requests = [
-        {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": ACP_PROTOCOL_VERSION,
-                "clientCapabilities": {"fs": {"readTextFile": True, "writeTextFile": False}, "terminal": False},
-                "clientInfo": {"name": "cbn-smoke", "version": __version__},
-            },
+    _write_json_requests(proc.stdin, [_initialize_request(client_name), _session_new_request()])
+    responses = _read_json_responses(proc.stdout, count=2)
+    session_id = _session_id(responses)
+    _write_json_requests(proc.stdin, [prompt_factory(session_id)])
+    proc.stdin.close()
+    responses.extend(_read_json_responses(proc.stdout, count=1))
+    stderr = proc.stderr.read() if proc.stderr is not None else ""
+    proc.stdout.close()
+    if proc.stderr is not None:
+        proc.stderr.close()
+    return {
+        "command": command,
+        "return_code": proc.wait(timeout=timeout),
+        "responses": responses,
+        "stderr": stderr,
+        "session_id": session_id,
+    }
+
+
+def _initialize_request(client_name: str) -> dict[str, Any]:
+    return {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": ACP_PROTOCOL_VERSION,
+            "clientCapabilities": {"fs": {"readTextFile": True, "writeTextFile": False}, "terminal": False},
+            "clientInfo": {"name": client_name, "version": __version__},
         },
-        {
-            "jsonrpc": "2.0",
-            "id": 2,
-            "method": "session/new",
-            "params": {"cwd": cwd, "mcpServers": [], "additionalDirectories": []},
-        },
-    ]
-    for request in requests:
-        proc.stdin.write(json.dumps(request, ensure_ascii=False, separators=(",", ":")) + "\n")
-        proc.stdin.flush()
-    responses = []
-    for _ in range(2):
-        line = proc.stdout.readline()
-        if not line:
-            break
-        responses.append(json.loads(line))
-    session_id = responses[1].get("result", {}).get("sessionId") if len(responses) > 1 else None
-    prompt_request = {
+    }
+
+
+def _session_new_request() -> dict[str, Any]:
+    return {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "session/new",
+        "params": {"cwd": str(Path.cwd()), "mcpServers": [], "additionalDirectories": []},
+    }
+
+
+def _capability_prompt_request(
+    session_id: Any,
+    capability_id: str,
+    extra_args: Iterable[str],
+    dry_run: bool,
+) -> dict[str, Any]:
+    return _prompt_request(
+        session_id,
+        "Run CBN capability",
+        {"capability_id": capability_id, "extra_args": list(extra_args), "dry_run": dry_run},
+    )
+
+
+def _workflow_prompt_request(
+    session_id: Any,
+    workflow_id: str,
+    dry_run: bool,
+    confirmed: bool,
+) -> dict[str, Any]:
+    return _prompt_request(
+        session_id,
+        "Run CBN workflow",
+        {"workflow_id": workflow_id, "dry_run": dry_run, "confirmed": confirmed},
+    )
+
+
+def _prompt_request(session_id: Any, prompt_text: str, cbn: dict[str, Any]) -> dict[str, Any]:
+    return {
         "jsonrpc": "2.0",
         "id": 3,
         "method": "session/prompt",
         "params": {
             "sessionId": session_id,
-            "prompt": [{"type": "text", "text": "Run CBN capability"}],
-            "_meta": {
-                "cbn": {
-                    "capability_id": capability_id,
-                    "extra_args": list(extra_args),
-                    "dry_run": dry_run,
-                }
-            },
+            "prompt": [{"type": "text", "text": prompt_text}],
+            "_meta": {"cbn": cbn},
         },
     }
-    proc.stdin.write(json.dumps(prompt_request, ensure_ascii=False, separators=(",", ":")) + "\n")
-    proc.stdin.close()
-    line = proc.stdout.readline()
-    if line:
+
+
+def _write_json_requests(stream: TextIO, requests: list[dict[str, Any]]) -> None:
+    for request in requests:
+        stream.write(json.dumps(request, ensure_ascii=False, separators=(",", ":")) + "\n")
+        stream.flush()
+
+
+def _read_json_responses(stream: TextIO, count: int) -> list[dict[str, Any]]:
+    responses = []
+    for _ in range(count):
+        line = stream.readline()
+        if not line:
+            break
         responses.append(json.loads(line))
-    stderr = proc.stderr.read() if proc.stderr is not None else ""
-    proc.stdout.close()
-    if proc.stderr is not None:
-        proc.stderr.close()
-    return_code = proc.wait(timeout=30)
-    prompt_result = responses[2].get("result", {}) if len(responses) > 2 else {}
-    cbn = prompt_result.get("_meta", {}).get("cbn", {})
-    ok = (
-        return_code == 0
+    return responses
+
+
+def _session_id(responses: list[dict[str, Any]]) -> Any:
+    return responses[1].get("result", {}).get("sessionId") if len(responses) > 1 else None
+
+
+def _base_smoke_ok(run: dict[str, Any], prompt_result: dict[str, Any]) -> bool:
+    responses = run["responses"]
+    return (
+        run["return_code"] == 0
         and len(responses) == 3
         and responses[0].get("result", {}).get("agentInfo", {}).get("name") == "CLI Bridge Network"
-        and isinstance(session_id, str)
+        and isinstance(run["session_id"], str)
         and prompt_result.get("stopReason") == "end_turn"
+    )
+
+
+def _capability_smoke_ok(
+    run: dict[str, Any],
+    prompt_result: dict[str, Any],
+    cbn: dict[str, Any],
+    capability_id: str,
+) -> bool:
+    return (
+        _base_smoke_ok(run, prompt_result)
         and cbn.get("capability_id") == capability_id
         and cbn.get("allowed") is True
         and cbn.get("ok") is True
         and cbn.get("exit_code") == 0
     )
-    return {
-        "ok": ok,
-        "command": command,
-        "return_code": return_code,
-        "capability_id": capability_id,
-        "responses": responses,
-        "stderr": stderr,
-    }
 
 
-def smoke_acp_workflow_stdio(workflow_path: str, dry_run: bool = False, confirmed: bool = False) -> dict[str, Any]:
-    command = [sys.executable, "-m", "cbn", "acp", "serve", "--stdio"]
-    proc = subprocess.Popen(
-        command,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-    )
-    assert proc.stdin is not None
-    assert proc.stdout is not None
-    cwd = str(Path.cwd())
-    requests = [
-        {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": ACP_PROTOCOL_VERSION,
-                "clientCapabilities": {"fs": {"readTextFile": True, "writeTextFile": False}, "terminal": False},
-                "clientInfo": {"name": "cbn-workflow-smoke", "version": __version__},
-            },
-        },
-        {
-            "jsonrpc": "2.0",
-            "id": 2,
-            "method": "session/new",
-            "params": {"cwd": cwd, "mcpServers": [], "additionalDirectories": []},
-        },
-    ]
-    for request in requests:
-        proc.stdin.write(json.dumps(request, ensure_ascii=False, separators=(",", ":")) + "\n")
-        proc.stdin.flush()
-    responses = []
-    for _ in range(2):
-        line = proc.stdout.readline()
-        if not line:
-            break
-        responses.append(json.loads(line))
-    session_id = responses[1].get("result", {}).get("sessionId") if len(responses) > 1 else None
-    prompt_request = {
-        "jsonrpc": "2.0",
-        "id": 3,
-        "method": "session/prompt",
-        "params": {
-            "sessionId": session_id,
-            "prompt": [{"type": "text", "text": "Run CBN workflow"}],
-            "_meta": {
-                "cbn": {
-                    "workflow_id": _workflow_id_from_path(workflow_path),
-                    "dry_run": dry_run,
-                    "confirmed": confirmed,
-                }
-            },
-        },
-    }
-    proc.stdin.write(json.dumps(prompt_request, ensure_ascii=False, separators=(",", ":")) + "\n")
-    proc.stdin.close()
-    line = proc.stdout.readline()
-    if line:
-        responses.append(json.loads(line))
-    stderr = proc.stderr.read() if proc.stderr is not None else ""
-    proc.stdout.close()
-    if proc.stderr is not None:
-        proc.stderr.close()
-    return_code = proc.wait(timeout=60)
-    prompt_result = responses[2].get("result", {}) if len(responses) > 2 else {}
-    cbn = prompt_result.get("_meta", {}).get("cbn", {})
-    workflow_id = _workflow_id_from_path(workflow_path)
-    ok = (
-        return_code == 0
-        and len(responses) == 3
-        and responses[0].get("result", {}).get("agentInfo", {}).get("name") == "CLI Bridge Network"
-        and isinstance(session_id, str)
-        and prompt_result.get("stopReason") == "end_turn"
+def _workflow_smoke_ok(
+    run: dict[str, Any],
+    prompt_result: dict[str, Any],
+    cbn: dict[str, Any],
+    workflow_path: str,
+    workflow_id: str,
+) -> bool:
+    return (
+        _base_smoke_ok(run, prompt_result)
         and _same_workflow_path(cbn.get("workflow_path"), workflow_path)
         and cbn.get("workflow_id") == workflow_id
         and cbn.get("status") == "completed"
     )
-    return {
-        "ok": ok,
-        "command": command,
-        "return_code": return_code,
-        "workflow_path": workflow_path,
-        "responses": responses,
-        "stderr": stderr,
-    }
 
 
 def _initialize_result(params: Any) -> dict[str, Any]:
@@ -406,6 +463,15 @@ def _cbn_metadata(params: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(cbn_meta, dict):
         raise ValueError("params._meta.cbn must be an object")
     return cbn_meta
+
+
+def _is_workflow_prompt(cbn_meta: dict[str, Any]) -> bool:
+    workflow_path = cbn_meta.get("workflow_path")
+    workflow_id = cbn_meta.get("workflow_id")
+    return bool(
+        (isinstance(workflow_path, str) and workflow_path)
+        or (isinstance(workflow_id, str) and workflow_id)
+    )
 
 
 def _optional_str(value: Any) -> str | None:

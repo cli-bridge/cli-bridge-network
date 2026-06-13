@@ -3,8 +3,74 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 
 from cbn_demo.network_connect import DEFAULT_AGENT_CONNECT_MESSAGE
+
+
+DEFAULT_NETWORK_WORKFLOW_PATH = "workflows/cli-anything-macrocli-mermaid-routing.example.json"
+DEFAULT_NETWORK_STUDIO_URL = "http://127.0.0.1:5177"
+DEFAULT_NETWORK_DASHBOARD_URL = "http://127.0.0.1:5173"
+DEFAULT_DAEMON_URL = "http://127.0.0.1:8787"
+AUTH_SESSION_HELP = "Optional daemon session token to include in auth metadata."
+REUSABLE_AGENT_MESSAGE_HELP = "Agent prompt used to shape the reusable workflow request."
+
+
+@dataclass(frozen=True)
+class NetworkConnectArgOptions:
+    workflow_help: str
+    session_help: str
+    message_help: str
+    base_url_help: str = "Daemon base URL to embed in endpoint URLs."
+    base_url_default: str | None = None
+    studio_help: str = "Workflow Studio base URL to embed as a preconfigured demo link."
+    dashboard_help: str = "Maintainer dashboard URL to embed in the Workflow Studio demo link."
+
+
+NETWORK_PROFILE_COMMANDS: tuple[dict[str, str], ...] = (
+    {
+        "name": "connect-package",
+        "help_text": "Print the one-shot package another program needs to connect to CBN.",
+        "workflow_help": "Workflow JSON path to expose in the connect package.",
+        "session_help": "Optional daemon session token to include in the Workflow Studio demo link.",
+        "message_help": "Agent prompt used to shape the Adapter Agent node bundle.",
+    },
+    {
+        "name": "entry-profile",
+        "help_text": "Print only the stable external integration profile from the one-shot package.",
+        "workflow_help": "Workflow JSON path to expose in the entry profile.",
+        "session_help": AUTH_SESSION_HELP,
+        "message_help": REUSABLE_AGENT_MESSAGE_HELP,
+    },
+    {
+        "name": "harness-agent",
+        "help_text": "Print only the reusable natural-language harness agent contract.",
+        "workflow_help": "Workflow JSON path to expose in the harness agent contract.",
+        "session_help": AUTH_SESSION_HELP,
+        "message_help": REUSABLE_AGENT_MESSAGE_HELP,
+    },
+    {
+        "name": "sdk-bootstrap",
+        "help_text": "Print only the stable SDK bootstrap contract for external CBN consumers.",
+        "workflow_help": "Workflow JSON path to expose in the SDK bootstrap contract.",
+        "session_help": AUTH_SESSION_HELP,
+        "message_help": "Agent prompt used to shape the SDK bootstrap request map.",
+    },
+    {
+        "name": "consumer-manifest",
+        "help_text": "Print the redacted persistable manifest for external CBN consumers.",
+        "workflow_help": "Workflow JSON path to expose in the consumer manifest.",
+        "session_help": "Optional daemon session token to redact into auth metadata.",
+        "message_help": "Agent prompt used to shape the consumer manifest.",
+    },
+    {
+        "name": "acceptance",
+        "help_text": "Print only the machine-readable acceptance checklist for external CBN consumers.",
+        "workflow_help": "Workflow JSON path to expose in the acceptance checklist.",
+        "session_help": "Optional daemon session token to include in generated first-call requests.",
+        "message_help": REUSABLE_AGENT_MESSAGE_HELP,
+    },
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -16,6 +82,39 @@ def build_parser() -> argparse.ArgumentParser:
     subcommands.add_parser("paths", help="Print resolved project paths.")
     subcommands.add_parser("nodes", help="List built-in capability nodes.")
 
+    _add_core_commands(subcommands)
+    _add_protocol_commands(subcommands)
+    _add_demo_network_commands(subcommands)
+    _add_import_commands(subcommands)
+    _add_facade_commands(subcommands)
+    _add_runtime_workflow_commands(subcommands)
+    _add_plugin_commands(subcommands)
+    return parser
+
+
+def _add_core_commands(subcommands: argparse._SubParsersAction) -> None:
+    _add_registry_commands(subcommands)
+    _add_capability_call_command(subcommands)
+    _add_tail_command(
+        subcommands,
+        name="audit",
+        dest="audit_command",
+        help_text="Inspect local audit log.",
+        tail_help="Print recent audit events.",
+    )
+    _add_tail_command(
+        subcommands,
+        name="event",
+        dest="event_command",
+        help_text="Inspect the local runtime event bus.",
+        tail_help="Print recent runtime events.",
+    )
+    _add_artifact_commands(subcommands)
+    _add_parser_commands(subcommands)
+    _add_record_parser_fixture_command(subcommands)
+
+
+def _add_registry_commands(subcommands: argparse._SubParsersAction) -> None:
     registry_parser = subcommands.add_parser("registry", help="Inspect capability registry.")
     registry_subcommands = registry_parser.add_subparsers(dest="registry_command")
     registry_subcommands.add_parser("list", help="List loaded capability manifests.")
@@ -27,6 +126,8 @@ def build_parser() -> argparse.ArgumentParser:
     registry_validate = registry_subcommands.add_parser("validate", help="Validate manifest JSON files.")
     registry_validate.add_argument("path", nargs="?", default="manifests", help="Manifest file or directory path.")
 
+
+def _add_capability_call_command(subcommands: argparse._SubParsersAction) -> None:
     call_parser = subcommands.add_parser("call", help="Call a capability through policy/audit.")
     call_parser.add_argument("capability_id")
     call_parser.add_argument("extra_args", nargs="*", help="Extra arguments appended to the manifest template.")
@@ -34,16 +135,21 @@ def build_parser() -> argparse.ArgumentParser:
     call_parser.add_argument("--yes", action="store_true", help="Confirm high-risk calls.")
     call_parser.add_argument("--approval-id", help="Use a previously approved approval request.")
 
-    audit_parser = subcommands.add_parser("audit", help="Inspect local audit log.")
-    audit_subcommands = audit_parser.add_subparsers(dest="audit_command")
-    audit_tail = audit_subcommands.add_parser("tail", help="Print recent audit events.")
-    audit_tail.add_argument("--limit", type=int, default=20)
 
-    event_parser = subcommands.add_parser("event", help="Inspect the local runtime event bus.")
-    event_subcommands = event_parser.add_subparsers(dest="event_command")
-    event_tail = event_subcommands.add_parser("tail", help="Print recent runtime events.")
-    event_tail.add_argument("--limit", type=int, default=20)
+def _add_tail_command(
+    subcommands: argparse._SubParsersAction,
+    *,
+    name: str,
+    dest: str,
+    help_text: str,
+    tail_help: str,
+) -> None:
+    parser = subcommands.add_parser(name, help=help_text)
+    tail = parser.add_subparsers(dest=dest).add_parser("tail", help=tail_help)
+    tail.add_argument("--limit", type=int, default=20)
 
+
+def _add_artifact_commands(subcommands: argparse._SubParsersAction) -> None:
     artifact_parser = subcommands.add_parser("artifact", help="Inspect local runtime artifacts.")
     artifact_subcommands = artifact_parser.add_subparsers(dest="artifact_command")
     artifact_list = artifact_subcommands.add_parser("list", help="List recent artifacts.")
@@ -51,6 +157,8 @@ def build_parser() -> argparse.ArgumentParser:
     artifact_inspect = artifact_subcommands.add_parser("inspect", help="Inspect one artifact.")
     artifact_inspect.add_argument("artifact_id")
 
+
+def _add_parser_commands(subcommands: argparse._SubParsersAction) -> None:
     parser_parser = subcommands.add_parser("parser", help="Inspect output parsers.")
     parser_subcommands = parser_parser.add_subparsers(dest="parser_command")
     parser_subcommands.add_parser("list", help="List built-in parsers.")
@@ -60,6 +168,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser_fixtures.add_argument("path", nargs="?", default="parser_fixtures", help="Fixture file or directory.")
     parser_fixtures.add_argument("--parser-ref", help="Only run fixtures for one parser ref.")
 
+
+def _add_record_parser_fixture_command(subcommands: argparse._SubParsersAction) -> None:
     record_parser_fixture = subcommands.add_parser(
         "record-parser-fixture",
         help="Record observed stdout/stderr as a reusable parser fixture.",
@@ -83,18 +193,41 @@ def build_parser() -> argparse.ArgumentParser:
     record_parser_fixture.add_argument("--output", help="Output fixture path. Defaults to parser_fixtures/<parser>.<case>.json.")
     record_parser_fixture.add_argument("--write", action="store_true", help="Write the fixture after validation.")
 
+
+
+def _add_protocol_commands(subcommands: argparse._SubParsersAction) -> None:
     protocol_parser = subcommands.add_parser("protocol", help="Inspect protocol export descriptors.")
     protocol_subcommands = protocol_parser.add_subparsers(dest="protocol_command")
+    _add_protocol_descriptor_commands(protocol_subcommands)
+    _add_protocol_conformance_commands(protocol_subcommands)
+    _add_protocol_acceptance_commands(protocol_subcommands)
+
+
+def _add_protocol_descriptor_commands(protocol_subcommands: argparse._SubParsersAction) -> None:
     protocol_subcommands.add_parser("list", help="List supported descriptor exports.")
+    _add_protocol_export_command(protocol_subcommands)
+    _add_protocol_export_workflows_command(protocol_subcommands)
+    _add_protocol_check_command(protocol_subcommands)
+    _add_protocol_matrix_command(protocol_subcommands)
+    _add_protocol_readiness_command(protocol_subcommands)
+
+
+def _add_protocol_export_command(protocol_subcommands: argparse._SubParsersAction) -> None:
     protocol_export = protocol_subcommands.add_parser("export", help="Export capability descriptors.")
     protocol_export.add_argument("target", choices=["mcp", "a2a", "acp", "all"])
     protocol_export.add_argument("--capability-id")
+
+
+def _add_protocol_export_workflows_command(protocol_subcommands: argparse._SubParsersAction) -> None:
     protocol_export_workflows = protocol_subcommands.add_parser(
         "export-workflows",
         help="Export workflow descriptors for protocol adapter design.",
     )
     protocol_export_workflows.add_argument("target", choices=["mcp", "a2a", "acp", "all"])
     protocol_export_workflows.add_argument("--path", help="Optional workflow JSON path.")
+
+
+def _add_protocol_check_command(protocol_subcommands: argparse._SubParsersAction) -> None:
     protocol_check = protocol_subcommands.add_parser(
         "check",
         help="Report descriptor evidence and remaining wire-compatibility gaps.",
@@ -102,6 +235,9 @@ def build_parser() -> argparse.ArgumentParser:
     protocol_check.add_argument("target", choices=["mcp", "a2a", "acp", "all"])
     protocol_check.add_argument("--capability-id")
     protocol_check.add_argument("--workflow-path", help="Check workflow descriptor compatibility for one workflow.")
+
+
+def _add_protocol_matrix_command(protocol_subcommands: argparse._SubParsersAction) -> None:
     protocol_matrix = protocol_subcommands.add_parser(
         "matrix",
         help="Summarize protocol compatibility checks for all capabilities.",
@@ -111,6 +247,9 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Include workflow descriptor compatibility rows.",
     )
+
+
+def _add_protocol_readiness_command(protocol_subcommands: argparse._SubParsersAction) -> None:
     protocol_readiness = protocol_subcommands.add_parser(
         "readiness",
         help="Report CLI-to-CLI BridgeMessage routing and external protocol readiness.",
@@ -128,6 +267,16 @@ def build_parser() -> argparse.ArgumentParser:
         dest="include_workflows",
         help="Skip workflow routing contract evidence.",
     )
+
+
+def _add_protocol_conformance_commands(protocol_subcommands: argparse._SubParsersAction) -> None:
+    _add_protocol_conformance_plan_command(protocol_subcommands)
+    _add_protocol_lifecycle_suite_command(protocol_subcommands)
+    _add_protocol_wire_conformance_command(protocol_subcommands)
+    _add_protocol_smoke_suite_command(protocol_subcommands)
+
+
+def _add_protocol_conformance_plan_command(protocol_subcommands: argparse._SubParsersAction) -> None:
     protocol_conformance = protocol_subcommands.add_parser(
         "conformance-plan",
         help="Return the conservative MCP/A2A/ACP wire conformance plan.",
@@ -135,18 +284,27 @@ def build_parser() -> argparse.ArgumentParser:
     protocol_conformance.add_argument("target", choices=["mcp", "a2a", "acp", "all"], nargs="?", default="all")
     protocol_conformance.add_argument("--capability-id")
     protocol_conformance.add_argument("--workflow-path", help="Plan conformance around one workflow descriptor.")
+
+
+def _add_protocol_lifecycle_suite_command(protocol_subcommands: argparse._SubParsersAction) -> None:
     protocol_lifecycle = protocol_subcommands.add_parser(
         "lifecycle-suite",
         help="Run MVP protocol lifecycle and error-boundary checks for MCP/A2A/ACP facades.",
     )
     protocol_lifecycle.add_argument("--capability-id", default="git.version")
     protocol_lifecycle.add_argument("--workflow-path", default="workflows/example.json")
+
+
+def _add_protocol_wire_conformance_command(protocol_subcommands: argparse._SubParsersAction) -> None:
     protocol_wire = protocol_subcommands.add_parser(
         "wire-conformance",
         help="Run local official-shape MCP/A2A/ACP wire conformance checks.",
     )
     protocol_wire.add_argument("target", choices=["mcp", "a2a", "acp", "all"], nargs="?", default="all")
     protocol_wire.add_argument("--capability-id", default="git.version")
+
+
+def _add_protocol_smoke_suite_command(protocol_subcommands: argparse._SubParsersAction) -> None:
     protocol_smoke_suite = protocol_subcommands.add_parser(
         "smoke-suite",
         help="Run the MVP MCP/A2A/ACP smoke suite for selected capabilities and workflows.",
@@ -177,72 +335,99 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Include raw per-protocol smoke payloads in the JSON report.",
     )
-    protocol_accept_workflow = protocol_subcommands.add_parser(
+
+
+def _add_protocol_acceptance_commands(protocol_subcommands: argparse._SubParsersAction) -> None:
+    _add_protocol_accept_workflow_command(protocol_subcommands)
+    _add_protocol_acceptance_queue_command(protocol_subcommands)
+    _add_protocol_bridge_lab_command(protocol_subcommands)
+
+
+def _add_protocol_accept_workflow_command(protocol_subcommands: argparse._SubParsersAction) -> None:
+    parser = protocol_subcommands.add_parser(
         "accept-workflow",
         help="Accept one CLI-to-CLI workflow BridgeMessage routing contract.",
     )
-    protocol_accept_workflow.add_argument("workflow_path", help="Workflow JSON path to accept.")
-    protocol_accept_workflow.add_argument(
-        "--run",
-        action="store_true",
-        help="Execute the workflow and attach runtime route evidence.",
+    parser.add_argument("workflow_path", help="Workflow JSON path to accept.")
+    _add_workflow_evidence_args(
+        parser,
+        run_help="Execute the workflow and attach runtime route evidence.",
+        include_payloads_help="Include task messages and raw run result payloads.",
     )
-    protocol_accept_workflow.add_argument("--dry-run", action="store_true", help="Dry-run workflow execution.")
-    protocol_accept_workflow.add_argument("--yes", action="store_true", help="Confirm workflow tasks when needed.")
-    protocol_accept_workflow.add_argument(
-        "--include-payloads",
-        action="store_true",
-        help="Include task messages and raw run result payloads.",
-    )
-    protocol_acceptance_queue = protocol_subcommands.add_parser(
+
+
+def _add_protocol_acceptance_queue_command(protocol_subcommands: argparse._SubParsersAction) -> None:
+    parser = protocol_subcommands.add_parser(
         "acceptance-queue",
         help="Accept multiple CLI-to-CLI workflow BridgeMessage routing contracts.",
     )
-    protocol_acceptance_queue.add_argument(
+    parser.add_argument(
         "--workflow-path",
         action="append",
         default=[],
         help="Workflow JSON path to accept; repeatable. Defaults to the workflow catalog.",
     )
-    protocol_acceptance_queue.add_argument(
+    parser.add_argument(
         "--max-workflows",
         type=int,
         default=50,
         help="Maximum catalog workflows to inspect when no --workflow-path is provided.",
     )
-    protocol_acceptance_queue.add_argument(
-        "--run",
-        action="store_true",
-        help="Execute selected workflows and attach runtime route evidence.",
+    _add_workflow_evidence_args(
+        parser,
+        run_help="Execute selected workflows and attach runtime route evidence.",
+        include_payloads_help="Include task messages and raw run result payloads.",
     )
-    protocol_acceptance_queue.add_argument("--dry-run", action="store_true", help="Dry-run workflow execution.")
-    protocol_acceptance_queue.add_argument("--yes", action="store_true", help="Confirm workflow tasks when needed.")
-    protocol_acceptance_queue.add_argument(
-        "--include-payloads",
-        action="store_true",
-        help="Include task messages and raw run result payloads.",
-    )
-    protocol_bridge_lab = protocol_subcommands.add_parser(
+
+
+def _add_protocol_bridge_lab_command(protocol_subcommands: argparse._SubParsersAction) -> None:
+    parser = protocol_subcommands.add_parser(
         "bridge-lab",
         help="Build a BridgeMessage CLI-to-CLI protocol research baseline.",
     )
-    protocol_bridge_lab.add_argument(
+    parser.add_argument(
         "--workflow-path",
         action="append",
         default=[],
         help="Workflow JSON path to include; repeatable. Defaults to the workflow catalog.",
     )
-    protocol_bridge_lab.add_argument("--max-workflows", type=int, default=10)
-    protocol_bridge_lab.add_argument("--run", action="store_true", help="Execute selected workflows for route evidence.")
-    protocol_bridge_lab.add_argument("--dry-run", action="store_true", help="Dry-run workflow execution.")
-    protocol_bridge_lab.add_argument("--yes", action="store_true", help="Confirm workflow tasks when needed.")
-    protocol_bridge_lab.add_argument("--include-payloads", action="store_true")
-    protocol_bridge_lab.add_argument(
+    parser.add_argument("--max-workflows", type=int, default=10)
+    _add_workflow_evidence_args(
+        parser,
+        run_help="Execute selected workflows for route evidence.",
+        include_payloads_help=None,
+    )
+    parser.add_argument(
         "--smoke-suite",
         action="store_true",
         help="Run protocol facade smoke checks as part of the lab report.",
     )
 
+
+def _add_workflow_evidence_args(
+    parser: argparse.ArgumentParser,
+    *,
+    run_help: str,
+    include_payloads_help: str | None,
+) -> None:
+    parser.add_argument("--run", action="store_true", help=run_help)
+    parser.add_argument("--dry-run", action="store_true", help="Dry-run workflow execution.")
+    parser.add_argument("--yes", action="store_true", help="Confirm workflow tasks when needed.")
+    if include_payloads_help is None:
+        parser.add_argument("--include-payloads", action="store_true")
+    else:
+        parser.add_argument("--include-payloads", action="store_true", help=include_payloads_help)
+
+
+
+
+
+def _add_demo_network_commands(subcommands: argparse._SubParsersAction) -> None:
+    _add_demo_commands(subcommands)
+    _add_network_commands(subcommands)
+
+
+def _add_demo_commands(subcommands: argparse._SubParsersAction) -> None:
     demo_parser = subcommands.add_parser("demo", help="Run product demo evidence bundles.")
     demo_subcommands = demo_parser.add_subparsers(dest="demo_command")
     killer_demo = demo_subcommands.add_parser(
@@ -264,210 +449,53 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run MCP/A2A/ACP smoke checks as part of the demo report.",
     )
 
+
+
+def _add_network_commands(subcommands: argparse._SubParsersAction) -> None:
     network_parser = subcommands.add_parser("network", help="Inspect external CBN network connection packages.")
     network_subcommands = network_parser.add_subparsers(dest="network_command")
-    network_connect = network_subcommands.add_parser(
-        "connect-package",
-        help="Print the one-shot package another program needs to connect to CBN.",
+    _add_network_profile_commands(network_subcommands)
+    _add_network_quickstart_command(network_subcommands)
+    _add_network_runtime_commands(network_subcommands)
+
+
+def _add_network_profile_commands(network_subcommands: argparse._SubParsersAction) -> None:
+    for command in NETWORK_PROFILE_COMMANDS:
+        _add_network_profile_command(network_subcommands, **command)
+
+
+def _add_network_profile_command(
+    network_subcommands: argparse._SubParsersAction,
+    *,
+    name: str,
+    help_text: str,
+    workflow_help: str,
+    session_help: str,
+    message_help: str,
+) -> None:
+    parser = network_subcommands.add_parser(name, help=help_text)
+    _add_network_connect_args(
+        parser,
+        NetworkConnectArgOptions(
+            workflow_help=workflow_help,
+            session_help=session_help,
+            message_help=message_help,
+        ),
     )
-    network_connect.add_argument(
-        "--workflow-path",
-        default="workflows/cli-anything-macrocli-mermaid-routing.example.json",
-        help="Workflow JSON path to expose in the connect package.",
-    )
-    network_connect.add_argument("--base-url", help="Daemon base URL to embed in endpoint URLs.")
-    network_connect.add_argument(
-        "--studio-url",
-        default="http://127.0.0.1:5177",
-        help="Workflow Studio base URL to embed as a preconfigured demo link.",
-    )
-    network_connect.add_argument(
-        "--dashboard-url",
-        default="http://127.0.0.1:5173",
-        help="Maintainer dashboard URL to embed in the Workflow Studio demo link.",
-    )
-    network_connect.add_argument(
-        "--session-token",
-        help="Optional daemon session token to include in the Workflow Studio demo link.",
-    )
-    network_connect.add_argument(
-        "--message",
-        default=DEFAULT_AGENT_CONNECT_MESSAGE,
-        help="Agent prompt used to shape the Adapter Agent node bundle.",
-    )
-    network_entry_profile = network_subcommands.add_parser(
-        "entry-profile",
-        help="Print only the stable external integration profile from the one-shot package.",
-    )
-    network_entry_profile.add_argument(
-        "--workflow-path",
-        default="workflows/cli-anything-macrocli-mermaid-routing.example.json",
-        help="Workflow JSON path to expose in the entry profile.",
-    )
-    network_entry_profile.add_argument("--base-url", help="Daemon base URL to embed in endpoint URLs.")
-    network_entry_profile.add_argument(
-        "--studio-url",
-        default="http://127.0.0.1:5177",
-        help="Workflow Studio base URL to embed as a preconfigured demo link.",
-    )
-    network_entry_profile.add_argument(
-        "--dashboard-url",
-        default="http://127.0.0.1:5173",
-        help="Maintainer dashboard URL to embed in the Workflow Studio demo link.",
-    )
-    network_entry_profile.add_argument(
-        "--session-token",
-        help="Optional daemon session token to include in auth metadata.",
-    )
-    network_entry_profile.add_argument(
-        "--message",
-        default=DEFAULT_AGENT_CONNECT_MESSAGE,
-        help="Agent prompt used to shape the reusable workflow request.",
-    )
-    network_harness_agent = network_subcommands.add_parser(
-        "harness-agent",
-        help="Print only the reusable natural-language harness agent contract.",
-    )
-    network_harness_agent.add_argument(
-        "--workflow-path",
-        default="workflows/cli-anything-macrocli-mermaid-routing.example.json",
-        help="Workflow JSON path to expose in the harness agent contract.",
-    )
-    network_harness_agent.add_argument("--base-url", help="Daemon base URL to embed in endpoint URLs.")
-    network_harness_agent.add_argument(
-        "--studio-url",
-        default="http://127.0.0.1:5177",
-        help="Workflow Studio base URL to embed as a preconfigured demo link.",
-    )
-    network_harness_agent.add_argument(
-        "--dashboard-url",
-        default="http://127.0.0.1:5173",
-        help="Maintainer dashboard URL to embed in the Workflow Studio demo link.",
-    )
-    network_harness_agent.add_argument(
-        "--session-token",
-        help="Optional daemon session token to include in auth metadata.",
-    )
-    network_harness_agent.add_argument(
-        "--message",
-        default=DEFAULT_AGENT_CONNECT_MESSAGE,
-        help="Agent prompt used to shape the reusable workflow request.",
-    )
-    network_sdk_bootstrap = network_subcommands.add_parser(
-        "sdk-bootstrap",
-        help="Print only the stable SDK bootstrap contract for external CBN consumers.",
-    )
-    network_sdk_bootstrap.add_argument(
-        "--workflow-path",
-        default="workflows/cli-anything-macrocli-mermaid-routing.example.json",
-        help="Workflow JSON path to expose in the SDK bootstrap contract.",
-    )
-    network_sdk_bootstrap.add_argument("--base-url", help="Daemon base URL to embed in endpoint URLs.")
-    network_sdk_bootstrap.add_argument(
-        "--studio-url",
-        default="http://127.0.0.1:5177",
-        help="Workflow Studio base URL to embed as a preconfigured demo link.",
-    )
-    network_sdk_bootstrap.add_argument(
-        "--dashboard-url",
-        default="http://127.0.0.1:5173",
-        help="Maintainer dashboard URL to embed in the Workflow Studio demo link.",
-    )
-    network_sdk_bootstrap.add_argument(
-        "--session-token",
-        help="Optional daemon session token to include in auth metadata.",
-    )
-    network_sdk_bootstrap.add_argument(
-        "--message",
-        default=DEFAULT_AGENT_CONNECT_MESSAGE,
-        help="Agent prompt used to shape the SDK bootstrap request map.",
-    )
-    network_consumer_manifest = network_subcommands.add_parser(
-        "consumer-manifest",
-        help="Print the redacted persistable manifest for external CBN consumers.",
-    )
-    network_consumer_manifest.add_argument(
-        "--workflow-path",
-        default="workflows/cli-anything-macrocli-mermaid-routing.example.json",
-        help="Workflow JSON path to expose in the consumer manifest.",
-    )
-    network_consumer_manifest.add_argument("--base-url", help="Daemon base URL to embed in endpoint URLs.")
-    network_consumer_manifest.add_argument(
-        "--studio-url",
-        default="http://127.0.0.1:5177",
-        help="Workflow Studio base URL to embed as a preconfigured demo link.",
-    )
-    network_consumer_manifest.add_argument(
-        "--dashboard-url",
-        default="http://127.0.0.1:5173",
-        help="Maintainer dashboard URL to embed in the Workflow Studio demo link.",
-    )
-    network_consumer_manifest.add_argument(
-        "--session-token",
-        help="Optional daemon session token to redact into auth metadata.",
-    )
-    network_consumer_manifest.add_argument(
-        "--message",
-        default=DEFAULT_AGENT_CONNECT_MESSAGE,
-        help="Agent prompt used to shape the consumer manifest.",
-    )
-    network_acceptance = network_subcommands.add_parser(
-        "acceptance",
-        help="Print only the machine-readable acceptance checklist for external CBN consumers.",
-    )
-    network_acceptance.add_argument(
-        "--workflow-path",
-        default="workflows/cli-anything-macrocli-mermaid-routing.example.json",
-        help="Workflow JSON path to expose in the acceptance checklist.",
-    )
-    network_acceptance.add_argument("--base-url", help="Daemon base URL to embed in endpoint URLs.")
-    network_acceptance.add_argument(
-        "--studio-url",
-        default="http://127.0.0.1:5177",
-        help="Workflow Studio base URL to embed as a preconfigured demo link.",
-    )
-    network_acceptance.add_argument(
-        "--dashboard-url",
-        default="http://127.0.0.1:5173",
-        help="Maintainer dashboard URL to embed in the Workflow Studio demo link.",
-    )
-    network_acceptance.add_argument(
-        "--session-token",
-        help="Optional daemon session token to include in generated first-call requests.",
-    )
-    network_acceptance.add_argument(
-        "--message",
-        default=DEFAULT_AGENT_CONNECT_MESSAGE,
-        help="Agent prompt used to shape the reusable workflow request.",
-    )
+
+
+def _add_network_quickstart_command(network_subcommands: argparse._SubParsersAction) -> None:
     network_quickstart = network_subcommands.add_parser(
         "quickstart",
         help="Print only the machine-readable first-call quickstart for external CBN consumers.",
     )
-    network_quickstart.add_argument(
-        "--workflow-path",
-        default="workflows/cli-anything-macrocli-mermaid-routing.example.json",
-        help="Workflow JSON path to expose in the quickstart.",
-    )
-    network_quickstart.add_argument("--base-url", help="Daemon base URL to embed in endpoint URLs.")
-    network_quickstart.add_argument(
-        "--studio-url",
-        default="http://127.0.0.1:5177",
-        help="Workflow Studio base URL to embed as a preconfigured demo link.",
-    )
-    network_quickstart.add_argument(
-        "--dashboard-url",
-        default="http://127.0.0.1:5173",
-        help="Maintainer dashboard URL to embed in the Workflow Studio demo link.",
-    )
-    network_quickstart.add_argument(
-        "--session-token",
-        help="Optional daemon session token to include in required headers and the Studio demo link.",
-    )
-    network_quickstart.add_argument(
-        "--message",
-        default=DEFAULT_AGENT_CONNECT_MESSAGE,
-        help="Agent prompt used to shape the reusable workflow request.",
+    _add_network_connect_args(
+        network_quickstart,
+        NetworkConnectArgOptions(
+            workflow_help="Workflow JSON path to expose in the quickstart.",
+            session_help="Optional daemon session token to include in required headers and the Studio demo link.",
+            message_help="Agent prompt used to shape the reusable workflow request.",
+        ),
     )
     network_quickstart.add_argument(
         "--output",
@@ -491,62 +519,56 @@ def build_parser() -> argparse.ArgumentParser:
             "consumer manifest."
         ),
     )
+
+
+def _add_network_runtime_commands(network_subcommands: argparse._SubParsersAction) -> None:
+    _add_network_verify_command(network_subcommands)
+    _add_network_studio_link_command(network_subcommands)
+
+
+def _add_network_verify_command(network_subcommands: argparse._SubParsersAction) -> None:
     network_verify = network_subcommands.add_parser(
         "verify",
         help="Run the quickstart acceptance checklist against a live CBN daemon.",
     )
-    network_verify.add_argument(
-        "--workflow-path",
-        default="workflows/cli-anything-macrocli-mermaid-routing.example.json",
-        help="Workflow JSON path to verify through the daemon.",
-    )
-    network_verify.add_argument(
-        "--base-url",
-        default="http://127.0.0.1:8787",
-        help="Daemon base URL to call during verification.",
-    )
-    network_verify.add_argument(
-        "--studio-url",
-        default="http://127.0.0.1:5177",
-        help="Workflow Studio base URL to embed in the generated connect package.",
-    )
-    network_verify.add_argument(
-        "--dashboard-url",
-        default="http://127.0.0.1:5173",
-        help="Maintainer dashboard URL to embed in generated Workflow Studio links.",
-    )
-    network_verify.add_argument(
-        "--session-token",
-        help="Optional daemon session token to include in verification requests.",
-    )
-    network_verify.add_argument(
-        "--message",
-        default=DEFAULT_AGENT_CONNECT_MESSAGE,
-        help="Agent prompt used to shape the reusable workflow request.",
+    _add_network_connect_args(
+        network_verify,
+        NetworkConnectArgOptions(
+            workflow_help="Workflow JSON path to verify through the daemon.",
+            base_url_help="Daemon base URL to call during verification.",
+            base_url_default=DEFAULT_DAEMON_URL,
+            studio_help="Workflow Studio base URL to embed in the generated connect package.",
+            dashboard_help="Maintainer dashboard URL to embed in generated Workflow Studio links.",
+            session_help="Optional daemon session token to include in verification requests.",
+            message_help="Agent prompt used to shape the reusable workflow request.",
+        ),
     )
     network_verify.add_argument("--timeout-seconds", type=float, default=8.0)
+
+
+def _add_network_studio_link_command(network_subcommands: argparse._SubParsersAction) -> None:
     network_studio_link = network_subcommands.add_parser(
         "studio-link",
         help="Print a preconfigured Workflow Studio URL for a CBN workflow.",
     )
     network_studio_link.add_argument(
         "--workflow-path",
-        default="workflows/cli-anything-macrocli-mermaid-routing.example.json",
+        default=DEFAULT_NETWORK_WORKFLOW_PATH,
         help="Workflow JSON path to open in Workflow Studio.",
     )
     network_studio_link.add_argument(
         "--daemon-url",
-        default="http://127.0.0.1:8787",
+        default=DEFAULT_DAEMON_URL,
         help="Daemon base URL to prefill in Workflow Studio.",
     )
     network_studio_link.add_argument(
         "--studio-url",
-        default="http://127.0.0.1:5177",
+        default=DEFAULT_NETWORK_STUDIO_URL,
         help="Workflow Studio base URL.",
     )
     network_studio_link.add_argument(
         "--dashboard-url",
-        default="http://127.0.0.1:5173",
+        default=DEFAULT_NETWORK_DASHBOARD_URL,
         help="Maintainer dashboard URL to prefill in Workflow Studio.",
     )
     network_studio_link.add_argument("--session-token", help="Optional daemon session token to include.")
@@ -559,16 +581,39 @@ def build_parser() -> argparse.ArgumentParser:
         help="Agent prompt to prefill in Workflow Studio.",
     )
 
+
+
+
+
+
+
+def _add_import_commands(subcommands: argparse._SubParsersAction) -> None:
     import_parser = subcommands.add_parser("import", help="Create CBN manifests from external tools.")
     import_subcommands = import_parser.add_subparsers(dest="import_command")
+    _add_import_catalog_command(import_subcommands)
+    _add_import_plain_command(import_subcommands)
+    _add_import_cli_anything_command(import_subcommands)
+    _add_import_external_protocol_commands(import_subcommands)
+
+
+def _add_import_catalog_command(import_subcommands: argparse._SubParsersAction) -> None:
     import_subcommands.add_parser(
         "catalog",
         help="Print the dry-run-first importer catalog.",
     )
+
+
+def _add_import_plain_command(import_subcommands: argparse._SubParsersAction) -> None:
     import_command = import_subcommands.add_parser(
         "command",
         help="Generate a ToolManifest for a plain CLI command.",
     )
+    _add_import_plain_identity_args(import_command)
+    _add_import_plain_policy_args(import_command)
+    _add_import_plain_metadata_args(import_command)
+
+
+def _add_import_plain_identity_args(import_command: argparse.ArgumentParser) -> None:
     import_command.add_argument("capability_id", help="Stable CBN capability id, for example local.echo.")
     import_command.add_argument(
         "--command",
@@ -586,6 +631,9 @@ def build_parser() -> argparse.ArgumentParser:
     import_command.add_argument("--transport", choices=["stdio", "pty"], default="stdio")
     import_command.add_argument("--parser-ref", default="raw.text")
     import_command.add_argument("--verified", action="store_true", help="Mark parser/output contract verified.")
+
+
+def _add_import_plain_policy_args(import_command: argparse.ArgumentParser) -> None:
     import_command.add_argument(
         "--risk",
         choices=["read", "write-workspace", "privileged", "external-network"],
@@ -599,6 +647,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     import_command.add_argument("--cwd-policy", default="workspace")
     import_command.add_argument("--timeout-seconds", type=int, default=30)
+
+
+def _add_import_plain_metadata_args(import_command: argparse.ArgumentParser) -> None:
     import_command.add_argument("--label", action="append", default=[], help="Manifest label as KEY=VALUE; repeatable.")
     import_command.add_argument(
         "--annotation",
@@ -608,6 +659,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     import_command.add_argument("--output", help="Output manifest path. Defaults to runtime/manifests/<id>.json.")
     import_command.add_argument("--write", action="store_true", help="Write the manifest after validation.")
+
+
+def _add_import_cli_anything_command(import_subcommands: argparse._SubParsersAction) -> None:
     import_cli_anything = import_subcommands.add_parser(
         "cli-anything",
         help="Import or onboard a CLI-Anything harness as a CBN capability.",
@@ -646,6 +700,15 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help="Extra arg passed to protocol smoke capability calls; repeatable.",
     )
+
+
+def _add_import_external_protocol_commands(import_subcommands: argparse._SubParsersAction) -> None:
+    _add_import_agent_cli_card_command(import_subcommands)
+    _add_import_mcp_command(import_subcommands)
+    _add_import_skill_command(import_subcommands)
+
+
+def _add_import_agent_cli_card_command(import_subcommands: argparse._SubParsersAction) -> None:
     import_agent_cli_card = import_subcommands.add_parser(
         "agent-cli-card",
         help="Generate ToolManifest drafts from an AgentCliCard descriptor.",
@@ -664,6 +727,9 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Write generated manifests after validation.",
     )
+
+
+def _add_import_mcp_command(import_subcommands: argparse._SubParsersAction) -> None:
     import_mcp = import_subcommands.add_parser(
         "mcp",
         help="Generate a ToolManifest draft from an external MCP tool descriptor.",
@@ -696,6 +762,9 @@ def build_parser() -> argparse.ArgumentParser:
     import_mcp.add_argument("--timeout-seconds", type=int, default=60)
     import_mcp.add_argument("--output", help="Output manifest path. Defaults to runtime/manifests/<id>.json.")
     import_mcp.add_argument("--write", action="store_true", help="Write the manifest after validation.")
+
+
+def _add_import_skill_command(import_subcommands: argparse._SubParsersAction) -> None:
     import_skill = import_subcommands.add_parser(
         "skill",
         help="Generate a ToolManifest draft from a local skill descriptor.",
@@ -727,6 +796,13 @@ def build_parser() -> argparse.ArgumentParser:
     import_skill.add_argument("--output", help="Output manifest path. Defaults to runtime/manifests/<id>.json.")
     import_skill.add_argument("--write", action="store_true", help="Write the manifest after validation.")
 
+
+
+
+
+
+
+def _add_facade_commands(subcommands: argparse._SubParsersAction) -> None:
     mcp_parser = subcommands.add_parser("mcp", help="Run or test the MCP stdio facade.")
     mcp_subcommands = mcp_parser.add_subparsers(dest="mcp_command")
     mcp_serve = mcp_subcommands.add_parser("serve", help="Serve MCP over stdio.")
@@ -765,6 +841,17 @@ def build_parser() -> argparse.ArgumentParser:
     acp_workflow_smoke.add_argument("--dry-run", action="store_true")
     acp_workflow_smoke.add_argument("--yes", action="store_true", help="Confirm workflow tasks.")
 
+
+
+def _add_runtime_workflow_commands(subcommands: argparse._SubParsersAction) -> None:
+    _add_message_commands(subcommands)
+    _add_approval_commands(subcommands)
+    _add_workflow_commands(subcommands)
+    _add_runtime_commands(subcommands)
+    _add_daemon_commands(subcommands)
+
+
+def _add_message_commands(subcommands: argparse._SubParsersAction) -> None:
     message_parser = subcommands.add_parser("message", help="Validate and inspect BridgeMessage envelopes.")
     message_subcommands = message_parser.add_subparsers(dest="message_command")
     message_validate = message_subcommands.add_parser("validate", help="Validate one BridgeMessage JSON file.")
@@ -781,6 +868,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     message_contract.add_argument("--workflow-path", help="Optional workflow JSON path to inspect.")
 
+
+
+def _add_approval_commands(subcommands: argparse._SubParsersAction) -> None:
     approvals_parser = subcommands.add_parser("approvals", help="Manage the approval queue.")
     approvals_subcommands = approvals_parser.add_subparsers(dest="approvals_command")
     approvals_list = approvals_subcommands.add_parser("list", help="List approval requests.")
@@ -795,9 +885,17 @@ def build_parser() -> argparse.ArgumentParser:
     approvals_deny.add_argument("approval_id")
     approvals_deny.add_argument("--reason", default="")
 
+
+
+def _add_workflow_commands(subcommands: argparse._SubParsersAction) -> None:
     workflow_parser = subcommands.add_parser("workflow", help="Validate, plan, package, or run workflows.")
     workflow_subcommands = workflow_parser.add_subparsers(dest="workflow_command")
     workflow_subcommands.add_parser("list", help="List workflow descriptors.")
+    _add_workflow_file_commands(workflow_subcommands)
+    _add_workflow_package_commands(workflow_subcommands)
+
+
+def _add_workflow_file_commands(workflow_subcommands: argparse._SubParsersAction) -> None:
     workflow_inspect = workflow_subcommands.add_parser("inspect", help="Inspect one workflow descriptor.")
     workflow_inspect.add_argument("path")
     workflow_validate = workflow_subcommands.add_parser("validate", help="Validate a workflow JSON file.")
@@ -808,6 +906,9 @@ def build_parser() -> argparse.ArgumentParser:
     workflow_run.add_argument("path")
     workflow_run.add_argument("--dry-run", action="store_true")
     workflow_run.add_argument("--yes", action="store_true", help="Confirm high-risk workflow tasks.")
+
+
+def _add_workflow_package_commands(workflow_subcommands: argparse._SubParsersAction) -> None:
     workflow_compile = workflow_subcommands.add_parser(
         "compile",
         help="Compile a workflow into an executable workflow package.",
@@ -842,6 +943,9 @@ def build_parser() -> argparse.ArgumentParser:
     workflow_golden.add_argument("--dry-run", action="store_true")
     workflow_golden.add_argument("--yes", action="store_true", help="Confirm high-risk workflow tasks.")
 
+
+
+def _add_runtime_commands(subcommands: argparse._SubParsersAction) -> None:
     runtime_parser = subcommands.add_parser("runtime", help="Inspect or prepare local runtime dependencies.")
     runtime_subcommands = runtime_parser.add_subparsers(dest="runtime_command")
     runtime_transport = runtime_subcommands.add_parser(
@@ -853,6 +957,9 @@ def build_parser() -> argparse.ArgumentParser:
     runtime_transport.add_argument("--install", action="store_true", help="Install the missing backend.")
     runtime_transport.add_argument("--yes", action="store_true", help="Confirm runtime dependency installation.")
 
+
+
+def _add_daemon_commands(subcommands: argparse._SubParsersAction) -> None:
     daemon_parser = subcommands.add_parser("daemon", help="Run or inspect the local daemon API.")
     daemon_subcommands = daemon_parser.add_subparsers(dest="daemon_command")
     daemon_subcommands.add_parser("routes", help="List MVP daemon routes.")
@@ -878,8 +985,26 @@ def build_parser() -> argparse.ArgumentParser:
         help="Disable the daemon session token gate.",
     )
 
+
+
+
+
+def _add_plugin_commands(subcommands: argparse._SubParsersAction) -> None:
     plugin_parser = subcommands.add_parser("plugin", help="Manage external CBN plugins.")
     plugin_subcommands = plugin_parser.add_subparsers(dest="plugin_command")
+    _add_plugin_manager_commands(plugin_subcommands)
+    _add_cli_anything_discovery_commands(plugin_subcommands)
+    _add_cli_anything_adaptation_commands(plugin_subcommands)
+    _add_plugin_lifecycle_commands(plugin_subcommands)
+
+
+def _add_plugin_manager_commands(plugin_subcommands: argparse._SubParsersAction) -> None:
+    _add_plugin_read_commands(plugin_subcommands)
+    _add_plugin_operation_commands(plugin_subcommands)
+    _add_plugin_gate_report_commands(plugin_subcommands)
+
+
+def _add_plugin_read_commands(plugin_subcommands: argparse._SubParsersAction) -> None:
     plugin_subcommands.add_parser("list", help="List known external plugins.")
 
     plugin_info = plugin_subcommands.add_parser("info", help="Show plugin metadata.")
@@ -891,12 +1016,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     plugin_operations.add_argument("plugin_id", nargs="?", help="Plugin id, for example cli-anything.")
 
+
+
+def _add_plugin_operation_commands(plugin_subcommands: argparse._SubParsersAction) -> None:
+    _add_validate_operations_command(plugin_subcommands)
+    _add_operation_plan_command(plugin_subcommands)
+    _add_verify_plan_command(plugin_subcommands)
+
+
+def _add_validate_operations_command(plugin_subcommands: argparse._SubParsersAction) -> None:
     plugin_validate_operations = plugin_subcommands.add_parser(
         "validate-operations",
         help="Validate provider operation descriptors and side-effect gates.",
     )
     plugin_validate_operations.add_argument("plugin_id", nargs="?", help="Plugin id, for example cli-anything.")
 
+
+def _add_operation_plan_command(plugin_subcommands: argparse._SubParsersAction) -> None:
     plugin_operation_plan = plugin_subcommands.add_parser(
         "operation-plan",
         help="Resolve one provider operation descriptor into a dispatch-ready plan.",
@@ -912,6 +1048,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     plugin_operation_plan.add_argument("--yes", action="store_true", help="Confirm side-effecting operation dispatch.")
 
+
+def _add_verify_plan_command(plugin_subcommands: argparse._SubParsersAction) -> None:
     plugin_verify_plan = plugin_subcommands.add_parser(
         "verify-plan",
         help="Preview or run a plugin plan's post-operation verification commands.",
@@ -931,6 +1069,9 @@ def build_parser() -> argparse.ArgumentParser:
     plugin_verify_plan.add_argument("--run", action="store_true", help="Run safe read-only verification commands.")
     plugin_verify_plan.add_argument("--timeout-seconds", type=int, default=60)
 
+
+
+def _add_plugin_gate_report_commands(plugin_subcommands: argparse._SubParsersAction) -> None:
     plugin_preflight = plugin_subcommands.add_parser("preflight", help="Run install readiness checks.")
     plugin_preflight.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
 
@@ -966,11 +1107,37 @@ def build_parser() -> argparse.ArgumentParser:
     plugin_status = plugin_subcommands.add_parser("status", help="Show external plugin runtime status.")
     plugin_status.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
 
+
+
+
+
+def _add_cli_anything_discovery_commands(plugin_subcommands: argparse._SubParsersAction) -> None:
+    _add_cli_anything_market_manifest_commands(plugin_subcommands)
+    _add_cli_anything_onboarding_commands(plugin_subcommands)
+    _add_cli_anything_planning_commands(plugin_subcommands)
+
+
+def _add_cli_anything_market_manifest_commands(plugin_subcommands: argparse._SubParsersAction) -> None:
+    _add_cli_anything_market_command(plugin_subcommands)
+    _add_cli_anything_manifest_commands(plugin_subcommands)
+    _add_cli_anything_probe_verify_commands(plugin_subcommands)
+
+
+def _add_cli_anything_market_command(plugin_subcommands: argparse._SubParsersAction) -> None:
     plugin_market = plugin_subcommands.add_parser("market", help="Inspect an external plugin market.")
     plugin_market.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
     plugin_market.add_argument("market_command", choices=["list", "search", "info"])
     plugin_market.add_argument("query", nargs="?", help="Search query or harness name.")
 
+
+
+def _add_cli_anything_manifest_commands(plugin_subcommands: argparse._SubParsersAction) -> None:
+    _add_import_harness_command(plugin_subcommands)
+    _add_adapt_harness_command(plugin_subcommands)
+    _add_prepare_harness_command(plugin_subcommands)
+
+
+def _add_import_harness_command(plugin_subcommands: argparse._SubParsersAction) -> None:
     plugin_import = plugin_subcommands.add_parser(
         "import-harness",
         help="Generate or write a CBN manifest for an external harness.",
@@ -985,6 +1152,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     plugin_import.add_argument("--write", action="store_true", help="Write manifest into manifests/.")
 
+
+def _add_adapt_harness_command(plugin_subcommands: argparse._SubParsersAction) -> None:
     plugin_adapt = plugin_subcommands.add_parser(
         "adapt-harness",
         help="Preview or write the full CBN adaptation report for an external harness.",
@@ -999,6 +1168,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     plugin_adapt.add_argument("--write", action="store_true", help="Write manifest into manifests/.")
 
+
+def _add_prepare_harness_command(plugin_subcommands: argparse._SubParsersAction) -> None:
     plugin_prepare = plugin_subcommands.add_parser(
         "prepare-harness",
         help="Return status, manifest validation, and lifecycle plans for an external harness.",
@@ -1012,6 +1183,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Require a CLI-Hub market record and include its metadata in the preparation report.",
     )
 
+
+
+def _add_cli_anything_probe_verify_commands(plugin_subcommands: argparse._SubParsersAction) -> None:
+    _add_cli_anything_evaluate_command(plugin_subcommands)
+    _add_cli_anything_probe_command(plugin_subcommands)
+    _add_cli_anything_verify_command(plugin_subcommands)
+
+
+def _add_cli_anything_evaluate_command(plugin_subcommands: argparse._SubParsersAction) -> None:
     plugin_evaluate = plugin_subcommands.add_parser(
         "evaluate-harness",
         help="Evaluate an external harness as a candidate for install and CBN adaptation.",
@@ -1032,6 +1212,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Evaluate without requiring market metadata.",
     )
 
+
+def _add_cli_anything_probe_command(plugin_subcommands: argparse._SubParsersAction) -> None:
     plugin_probe = plugin_subcommands.add_parser(
         "probe-harness",
         help="Read-only probe of CLI-Anything harness dependencies before install.",
@@ -1041,6 +1223,8 @@ def build_parser() -> argparse.ArgumentParser:
     plugin_probe.add_argument("--title", help="Override generated manifest title.")
     plugin_probe.add_argument("--from-market", action="store_true", default=True)
 
+
+def _add_cli_anything_verify_command(plugin_subcommands: argparse._SubParsersAction) -> None:
     plugin_verify = plugin_subcommands.add_parser(
         "verify-harness",
         help="Return the read-only adaptation verification plan for a CLI-Anything harness.",
@@ -1073,6 +1257,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Extra arg passed to the harness capability when --smoke-suite is used; repeatable.",
     )
 
+
+
+
+
+def _add_cli_anything_onboarding_commands(plugin_subcommands: argparse._SubParsersAction) -> None:
+    _add_cli_anything_verification_plan_command(plugin_subcommands)
+    _add_cli_anything_onboard_command(plugin_subcommands)
+    _add_cli_anything_live_command(plugin_subcommands)
+
+
+def _add_cli_anything_verification_plan_command(plugin_subcommands: argparse._SubParsersAction) -> None:
     plugin_verify_harness_plan = plugin_subcommands.add_parser(
         "verify-harness-plan",
         help="Preview or run a CLI-Anything harness plan's post-operation verification commands.",
@@ -1088,10 +1283,19 @@ def build_parser() -> argparse.ArgumentParser:
     plugin_verify_harness_plan.add_argument("--run", action="store_true", help="Run safe read-only verification commands.")
     plugin_verify_harness_plan.add_argument("--timeout-seconds", type=int, default=60)
 
+
+
+def _add_cli_anything_onboard_command(plugin_subcommands: argparse._SubParsersAction) -> None:
     plugin_onboard = plugin_subcommands.add_parser(
         "onboard-harness",
         help="Run the CLI-Anything harness discovery, adaptation, install gate, and verification onboarding report.",
     )
+    _add_cli_anything_onboard_identity_args(plugin_onboard)
+    _add_cli_anything_onboard_write_args(plugin_onboard)
+    _add_cli_anything_onboard_verification_args(plugin_onboard)
+
+
+def _add_cli_anything_onboard_identity_args(plugin_onboard: argparse.ArgumentParser) -> None:
     plugin_onboard.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
     plugin_onboard.add_argument("harness_name", help="Harness name in CLI-Hub.")
     plugin_onboard.add_argument("--title", help="Override generated manifest title.")
@@ -1102,6 +1306,9 @@ def build_parser() -> argparse.ArgumentParser:
         dest="from_market",
         help="Onboard without requiring market metadata.",
     )
+
+
+def _add_cli_anything_onboard_write_args(plugin_onboard: argparse.ArgumentParser) -> None:
     plugin_onboard.add_argument("--write", action="store_true", help="Write the generated harness manifest.")
     plugin_onboard.add_argument("--yes", action="store_true", help="Confirm manifest write when --write is set.")
     plugin_onboard.add_argument(
@@ -1114,6 +1321,9 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Execute install even when harness evaluation reports blockers.",
     )
+
+
+def _add_cli_anything_onboard_verification_args(plugin_onboard: argparse.ArgumentParser) -> None:
     plugin_onboard.add_argument(
         "--no-workflows",
         action="store_false",
@@ -1132,6 +1342,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Extra arg passed to the harness capability when --smoke-suite is used; repeatable.",
     )
 
+
+
+def _add_cli_anything_live_command(plugin_subcommands: argparse._SubParsersAction) -> None:
     plugin_live = plugin_subcommands.add_parser(
         "live-verification",
         help="Return a read-only CLI-Anything live verification snapshot.",
@@ -1169,6 +1382,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Extra arg passed to harness capabilities when --smoke-suite is used; repeatable.",
     )
 
+
+
+
+
+def _add_cli_anything_planning_commands(plugin_subcommands: argparse._SubParsersAction) -> None:
+    _add_cli_anything_mvp_bootstrap_commands(plugin_subcommands)
+    _add_cli_anything_candidate_queue_commands(plugin_subcommands)
+    _add_cli_anything_blocked_plan_command(plugin_subcommands)
+
+
+def _add_cli_anything_mvp_bootstrap_commands(plugin_subcommands: argparse._SubParsersAction) -> None:
     plugin_mvp_plan = plugin_subcommands.add_parser(
         "mvp-plan",
         help="Return the read-only CLI-Anything install, adaptation, and protocol MVP plan.",
@@ -1207,6 +1431,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     plugin_bootstrap_plan.set_defaults(include_workflows=True)
 
+
+
+def _add_cli_anything_candidate_queue_commands(plugin_subcommands: argparse._SubParsersAction) -> None:
     plugin_candidates = plugin_subcommands.add_parser(
         "candidates",
         help="Rank CLI-Anything market harnesses as install candidates without installing them.",
@@ -1245,6 +1472,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Omit blocked candidates from the queue report.",
     )
 
+
+
+def _add_cli_anything_blocked_plan_command(plugin_subcommands: argparse._SubParsersAction) -> None:
     plugin_blocked_plan = plugin_subcommands.add_parser(
         "blocked-plan",
         help="Build a read-only decision report for blocked CLI-Anything market harnesses.",
@@ -1259,6 +1489,25 @@ def build_parser() -> argparse.ArgumentParser:
     plugin_blocked_plan.add_argument("--query", help="Optional CLI-Hub search query when no --harness is provided.")
     plugin_blocked_plan.add_argument("--limit", type=int, default=50, help="Maximum market records to inspect.")
 
+
+
+
+
+
+
+def _add_cli_anything_adaptation_commands(plugin_subcommands: argparse._SubParsersAction) -> None:
+    _add_cli_anything_repair_commands(plugin_subcommands)
+    _add_cli_anything_adapter_commands(plugin_subcommands)
+    _add_cli_anything_gate_commands(plugin_subcommands)
+    _add_cli_anything_sync_harness_commands(plugin_subcommands)
+
+
+def _add_cli_anything_repair_commands(plugin_subcommands: argparse._SubParsersAction) -> None:
+    _add_cli_anything_repair_plan_command(plugin_subcommands)
+    _add_cli_anything_repair_entrypoint_command(plugin_subcommands)
+
+
+def _add_cli_anything_repair_plan_command(plugin_subcommands: argparse._SubParsersAction) -> None:
     plugin_repair_plan = plugin_subcommands.add_parser(
         "repair-plan",
         help="Build a read-only repair plan for a CLI-Anything harness entrypoint problem.",
@@ -1273,6 +1522,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Build repair diagnostics without requiring market metadata.",
     )
 
+
+def _add_cli_anything_repair_entrypoint_command(plugin_subcommands: argparse._SubParsersAction) -> None:
     plugin_repair_entrypoint = plugin_subcommands.add_parser(
         "repair-entrypoint",
         help="Plan or confirm a CBN-owned wrapper repair for a missing CLI-Anything entrypoint.",
@@ -1305,74 +1556,91 @@ def build_parser() -> argparse.ArgumentParser:
     )
     plugin_repair_entrypoint.add_argument("--smoke-timeout", type=int, default=10)
 
-    plugin_promotion_gate = plugin_subcommands.add_parser(
+
+
+def _add_cli_anything_adapter_commands(plugin_subcommands: argparse._SubParsersAction) -> None:
+    _add_cli_anything_promotion_gate_command(plugin_subcommands)
+    _add_cli_anything_adapter_targets_command(plugin_subcommands)
+    _add_cli_anything_adapter_smoke_command(plugin_subcommands)
+
+
+def _add_cli_anything_promotion_gate_command(plugin_subcommands: argparse._SubParsersAction) -> None:
+    parser = plugin_subcommands.add_parser(
         "promotion-gate",
         help="Check whether a repaired CLI-Anything runtime overlay can be promoted to portable manifests.",
     )
-    plugin_promotion_gate.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
-    plugin_promotion_gate.add_argument("harness_name", help="Harness name from the plugin market.")
-    plugin_promotion_gate.add_argument("--from-market", action="store_true", default=True)
-    plugin_promotion_gate.add_argument(
-        "--offline",
-        action="store_false",
-        dest="from_market",
-        help="Gate local overlay promotion without requiring market metadata.",
+    _add_cli_anything_harness_market_args(
+        parser,
+        offline_help="Gate local overlay promotion without requiring market metadata.",
     )
-    plugin_promotion_gate.add_argument("--title", help="Optional title override for generated preview manifests.")
-    plugin_promotion_gate.add_argument("--no-workflows", action="store_false", dest="include_workflows")
-    plugin_promotion_gate.set_defaults(include_workflows=True)
-    plugin_promotion_gate.add_argument(
+    parser.add_argument("--title", help="Optional title override for generated preview manifests.")
+    parser.add_argument("--no-workflows", action="store_false", dest="include_workflows")
+    parser.set_defaults(include_workflows=True)
+    parser.add_argument(
         "--smoke-suite",
         action="store_true",
         help="Run protocol smoke-suite evidence as part of the promotion gate.",
     )
-    plugin_promotion_gate.add_argument(
+    parser.add_argument(
         "--smoke-extra-arg",
         action="append",
         default=[],
         help="Extra arg passed to the capability during protocol smoke-suite.",
     )
 
-    plugin_adapter_targets = plugin_subcommands.add_parser(
+
+def _add_cli_anything_adapter_targets_command(plugin_subcommands: argparse._SubParsersAction) -> None:
+    parser = plugin_subcommands.add_parser(
         "adapter-targets",
         help="Inspect installed Python packages for CLI-like modules that can back a CLI-Anything adapter.",
     )
-    plugin_adapter_targets.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
-    plugin_adapter_targets.add_argument("harness_name", help="Harness name from the plugin market.")
-    plugin_adapter_targets.add_argument("--from-market", action="store_true", default=True)
-    plugin_adapter_targets.add_argument(
-        "--offline",
-        action="store_false",
-        dest="from_market",
-        help="Inspect local packages without requiring market metadata.",
+    _add_cli_anything_harness_market_args(
+        parser,
+        offline_help="Inspect local packages without requiring market metadata.",
     )
-    plugin_adapter_targets.add_argument("--package", help="Inspect one explicit Python distribution name.")
-    plugin_adapter_targets.add_argument("--limit", type=int, default=20, help="Maximum adapter targets to return.")
+    parser.add_argument("--package", help="Inspect one explicit Python distribution name.")
+    parser.add_argument("--limit", type=int, default=20, help="Maximum adapter targets to return.")
 
-    plugin_adapter_smoke = plugin_subcommands.add_parser(
+
+def _add_cli_anything_adapter_smoke_command(plugin_subcommands: argparse._SubParsersAction) -> None:
+    parser = plugin_subcommands.add_parser(
         "adapter-smoke",
         help="Plan or run a confirmed smoke test for a CLI-Anything adapter target module.",
     )
-    plugin_adapter_smoke.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
-    plugin_adapter_smoke.add_argument("harness_name", help="Harness name from the plugin market.")
-    plugin_adapter_smoke.add_argument("--from-market", action="store_true", default=True)
-    plugin_adapter_smoke.add_argument(
-        "--offline",
-        action="store_false",
-        dest="from_market",
-        help="Smoke a module without requiring market metadata.",
+    _add_cli_anything_harness_market_args(
+        parser,
+        offline_help="Smoke a module without requiring market metadata.",
     )
-    plugin_adapter_smoke.add_argument("--module", required=True, help="Python module candidate to smoke.")
-    plugin_adapter_smoke.add_argument(
+    parser.add_argument("--module", required=True, help="Python module candidate to smoke.")
+    parser.add_argument(
         "--smoke-arg",
         action="append",
         default=[],
         help="Argument passed to python -m <module>; defaults to --help when omitted.",
     )
-    plugin_adapter_smoke.add_argument("--timeout", type=int, default=10, help="Smoke command timeout in seconds.")
-    plugin_adapter_smoke.add_argument("--run", action="store_true", help="Execute the smoke command.")
-    plugin_adapter_smoke.add_argument("--yes", action="store_true", help="Confirm smoke execution.")
+    parser.add_argument("--timeout", type=int, default=10, help="Smoke command timeout in seconds.")
+    parser.add_argument("--run", action="store_true", help="Execute the smoke command.")
+    parser.add_argument("--yes", action="store_true", help="Confirm smoke execution.")
 
+
+def _add_cli_anything_harness_market_args(
+    parser: argparse.ArgumentParser,
+    *,
+    offline_help: str,
+) -> None:
+    parser.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
+    parser.add_argument("harness_name", help="Harness name from the plugin market.")
+    parser.add_argument("--from-market", action="store_true", default=True)
+    parser.add_argument("--offline", action="store_false", dest="from_market", help=offline_help)
+
+
+
+def _add_cli_anything_gate_commands(plugin_subcommands: argparse._SubParsersAction) -> None:
+    _add_cli_anything_adaptation_gate_command(plugin_subcommands)
+    _add_cli_anything_adaptation_queue_command(plugin_subcommands)
+
+
+def _add_cli_anything_adaptation_gate_command(plugin_subcommands: argparse._SubParsersAction) -> None:
     plugin_adaptation_gate = plugin_subcommands.add_parser(
         "adaptation-gate",
         help="Summarize native launch, repair, adapter target, and smoke readiness for one CLI-Anything harness.",
@@ -1399,6 +1667,8 @@ def build_parser() -> argparse.ArgumentParser:
     plugin_adaptation_gate.add_argument("--run-smoke", action="store_true", help="Execute adapter smoke.")
     plugin_adaptation_gate.add_argument("--yes", action="store_true", help="Confirm smoke execution.")
 
+
+def _add_cli_anything_adaptation_queue_command(plugin_subcommands: argparse._SubParsersAction) -> None:
     plugin_adaptation_queue = plugin_subcommands.add_parser(
         "adaptation-queue",
         help="Build a read-only adaptation gate queue for multiple CLI-Anything harnesses.",
@@ -1426,6 +1696,9 @@ def build_parser() -> argparse.ArgumentParser:
     plugin_adaptation_queue.add_argument("--run-smoke", action="store_true", help="Execute adapter smoke for selected gates.")
     plugin_adaptation_queue.add_argument("--yes", action="store_true", help="Confirm smoke execution.")
 
+
+
+def _add_cli_anything_sync_harness_commands(plugin_subcommands: argparse._SubParsersAction) -> None:
     plugin_sync = plugin_subcommands.add_parser(
         "sync-market",
         help="Preview or write CBN manifests for CLI-Anything market records.",
@@ -1457,6 +1730,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Execute install/update even when harness evaluation reports blockers.",
     )
 
+
+
+
+
+def _add_plugin_lifecycle_commands(plugin_subcommands: argparse._SubParsersAction) -> None:
+    _add_plugin_plan_command(plugin_subcommands)
+    _add_plugin_install_command(plugin_subcommands)
+    _add_plugin_update_command(plugin_subcommands)
+
+
+def _add_plugin_plan_command(plugin_subcommands: argparse._SubParsersAction) -> None:
     plugin_plan = plugin_subcommands.add_parser("plan", help="Print install/update plan.")
     plugin_plan.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
     plugin_plan.add_argument(
@@ -1471,6 +1755,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Include the optional Codex skill install command in the plan.",
     )
 
+
+def _add_plugin_install_command(plugin_subcommands: argparse._SubParsersAction) -> None:
     plugin_install = plugin_subcommands.add_parser("install", help="Install an external plugin.")
     plugin_install.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
     plugin_install.add_argument("--yes", action="store_true", help="Execute the install plan.")
@@ -1485,6 +1771,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Also install the optional Codex skill when supported.",
     )
 
+
+def _add_plugin_update_command(plugin_subcommands: argparse._SubParsersAction) -> None:
     plugin_update = plugin_subcommands.add_parser("update", help="Update an external plugin.")
     plugin_update.add_argument("plugin_id", help="Plugin id, for example cli-anything.")
     plugin_update.add_argument("--yes", action="store_true", help="Execute the update plan.")
@@ -1498,4 +1786,20 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Also run the optional Codex skill installer when supported.",
     )
-    return parser
+
+
+
+
+def _add_network_connect_args(
+    parser: argparse.ArgumentParser,
+    options: NetworkConnectArgOptions,
+) -> None:
+    parser.add_argument("--workflow-path", default=DEFAULT_NETWORK_WORKFLOW_PATH, help=options.workflow_help)
+    if options.base_url_default is None:
+        parser.add_argument("--base-url", help=options.base_url_help)
+    else:
+        parser.add_argument("--base-url", default=options.base_url_default, help=options.base_url_help)
+    parser.add_argument("--studio-url", default=DEFAULT_NETWORK_STUDIO_URL, help=options.studio_help)
+    parser.add_argument("--dashboard-url", default=DEFAULT_NETWORK_DASHBOARD_URL, help=options.dashboard_help)
+    parser.add_argument("--session-token", help=options.session_help)
+    parser.add_argument("--message", default=DEFAULT_AGENT_CONNECT_MESSAGE, help=options.message_help)

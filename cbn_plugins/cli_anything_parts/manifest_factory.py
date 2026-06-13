@@ -74,49 +74,70 @@ def build_harness_manifest(
     market_record: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     market_record = market_record or {}
-    market_name = str(market_record.get("name") or harness_name)
-    display_name = str(market_record.get("display_name") or market_name)
-    safe_name = sanitize_harness_name(market_name)
-    capability_id = f"cli-anything.{safe_name}.launch"
-    labels = {
-        "plugin": PLUGIN_ID,
-        "harness": market_name,
+    context = _harness_manifest_context(harness_name, title, risk, market_record)
+    return {
+        "apiVersion": "bridge.dev/v1alpha1",
+        "kind": "ToolManifest",
+        "metadata": _harness_manifest_metadata(context),
+        "spec": _harness_manifest_spec(entrypoint, context),
     }
-    labels.update(market_labels(market_record))
-    annotations = market_annotations(market_record)
+
+
+def _harness_manifest_context(
+    harness_name: str,
+    title: str | None,
+    risk: str,
+    market_record: dict[str, Any],
+) -> dict[str, Any]:
+    market_name = str(market_record.get("name") or harness_name)
     policy = infer_market_policy(market_record, requested_risk=risk)
+    annotations = market_annotations(market_record)
     if policy["reasons"]:
         annotations["cli-anything.policy_inference"] = json.dumps(
             policy["reasons"],
             ensure_ascii=False,
             sort_keys=True,
         )
+    labels = {"plugin": PLUGIN_ID, "harness": market_name}
+    labels.update(market_labels(market_record))
     return {
-        "apiVersion": "bridge.dev/v1alpha1",
-        "kind": "ToolManifest",
-        "metadata": {
-            "id": capability_id,
-            "title": title or f"CLI-Anything {display_name}",
-            "labels": labels,
-            "annotations": annotations,
+        "market_name": market_name,
+        "display_name": str(market_record.get("display_name") or market_name),
+        "capability_id": f"cli-anything.{sanitize_harness_name(market_name)}.launch",
+        "title": title,
+        "labels": labels,
+        "annotations": annotations,
+        "policy": policy,
+    }
+
+
+def _harness_manifest_metadata(context: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": context["capability_id"],
+        "title": context["title"] or f"CLI-Anything {context['display_name']}",
+        "labels": context["labels"],
+        "annotations": context["annotations"],
+    }
+
+
+def _harness_manifest_spec(entrypoint: str, context: dict[str, Any]) -> dict[str, Any]:
+    policy = context["policy"]
+    return {
+        "transport": {
+            "kind": "pty",
+            "command": entrypoint,
+            "argsTemplate": ["launch", context["market_name"], "--"],
+            "cwdPolicy": "workspace",
+            "timeoutSeconds": 600,
         },
-        "spec": {
-            "transport": {
-                "kind": "pty",
-                "command": entrypoint,
-                "argsTemplate": ["launch", market_name, "--"],
-                "cwdPolicy": "workspace",
-                "timeoutSeconds": 600,
-            },
-            "policy": {
-                "risk": policy["risk"],
-                "requiresConfirmation": policy["requires_confirmation"],
-                "network": policy["network"],
-            },
-            "output": {
-                "parserRef": "cli-anything.raw",
-                "verified": False,
-            },
+        "policy": {
+            "risk": policy["risk"],
+            "requiresConfirmation": policy["requires_confirmation"],
+            "network": policy["network"],
+        },
+        "output": {
+            "parserRef": "cli-anything.raw",
+            "verified": False,
         },
     }
 
@@ -188,17 +209,25 @@ def preserve_existing_parser_contract(
 ) -> dict[str, Any]:
     existing_output = ((existing.get("spec") or {}).get("output") or {})
     generated_output = ((generated.get("spec") or {}).get("output") or {})
-    if (
-        existing_output.get("verified") is True
-        and existing_output.get("parserRef") == generated_output.get("parserRef")
-    ):
+    if parser_contract_can_be_preserved(existing_output, generated_output):
         generated_output["verified"] = True
-        generated_annotations = generated.setdefault("metadata", {}).setdefault("annotations", {})
-        existing_annotations = (existing.get("metadata") or {}).get("annotations") or {}
-        for key, value in existing_annotations.items():
-            if str(key).startswith("cbn.parser"):
-                generated_annotations.setdefault(key, value)
+        preserve_parser_annotations(existing, generated)
     return generated
+
+
+def parser_contract_can_be_preserved(
+    existing_output: dict[str, Any],
+    generated_output: dict[str, Any],
+) -> bool:
+    return existing_output.get("verified") is True and existing_output.get("parserRef") == generated_output.get("parserRef")
+
+
+def preserve_parser_annotations(existing: dict[str, Any], generated: dict[str, Any]) -> None:
+    generated_annotations = generated.setdefault("metadata", {}).setdefault("annotations", {})
+    existing_annotations = (existing.get("metadata") or {}).get("annotations") or {}
+    for key, value in existing_annotations.items():
+        if str(key).startswith("cbn.parser"):
+            generated_annotations.setdefault(key, value)
 
 
 def market_runtime_text(market_record: dict[str, Any]) -> str:

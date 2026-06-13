@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import importlib.metadata as importlib_metadata
 import importlib.util as importlib_util
 import json
@@ -27,11 +28,101 @@ from cbn_plugins.manager import PluginPlan
 PLUGIN_ID = "cli-anything"
 
 
+@dataclass(frozen=True)
+class RepairEntrypointRequest:
+    harness_name: str
+    from_market: bool
+    module: str | None
+    write: bool
+    confirmed: bool
+    require_smoke: bool
+    smoke_args: tuple[str, ...]
+    smoke_timeout_seconds: int
+
+
+@dataclass(frozen=True)
+class RepairEntrypointContext:
+    plan: dict[str, Any]
+    strategy: dict[str, Any]
+    smoke_gate: dict[str, Any]
+    smoke_report: dict[str, Any] | None
+    wrapper_path: Path
+    repair_manifest_path: Path
+    manifest: dict[str, Any]
+    parser_fixture_gate: dict[str, Any]
+    validation: dict[str, Any]
+    execution: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class RepairEntrypointManifestState:
+    wrapper_path: Path
+    repair_manifest_path: Path
+    manifest: dict[str, Any]
+    validation_context: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class RepairEntrypointExecutionRequest:
+    hub: Any
+    harness_name: str
+    write: bool
+    confirmed: bool
+    strategy: dict[str, Any]
+    smoke_gate: dict[str, Any]
+    validation: dict[str, Any]
+    wrapper_path: Path
+    repair_manifest_path: Path
+    manifest: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class EntrypointRepairPlanContext:
+    evaluation: dict[str, Any]
+    entry_point: str | None
+    entrypoint_path: str | None
+    package_candidates: list[str]
+    script_candidates: list[str]
+    distribution_reports: list[dict[str, Any]]
+    module_reports: list[dict[str, Any]]
+    diagnosis: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class EntrypointDiagnosisContext:
+    gates: dict[str, Any]
+    installed_dists: list[dict[str, Any]]
+    matching_scripts: list[dict[str, Any]]
+    existing_script_files: list[dict[str, Any]]
+    runnable_modules: list[dict[str, Any]]
+
+
+_REPAIR_ENTRYPOINT_OPTION_NAMES = (
+    "from_market",
+    "module",
+    "write",
+    "confirmed",
+    "require_smoke",
+    "smoke_args",
+    "smoke_timeout_seconds",
+    "smoke_gate_fn",
+)
+
+
 def entrypoint_repair_plan(
     hub: Any,
     harness_name: str,
     from_market: bool = True,
 ) -> dict[str, Any]:
+    context = entrypoint_repair_plan_context(hub, harness_name, from_market)
+    return entrypoint_repair_plan_payload(harness_name, from_market, context)
+
+
+def entrypoint_repair_plan_context(
+    hub: Any,
+    harness_name: str,
+    from_market: bool,
+) -> EntrypointRepairPlanContext:
     evaluation = hub.evaluate_harness(harness_name, from_market=from_market)
     status = evaluation.get("status") if isinstance(evaluation.get("status"), dict) else {}
     market_record = status.get("market_record") if isinstance(status.get("market_record"), dict) else None
@@ -51,61 +142,155 @@ def entrypoint_repair_plan(
         module_reports=module_reports,
         evaluation=evaluation,
     )
+    return EntrypointRepairPlanContext(
+        evaluation=evaluation,
+        entry_point=entry_point,
+        entrypoint_path=entrypoint_path,
+        package_candidates=package_candidates,
+        script_candidates=script_candidates,
+        distribution_reports=distribution_reports,
+        module_reports=module_reports,
+        diagnosis=diagnosis,
+    )
+
+
+def entrypoint_repair_plan_payload(
+    harness_name: str,
+    from_market: bool,
+    context: EntrypointRepairPlanContext,
+) -> dict[str, Any]:
     return {
         "ok": True,
         "plugin_id": PLUGIN_ID,
         "kind": "CliAnythingEntrypointRepairPlan",
         "harness_name": harness_name,
         "from_market": from_market,
-        "capability_id": evaluation.get("capability_id"),
-        "entry_point": entry_point,
-        "entrypoint_path": entrypoint_path,
-        "entrypoint_available": bool(entrypoint_path),
-        "package_candidates": package_candidates,
-        "script_candidates": script_candidates,
-        "distributions": distribution_reports,
-        "modules": module_reports,
-        "diagnosis": diagnosis,
-        "evaluation": evaluation,
-        "commands": {
-            "status": f"python -m cbn plugin harness cli-anything status {harness_name} --from-market",
-            "evaluate": f"python -m cbn plugin evaluate-harness cli-anything {harness_name} --from-market",
-            "blocked_plan": f"python -m cbn plugin blocked-plan cli-anything --harness {harness_name}",
-            "where_entrypoint": f"where.exe {entry_point}" if entry_point else None,
-            "pip_show": f"python -m pip show {package_candidates[0]}" if package_candidates else None,
-            "cli_hub_launch_help": f"cli-hub launch {harness_name} -- --help",
-        },
+        "capability_id": context.evaluation.get("capability_id"),
+        "entry_point": context.entry_point,
+        "entrypoint_path": context.entrypoint_path,
+        "entrypoint_available": bool(context.entrypoint_path),
+        "package_candidates": context.package_candidates,
+        "script_candidates": context.script_candidates,
+        "distributions": context.distribution_reports,
+        "modules": context.module_reports,
+        "diagnosis": context.diagnosis,
+        "evaluation": context.evaluation,
+        "commands": entrypoint_repair_plan_commands(harness_name, context),
+    }
+
+
+def entrypoint_repair_plan_commands(
+    harness_name: str,
+    context: EntrypointRepairPlanContext,
+) -> dict[str, str | None]:
+    return {
+        "status": f"python -m cbn plugin harness cli-anything status {harness_name} --from-market",
+        "evaluate": f"python -m cbn plugin evaluate-harness cli-anything {harness_name} --from-market",
+        "blocked_plan": f"python -m cbn plugin blocked-plan cli-anything --harness {harness_name}",
+        "where_entrypoint": f"where.exe {context.entry_point}" if context.entry_point else None,
+        "pip_show": (
+            f"python -m pip show {context.package_candidates[0]}"
+            if context.package_candidates
+            else None
+        ),
+        "cli_hub_launch_help": f"cli-hub launch {harness_name} -- --help",
     }
 
 
 def repair_entrypoint(
     hub: Any,
     harness_name: str,
-    from_market: bool = True,
-    module: str | None = None,
-    write: bool = False,
-    confirmed: bool = False,
-    require_smoke: bool = False,
-    smoke_args: tuple[str, ...] = ("--help",),
-    smoke_timeout_seconds: int = 10,
-    smoke_gate_fn: Callable[[bool, dict[str, Any] | None], dict[str, Any]] | None = None,
+    *args: Any,
+    **options: Any,
 ) -> dict[str, Any]:
-    smoke_gate_fn = smoke_gate_fn or default_repair_smoke_gate
-    plan = hub.entrypoint_repair_plan(harness_name, from_market=from_market)
-    strategy = entrypoint_repair_strategy(plan, module=module)
-    wrapper_path = entrypoint_wrapper_path(hub.paths.external_plugins, harness_name)
-    smoke_report = repair_smoke_report(
+    request, smoke_gate_fn = repair_entrypoint_request(harness_name, args, options)
+    context = repair_entrypoint_context(
         hub,
-        harness_name=harness_name,
-        from_market=from_market,
-        strategy=strategy,
-        require_smoke=require_smoke,
-        smoke_args=smoke_args,
-        smoke_timeout_seconds=smoke_timeout_seconds,
-        run=write,
-        confirmed=confirmed,
+        request=request,
+        smoke_gate_fn=smoke_gate_fn or default_repair_smoke_gate,
     )
-    smoke_gate = smoke_gate_fn(require_smoke, smoke_report)
+    return repair_entrypoint_report_for_request(request, context)
+
+
+def repair_entrypoint_request(
+    harness_name: str,
+    args: tuple[Any, ...],
+    options: dict[str, Any],
+) -> tuple[RepairEntrypointRequest, Callable[[bool, dict[str, Any] | None], dict[str, Any]] | None]:
+    values = repair_entrypoint_options(args, options)
+    smoke_gate_fn = values.pop("smoke_gate_fn")
+    return RepairEntrypointRequest(harness_name=harness_name, **values), smoke_gate_fn
+
+
+def repair_entrypoint_options(args: tuple[Any, ...], options: dict[str, Any]) -> dict[str, Any]:
+    if len(args) > len(_REPAIR_ENTRYPOINT_OPTION_NAMES):
+        raise TypeError(f"repair_entrypoint expected at most {len(_REPAIR_ENTRYPOINT_OPTION_NAMES) + 2} arguments")
+    values = {
+        "from_market": True,
+        "module": None,
+        "write": False,
+        "confirmed": False,
+        "require_smoke": False,
+        "smoke_args": ("--help",),
+        "smoke_timeout_seconds": 10,
+        "smoke_gate_fn": None,
+    }
+    for name, value in zip(_REPAIR_ENTRYPOINT_OPTION_NAMES, args):
+        if name in options:
+            raise TypeError(f"repair_entrypoint got multiple values for argument '{name}'")
+        values[name] = value
+    unknown = sorted(set(options) - set(_REPAIR_ENTRYPOINT_OPTION_NAMES))
+    if unknown:
+        raise TypeError(f"unknown repair entrypoint option(s): {', '.join(unknown)}")
+    values.update(options)
+    return values
+
+
+def repair_entrypoint_context(
+    hub: Any,
+    *,
+    request: RepairEntrypointRequest,
+    smoke_gate_fn: Callable[[bool, dict[str, Any] | None], dict[str, Any]],
+) -> RepairEntrypointContext:
+    plan = hub.entrypoint_repair_plan(request.harness_name, from_market=request.from_market)
+    strategy = entrypoint_repair_strategy(plan, module=request.module)
+    smoke_report = repair_smoke_report_for_request(hub, request, strategy)
+    smoke_gate = smoke_gate_fn(request.require_smoke, smoke_report)
+    manifest_state = repair_entrypoint_manifest_state(hub, request, plan, strategy, smoke_report)
+    execution = repair_entrypoint_execution(RepairEntrypointExecutionRequest(
+        hub=hub,
+        harness_name=request.harness_name,
+        write=request.write,
+        confirmed=request.confirmed,
+        strategy=strategy,
+        smoke_gate=smoke_gate,
+        validation=manifest_state.validation_context["validation"],
+        wrapper_path=manifest_state.wrapper_path,
+        repair_manifest_path=manifest_state.repair_manifest_path,
+        manifest=manifest_state.manifest,
+    ))
+    return RepairEntrypointContext(
+        plan=plan,
+        strategy=strategy,
+        smoke_gate=smoke_gate,
+        smoke_report=smoke_report,
+        wrapper_path=manifest_state.wrapper_path,
+        repair_manifest_path=manifest_state.repair_manifest_path,
+        manifest=manifest_state.manifest,
+        parser_fixture_gate=manifest_state.validation_context["parser_fixtures"],
+        validation=manifest_state.validation_context["validation"],
+        execution=execution,
+    )
+
+
+def repair_entrypoint_manifest_state(
+    hub: Any,
+    request: RepairEntrypointRequest,
+    plan: dict[str, Any],
+    strategy: dict[str, Any],
+    smoke_report: dict[str, Any] | None,
+) -> RepairEntrypointManifestState:
+    wrapper_path = entrypoint_wrapper_path(hub.paths.external_plugins, request.harness_name)
     manifest = entrypoint_repair_manifest(plan, strategy, wrapper_path)
     repair_manifest_path = hub.paths.local_manifests / f"{plan['capability_id']}.json"
     annotate_repair_manifest_with_smoke(manifest, smoke_report)
@@ -116,39 +301,64 @@ def repair_entrypoint(
         repair_manifest_path=repair_manifest_path,
         smoke_report=smoke_report,
     )
-    validation = validation_context["validation"]
-    execution = repair_entrypoint_execution(
-        hub,
-        harness_name=harness_name,
-        write=write,
-        confirmed=confirmed,
-        strategy=strategy,
-        smoke_gate=smoke_gate,
-        validation=validation,
-        wrapper_path=wrapper_path,
-        repair_manifest_path=repair_manifest_path,
-        manifest=manifest,
+    return RepairEntrypointManifestState(wrapper_path, repair_manifest_path, manifest, validation_context)
+
+
+def repair_smoke_report_for_request(
+    hub: Any,
+    request: RepairEntrypointRequest,
+    strategy: dict[str, Any],
+) -> dict[str, Any] | None:
+    return repair_smoke_report(hub, request, strategy)
+
+
+def repair_entrypoint_execution(request: RepairEntrypointExecutionRequest) -> dict[str, Any]:
+    execution: dict[str, Any] = repair_entrypoint_initial_execution(
+        write=request.write,
+        confirmed=request.confirmed,
     )
-    return repair_entrypoint_report(
-        harness_name=harness_name,
-        from_market=from_market,
-        module=module,
-        write=write,
-        confirmed=confirmed,
-        require_smoke=require_smoke,
-        smoke_args=smoke_args,
-        smoke_timeout_seconds=smoke_timeout_seconds,
-        plan=plan,
-        strategy=strategy,
-        smoke_gate=smoke_gate,
-        smoke_report=smoke_report,
-        wrapper_path=wrapper_path,
-        repair_manifest_path=repair_manifest_path,
-        manifest=manifest,
-        parser_fixture_gate=validation_context["parser_fixtures"],
-        validation=validation,
-        execution=execution,
-    )
+    blocker = repair_entrypoint_execution_blocker(request)
+    if blocker:
+        execution["status"] = blocker["status"]
+        execution["blockers"] = blocker["blockers"]
+    elif request.write and request.confirmed:
+        repair_operation = execute_repair_entrypoint_write(
+            request.hub,
+            harness_name=request.harness_name,
+            strategy=request.strategy,
+            wrapper_path=request.wrapper_path,
+            repair_manifest_path=request.repair_manifest_path,
+            manifest=request.manifest,
+        )
+        apply_repair_operation_result(execution, repair_operation)
+    return execution
+
+
+def repair_entrypoint_execution_blocker(request: RepairEntrypointExecutionRequest) -> dict[str, Any] | None:
+    if not request.write:
+        return None
+    if not request.confirmed:
+        return {
+            "status": "requires_confirmation",
+            "blockers": ["entrypoint repair writes require --yes or confirmed=true"],
+        }
+    if not request.strategy["ready"]:
+        return {"status": "blocked", "blockers": list(request.strategy["blockers"])}
+    if not request.smoke_gate["ok"]:
+        return {"status": "blocked", "blockers": list(request.smoke_gate["blockers"])}
+    if not request.validation["valid"]:
+        return {
+            "status": "blocked",
+            "blockers": [f"manifest validation error: {item}" for item in request.validation["errors"]],
+        }
+    return None
+
+
+def repair_entrypoint_report_for_request(
+    request: RepairEntrypointRequest,
+    context: RepairEntrypointContext,
+) -> dict[str, Any]:
+    return repair_entrypoint_report(request, context)
 
 
 def default_repair_smoke_gate(require_smoke: bool, smoke_report: dict[str, Any] | None) -> dict[str, Any]:
@@ -159,26 +369,19 @@ def default_repair_smoke_gate(require_smoke: bool, smoke_report: dict[str, Any] 
 
 def repair_smoke_report(
     hub: Any,
-    *,
-    harness_name: str,
-    from_market: bool,
+    request: RepairEntrypointRequest,
     strategy: dict[str, Any],
-    require_smoke: bool,
-    smoke_args: tuple[str, ...],
-    smoke_timeout_seconds: int,
-    run: bool,
-    confirmed: bool,
 ) -> dict[str, Any] | None:
-    if not (require_smoke and strategy.get("ready") and strategy.get("module")):
+    if not (request.require_smoke and strategy.get("ready") and strategy.get("module")):
         return None
     return hub.adapter_target_smoke(
-        harness_name,
+        request.harness_name,
         module=strategy["module"],
-        from_market=from_market,
-        smoke_args=smoke_args,
-        timeout_seconds=smoke_timeout_seconds,
-        run=run,
-        confirmed=confirmed,
+        from_market=request.from_market,
+        smoke_args=request.smoke_args,
+        timeout_seconds=request.smoke_timeout_seconds,
+        run=request.write,
+        confirmed=request.confirmed,
     )
 
 
@@ -217,45 +420,6 @@ def repair_manifest_validation_context(
             known_parser_refs=known_parser_refs(),
         ),
     }
-
-
-def repair_entrypoint_execution(
-    hub: Any,
-    *,
-    harness_name: str,
-    write: bool,
-    confirmed: bool,
-    strategy: dict[str, Any],
-    smoke_gate: dict[str, Any],
-    validation: dict[str, Any],
-    wrapper_path: Path,
-    repair_manifest_path: Path,
-    manifest: dict[str, Any],
-) -> dict[str, Any]:
-    execution: dict[str, Any] = repair_entrypoint_initial_execution(write=write, confirmed=confirmed)
-    if write and not confirmed:
-        execution["status"] = "requires_confirmation"
-        execution["blockers"] = ["entrypoint repair writes require --yes or confirmed=true"]
-    elif write and confirmed and not strategy["ready"]:
-        execution["status"] = "blocked"
-        execution["blockers"] = list(strategy["blockers"])
-    elif write and confirmed and not smoke_gate["ok"]:
-        execution["status"] = "blocked"
-        execution["blockers"] = list(smoke_gate["blockers"])
-    elif write and confirmed and not validation["valid"]:
-        execution["status"] = "blocked"
-        execution["blockers"] = [f"manifest validation error: {item}" for item in validation["errors"]]
-    elif write and confirmed:
-        repair_operation = execute_repair_entrypoint_write(
-            hub,
-            harness_name=harness_name,
-            strategy=strategy,
-            wrapper_path=wrapper_path,
-            repair_manifest_path=repair_manifest_path,
-            manifest=manifest,
-        )
-        apply_repair_operation_result(execution, repair_operation)
-    return execution
 
 
 def repair_entrypoint_initial_execution(write: bool, confirmed: bool) -> dict[str, Any]:
@@ -317,59 +481,48 @@ def apply_repair_operation_result(execution: dict[str, Any], repair_operation: d
 
 
 def repair_entrypoint_report(
-    *,
-    harness_name: str,
-    from_market: bool,
-    module: str | None,
-    write: bool,
-    confirmed: bool,
-    require_smoke: bool,
-    smoke_args: tuple[str, ...],
-    smoke_timeout_seconds: int,
-    plan: dict[str, Any],
-    strategy: dict[str, Any],
-    smoke_gate: dict[str, Any],
-    smoke_report: dict[str, Any] | None,
-    wrapper_path: Path,
-    repair_manifest_path: Path,
-    manifest: dict[str, Any],
-    parser_fixture_gate: dict[str, Any],
-    validation: dict[str, Any],
-    execution: dict[str, Any],
+    request: RepairEntrypointRequest,
+    context: RepairEntrypointContext,
 ) -> dict[str, Any]:
+    plan = context.plan
+    harness_name = request.harness_name
     return {
         "ok": True,
         "plugin_id": PLUGIN_ID,
         "kind": "CliAnythingEntrypointRepair",
         "harness_name": harness_name,
-        "from_market": from_market,
-        "module": module,
-        "write": write,
-        "confirmed": confirmed,
-        "require_smoke": require_smoke,
-        "smoke_args": list(smoke_args),
-        "smoke_timeout_seconds": smoke_timeout_seconds,
+        "from_market": request.from_market,
+        "module": request.module,
+        "write": request.write,
+        "confirmed": request.confirmed,
+        "require_smoke": request.require_smoke,
+        "smoke_args": list(request.smoke_args),
+        "smoke_timeout_seconds": request.smoke_timeout_seconds,
         "plan": plan,
-        "strategy": strategy,
-        "smoke_gate": smoke_gate,
-        "smoke_report": smoke_report,
-        "wrapper_path": str(wrapper_path),
-        "manifest_path": str(repair_manifest_path),
-        "manifest": manifest,
-        "repair_provenance": entrypoint_repair_manifest_provenance(manifest),
-        "parser_fixtures": parser_fixture_gate,
-        "validation": validation,
-        "execution": execution,
-        "next_commands": [
-            f"python -m cbn plugin repair-plan cli-anything {harness_name} --from-market",
-            f"python -m cbn plugin repair-entrypoint cli-anything {harness_name} --from-market --module <module>",
-            f"python -m cbn plugin adapter-smoke cli-anything {harness_name} --from-market --module <module> --run --yes",
-            f"python -m cbn plugin repair-entrypoint cli-anything {harness_name} --from-market --module <module> --write --yes",
-            f"python -m cbn plugin repair-entrypoint cli-anything {harness_name} --from-market --module <module> --require-smoke --write --yes",
-            "python -m cbn registry validate runtime/manifests",
-            f"python -m cbn call {plan.get('capability_id')} --dry-run",
-        ],
+        "strategy": context.strategy,
+        "smoke_gate": context.smoke_gate,
+        "smoke_report": context.smoke_report,
+        "wrapper_path": str(context.wrapper_path),
+        "manifest_path": str(context.repair_manifest_path),
+        "manifest": context.manifest,
+        "repair_provenance": entrypoint_repair_manifest_provenance(context.manifest),
+        "parser_fixtures": context.parser_fixture_gate,
+        "validation": context.validation,
+        "execution": context.execution,
+        "next_commands": repair_entrypoint_next_commands(harness_name, plan),
     }
+
+
+def repair_entrypoint_next_commands(harness_name: str, plan: dict[str, Any]) -> list[str]:
+    return [
+        f"python -m cbn plugin repair-plan cli-anything {harness_name} --from-market",
+        f"python -m cbn plugin repair-entrypoint cli-anything {harness_name} --from-market --module <module>",
+        f"python -m cbn plugin adapter-smoke cli-anything {harness_name} --from-market --module <module> --run --yes",
+        f"python -m cbn plugin repair-entrypoint cli-anything {harness_name} --from-market --module <module> --write --yes",
+        f"python -m cbn plugin repair-entrypoint cli-anything {harness_name} --from-market --module <module> --require-smoke --write --yes",
+        "python -m cbn registry validate runtime/manifests",
+        f"python -m cbn call {plan.get('capability_id')} --dry-run",
+    ]
 
 
 def entrypoint_package_candidates(
@@ -377,22 +530,38 @@ def entrypoint_package_candidates(
     market_record: dict[str, Any] | None,
     status: dict[str, Any],
 ) -> list[str]:
-    candidates: list[str] = []
-    if market_record:
-        for key in ("name", "package", "pip_package", "npm_package"):
-            value = market_record.get(key)
-            if isinstance(value, str) and value.strip():
-                candidates.append(value.strip())
-        install_cmd = market_record.get("install_cmd")
-        if isinstance(install_cmd, str):
-            candidates.extend(packages_from_install_command(install_cmd))
+    candidates = [
+        *market_package_candidates(market_record),
+        *status_package_candidates(status),
+        harness_name,
+    ]
+    return normalized_package_candidates(candidates)
+
+
+def market_package_candidates(market_record: dict[str, Any] | None) -> list[str]:
+    if not market_record:
+        return []
+    candidates = [
+        value.strip()
+        for key in ("name", "package", "pip_package", "npm_package")
+        if isinstance((value := market_record.get(key)), str) and value.strip()
+    ]
+    install_cmd = market_record.get("install_cmd")
+    if isinstance(install_cmd, str):
+        candidates.extend(packages_from_install_command(install_cmd))
+    return candidates
+
+
+def status_package_candidates(status: dict[str, Any]) -> list[str]:
     fields = status.get("cli_hub_info", {}).get("fields", {})
-    if isinstance(fields, dict):
-        install_cmd = fields.get("install_cmd")
-        if isinstance(install_cmd, str):
-            candidates.extend(packages_from_install_command(install_cmd))
-    candidates.append(harness_name)
-    normalized = []
+    if not isinstance(fields, dict):
+        return []
+    install_cmd = fields.get("install_cmd")
+    return packages_from_install_command(install_cmd) if isinstance(install_cmd, str) else []
+
+
+def normalized_package_candidates(candidates: list[str]) -> list[str]:
+    normalized: list[str] = []
     for candidate in candidates:
         cleaned = normalize_package_candidate(candidate)
         if cleaned and cleaned not in normalized:
@@ -522,103 +691,183 @@ def entrypoint_diagnosis(
     evaluation: dict[str, Any],
 ) -> dict[str, Any]:
     if entrypoint_path:
-        return {
-            "state": "entrypoint_available",
-            "repair_required": False,
-            "recommended_next_action": "verify_harness_runtime",
-            "findings": ["entrypoint is available on PATH"],
-        }
-    findings = []
-    if entry_point:
-        findings.append(f"entrypoint is not on PATH: {entry_point}")
-    installed_dists = [report for report in distribution_reports if report.get("installed")]
-    if installed_dists:
-        findings.append("python package distribution is installed")
-    else:
-        findings.append("no matching python package distribution found")
+        return entrypoint_available_diagnosis()
+    context = entrypoint_diagnosis_context(
+        entry_point,
+        script_candidates,
+        distribution_reports,
+        module_reports,
+        evaluation,
+    )
+    state, action = entrypoint_diagnosis_state(
+        gates=context.gates,
+        installed_dists=context.installed_dists,
+        matching_scripts=context.matching_scripts,
+        existing_script_files=context.existing_script_files,
+    )
+    return entrypoint_repair_diagnosis_payload(state, action, entry_point, context)
+
+
+def entrypoint_available_diagnosis() -> dict[str, Any]:
+    return {
+        "state": "entrypoint_available",
+        "repair_required": False,
+        "recommended_next_action": "verify_harness_runtime",
+        "findings": ["entrypoint is available on PATH"],
+    }
+
+
+def entrypoint_repair_diagnosis_payload(
+    state: str,
+    action: str,
+    entry_point: str | None,
+    context: EntrypointDiagnosisContext,
+) -> dict[str, Any]:
+    return {
+        "state": state,
+        "repair_required": True,
+        "recommended_next_action": action,
+        "findings": entrypoint_diagnosis_findings(
+            entry_point=entry_point,
+            installed_dists=context.installed_dists,
+            matching_scripts=context.matching_scripts,
+            existing_script_files=context.existing_script_files,
+            runnable_modules=context.runnable_modules,
+        ),
+    }
+
+
+def entrypoint_diagnosis_context(
+    entry_point: str | None,
+    script_candidates: list[dict[str, Any]],
+    distribution_reports: list[dict[str, Any]],
+    module_reports: list[dict[str, Any]],
+    evaluation: dict[str, Any],
+) -> EntrypointDiagnosisContext:
     matching_scripts = [
         script
         for report in distribution_reports
         for script in report.get("console_scripts", [])
         if script.get("name") == entry_point
     ]
+    gates = evaluation.get("gates") if isinstance(evaluation.get("gates"), dict) else {}
+    return EntrypointDiagnosisContext(
+        gates=gates,
+        installed_dists=[report for report in distribution_reports if report.get("installed")],
+        matching_scripts=matching_scripts,
+        existing_script_files=[item for item in script_candidates if item.get("exists")],
+        runnable_modules=[item for item in module_reports if item.get("module_main")],
+    )
+
+
+def entrypoint_diagnosis_findings(
+    *,
+    entry_point: str | None,
+    installed_dists: list[dict[str, Any]],
+    matching_scripts: list[dict[str, Any]],
+    existing_script_files: list[dict[str, Any]],
+    runnable_modules: list[dict[str, Any]],
+) -> list[str]:
+    findings = []
+    if entry_point:
+        findings.append(f"entrypoint is not on PATH: {entry_point}")
+    findings.append(
+        "python package distribution is installed"
+        if installed_dists
+        else "no matching python package distribution found"
+    )
     if matching_scripts:
         findings.append("matching console_script exists in package metadata")
     elif installed_dists:
         findings.append("installed package has no matching console_script")
-    existing_script_files = [item for item in script_candidates if item.get("exists")]
     if existing_script_files:
         findings.append("entrypoint file exists in a scripts directory but is not on PATH")
-    runnable_modules = [item for item in module_reports if item.get("module_main")]
     if runnable_modules:
         findings.append("package exposes a python -m module entry")
-    gates = evaluation.get("gates") if isinstance(evaluation.get("gates"), dict) else {}
+    return findings
+
+
+def entrypoint_diagnosis_state(
+    *,
+    gates: dict[str, Any],
+    installed_dists: list[dict[str, Any]],
+    matching_scripts: list[dict[str, Any]],
+    existing_script_files: list[dict[str, Any]],
+) -> tuple[str, str]:
     if gates.get("installed") and not gates.get("entrypoint_available"):
-        state = "installed_entrypoint_missing"
-        action = "repair_market_metadata_or_create_entrypoint_wrapper"
-    elif installed_dists and not matching_scripts:
-        state = "package_without_declared_console_script"
-        action = "repair_market_metadata_or_choose_module_adapter"
-    elif existing_script_files:
-        state = "script_exists_but_path_missing"
-        action = "add_scripts_directory_to_path_or_use_absolute_entrypoint"
-    else:
-        state = "entrypoint_unresolved"
-        action = "inspect_package_and_market_metadata"
-    return {
-        "state": state,
-        "repair_required": True,
-        "recommended_next_action": action,
-        "findings": findings,
-    }
+        return "installed_entrypoint_missing", "repair_market_metadata_or_create_entrypoint_wrapper"
+    if installed_dists and not matching_scripts:
+        return "package_without_declared_console_script", "repair_market_metadata_or_choose_module_adapter"
+    if existing_script_files:
+        return "script_exists_but_path_missing", "add_scripts_directory_to_path_or_use_absolute_entrypoint"
+    return "entrypoint_unresolved", "inspect_package_and_market_metadata"
 
 
 def entrypoint_repair_strategy(plan: dict[str, Any], module: str | None) -> dict[str, Any]:
     diagnosis = plan.get("diagnosis") if isinstance(plan.get("diagnosis"), dict) else {}
     if diagnosis.get("repair_required") is False:
-        return {
-            "ready": False,
-            "state": "repair_not_required",
-            "module": None,
-            "blockers": ["entrypoint is already available"],
-            "recommended_next_action": "verify_harness_runtime",
-        }
+        return repair_strategy_result(
+            False,
+            "repair_not_required",
+            None,
+            ["entrypoint is already available"],
+            "verify_harness_runtime",
+        )
     if not module:
-        runnable_modules = [
-            item
-            for item in plan.get("modules", [])
-            if item.get("importable") and item.get("module_main")
-        ]
-        if runnable_modules:
-            module = str(runnable_modules[0]["package"])
-        else:
-            return {
-                "ready": False,
-                "state": "adapter_target_required",
-                "module": None,
-                "blockers": [
-                    "no importable module with __main__.py was found; pass --module after inspecting the package API"
-                ],
-                "recommended_next_action": "choose_explicit_python_module_or_custom_adapter",
-            }
+        module = default_repair_module(plan)
+    if not module:
+        return repair_strategy_result(
+            False,
+            "adapter_target_required",
+            None,
+            ["no importable module with __main__.py was found; pass --module after inspecting the package API"],
+            "choose_explicit_python_module_or_custom_adapter",
+        )
     module_check = module_report(module)
     if not module_check["importable"]:
-        return {
-            "ready": False,
-            "state": "module_not_importable",
-            "module": module,
-            "module_report": module_check,
-            "blockers": [f"module is not importable: {module}"],
-            "recommended_next_action": "choose_importable_python_module",
-        }
-    return {
-        "ready": True,
-        "state": "python_module_wrapper",
+        return repair_strategy_result(
+            False,
+            "module_not_importable",
+            module,
+            [f"module is not importable: {module}"],
+            "choose_importable_python_module",
+            module_check,
+        )
+    return repair_strategy_result(
+        True,
+        "python_module_wrapper",
+        module,
+        [],
+        "write_wrapper_and_repaired_manifest",
+        module_check,
+    )
+
+
+def default_repair_module(plan: dict[str, Any]) -> str | None:
+    for item in plan.get("modules", []):
+        if item.get("importable") and item.get("module_main"):
+            return str(item["package"])
+    return None
+
+
+def repair_strategy_result(
+    ready: bool,
+    state: str,
+    module: str | None,
+    blockers: list[str],
+    next_action: str,
+    module_report_payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "ready": ready,
+        "state": state,
         "module": module,
-        "module_report": module_check,
-        "blockers": [],
-        "recommended_next_action": "write_wrapper_and_repaired_manifest",
+        "blockers": blockers,
+        "recommended_next_action": next_action,
     }
+    if module_report_payload is not None:
+        result["module_report"] = module_report_payload
+    return result
 
 
 def entrypoint_wrapper_path(
@@ -663,38 +912,16 @@ def write_repair_entrypoint_files(
     manifest: dict[str, Any],
 ) -> dict[str, Any]:
     backup_dir = root / "runtime" / "backups" / "cli-anything-repair" / operation_id
-    writes = [
-        {
-            "kind": "wrapper",
-            "path": wrapper_path,
-            "text": python_module_wrapper_content(module),
-        },
-        {
-            "kind": "manifest",
-            "path": manifest_path,
-            "text": json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
-        },
-    ]
     written: list[str] = []
     backups: list[dict[str, Any]] = []
-    for item in writes:
+    for item in repair_entrypoint_write_items(wrapper_path, module, manifest_path, manifest):
         result = atomic_write_text_with_backup(
             path=item["path"],
             text=item["text"],
             backup_dir=backup_dir,
             operation_id=operation_id,
         )
-        result["kind"] = item["kind"]
-        written.append(result["path"])
-        if result["backup_path"]:
-            backups.append(
-                {
-                    "kind": item["kind"],
-                    "path": result["path"],
-                    "backup_path": result["backup_path"],
-                    "backup_size_bytes": result["backup_size_bytes"],
-                }
-            )
+        record_repair_entrypoint_write_result(item, result, written, backups)
     return {
         "status": "completed",
         "operation_id": operation_id,
@@ -703,6 +930,42 @@ def write_repair_entrypoint_files(
         "atomic": True,
         "backup_dir": str(backup_dir),
     }
+
+
+def repair_entrypoint_write_items(
+    wrapper_path: Path,
+    module: str,
+    manifest_path: Path,
+    manifest: dict[str, Any],
+) -> list[dict[str, Any]]:
+    return [
+        {"kind": "wrapper", "path": wrapper_path, "text": python_module_wrapper_content(module)},
+        {
+            "kind": "manifest",
+            "path": manifest_path,
+            "text": json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+        },
+    ]
+
+
+def record_repair_entrypoint_write_result(
+    item: dict[str, Any],
+    result: dict[str, Any],
+    written: list[str],
+    backups: list[dict[str, Any]],
+) -> None:
+    result["kind"] = item["kind"]
+    written.append(result["path"])
+    if not result["backup_path"]:
+        return
+    backups.append(
+        {
+            "kind": item["kind"],
+            "path": result["path"],
+            "backup_path": result["backup_path"],
+            "backup_size_bytes": result["backup_size_bytes"],
+        }
+    )
 
 
 def atomic_write_text_with_backup(
@@ -743,11 +1006,34 @@ def entrypoint_repair_manifest(
     original_transport = json.loads(json.dumps(transport))
     module_provenance = entrypoint_repair_module_provenance(plan, strategy)
     policy_recheck = entrypoint_repair_policy_recheck(plan, manifest)
+    apply_entrypoint_repair_annotations(
+        annotations,
+        strategy=strategy,
+        wrapper_path=wrapper_path,
+        original_transport=original_transport,
+        module_provenance=module_provenance,
+        policy_recheck=policy_recheck,
+    )
+    apply_entrypoint_repair_transport(transport, wrapper_path)
+    annotations["cbn.repair.wrapper_transport"] = json.dumps(transport, ensure_ascii=False, sort_keys=True)
+    manifest.setdefault("spec", {})["policy"] = manifest_policy_from_recheck(policy_recheck["effective_policy"])
+    return manifest
+
+
+def apply_entrypoint_repair_annotations(
+    annotations: dict[str, Any],
+    *,
+    strategy: dict[str, Any],
+    wrapper_path: Path,
+    original_transport: dict[str, Any],
+    module_provenance: dict[str, Any],
+    policy_recheck: dict[str, Any],
+) -> None:
     annotations["cbn.repair.kind"] = "cli-anything-entrypoint-wrapper"
     annotations["cbn.repair.original_transport"] = json.dumps(original_transport, ensure_ascii=False, sort_keys=True)
-    annotations["cbn.repair.original_command"] = str(transport.get("command", ""))
+    annotations["cbn.repair.original_command"] = str(original_transport.get("command", ""))
     annotations["cbn.repair.original_argsTemplate"] = json.dumps(
-        transport.get("argsTemplate", []),
+        original_transport.get("argsTemplate", []),
         ensure_ascii=False,
     )
     annotations["cbn.repair.wrapper_path"] = str(wrapper_path)
@@ -769,13 +1055,13 @@ def entrypoint_repair_manifest(
         annotations["cbn.repair.python_distribution"] = str(module_provenance["distribution"])
     if module_provenance.get("version"):
         annotations["cbn.repair.python_distribution_version"] = str(module_provenance["version"])
+
+
+def apply_entrypoint_repair_transport(transport: dict[str, Any], wrapper_path: Path) -> None:
     transport["kind"] = "pty"
     transport["command"] = sys.executable
     transport["argsTemplate"] = [str(wrapper_path)]
     transport["cwdPolicy"] = transport.get("cwdPolicy", "workspace")
-    annotations["cbn.repair.wrapper_transport"] = json.dumps(transport, ensure_ascii=False, sort_keys=True)
-    manifest.setdefault("spec", {})["policy"] = manifest_policy_from_recheck(policy_recheck["effective_policy"])
-    return manifest
 
 
 def entrypoint_repair_manifest_provenance(manifest: dict[str, Any]) -> dict[str, Any]:
@@ -815,19 +1101,30 @@ def entrypoint_repair_module_provenance(plan: dict[str, Any], strategy: dict[str
 def distribution_for_module(module: str, distributions: list[Any]) -> dict[str, Any] | None:
     if not module:
         return None
+    matched = installed_distribution_for_module(module, distributions)
+    if matched:
+        return matched
+    return metadata_distribution_for_module(module)
+
+
+def installed_distribution_for_module(module: str, distributions: list[Any]) -> dict[str, Any] | None:
     normalized_module = module.replace("_", "-").lower()
     for item in distributions:
-        if not isinstance(item, dict) or not item.get("installed"):
-            continue
-        package = str(item.get("package") or "")
-        normalized_package = package.replace("_", "-").lower()
-        package_import = package.replace("-", "_")
-        if (
-            normalized_module == normalized_package
-            or module == package_import
-            or module.startswith(package_import + ".")
-        ):
+        if distribution_matches_module(item, module, normalized_module):
             return item
+    return None
+
+
+def distribution_matches_module(item: Any, module: str, normalized_module: str) -> bool:
+    if not isinstance(item, dict) or not item.get("installed"):
+        return False
+    package = str(item.get("package") or "")
+    normalized_package = package.replace("_", "-").lower()
+    package_import = package.replace("-", "_")
+    return normalized_module == normalized_package or module == package_import or module.startswith(package_import + ".")
+
+
+def metadata_distribution_for_module(module: str) -> dict[str, Any] | None:
     try:
         dist = importlib_metadata.distribution(module.split(".", 1)[0])
     except importlib_metadata.PackageNotFoundError:
