@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -30,8 +31,35 @@ class RuntimeContext:
     plugin_runner: PluginOperationRunner
 
 
+_EXTERNAL_PATH_ADDED = False
+
+
+def _ensure_external_plugin_path(paths: object) -> None:
+    """One-time prepend of external plugin bin dirs (cli-anything hub-venv +
+    npm-global) to PATH so bare commands like ``cli-hub`` / ``lark-cli`` resolve
+    in capability subprocesses (which inherit os.environ via _subprocess_env)."""
+    global _EXTERNAL_PATH_ADDED
+    if _EXTERNAL_PATH_ADDED:
+        return
+    root = getattr(paths, "root", None)
+    if root is None:
+        _EXTERNAL_PATH_ADDED = True
+        return
+    candidates = [
+        Path(root) / "external_plugins" / "cli-anything" / "hub-venv" / "Scripts",
+        Path(root) / "external_plugins" / "cli-anything" / "npm-global",
+    ]
+    sep = os.pathsep
+    parts = os.environ.get("PATH", "").split(sep)
+    additions = [str(p) for p in candidates if p.exists() and str(p) not in parts]
+    if additions:
+        os.environ["PATH"] = sep.join([*additions, *parts])
+    _EXTERNAL_PATH_ADDED = True
+
+
 def build_runtime(root: Path | None = None) -> RuntimeContext:
     paths = resolve_project_paths(root)
+    _ensure_external_plugin_path(paths)
     registry = ManifestRegistry()
     registry.load_dir(paths.manifests)
     registry.load_dir(paths.local_manifests, replace=True)
