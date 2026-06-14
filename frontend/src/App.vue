@@ -358,63 +358,109 @@ type BoardView = "whiteboard" | "card-detail" | "draft";
 const currentView = ref<BoardView>("whiteboard");
 const activeCardId = ref("");
 const activeCard = computed(() => cardRows.value.find((c) => String(c.card_id) === activeCardId.value) ?? null);
-const whiteboardZoom = ref(1); // 0.1 .. 5
-const whiteboardPan = reactive({ x: 0, y: 0 });
+// AFFiNE-style viewport (replicated from reference-learn/AFFiNE blocksuite gfx/viewport):
+// center = world coord under the viewport center; zoom 0.1..6; plain wheel = PAN,
+// Ctrl/Cmd+wheel = ZOOM anchored at the cursor; dynamic background grid (10-50px gap).
+const boardZoom = ref(1); // ZOOM_MIN 0.1 .. ZOOM_MAX 6
+const boardCenter = reactive({ x: 0, y: 0 });
 const cardPositions = ref<Record<string, { x: number; y: number }>>({});
 const whiteboardDrag = reactive({ active: false, movingId: "", startX: 0, startY: 0, origX: 0, origY: 0 });
 
-const whiteboardViewportStyle = computed(() => ({
-  transform: `translate(${whiteboardPan.x}px, ${whiteboardPan.y}px) scale(${whiteboardZoom.value})`,
-}));
+const boardViewport = computed(() => {
+  const el = canvasSurfaceEl.value;
+  const w = el?.clientWidth ?? viewportW.value;
+  const h = el?.clientHeight ?? 600;
+  const z = boardZoom.value;
+  // top-left world coord of the viewport (toModelCoord model)
+  return { vx: boardCenter.x - w / (2 * z), vy: boardCenter.y - h / (2 * z), z };
+});
 
-// The Workflow Agent is itself a whiteboard element: world-coord positioned + scales
-// with the whiteboard zoom (same transform as the viewport), WITHOUT nesting it (keeps
-// its existing drag/resize plumbing intact). Its header drag uses startCardDrag so the
-// delta is converted to world coords.
+const whiteboardViewportStyle = computed(() => {
+  const { vx, vy, z } = boardViewport.value;
+  return { transform: `translate(${-vx * z}px, ${-vy * z}px) scale(${z})`, transformOrigin: "0 0" };
+});
+
+// Dynamic background grid (AFFiNE getBgGridGap): screen-space, pans with content,
+// gap adapts to zoom so it stays readable (clamped 10-50px).
+const gridStyle = computed(() => {
+  const { vx, vy, z } = boardViewport.value;
+  const step = z < 0.5 ? 2 : 1 / (Math.floor(z) || 1);
+  const gap = Math.min(50, Math.max(10, Math.round(20 * step * z)));
+  const offX = (((-vx * z) % gap) + gap) % gap;
+  const offY = (((-vy * z) % gap) + gap) % gap;
+  return {
+    backgroundImage:
+      "linear-gradient(rgba(117,159,213,0.09) 1px, transparent 1px), linear-gradient(90deg, rgba(117,159,213,0.09) 1px, transparent 1px)",
+    backgroundSize: `${gap}px ${gap}px`,
+    backgroundPosition: `${offX}px ${offY}px`,
+  };
+});
+
+// The Workflow Agent is a whiteboard element: same center/zoom transform as the viewport
+// (its world position stored in cardPositions["__agent"]), without nesting it.
 const agentBoardStyle = computed(() => {
+  const { vx, vy, z } = boardViewport.value;
   const p = cardPositions.value["__agent"] ?? { x: 200, y: -140 };
   return {
     left: "0px",
     top: "0px",
     transformOrigin: "0 0",
-    transform: `translate(${whiteboardPan.x + p.x * whiteboardZoom.value}px, ${whiteboardPan.y + p.y * whiteboardZoom.value}px) scale(${whiteboardZoom.value})`,
+    transform: `translate(${(p.x - vx) * z}px, ${(p.y - vy) * z}px) scale(${z})`,
   } as Record<string, string>;
 });
+
+function clampNum(v: number, lo: number, hi: number): number {
+  return Math.min(hi, Math.max(lo, v));
+}
+
+// AFFiNE normalizeWheelDeltaY: zoom step grows slightly with zoom level.
+function normalizeWheelDeltaY(delta: number, z: number): number {
+  const sign = Math.sign(delta);
+  const abs = Math.abs(delta);
+  const maxStep = 25; // ZOOM_WHEEL_STEP(0.25) * 100
+  const d = abs > maxStep ? maxStep * sign : delta;
+  let nz = z - d / 100;
+  nz += Math.log10(Math.max(1, z)) * -sign * Math.min(1, abs / 20);
+  return nz;
+}
 
 function cardBoardPos(cardId: string, idx: number): { left: string; top: string } {
   const stored = cardPositions.value[cardId];
   if (stored) return { left: `${stored.x}px`, top: `${stored.y}px` };
-  // default scatter around the world origin (0,0) so content stays centered on zoom
   const col = idx % 3;
   const row = Math.floor(idx / 3);
   return { left: `${-280 + col * 300}px`, top: `${-130 + row * 190}px` };
 }
 
-function boardCenter(): { cx: number; cy: number } {
-  const el = canvasSurfaceEl.value;
-  return { cx: (el?.clientWidth ?? viewportW.value) / 2, cy: (el?.clientHeight ?? 600) / 2 };
-}
-
 function centerWhiteboard(): void {
-  // place world origin (0,0) at the viewport center => cards (around origin) appear centered
-  const { cx, cy } = boardCenter();
-  whiteboardPan.x = cx;
-  whiteboardPan.y = cy;
+  // center world origin (0,0) — cards scatter around it
+  boardCenter.x = 0;
+  boardCenter.y = 0;
 }
 
 function onWhiteboardWheel(e: WheelEvent): void {
   e.preventDefault();
-  const { cx, cy } = boardCenter();
-  const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
-  const newZoom = Math.min(5, Math.max(0.1, whiteboardZoom.value * factor));
-  // world point currently under the viewport center
-  const wx = (cx - whiteboardPan.x) / whiteboardZoom.value;
-  const wy = (cy - whiteboardPan.y) / whiteboardZoom.value;
-  // keep that world point at the center after zoom
-  whiteboardPan.x = cx - wx * newZoom;
-  whiteboardPan.y = cy - wy * newZoom;
-  whiteboardZoom.value = newZoom;
-  zoom.value = Math.round(newZoom * 100);
+  const z = boardZoom.value;
+  if (e.ctrlKey || e.metaKey) {
+    // ZOOM anchored at the cursor (AFFiNE setZoom with focus = cursor world point)
+    const rect = canvasSurfaceEl.value?.getBoundingClientRect();
+    const sx = rect ? e.clientX - rect.left : 0;
+    const sy = rect ? e.clientY - rect.top : 0;
+    const { vx, vy } = boardViewport.value;
+    const worldX = vx + sx / z;
+    const worldY = vy + sy / z;
+    const newZoom = clampNum(normalizeWheelDeltaY(e.deltaY, z), 0.1, 6);
+    boardCenter.x = worldX + (boardCenter.x - worldX) * (z / newZoom);
+    boardCenter.y = worldY + (boardCenter.y - worldY) * (z / newZoom);
+    boardZoom.value = newZoom;
+    zoom.value = Math.round(newZoom * 100);
+  } else {
+    // PAN: center += delta/zoom (shift+wheel = horizontal, Windows-style)
+    const dx = (e.shiftKey ? e.deltaY : e.deltaX) / z;
+    const dy = e.shiftKey ? 0 : e.deltaY / z;
+    boardCenter.x += dx;
+    boardCenter.y += dy;
+  }
 }
 
 function startCardDrag(e: PointerEvent, cardId: string): void {
@@ -430,8 +476,8 @@ function startCardDrag(e: PointerEvent, cardId: string): void {
 
 function moveCardDrag(e: PointerEvent): void {
   if (!whiteboardDrag.active) return;
-  const dx = (e.clientX - whiteboardDrag.startX) / whiteboardZoom.value;
-  const dy = (e.clientY - whiteboardDrag.startY) / whiteboardZoom.value;
+  const dx = (e.clientX - whiteboardDrag.startX) / boardZoom.value;
+  const dy = (e.clientY - whiteboardDrag.startY) / boardZoom.value;
   cardPositions.value = {
     ...cardPositions.value,
     [whiteboardDrag.movingId]: { x: whiteboardDrag.origX + dx, y: whiteboardDrag.origY + dy },
@@ -477,8 +523,8 @@ function mountCardGraph(): void {
 }
 
 function setBoardZoom(nextPct: number): void {
-  whiteboardZoom.value = Math.min(5, Math.max(0.1, nextPct / 100));
-  zoom.value = Math.round(whiteboardZoom.value * 100);
+  boardZoom.value = clampNum(nextPct / 100, 0.1, 6);
+  zoom.value = Math.round(boardZoom.value * 100);
 }
 
 const savedAreaEl = ref<HTMLElement | null>(null);
@@ -1904,15 +1950,14 @@ onUnmounted(() => {
             <button type="button" title="缩小白板" @click="setBoardZoom(zoom - 10)">-</button>
             <strong>{{ zoom }}%</strong>
             <button type="button" title="放大白板" @click="setBoardZoom(zoom + 10)">+</button>
-            <button type="button" title="复位白板" @click="whiteboardZoom = 1; whiteboardPan.x = 0; whiteboardPan.y = 0; zoom = 100"><RefreshCw :size="14" /> 复位</button>
+            <button type="button" title="复位白板（100%）" @click="boardZoom = 1; boardCenter.x = 0; boardCenter.y = 0; zoom = 100"><RefreshCw :size="14" /> 复位</button>
           </div>
         </div>
 
-        <div ref="canvasSurfaceEl" class="canvas-surface">
+        <div ref="canvasSurfaceEl" class="canvas-surface" :style="gridStyle">
           <canvas v-if="false" ref="graphCanvasEl" class="workflow-graph-canvas" aria-label="Workflow graph whiteboard" />
           <!-- WHITEBOARD VIEW (主页无界白板：卡片自由摆放 + 整体缩放) -->
           <div v-if="currentView === 'whiteboard'" class="whiteboard-viewport" :style="whiteboardViewportStyle" @wheel="onWhiteboardWheel">
-            <div class="whiteboard-grid" aria-hidden="true"></div>
             <article
               v-for="(card, idx) in cardRows"
               :key="String(card.card_id)"
