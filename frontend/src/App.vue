@@ -330,6 +330,9 @@ const artifactGroups = computed(() => artifactStoreTree.value as Array<{
 }>);
 const agentEvents = ref<Array<Record<string, unknown>>>([]);
 const agentRunning = ref(false);
+const showLiveBuild = ref(false);
+const liveGraphCanvasEl = ref<HTMLCanvasElement | null>(null);
+let liveGraph: StudioGraph | null = null;
 const conversationThreadsReal = ref<ConversationThread[]>([]);
 const currentThreadId = ref("");
 const cardRows = ref<Array<Record<string, unknown>>>([]);
@@ -1144,6 +1147,7 @@ async function runAgentTurn() {
   const message = config.agentMessage.trim();
   const continueId = currentThreadId.value;
   agentRunning.value = true;
+  showLiveBuild.value = true;
   agentEvents.value = continueId
     ? [...agentEvents.value, { type: "user", text: message }]
     : [{ type: "user", text: message }];
@@ -1266,6 +1270,39 @@ const filteredCliMarket = computed(() => {
 });
 
 const cliHubReady = computed(() => !!cliAnythingCatalog.value.status.entrypoint_available);
+
+// F3/R5: incremental live wiring — each run_capability call the agent makes becomes a
+// connected LiteGraph node, rendered live as the run streams. Mirrors the owner's
+// "每连通 2 个 CLI 节点 → lightGraph 里将两个相连".
+const liveBuildTasks = computed(() => {
+  const tasks: Array<{ id: string; uses: string; needs: string[]; args: string[]; argsFrom: unknown[] }> = [];
+  let prevId = "";
+  for (const ev of agentEvents.value) {
+    if (ev.type !== "tool_call" || ev.name !== "run_capability") continue;
+    const args = ev.args as Record<string, unknown> | undefined;
+    const cap = String(args?.capability_id ?? "");
+    if (!cap) continue;
+    const id = `step-${tasks.length + 1}-${cap.replace(/[^a-zA-Z0-9._-]/g, "-")}`.slice(0, 48);
+    tasks.push({ id, uses: cap, needs: prevId ? [prevId] : [], args: [], argsFrom: [] });
+    prevId = id;
+  }
+  return tasks;
+});
+
+function mountLiveGraph(): void {
+  if (!liveGraphCanvasEl.value || liveGraph) return;
+  liveGraph = mountWorkflowGraph(liveGraphCanvasEl.value);
+  liveGraph.render({ tasks: liveBuildTasks.value } as never, null);
+  liveGraph.setZoom(0.85);
+}
+
+watch(() => showLiveBuild.value, (on) => {
+  if (on) void nextTick(() => mountLiveGraph());
+});
+
+watch(liveBuildTasks, () => {
+  if (liveGraph) liveGraph.render({ tasks: liveBuildTasks.value } as never, null);
+}, { deep: true });
 
 async function loadDesktopAppState(silent = false): Promise<boolean> {
   if (!window.__cbnApp) {
@@ -2040,6 +2077,18 @@ onUnmounted(() => {
               <input v-model="config.agentMessage" aria-label="Agent message" @keyup.enter="runAgentTurn()" />
               <button type="button" :disabled="agentRunning" :title="agentRunning ? '运行中…' : '运行 Agent（真实）'" @click="runAgentTurn()"><Play :size="14" /></button>
             </div>
+          </section>
+
+          <section v-if="showLiveBuild" class="live-build-panel floating-card">
+            <header class="drag-handle" style="cursor: default">
+              <div>
+                <span>实时构建</span>
+                <strong>Live Build · {{ liveBuildTasks.length }} 节点</strong>
+              </div>
+              <button type="button" title="关闭" @click="showLiveBuild = false"><X :size="14" /></button>
+            </header>
+            <canvas ref="liveGraphCanvasEl" class="live-build-canvas" aria-label="live workflow build" />
+            <span v-if="!liveBuildTasks.length" class="wb-empty" style="position: static; transform: none; padding: 20px">Agent 跑通 CLI 节点后，这里实时连线…</span>
           </section>
 
           <section v-if="showArtifactsPanel" ref="artifactsPanelEl" data-draggable-card class="artifacts-panel floating-card" :style="draggableCards.artifacts.style.value">
