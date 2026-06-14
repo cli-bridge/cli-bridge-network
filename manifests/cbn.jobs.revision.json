@@ -1,0 +1,15 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "ToolManifest",
+  "metadata": {
+    "id": "cbn.jobs.revision",
+    "title": "ERC-8183 Job Revision (rework)",
+    "labels": {"profile": "cbn-jobs", "category": "job-commerce", "role": "client"},
+    "annotations": {"cbn.usage": "args=['<rejected_job_id>','--spec','<new job_spec json>']. Creates a linked revision job (parent_job_id set) in 'drafting'. Use after a terminal reject."}
+  },
+  "spec": {
+    "transport": {"kind": "stdio", "command": "python", "argsTemplate": ["-m", "cbn_jobs", "revision"], "cwdPolicy": "workspace", "timeoutSeconds": 30},
+    "policy": {"risk": "read", "requiresConfirmation": false, "network": "deny"},
+    "output": {"parserRef": "direct-cli.typed", "verified": true}
+  }
+}

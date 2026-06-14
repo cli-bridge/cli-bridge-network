@@ -352,9 +352,7 @@ const installingName = ref("");
 const installLines = ref<string[]>([]);
 const permissionMode = ref<PermissionMode>("full");
 const zoom = ref(100);
-const graphCanvasEl = ref<HTMLCanvasElement | null>(null);
 const cardGraphCanvasEl = ref<HTMLCanvasElement | null>(null);
-let studioGraph: StudioGraph | null = null;
 let cardGraph: StudioGraph | null = null;
 const canvasSurfaceEl = ref<HTMLElement | null>(null);
 const viewportW = ref(typeof window !== "undefined" ? window.innerWidth : 1280);
@@ -697,13 +695,6 @@ const artifactRows = computed<ArtifactRow[]>(() => {
       path: typeof record.path === "string" ? record.path : undefined,
     });
   }
-  if (!rows.length) {
-    rows.push(
-      { id: "placeholder-html", name: "daily-news-preview.html", kind: "HTML", source: "preview", size: "128 KB" },
-      { id: "placeholder-json", name: "summary.json", kind: "JSON", source: "preview", size: "32 KB" },
-      { id: "placeholder-prompt", name: "cover-prompt.txt", kind: "TXT", source: "preview", size: "8 KB" },
-    );
-  }
   return dedupeRows(rows);
 });
 const pluginRows = computed<PluginRow[]>(() => {
@@ -882,16 +873,6 @@ function setPermissionMode(mode: PermissionMode) {
   config.confirmed = mode === "full";
   const autonomy = mode === "full" ? "Agent 自主长程" : mode === "auto" ? "风险操作确认" : "每步人工确认";
   notify("权限模式已切换", `${mode} · live · ${autonomy}`, "success");
-}
-
-function setZoom(nextZoom: number) {
-  zoom.value = Math.min(500, Math.max(10, nextZoom));
-  studioGraph?.setZoom(zoom.value / 100);
-}
-
-function resetGraphView() {
-  zoom.value = 100;
-  studioGraph?.resetView();
 }
 
 async function selectThread(threadId: string) {
@@ -1174,6 +1155,33 @@ function isAuthResult(ev: Record<string, unknown>): boolean {
   return AUTH_PATTERN.test(String(text));
 }
 
+// Cooperation card: a blocker_kind cooperation_required event from the agent.
+// Maps the backend's cooperation_required blocker_kind to a human label.
+const COOPERATION_LABELS: Record<string, string> = {
+  auth: "缺凭证",
+  pairing: "钱包未配对",
+  login: "未登录",
+  install: "CLI 未安装",
+  entitlement: "权限额度不足",
+};
+function isCooperationRequired(ev: Record<string, unknown>): boolean {
+  return ev.type === "cooperation_required";
+}
+function cooperationLabel(ev: Record<string, unknown>): string {
+  const kind = String(ev.blocker_kind ?? "");
+  return COOPERATION_LABELS[kind] ?? kind ?? "需要协作";
+}
+
+// Intent chip label rendered next to the assistant turn.
+const INTENT_LABELS: Record<string, string> = {
+  chat: "对话",
+  workflow: "编排工作流",
+  question: "提问",
+};
+function intentLabel(intent: unknown): string {
+  return INTENT_LABELS[String(intent ?? "")] ?? String(intent ?? "");
+}
+
 async function provideObsidianKey() {
   const key = authKeyInput.value.trim();
   if (!key) return;
@@ -1339,6 +1347,52 @@ const filteredCliMarket = computed(() => {
 });
 
 const cliHubReady = computed(() => !!cliAnythingCatalog.value.status.entrypoint_available);
+
+// View-model that flattens agentEvents into render entries. Consecutive `text`
+// deltas (live streaming prose) are merged into ONE assistant message bubble so
+// the agent types like a normal chatbot instead of one card per chunk. The most
+// recent `intent` is attached as a header chip on the current assistant bubble.
+// `intent`/`text`/`final` are normalized; every other event passes through as-is
+// (thinking/tool_call/tool_result/auth-ask/error/user keep their existing cards).
+type DisplayEvent = Record<string, unknown>;
+const displayEvents = computed<DisplayEvent[]>(() => {
+  const out: DisplayEvent[] = [];
+  let bubble: DisplayEvent | null = null; // current assistant-text bubble being built
+  let pendingIntent = ""; // intent awaiting the next assistant bubble
+  const finalize = () => { bubble = null; };
+  for (const ev of agentEvents.value) {
+    const t = String(ev.type ?? "");
+    if (t === "text") {
+      if (!bubble) {
+        bubble = { type: "assistant-text", text: "", intent: pendingIntent };
+        out.push(bubble);
+      }
+      bubble.text = `${String(bubble.text ?? "")}${String(ev.delta ?? "")}`;
+    } else if (t === "intent") {
+      pendingIntent = String(ev.intent ?? "");
+      if (bubble) bubble.intent = pendingIntent;
+    } else if (t === "final") {
+      // Confirm/finalize the streamed bubble with the authoritative text.
+      const finalText = String(ev.text ?? "");
+      if (bubble) {
+        if (finalText) bubble.text = finalText;
+        if (pendingIntent) bubble.intent = pendingIntent;
+      } else {
+        bubble = { type: "assistant-text", text: finalText, intent: pendingIntent };
+        out.push(bubble);
+      }
+      finalize();
+      pendingIntent = "";
+    } else {
+      // Any non-prose event (thinking/tool_call/tool_result/user/error/cooperation…)
+      // finalizes the current streaming bubble, then passes through unchanged.
+      finalize();
+      pendingIntent = "";
+      out.push(ev);
+    }
+  }
+  return out;
+});
 
 // F3/R5: incremental live wiring — each run_capability call the agent makes becomes a
 // connected LiteGraph node, rendered live as the run streams. Mirrors the owner's
@@ -1824,14 +1878,6 @@ function shortJson(value: unknown): string {
   }
 }
 
-function mountStudioGraph() {
-  if (!graphCanvasEl.value || studioGraph) return;
-  studioGraph = mountWorkflowGraph(graphCanvasEl.value);
-  studioGraph.render(workflow.value, agentBundle.value);
-}
-
-watch(workflow, () => studioGraph?.render(workflow.value, agentBundle.value));
-watch(agentBundle, () => studioGraph?.render(workflow.value, agentBundle.value));
 watch(leftNavCollapsed, () => {
   draggableCards.saved.reclamp();
   draggableCards.temporary.reclamp();
@@ -1863,7 +1909,6 @@ onMounted(async () => {
   await loadInitial();
   void loadThreads();
   void loadCards();
-  mountStudioGraph();
   void nextTick(() => centerWhiteboard());
 });
 
@@ -1873,8 +1918,6 @@ onUnmounted(() => {
   window.removeEventListener("pointermove", moveCardDrag);
   window.removeEventListener("pointerup", endCardDrag);
   window.removeEventListener("resize", handleWindowResize);
-  studioGraph?.dispose();
-  studioGraph = null;
   disposeWindowState?.();
   disposeWindowState = null;
 });
@@ -2062,7 +2105,6 @@ onUnmounted(() => {
         </div>
 
         <div ref="canvasSurfaceEl" class="canvas-surface" :style="gridStyle">
-          <canvas v-if="false" ref="graphCanvasEl" class="workflow-graph-canvas" aria-label="Workflow graph whiteboard" />
           <!-- WHITEBOARD VIEW (主页无界白板：卡片自由摆放 + 整体缩放) -->
           <div v-if="currentView === 'whiteboard'" class="whiteboard-viewport" :style="whiteboardViewportStyle" @wheel="onWhiteboardWheel">
             <article
@@ -2080,7 +2122,7 @@ onUnmounted(() => {
               </div>
               <div class="wb-card-actions" @pointerdown.stop>
                 <button type="button" @click="openCardDetail(card)">展开</button>
-                <button type="button" v-if="!card.favorite" @click="favoriteCard(card)">★</button>
+                <button type="button" v-if="!card.favorite" @click="favoriteCard(card)">*</button>
                 <button type="button" title="复用：把工作流作为上下文喂给 Agent" @click="replayWorkflowAsContext(card)">复用</button>
               </div>
             </article>
@@ -2112,7 +2154,7 @@ onUnmounted(() => {
                 </div>
                 <div class="draft-card-actions" @pointerdown.stop>
                   <button type="button" @click="saveToBoard(String(card.source_thread_id))">保存到白板</button>
-                  <button type="button" @click="favoriteCard(card)">★ 收藏</button>
+                  <button type="button" @click="favoriteCard(card)">* 收藏</button>
                   <button type="button" @click="openCardDetail(card)">展开</button>
                 </div>
               </article>
@@ -2149,8 +2191,15 @@ onUnmounted(() => {
                   输入任务后点运行——内置 Agent 会真实驱动 CLI 总线（obsidian / jimeng …），思考、工具调用、产物实时显示。
                 </p>
               </template>
-              <template v-for="(ev, idx) in agentEvents" :key="idx">
+              <template v-for="(ev, idx) in displayEvents" :key="idx">
                 <p v-if="ev.type === 'user'" class="ev-user"><b>你</b> {{ ev.text }}</p>
+                <p v-else-if="ev.type === 'assistant-text'" class="ev-assistant">
+                  <span class="ev-assistant-head">
+                    <b>Agent</b>
+                    <em v-if="ev.intent" class="ev-intent-chip">{{ intentLabel(ev.intent) }}</em>
+                  </span>
+                  <span class="ev-assistant-body">{{ ev.text }}</span>
+                </p>
                 <p v-else-if="ev.type === 'thinking'" class="ev-think"><b>思考</b> {{ ev.text }}</p>
                 <div v-else-if="ev.type === 'tool_call'" class="ev-tool">
                   <TerminalSquare :size="14" />
@@ -2158,10 +2207,18 @@ onUnmounted(() => {
                   <code>{{ JSON.stringify(ev.args) }}</code>
                 </div>
                 <div v-else-if="ev.type === 'tool_result'" class="ev-result" :class="{ ok: ev.ok }">
-                  <span>{{ ev.ok ? '✓' : '✗' }} {{ ev.name }}</span>
+                  <span>{{ ev.ok ? '[+]' : '[-]' }} {{ ev.name }}</span>
                   <small>{{ agentEventSummary(ev.result) }}</small>
                 </div>
-                <div v-if="isAuthResult(ev)" class="ev-auth-ask" @pointerdown.stop>
+                <div v-if="isCooperationRequired(ev)" class="ev-cooperation" @pointerdown.stop>
+                  <span>[!] {{ cooperationLabel(ev) }}</span>
+                  <small v-if="ev.message">{{ ev.message }}</small>
+                  <template v-if="ev.blocker_kind === 'auth'">
+                    <input v-model="authKeyInput" placeholder="粘贴 API key…" />
+                    <button type="button" @click="provideObsidianKey()">设置</button>
+                  </template>
+                </div>
+                <div v-else-if="isAuthResult(ev)" class="ev-auth-ask" @pointerdown.stop>
                   <span>🔑 需要 OBSIDIAN_API_KEY</span>
                   <input v-model="authKeyInput" placeholder="粘贴 API key…" />
                   <button type="button" @click="provideObsidianKey()">设置</button>
@@ -2487,7 +2544,7 @@ onUnmounted(() => {
               <TerminalSquare :size="14" /><strong>{{ ev.name }}</strong><code>{{ JSON.stringify(ev.args) }}</code>
             </div>
             <div v-else-if="ev.type === 'tool_result'" class="ev-result" :class="{ ok: ev.ok }">
-              <span>{{ ev.ok ? '✓' : '✗' }} {{ ev.name }}</span>
+              <span>{{ ev.ok ? '[+]' : '[-]' }} {{ ev.name }}</span>
               <small>{{ agentEventSummary(ev.result) }}</small>
             </div>
             <p v-else-if="ev.type === 'final'" class="ev-final"><b>注册 Agent</b> {{ ev.text }}</p>

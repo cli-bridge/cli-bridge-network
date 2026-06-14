@@ -185,6 +185,12 @@ def _feishu_actions() -> tuple[ExternalCliAction, ...]:
         ExternalCliAction("feishu", "help", "Feishu/Lark CLI help", lambda root: [_lark_cli(root), "--help"]),
         ExternalCliAction("feishu", "doctor", "Feishu/Lark CLI doctor", lambda root: [_lark_cli(root), "doctor"]),
         ExternalCliAction("feishu", "schema-help", "Feishu/Lark CLI schema help", lambda root: [_lark_cli(root), "schema", "--help"]),
+        ExternalCliAction(
+            "feishu",
+            "im-message-send",
+            "Send a Feishu/Lark message (interactive card or text). args=['--data','{\"receive_id\":\"ou_...\",\"msg_type\":\"interactive|text\",\"content\":\"<json string>\"}']",
+            lambda root: [_lark_cli(root), "api", "POST", "/open-apis/im/v1/messages?receive_id_type=open_id"],
+        ),
     )
 
 

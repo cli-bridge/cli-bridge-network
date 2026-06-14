@@ -1,0 +1,15 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "ToolManifest",
+  "metadata": {
+    "id": "cbn.jobs.publish",
+    "title": "ERC-8183 Job Publish",
+    "labels": {"profile": "cbn-jobs", "category": "job-commerce", "role": "client"},
+    "annotations": {"cbn.usage": "args=['<job_id>']. drafting -> job_created. Onchain createJob is a separate caw.erc8183.create-job call."}
+  },
+  "spec": {
+    "transport": {"kind": "stdio", "command": "python", "argsTemplate": ["-m", "cbn_jobs", "publish"], "cwdPolicy": "workspace", "timeoutSeconds": 30},
+    "policy": {"risk": "read", "requiresConfirmation": false, "network": "deny"},
+    "output": {"parserRef": "direct-cli.typed", "verified": true}
+  }
+}

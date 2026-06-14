@@ -1,0 +1,15 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "ToolManifest",
+  "metadata": {
+    "id": "cbn.jobs.complete",
+    "title": "ERC-8183 Job Complete (accept)",
+    "labels": {"profile": "cbn-jobs", "category": "job-commerce", "role": "evaluator"},
+    "annotations": {"cbn.usage": "args=['<job_id>','--reason','<text>']. evaluation_pending -> completed. Onchain payment release is caw.erc8183.complete."}
+  },
+  "spec": {
+    "transport": {"kind": "stdio", "command": "python", "argsTemplate": ["-m", "cbn_jobs", "complete"], "cwdPolicy": "workspace", "timeoutSeconds": 240},
+    "policy": {"risk": "read", "requiresConfirmation": false, "network": "deny"},
+    "output": {"parserRef": "direct-cli.typed", "verified": true}
+  }
+}

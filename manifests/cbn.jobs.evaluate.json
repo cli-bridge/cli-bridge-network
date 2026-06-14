@@ -1,0 +1,15 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "ToolManifest",
+  "metadata": {
+    "id": "cbn.jobs.evaluate",
+    "title": "ERC-8183 Job Evaluate (policy-driven)",
+    "labels": {"profile": "cbn-jobs", "category": "job-commerce", "role": "evaluator"},
+    "annotations": {"cbn.usage": "args=['<job_id>','--permission','full|auto|default']. full=auto-settle on evidence; auto/default=suggest+needs_human_confirm. Checks deliverable evidence_hash+media+summary."}
+  },
+  "spec": {
+    "transport": {"kind": "stdio", "command": "python", "argsTemplate": ["-m", "cbn_jobs", "evaluate"], "cwdPolicy": "workspace", "timeoutSeconds": 30},
+    "policy": {"risk": "read", "requiresConfirmation": false, "network": "deny"},
+    "output": {"parserRef": "direct-cli.typed", "verified": true}
+  }
+}

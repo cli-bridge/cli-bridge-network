@@ -1500,6 +1500,93 @@ pre {
   font-weight: 700;
 }
 
+/* Streaming assistant prose bubble + intent chip.
+   Live `text` deltas merge into ONE message bubble (chatbot-style typing). */
+.message-feed .ev-assistant {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid rgba(75, 209, 135, 0.34);
+  border-radius: 8px;
+  background: rgba(75, 209, 135, 0.08);
+  padding: 9px;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.message-feed .ev-assistant-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.message-feed .ev-intent-chip {
+  border: 1px solid rgba(99, 179, 255, 0.4);
+  border-radius: 999px;
+  background: rgba(47, 141, 255, 0.14);
+  padding: 1px 8px;
+  color: #b6dcff;
+  font-size: 10.5px;
+  font-style: normal;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.message-feed .ev-assistant-body {
+  color: var(--text);
+}
+
+/* Cooperation card (amber, mirrors ev-auth-ask) for cooperation_required events. */
+.message-feed .ev-cooperation {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid rgba(242, 184, 91, 0.4);
+  border-radius: 8px;
+  background: rgba(242, 184, 91, 0.08);
+  padding: 8px 10px;
+}
+
+.message-feed .ev-cooperation > span {
+  color: var(--amber);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.message-feed .ev-cooperation > small {
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.message-feed .ev-cooperation input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel-soft);
+  padding: 0 8px;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.message-feed .ev-cooperation button {
+  align-self: flex-start;
+  min-height: 26px;
+  padding: 0 12px;
+  border-color: rgba(242, 184, 91, 0.5);
+  background: rgba(242, 184, 91, 0.16);
+  color: #f5cf86;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 @keyframes cbnPulse {
   0%, 100% { opacity: 0.35; }
   50% { opacity: 1; }

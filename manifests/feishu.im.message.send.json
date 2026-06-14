@@ -1,0 +1,18 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "ToolManifest",
+  "metadata": {
+    "id": "feishu.im.message.send",
+    "title": "Feishu/Lark Send Message (card or text)",
+    "labels": {"adapter": "direct-cli", "profile": "feishu", "category": "communication", "role": "evidence-channel"},
+    "annotations": {
+      "cbn.usage": "args=['--data','{\"receive_id\":\"ou_...\",\"msg_type\":\"interactive|text\",\"content\":\"<card/text json>\"}']. Posts to a Feishu chat/user via lark-cli api. Requires lark-cli configured (lark-cli config init).",
+      "cbn.privacy": "posts to an external Feishu recipient; confirmation required"
+    }
+  },
+  "spec": {
+    "transport": {"kind": "stdio", "command": "python", "argsTemplate": ["-m", "cbn_tools.external_cli", "feishu", "im-message-send"], "cwdPolicy": "workspace", "timeoutSeconds": 60},
+    "policy": {"risk": "external-network", "requiresConfirmation": true, "network": "requires-confirmation"},
+    "output": {"parserRef": "direct-cli.typed", "verified": true}
+  }
+}

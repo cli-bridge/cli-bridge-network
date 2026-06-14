@@ -1,0 +1,15 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "ToolManifest",
+  "metadata": {
+    "id": "cbn.jobs.submit",
+    "title": "ERC-8183 Job Submit Deliverable",
+    "labels": {"profile": "cbn-jobs", "category": "job-commerce", "role": "provider"},
+    "annotations": {"cbn.usage": "args=['<job_id>','--deliverable','<deliverable_package json>']. Records deliverable_package + evidence_hash, -> deliverable_submitted."}
+  },
+  "spec": {
+    "transport": {"kind": "stdio", "command": "python", "argsTemplate": ["-m", "cbn_jobs", "submit"], "cwdPolicy": "workspace", "timeoutSeconds": 30},
+    "policy": {"risk": "read", "requiresConfirmation": false, "network": "deny"},
+    "output": {"parserRef": "direct-cli.typed", "verified": true}
+  }
+}

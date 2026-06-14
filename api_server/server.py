@@ -415,11 +415,6 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
         def on_event(event: dict[str, Any]) -> None:
             self._write_stream_event(event)
             kind = str(event.get("type") or "")
-            if kind == "tool_call" and event.get("name") == "run_capability":
-                args = event.get("args") or {}
-                capability_id = args.get("capability_id")
-                if capability_id:
-                    capture.record_capability_call(str(capability_id), args.get("args") or [])
             if kind in {"thinking", "tool_call", "tool_result", "final", "error"}:
                 try:
                     thread_store.append_event(thread_id, "assistant_event", kind, event)
@@ -437,6 +432,7 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                 on_event=on_event,
                 audit_log=runtime.audit_log,
                 event_bus=runtime.event_bus,
+                capture=capture,
             )
             captured = capture.build()
             if captured is not None:

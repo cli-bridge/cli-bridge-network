@@ -1,0 +1,17 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "ToolManifest",
+  "metadata": {
+    "id": "cbn.jobs.draft",
+    "title": "ERC-8183 Job Draft",
+    "labels": {"profile": "cbn-jobs", "category": "job-commerce", "role": "client"},
+    "annotations": {
+      "cbn.usage": "args=['--spec','<job_spec json>'] or ['--brief','<text>','--client','0x..','--provider','0x..','--evaluator','0x..','--chain','base-sepolia']. Creates a job in 'drafting' with spec_hash."
+    }
+  },
+  "spec": {
+    "transport": {"kind": "stdio", "command": "python", "argsTemplate": ["-m", "cbn_jobs", "draft"], "cwdPolicy": "workspace", "timeoutSeconds": 30},
+    "policy": {"risk": "read", "requiresConfirmation": false, "network": "deny"},
+    "output": {"parserRef": "direct-cli.typed", "verified": true}
+  }
+}

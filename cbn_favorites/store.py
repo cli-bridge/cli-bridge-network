@@ -1,7 +1,7 @@
 """Favorite workflow cards.
 
 A "card" is a captured workflow + presentation metadata. A draft card comes from a
-conversation thread's ``captured_workflow``; promoting it (★ 收藏) copies the workflow
+conversation thread's ``captured_workflow``; promoting it (* 收藏) copies the workflow
 here under ``runtime/favorites/`` with ``favorite=true`` and stamps the thread's
 ``card_id``. Favorites are re-runnable via the existing ``/workflows/run`` (the
 workflow body is a standard WorkflowGraph).

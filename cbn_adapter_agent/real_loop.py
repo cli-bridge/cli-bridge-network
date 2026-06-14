@@ -17,12 +17,14 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
 from cbn_adapter_agent.tool_use import store_session_secret
+from cbn_threads.workflow_capture import WorkflowCapture
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -103,6 +105,104 @@ def glm_chat(messages: list[dict[str, Any]], tools: list[dict[str, Any]], env: d
 
 
 # --------------------------------------------------------------------------- #
+# Streaming GLM (SSE) — same endpoint/auth/payload as glm_chat, with stream=True
+# --------------------------------------------------------------------------- #
+def _parse_sse_line(line: str) -> dict[str, Any] | None:
+    """Parse one raw line of an SSE stream.
+
+    Returns:
+        - ``None`` for non-data lines (comments, ``event:``, ``id:``, ``retry:``, blanks).
+        - ``{"_done": True}`` sentinel for the terminal ``data: [DONE]`` marker.
+        - the parsed JSON dict for any ``data: {json}`` payload (OpenAI-compatible
+          chat.completion.chunk shape: ``choices[0].delta`` etc.).
+
+    The payload object itself is returned as-is so callers can pull
+    ``choices[0].delta.content / .reasoning_content / .tool_calls`` and
+    ``choices[0].finish_reason`` directly.
+    """
+    stripped = line.strip()
+    if not stripped or stripped.startswith(":"):
+        # blank line or SSE comment (begins with ':')
+        return None
+    if not stripped.startswith("data:"):
+        # other SSE field prefixes (event:, id:, retry:) — not payload data
+        return None
+    payload = stripped[len("data:"):].lstrip()
+    if payload == "[DONE]":
+        return {"_done": True}
+    try:
+        parsed = json.loads(payload)
+    except json.JSONDecodeError:
+        # Malformed JSON fragment — ignore rather than crash the stream.
+        return None
+    return parsed
+
+
+def glm_chat_stream(
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]],
+    env: dict[str, str],
+    *,
+    max_tokens: int = 4098,
+) -> Iterator[dict[str, Any]]:
+    """Stream an OpenAI-compatible chat completion from GLM (z.ai).
+
+    POSTs to the SAME endpoint/auth/payload shape as :func:`glm_chat`, but with
+    ``stream: True``, then reads the urllib response line-by-line in text mode
+    (utf-8) and yields each parsed SSE payload (the JSON dict returned by
+    :func:`_parse_sse_line`). The terminal ``[DONE]`` sentinel is yielded too, so
+    callers can detect end-of-stream; non-data lines are silently skipped.
+
+    Each yielded dict is an OpenAI-compatible ``chat.completion.chunk``:
+    ``choices[0].delta`` may carry ``.content`` (str), ``.reasoning_content``
+    (str), and/or ``.tool_calls`` (a list of partial fragments
+    ``{index, id?, function?:{name?, arguments?}}`` — fragments for the same
+    ``index`` arrive incrementally across chunks; ``function.arguments`` is a
+    JSON string that grows chunk by chunk). The final chunk also surfaces
+    ``choices[0].finish_reason``.
+
+    ``urllib.error.HTTPError`` is re-raised (like :func:`glm_chat`) so the agent
+    loop's existing error branch handles it.
+    """
+    base = (env.get("ZAI_BASE_URL") or DEFAULT_BASE_URL).rstrip("/")
+    endpoint = base if base.endswith("/chat/completions") else f"{base}/chat/completions"
+    payload: dict[str, Any] = {
+        "model": env.get("ZAI_MODEL") or DEFAULT_MODEL,
+        "messages": messages,
+        "temperature": 0.2,
+        "max_tokens": max_tokens,
+        "stream": True,
+    }
+    if tools:
+        payload["tools"] = tools
+        payload["tool_choice"] = "auto"
+    request = urllib.request.Request(
+        endpoint,
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {env.get('ZAI_API_KEY', '')}",
+            "Content-Type": "application/json; charset=utf-8",
+            "Accept": "text/event-stream",
+        },
+        method="POST",
+    )
+    # HTTPError propagates to the caller (re-raised, same contract as glm_chat).
+    response = urllib.request.urlopen(request, timeout=180)
+    try:
+        # Read line-by-line in text mode. The server emits SSE: lines terminated
+        # by \n; decode lazily so streaming actually reaches the caller chunk by
+        # chunk instead of buffering the whole body.
+        for raw in response:
+            if isinstance(raw, bytes):
+                raw = raw.decode("utf-8", "replace")
+            parsed = _parse_sse_line(raw)
+            if parsed is not None:
+                yield parsed
+    finally:
+        response.close()
+
+
+# --------------------------------------------------------------------------- #
 # Harness + tool schemas
 # --------------------------------------------------------------------------- #
 def harness_system(*, permission: str, capability_block: str) -> str:
@@ -121,10 +221,16 @@ def harness_system(*, permission: str, capability_block: str) -> str:
 硬规则：
 1. 绝不伪造结果。只能报告 run_capability 真正返回的内容。没跑过就别说跑了。
 2. 如果任务需要的 CLI 不在已注册能力里，**停止并明确告诉用户缺什么**，不要臆造。
-3. 如果一个能力返回认证错误（如 "API key required" / 未登录）：Obsidian 用 set_obsidian_key 设置；Jimeng 登录用 run_capability("jimeng","login",["--headless"]) 触发，把返回的登录链接/验证码通过 auth_ask 事件告诉用户，等用户授权后再继续。
+3. 如果一个能力返回认证错误（如 "API key required" / 未登录）：Obsidian 用 set_obsidian_key 设置；其它 key/login 类阻塞系统会抛出 cooperation_required，你按提示让用户配合即可。
 4. 需要"整理/总结/改写"这类 LLM 变换（例如把笔记整理成文生图提示词）——你自己用推理完成，不要为此调用 CLI。
 5. 真实工作流示例：读取 obsidian 笔记 → (你自己整理成提示词) → 提交即梦文生图 → 轮询取图 → 报告真实产物。
 6. 每一步如实、简短地汇报真实结果（成功/失败/产物 id/错误）。
+7. **像一个正常助手一样对话**：用户如果只是闲聊、问普通问题、或任务根本不需要调 CLI，就直接正常回答，**不要硬编排工作流**。
+8. **遇到需要用户配合的阻塞**（缺 key / 钱包未配对 / 未登录 / CLI 未装 / 权限额度不足），系统会发 cooperation_required——你**立刻停下来**，用大白话告诉用户具体要做什么；等用户回复"好了/done"后，**先重新调用对应能力（或其 status/help 探针）验证通过**，再继续原任务，绝不跳过验证。
+9. 调用一个你不确定是否就绪的能力前，可以先调它的 status/help/version 探针确认环境，避免无谓失败——尤其是涉及钱包/登录/外部账号的能力。
+10. **绝不使用任何 emoji（图标/表情符号）**。所有回复、总结、卡片内容只用纯文字 + 标点——避免终端编码问题，保持输出干净。
+
+工作流编排方式：当任务确实需要编排多个能力时，先用一两句大白话说出你的计划（例如"我先读取笔记，再整理成提示词，然后提交即梦文生图"），然后一步一步真实执行，每一步如实汇报结果；在非 full 权限下，每次 run_capability 之前先简短说明你要跑什么再跑。纯聊天或普通问答不要套这个流程——直接正常回答即可。
 
 当前权限模式：{perm_guidance}
 """.strip()
@@ -245,6 +351,60 @@ def _extract_output(result: dict[str, Any]) -> dict[str, Any]:
     return summary
 
 
+# --------------------------------------------------------------------------- #
+# Cooperation gate — surface missing-setup blockers (auth/pairing/login/install)
+# Mirrors auth_ask but generalized: any capability that fails because of a missing
+# human-setup step becomes a structured "needs cooperation" request the host can
+# render (amber card) and the user resolves, then the agent re-verifies on resume.
+# --------------------------------------------------------------------------- #
+_BLOCKER_PATTERNS: list[tuple[str, str, str]] = [
+    (r"api key required|obsidian_api_key|missing.{0,6}key|unauthorized", "auth",
+     "需要 API key —— 用下面的输入框粘贴 key，或在 .env 里设好后回复我，我会重新验证。"),
+    (r"not.{0,6}paired|pairing|healthy.{0,4}false|unsupported protocol scheme|wallet.{0,12}not.{0,12}configured", "pairing",
+     "CAW 钱包未配对 —— 请跑 `caw onboard` 配对 Cobo 账号（或提供 API key + AGENT_WALLET_API_URL），完成后回复我。"),
+    (r"not logged in|login required|not.{0,6}authenticated|not authorized|需要登录", "login",
+     "需要登录 —— 请完成对应 CLI 的登录授权，完成后回复我，我会重新验证。"),
+    (r"command not found|no such file|not recognized|cli-hub.{0,12}not|未安装|not installed", "install",
+     "CLI 未安装 —— 请先安装对应工具（注册 Agent / cli-hub install），完成后回复我。"),
+    (r"requires?.{0,12}(vip|maestro)|(vip|maestro).{0,12}(required|needed|only|plan)|permission denied|no.{0,6}permission|额度|insufficient", "entitlement",
+     "账号权限/额度不足（如即梦需 Maestro VIP）—— 请升级/充值后回复我，我会重新验证。"),
+]
+
+_BLOCKER_FINAL = {
+    "auth": "缺凭证", "pairing": "钱包未配对", "login": "未登录",
+    "install": "CLI 未安装", "entitlement": "权限/额度不足",
+}
+
+
+def _detect_cooperation(result: dict[str, Any], capability_id: str) -> dict[str, Any] | None:
+    """If a failed tool result smells like a missing-setup blocker, return a
+    cooperation_required payload; else None (caller keeps looping / lets GLM handle)."""
+    haystack = " ".join([
+        str(result.get("reason") or ""),
+        str(result.get("stdout") or ""),
+        str(result.get("stderr") or ""),
+    ]).lower()
+    for pattern, kind, message in _BLOCKER_PATTERNS:
+        if re.search(pattern, haystack):
+            return {
+                "type": "cooperation_required",
+                "capability_id": capability_id,
+                "blocker_kind": kind,
+                "message": message,
+                "probe": {"capability_id": capability_id,
+                          "note": "用户配合后，重新调用此能力（或其 status/help 探针）验证通过再继续"},
+                "raw": (result.get("stdout") or result.get("stderr") or result.get("reason") or "")[:300],
+            }
+    return None
+
+
+def _cooperation_final_text(coop: dict[str, Any]) -> str:
+    kind = coop.get("blocker_kind", "unknown")
+    label = _BLOCKER_FINAL.get(kind, kind)
+    return (f"[!] 需要你配合 —— {label}。\n{coop.get('message', '')}\n"
+            f"（这是「{label}」类阻塞，我不会伪造结果。你处理好后回复我，我会先重新验证再继续原任务。）")
+
+
 def dispatch_tool(
     name: str,
     args: dict[str, Any],
@@ -255,6 +415,7 @@ def dispatch_tool(
     permission: str,
     audit_log: Any = None,
     event_bus: Any = None,
+    capture: WorkflowCapture | None = None,
 ) -> dict[str, Any]:
     if name == "list_capabilities":
         return {"ok": True, "capabilities": list_capabilities(registry)}
@@ -263,6 +424,12 @@ def dispatch_tool(
         if not capability_id:
             return {"ok": False, "error": "run_capability requires capability_id"}
         extra = tuple(str(a) for a in (args.get("args") or []))
+        # Record every real capability execution at the execution choke point so
+        # the captured workflow never depends on the streamed-event shape (a
+        # previous streaming refactor risked losing the capture hook that lived
+        # only in the route's on_event filter).
+        if capture is not None:
+            capture.record_capability_call(capability_id, extra)
         try:
             raw = executor.call(
                 capability_id,
@@ -299,6 +466,7 @@ def run_agent_loop(
     audit_log: Any = None,
     event_bus: Any = None,
     max_iters: int = 12,
+    capture: WorkflowCapture | None = None,
 ) -> None:
     env = load_env()
     apply_secret_env(env)
@@ -329,7 +497,61 @@ def run_agent_loop(
 
     for iteration in range(1, max_iters + 1):
         try:
-            response = glm_chat(messages, TOOLS, env)
+            # Streaming consumption of GLM (SSE). We accumulate content/reasoning
+            # incrementally (emitting text/thinking deltas live) and reassemble
+            # tool_call fragments by index across chunks, exactly as the
+            # OpenAI-compatible streaming spec dictates.
+            assistant_content_parts: list[str] = []
+            reasoning_parts: list[str] = []
+            # tool_call fragments keyed by index; first fragment for an index sets
+            # id + function.name, subsequent fragments append to function.arguments.
+            assembled: dict[int, dict[str, Any]] = {}
+            finish: str | None = None
+
+            for chunk in glm_chat_stream(messages, TOOLS, env):
+                if chunk.get("_done"):
+                    # terminal [DONE] sentinel — end of stream
+                    break
+                choices = chunk.get("choices") or []
+                if not choices:
+                    continue
+                choice = choices[0]
+                if choice.get("finish_reason"):
+                    finish = choice["finish_reason"]
+                delta = choice.get("delta") or {}
+
+                content_delta = delta.get("content")
+                if isinstance(content_delta, str) and content_delta:
+                    assistant_content_parts.append(content_delta)
+                    on_event({"type": "text", "delta": content_delta})
+
+                reasoning_delta = delta.get("reasoning_content")
+                if isinstance(reasoning_delta, str) and reasoning_delta:
+                    reasoning_parts.append(reasoning_delta)
+                    on_event({"type": "thinking", "text": "".join(reasoning_parts)[:900]})
+
+                tc_frags = delta.get("tool_calls")
+                if isinstance(tc_frags, list):
+                    for frag in tc_frags:
+                        if not isinstance(frag, dict):
+                            continue
+                        idx = frag.get("index", 0)
+                        slot = assembled.get(idx)
+                        if slot is None:
+                            slot = {
+                                "id": frag.get("id", ""),
+                                "type": "function",
+                                "function": {"name": "", "arguments": ""},
+                            }
+                            assembled[idx] = slot
+                        if frag.get("id") and not slot["id"]:
+                            slot["id"] = frag["id"]
+                        fn = frag.get("function") or {}
+                        if fn.get("name") and not slot["function"]["name"]:
+                            slot["function"]["name"] = fn["name"]
+                        arg_chunk = fn.get("arguments")
+                        if isinstance(arg_chunk, str):
+                            slot["function"]["arguments"] += arg_chunk
         except urllib.error.HTTPError as exc:
             on_event({"type": "error", "error": f"GLM HTTP {exc.code}: {exc.read().decode('utf-8', 'replace')[:300]}"})
             break
@@ -337,17 +559,20 @@ def run_agent_loop(
             on_event({"type": "error", "error": f"{type(exc).__name__}: {exc}"})
             break
 
-        choice = (response.get("choices") or [{}])[0]
-        msg = choice.get("message") or {}
-        finish = choice.get("finish_reason")
-        reasoning = msg.get("reasoning_content")
-        if isinstance(reasoning, str) and reasoning.strip():
-            on_event({"type": "thinking", "text": reasoning[:900]})
+        assistant_content = "".join(assistant_content_parts)
+        tool_calls = [assembled[k] for k in sorted(assembled.keys())]
+        if tool_calls and not tool_calls[0]["function"]["name"]:
+            # a stream that declared tool_calls but never named them is not a
+            # real tool turn — treat as chat so we don't dispatch anonymously.
+            tool_calls = []
 
-        tool_calls = msg.get("tool_calls")
         if tool_calls:
-            # echo the assistant turn (drop reasoning_content) then execute each call
-            messages.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": tool_calls})
+            # Intent = workflow: echo the assistant turn (drop reasoning) then
+            # execute each call exactly as the pre-streaming path did.
+            on_event({"type": "intent", "intent": "workflow"})
+            messages.append(
+                {"role": "assistant", "content": assistant_content, "tool_calls": tool_calls}
+            )
             for call in tool_calls:
                 fn = call.get("function") or {}
                 tool_name = fn.get("name", "")
@@ -365,6 +590,7 @@ def run_agent_loop(
                     permission=permission,
                     audit_log=audit_log,
                     event_bus=event_bus,
+                    capture=capture,
                 )
                 on_event({"type": "tool_result", "name": tool_name, "ok": bool(result.get("ok")), "result": result})
                 messages.append(
@@ -375,11 +601,23 @@ def run_agent_loop(
                         "content": json.dumps(result, ensure_ascii=False)[:6000],
                     }
                 )
+                # cooperation gate: a capability FAILED, OR returned ok=True but reported
+                # an UNHEALTHY/blocked state (status/health probes like caw.status return
+                # ok=True with content {"healthy": false}). Detect either way and PAUSE so
+                # the user can cooperate; on resume GLM re-probes per harness rule 8.
+                coop = _detect_cooperation(result, str(parsed_args.get("capability_id", "")))
+                if coop:
+                    on_event(coop)
+                    on_event({"type": "final", "text": _cooperation_final_text(coop),
+                              "finish_reason": "cooperation_required", "iterations": iteration})
+                    on_event({"type": "done", "ok": False, "waiting_for_cooperation": True,
+                              "blocker_kind": coop["blocker_kind"]})
+                    return
             continue
 
-        # no tool calls -> final answer
-        content = msg.get("content") or ""
-        on_event({"type": "final", "text": content, "finish_reason": finish, "iterations": iteration})
+        # no tool calls -> Intent = chat: pure streamed answer, no bus work.
+        on_event({"type": "intent", "intent": "chat"})
+        on_event({"type": "final", "text": assistant_content, "finish_reason": finish, "iterations": iteration})
         on_event({"type": "done", "ok": True})
         return
 

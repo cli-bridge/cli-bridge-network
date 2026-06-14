@@ -1,0 +1,15 @@
+{
+  "apiVersion": "bridge.dev/v1alpha1",
+  "kind": "ToolManifest",
+  "metadata": {
+    "id": "cbn.jobs.fund",
+    "title": "ERC-8183 Job Fund (escrow)",
+    "labels": {"profile": "cbn-jobs", "category": "job-commerce", "role": "client"},
+    "annotations": {"cbn.usage": "args=['<job_id>']. job_created -> escrow_funded. Onchain fund (testnet USDC escrow) is caw.erc8183.fund."}
+  },
+  "spec": {
+    "transport": {"kind": "stdio", "command": "python", "argsTemplate": ["-m", "cbn_jobs", "fund"], "cwdPolicy": "workspace", "timeoutSeconds": 30},
+    "policy": {"risk": "read", "requiresConfirmation": false, "network": "deny"},
+    "output": {"parserRef": "direct-cli.typed", "verified": true}
+  }
+}
