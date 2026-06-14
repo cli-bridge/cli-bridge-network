@@ -45,13 +45,14 @@ class FavoriteStore:
         workflow: dict[str, Any],
         source_thread_id: str | None = None,
         labels: dict[str, Any] | None = None,
+        favorite: bool = True,
     ) -> dict[str, Any]:
         record: dict[str, Any] = {
             "card_id": card_id,
-            "title": title or "收藏工作流",
+            "title": title or "工作流",
             "workflow": workflow,
             "source_thread_id": source_thread_id,
-            "favorite": True,
+            "favorite": favorite,
             "created_at": now_iso(),
             "labels": labels or {},
         }
@@ -63,6 +64,7 @@ class FavoriteStore:
         thread_store: Any,
         thread_id: str,
         title: str | None = None,
+        favorite: bool = True,
     ) -> dict[str, Any] | None:
         thread = thread_store.get(thread_id)
         if thread is None or not thread.get("captured_workflow"):
@@ -75,10 +77,11 @@ class FavoriteStore:
         card_id = str(uuid.uuid4())
         card = self.save(
             card_id,
-            title or thread.get("title") or "收藏工作流",
+            title or thread.get("title") or "工作流",
             thread["captured_workflow"],
             source_thread_id=thread_id,
             labels={"source": "agent-run"},
+            favorite=favorite,
         )
         thread_store.set_card_id(thread_id, card_id)
         return card

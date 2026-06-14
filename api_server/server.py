@@ -145,6 +145,7 @@ ROUTE_SUMMARY = [
     {"method": "POST", "path": "/threads/delete"},
     {"method": "POST", "path": "/favorites"},
     {"method": "POST", "path": "/favorites/delete"},
+    {"method": "POST", "path": "/cards/save"},
     {"method": "POST", "path": "/mcp-ingress/connect"},
     {"method": "POST", "path": "/mcp-ingress/disconnect"},
     {"method": "POST", "path": "/runtime/transports/gate"},
@@ -708,6 +709,9 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
         if self.path == "/favorites":
             _post_favorite_promote(self, payload)
             return True
+        if self.path == "/cards/save":
+            _post_card_save(self, payload)
+            return True
         if self.path == "/favorites/delete":
             _post_favorite_delete(self, payload)
             return True
@@ -991,8 +995,9 @@ def _workflow_task_count(workflow: dict[str, Any] | None) -> int:
 
 
 def _build_card_rows(runtime: Any) -> list[dict[str, Any]]:
-    """Draft cards (threads with a captured workflow, not yet favorited) + favorite cards."""
+    """Draft (thread-captured, not saved) + saved (store, favorite=false) + favorite cards."""
     cards: list[dict[str, Any]] = []
+    # Drafts: threads with captured_workflow, not yet promoted to the store
     for row in runtime.thread_store.list(limit=100):
         if not row.get("has_workflow"):
             continue
@@ -1006,17 +1011,21 @@ def _build_card_rows(runtime: Any) -> list[dict[str, Any]]:
                 "title": thread.get("title") or "草稿工作流",
                 "workflow": workflow,
                 "favorite": False,
+                "state": "draft",
                 "source_thread_id": thread["thread_id"],
                 "task_count": _workflow_task_count(workflow),
             }
         )
+    # Saved (favorite=false) + Favorites (favorite=true) from the store
     for fav in runtime.favorite_store.list_full(limit=100):
+        is_fav = bool(fav.get("favorite", True))
         cards.append(
             {
                 "card_id": fav["card_id"],
-                "title": fav.get("title") or "收藏工作流",
+                "title": fav.get("title") or "工作流",
                 "workflow": fav["workflow"],
-                "favorite": True,
+                "favorite": is_fav,
+                "state": "favorite" if is_fav else "saved",
                 "source_thread_id": fav.get("source_thread_id"),
                 "task_count": _workflow_task_count(fav["workflow"]),
             }
@@ -1055,6 +1064,22 @@ def _post_favorite_delete(handler: CbnRequestHandler, payload: dict[str, Any]) -
     runtime = build_runtime()
     deleted = runtime.favorite_store.delete(card_id)
     handler._send(200, {"deleted": deleted, "card_id": card_id})
+
+
+def _post_card_save(handler: CbnRequestHandler, payload: dict[str, Any]) -> None:
+    """Save a draft (thread-captured) workflow to the board (favorite=false)."""
+    thread_id = str(payload.get("thread_id", ""))
+    if not thread_id:
+        handler._send_error(400, "bad_request", "thread_id is required")
+        return
+    runtime = build_runtime()
+    card = runtime.favorite_store.promote_from_thread(
+        runtime.thread_store, thread_id, title=payload.get("title"), favorite=False
+    )
+    if card is None:
+        handler._send_error(404, "not_found", "thread has no captured workflow to save")
+        return
+    handler._send(200, card)
 
 
 def _get_mcp_ingress_servers(handler: CbnRequestHandler, query: dict[str, list[str]], runtime: Any) -> None:

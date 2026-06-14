@@ -262,6 +262,13 @@ export class StudioApi {
     return (await this.post("/favorites", { thread_id: threadId, title })) as Record<string, unknown>;
   }
 
+  /** Save a draft to the board (favorite=false — appears on whiteboard, not left panel). */
+  async saveCardToBoard(threadId: string, title?: string): Promise<Record<string, unknown>> {
+    const body: Record<string, unknown> = { thread_id: threadId };
+    if (title) body.title = title;
+    return (await this.post("/cards/save", body)) as Record<string, unknown>;
+  }
+
   async deleteFavorite(cardId: string): Promise<unknown> {
     return this.post("/favorites/delete", { card_id: cardId });
   }

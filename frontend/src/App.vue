@@ -938,8 +938,12 @@ function startNewThread() {
 }
 
 // Workflow cards (drafts from threads + favorites) — each card IS a workflow graph.
-const favoriteCards = computed(() => cardRows.value.filter((c) => c.favorite));
-const draftCards = computed(() => cardRows.value.filter((c) => !c.favorite));
+// 3-state card model: draft (thread-captured, not saved) → saved (on board) → favorite (left panel)
+const boardCards = computed(() => cardRows.value.filter((c) => String(c.state) === "saved" || String(c.state) === "favorite"));
+const draftCards = computed(() => cardRows.value.filter((c) => String(c.state) === "draft"));
+const favoriteCards = computed(() => cardRows.value.filter((c) => String(c.state) === "favorite"));
+const showSavePrompt = ref(false);
+const pendingSaveThreadId = ref("");
 
 async function loadCards() {
   try {
@@ -962,6 +966,22 @@ async function favoriteCard(card: Record<string, unknown>) {
     await loadCards();
   } catch (err) {
     notify("收藏失败", err instanceof Error ? err.message : String(err), "warning");
+  }
+}
+
+// R4a: save a draft to the board (state draft → saved, favorite=false).
+async function saveToBoard(threadId?: string) {
+  const tid = threadId ?? pendingSaveThreadId.value;
+  if (!tid) return;
+  try {
+    await api.value.saveCardToBoard(tid);
+    notify("已保存", "工作流已保存到白板", "success");
+    await loadCards();
+  } catch (err) {
+    notify("保存失败", err instanceof Error ? err.message : String(err), "warning");
+  } finally {
+    showSavePrompt.value = false;
+    pendingSaveThreadId.value = "";
   }
 }
 
@@ -1164,6 +1184,12 @@ async function runAgentTurn() {
     agentRunning.value = false;
     void loadThreads();
     void loadCards();
+    // R4a: "工作流已生成，是否保存？" popup when the run captured a workflow
+    const wfCaptured = agentEvents.value.some((e) => e.type === "workflow_captured");
+    if (wfCaptured && currentThreadId.value) {
+      pendingSaveThreadId.value = currentThreadId.value;
+      showSavePrompt.value = true;
+    }
   }
 }
 
@@ -1984,6 +2010,7 @@ onUnmounted(() => {
           </div>
           <div class="toolbar-actions">
             <button type="button" title="刷新卡片" @click="loadCards()"><RefreshCw :size="14" /> 刷新</button>
+            <button type="button" title="查看草稿工作流" @click="currentView = 'draft'; void loadCards()"><Archive :size="14" /> 草稿 ({{ draftCards.length }})</button>
             <button type="button" title="缩小白板" @click="setBoardZoom(zoom - 10)">-</button>
             <strong>{{ zoom }}%</strong>
             <button type="button" title="放大白板" @click="setBoardZoom(zoom + 10)">+</button>
@@ -1996,7 +2023,7 @@ onUnmounted(() => {
           <!-- WHITEBOARD VIEW (主页无界白板：卡片自由摆放 + 整体缩放) -->
           <div v-if="currentView === 'whiteboard'" class="whiteboard-viewport" :style="whiteboardViewportStyle" @wheel="onWhiteboardWheel">
             <article
-              v-for="(card, idx) in cardRows"
+              v-for="(card, idx) in boardCards"
               :key="String(card.card_id)"
               class="wb-card"
               :style="cardBoardPos(String(card.card_id), idx)"
@@ -2006,7 +2033,7 @@ onUnmounted(() => {
               <canvas class="card-mini-graph" :data-card-id="String(card.card_id)" aria-label="workflow graph" />
               <div class="wb-card-body">
                 <strong>{{ card.title }}</strong>
-                <small>{{ Number(card.task_count ?? 0) }} 节点 · {{ card.favorite ? "收藏" : "草稿" }}</small>
+                <small>{{ Number(card.task_count ?? 0) }} 节点 · {{ card.state === "favorite" ? "收藏" : "已保存" }}</small>
               </div>
               <div class="wb-card-actions" @pointerdown.stop>
                 <button type="button" @click="openCardDetail(card)">展开</button>
@@ -2025,6 +2052,29 @@ onUnmounted(() => {
               <button type="button" v-if="activeCard" @click="reuseCard(activeCard)"><Play :size="14" /> 运行</button>
             </header>
             <canvas ref="cardGraphCanvasEl" class="card-detail-graph" aria-label="card workflow graph" />
+          </div>
+
+          <!-- DRAFT VIEW (separate page: thread-captured workflows not yet saved) -->
+          <div v-else-if="currentView === 'draft'" class="draft-view">
+            <header class="card-detail-head">
+              <button type="button" @click="currentView = 'whiteboard'"><ChevronDown :size="16" /> 返回白板</button>
+              <strong>草稿工作流 · {{ draftCards.length }}</strong>
+            </header>
+            <div class="draft-list nav-scroll">
+              <article v-for="card in draftCards" :key="String(card.card_id)" class="draft-card-row">
+                <canvas class="card-mini-graph" :data-card-id="String(card.card_id)" />
+                <div class="draft-card-body">
+                  <strong>{{ card.title }}</strong>
+                  <small>{{ Number(card.task_count ?? 0) }} 节点 · 草稿</small>
+                </div>
+                <div class="draft-card-actions" @pointerdown.stop>
+                  <button type="button" @click="saveToBoard(String(card.source_thread_id))">保存到白板</button>
+                  <button type="button" @click="favoriteCard(card)">★ 收藏</button>
+                  <button type="button" @click="openCardDetail(card)">展开</button>
+                </div>
+              </article>
+              <span v-if="!draftCards.length" class="wb-empty" style="position: static; transform: none; padding: 24px">暂无草稿。跟 Agent 对话跑通后会自动生成。</span>
+            </div>
           </div>
 
 
@@ -2434,6 +2484,17 @@ onUnmounted(() => {
         </header>
         <pre>{{ shortJson({ health, workflowList, workflow, contract, runResult, demoReport, agentBundle, workflowRequestPlan, toolCallPlan, connectPackage, directQuickstart, entryProfile, networkHarnessAgent, directAcceptance, importCatalog, directCliReadiness, protocolWireReport, networkVerifyReport }) }}</pre>
       </aside>
+    </div>
+
+    <div v-if="showSavePrompt" class="save-prompt-overlay" @click.self="showSavePrompt = false">
+      <div class="save-prompt">
+        <strong>工作流已生成</strong>
+        <p>是否保存到白板？</p>
+        <div class="save-prompt-actions">
+          <button type="button" class="cm-install" @click="saveToBoard()">保存</button>
+          <button type="button" @click="showSavePrompt = false">稍后</button>
+        </div>
+      </div>
     </div>
 
     <div class="toast-stack" aria-live="polite" aria-atomic="false">

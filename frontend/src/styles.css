@@ -1183,6 +1183,105 @@ pre {
   background: transparent;
 }
 
+/* Draft view (R4a): separate page for thread-captured workflows not yet saved */
+.draft-view {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: 44px minmax(0, 1fr);
+  background: #0a0f18;
+}
+
+.draft-list {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 16px;
+}
+
+.draft-card-row {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 10px;
+}
+
+.draft-card-body {
+  display: grid;
+  gap: 2px;
+}
+
+.draft-card-body strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.draft-card-body small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.draft-card-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.draft-card-actions button {
+  min-height: 26px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+
+/* "工作流已生成，是否保存？" prompt */
+.save-prompt-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(6px);
+}
+
+.save-prompt {
+  display: grid;
+  gap: 10px;
+  padding: 24px 28px;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background: rgba(13, 22, 35, 0.96);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+  text-align: center;
+}
+
+.save-prompt strong {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.save-prompt p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.save-prompt-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.save-prompt-actions button {
+  min-height: 32px;
+  padding: 0 20px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
 
 .floating-card,
 .workflow-stage {
