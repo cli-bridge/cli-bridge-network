@@ -344,6 +344,9 @@ const mcpIngressServers = ref<Array<Record<string, unknown>>>([]);
 const mcpIngressCommand = ref("python");
 const mcpIngressArgs = ref("-m cbn mcp serve --stdio");
 const mcpIngressBusy = ref(false);
+const registerEvents = ref<Array<Record<string, unknown>>>([]);
+const registerRunning = ref(false);
+const registerMessage = ref("");
 const installingName = ref("");
 const installLines = ref<string[]>([]);
 const permissionMode = ref<PermissionMode>("full");
@@ -1239,6 +1242,23 @@ async function disconnectMcpIngress(serverId: string) {
     await loadMcpIngressServers();
   } catch (err) {
     notify("MCP 入口", String(err), "warning");
+  }
+}
+
+// F1: Registration Agent — interactive probe→install→generate-manifest→register.
+async function runRegisterTurn() {
+  if (registerRunning.value || !registerMessage.value.trim()) return;
+  const message = registerMessage.value.trim();
+  registerRunning.value = true;
+  registerEvents.value = [{ type: "user", text: message }];
+  try {
+    await api.value.registerAgent(message, (event) => {
+      registerEvents.value = [...registerEvents.value, event];
+    });
+  } catch (err) {
+    registerEvents.value = [...registerEvents.value, { type: "error", error: String(err) }];
+  } finally {
+    registerRunning.value = false;
   }
 }
 
@@ -2426,6 +2446,30 @@ onUnmounted(() => {
             <span><strong>{{ srv.server_id }}</strong><small>{{ String(srv.command) }} · {{ srv.connected ? "已连接" : "离线" }} · {{ Number(srv.tool_count ?? 0) }} 工具</small></span>
             <button type="button" @click="disconnectMcpIngress(String(srv.server_id))">断开</button>
           </div>
+        </div>
+      </div>
+      <!-- F1: Registration Agent (probe→install→manifest IR→register) -->
+      <div class="register-agent">
+        <header><span>注册助手</span><strong>Registration Agent · 自然语言注册 CLI</strong></header>
+        <div class="register-feed nav-scroll">
+          <template v-for="(ev, idx) in registerEvents" :key="idx">
+            <p v-if="ev.type === 'user'" class="ev-user"><b>你</b> {{ ev.text }}</p>
+            <p v-else-if="ev.type === 'thinking'" class="ev-think"><b>思考</b> {{ ev.text }}</p>
+            <div v-else-if="ev.type === 'tool_call'" class="ev-tool">
+              <TerminalSquare :size="14" /><strong>{{ ev.name }}</strong><code>{{ JSON.stringify(ev.args) }}</code>
+            </div>
+            <div v-else-if="ev.type === 'tool_result'" class="ev-result" :class="{ ok: ev.ok }">
+              <span>{{ ev.ok ? '✓' : '✗' }} {{ ev.name }}</span>
+              <small>{{ agentEventSummary(ev.result) }}</small>
+            </div>
+            <p v-else-if="ev.type === 'final'" class="ev-final"><b>注册 Agent</b> {{ ev.text }}</p>
+            <p v-else-if="ev.type === 'error'" class="ev-error"><b>错误</b> {{ ev.error }}</p>
+          </template>
+          <span v-if="!registerEvents.length" class="wb-empty" style="position:static;transform:none;padding:12px">描述你想注册的 CLI（如"注册 obsidian"），Agent 会自动搜索→安装→生成 Manifest IR→注册。</span>
+        </div>
+        <div class="register-composer">
+          <input v-model="registerMessage" placeholder="如：注册一个 obsidian CLI" @keyup.enter="runRegisterTurn()" />
+          <button type="button" :disabled="registerRunning" @click="runRegisterTurn()">{{ registerRunning ? "运行中…" : "注册" }}</button>
         </div>
       </div>
       <div v-if="installingName || installLines.length" class="cli-market-log">

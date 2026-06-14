@@ -57,6 +57,7 @@ from cbn_adapter_agent.orchestrator import (
 )
 from cbn_adapter_agent.tool_use import run_setup_tool, store_session_secret
 from cbn_adapter_agent.real_loop import run_agent_loop
+from cbn_adapter_agent.register_loop import run_register_loop
 from cbn_threads.workflow_capture import WorkflowCapture
 from cbn_adapter_agent.tool_call_plan import build_agent_tool_call_plan
 from cbn_adapter_agent.workflow_request import build_agent_workflow_request_plan
@@ -142,6 +143,7 @@ ROUTE_SUMMARY = [
     {"method": "POST", "path": "/adapter-agent/tool-call-plan"},
     {"method": "POST", "path": "/adapter-agent/tool-use"},
     {"method": "POST", "path": "/adapter-agent/run"},
+    {"method": "POST", "path": "/register-agent/run"},
     {"method": "POST", "path": "/threads/delete"},
     {"method": "POST", "path": "/favorites"},
     {"method": "POST", "path": "/favorites/delete"},
@@ -446,6 +448,26 @@ class CbnRequestHandler(BaseHTTPRequestHandler):
                     # invalid capture (e.g. empty) — skip silently; the run still succeeded
                     pass
         except Exception as exc:  # keep the stream well-formed even on a loop crash
+            self._write_stream_event({"type": "error", "error": f"{type(exc).__name__}: {exc}"})
+            self._write_stream_event({"type": "done", "ok": False})
+
+    def _handle_register_agent_run(self, payload: dict[str, Any]) -> None:
+        """Registration Agent: GLM function-calling → probe/install/generate-manifest/register."""
+        message = payload.get("message", "")
+        if not isinstance(message, str) or not message.strip():
+            self._send_error(400, "bad_request", "message must be a non-empty string")
+            return
+        runtime = build_runtime()
+        hub = CliAnythingHub()
+        self._send_stream_headers()
+        try:
+            run_register_loop(
+                message=message,
+                hub=hub,
+                registry=runtime.registry,
+                on_event=self._write_stream_event,
+            )
+        except Exception as exc:
             self._write_stream_event({"type": "error", "error": f"{type(exc).__name__}: {exc}"})
             self._write_stream_event({"type": "done", "ok": False})
 
@@ -1418,6 +1440,10 @@ def _post_adapter_agent_run(handler: CbnRequestHandler, payload: dict[str, Any])
     handler._handle_adapter_agent_run(payload)
 
 
+def _post_register_agent_run(handler: CbnRequestHandler, payload: dict[str, Any]) -> None:
+    handler._handle_register_agent_run(payload)
+
+
 _ADAPTER_AGENT_POST_ROUTES = {
     "/adapter-agent/orchestrate": _post_adapter_orchestrate,
     "/adapter-agent/orchestrate-stream": _post_adapter_orchestrate_stream,
@@ -1425,6 +1451,7 @@ _ADAPTER_AGENT_POST_ROUTES = {
     "/adapter-agent/workflow-request-plan": _post_adapter_workflow_request_plan,
     "/adapter-agent/tool-use": _post_adapter_tool_use,
     "/adapter-agent/run": _post_adapter_agent_run,
+    "/register-agent/run": _post_register_agent_run,
 }
 
 
