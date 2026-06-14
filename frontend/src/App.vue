@@ -332,6 +332,7 @@ const agentEvents = ref<Array<Record<string, unknown>>>([]);
 const agentRunning = ref(false);
 const showLiveBuild = ref(false);
 const liveGraphCanvasEl = ref<HTMLCanvasElement | null>(null);
+const authKeyInput = ref("");
 let liveGraph: StudioGraph | null = null;
 const conversationThreadsReal = ref<ConversationThread[]>([]);
 const currentThreadId = ref("");
@@ -1161,6 +1162,28 @@ function agentEventSummary(result: unknown): string {
     return `artifact: ${first?.artifact_id ?? ""}`;
   }
   return JSON.stringify(r).slice(0, 160);
+}
+
+// F2: detect auth/key errors in tool_result events → render an inline key input.
+const AUTH_PATTERN = /api.?key.?required|obsidian_api_key|login|未登录|not.*logged|auth.*required|account_permission|needs? attention/i;
+function isAuthResult(ev: Record<string, unknown>): boolean {
+  if (ev.type !== "tool_result") return false;
+  const r = ev.result as Record<string, unknown> | undefined;
+  if (!r) return false;
+  const text = `${r.stdout ?? ""} ${r.stderr ?? ""} ${r.reason ?? ""} ${r.error ?? ""}`;
+  return AUTH_PATTERN.test(String(text));
+}
+
+async function provideObsidianKey() {
+  const key = authKeyInput.value.trim();
+  if (!key) return;
+  try {
+    await api.value.storeSecret("OBSIDIAN_API_KEY", key);
+    notify("密钥已设置", "OBSIDIAN_API_KEY 已存入会话。请重新运行 Agent。", "success");
+    authKeyInput.value = "";
+  } catch (err) {
+    notify("设置失败", err instanceof Error ? err.message : String(err), "warning");
+  }
 }
 
 // Drive the REAL built-in Workflow Agent loop (GLM function-calling -> real CBN bus).
@@ -2137,6 +2160,11 @@ onUnmounted(() => {
                 <div v-else-if="ev.type === 'tool_result'" class="ev-result" :class="{ ok: ev.ok }">
                   <span>{{ ev.ok ? '✓' : '✗' }} {{ ev.name }}</span>
                   <small>{{ agentEventSummary(ev.result) }}</small>
+                </div>
+                <div v-if="isAuthResult(ev)" class="ev-auth-ask" @pointerdown.stop>
+                  <span>🔑 需要 OBSIDIAN_API_KEY</span>
+                  <input v-model="authKeyInput" placeholder="粘贴 API key…" />
+                  <button type="button" @click="provideObsidianKey()">设置</button>
                 </div>
                 <p v-else-if="ev.type === 'final'" class="ev-final"><b>Agent</b> {{ ev.text }}</p>
                 <p v-else-if="ev.type === 'error'" class="ev-error"><b>错误</b> {{ ev.error }}</p>

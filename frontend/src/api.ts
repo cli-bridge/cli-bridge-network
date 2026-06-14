@@ -269,6 +269,11 @@ export class StudioApi {
     return (await this.post("/cards/save", body)) as Record<string, unknown>;
   }
 
+  /** Store a session secret (e.g. OBSIDIAN_API_KEY) via the adapter-agent tool-use route. */
+  async storeSecret(name: string, value: string): Promise<unknown> {
+    return this.post("/adapter-agent/tool-use", { action: "store-secret", name, value });
+  }
+
   /** Registration Agent: stream probe→install→manifest→register as NDJSON. */
   async registerAgent(message: string, onEvent: (event: Record<string, unknown>) => void): Promise<void> {
     const headers = new Headers({ "Content-Type": "application/json" });

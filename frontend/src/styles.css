@@ -1460,6 +1460,46 @@ pre {
   animation: cbnPulse 1s ease-in-out infinite;
 }
 
+/* F2: inline auth-ask (key input) when a tool_result needs a credential */
+.message-feed .ev-auth-ask {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(242, 184, 91, 0.4);
+  border-radius: 8px;
+  background: rgba(242, 184, 91, 0.08);
+  padding: 8px 10px;
+}
+
+.message-feed .ev-auth-ask span {
+  color: var(--amber);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.message-feed .ev-auth-ask input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel-soft);
+  padding: 0 8px;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.message-feed .ev-auth-ask button {
+  min-height: 26px;
+  padding: 0 12px;
+  border-color: rgba(242, 184, 91, 0.5);
+  background: rgba(242, 184, 91, 0.16);
+  color: #f5cf86;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 @keyframes cbnPulse {
   0%, 100% { opacity: 0.35; }
   50% { opacity: 1; }
