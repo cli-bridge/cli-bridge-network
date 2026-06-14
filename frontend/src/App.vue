@@ -367,20 +367,54 @@ const whiteboardViewportStyle = computed(() => ({
   transform: `translate(${whiteboardPan.x}px, ${whiteboardPan.y}px) scale(${whiteboardZoom.value})`,
 }));
 
+// The Workflow Agent is itself a whiteboard element: world-coord positioned + scales
+// with the whiteboard zoom (same transform as the viewport), WITHOUT nesting it (keeps
+// its existing drag/resize plumbing intact). Its header drag uses startCardDrag so the
+// delta is converted to world coords.
+const agentBoardStyle = computed(() => {
+  const p = cardPositions.value["__agent"] ?? { x: 200, y: -140 };
+  return {
+    left: "0px",
+    top: "0px",
+    transformOrigin: "0 0",
+    transform: `translate(${whiteboardPan.x + p.x * whiteboardZoom.value}px, ${whiteboardPan.y + p.y * whiteboardZoom.value}px) scale(${whiteboardZoom.value})`,
+  } as Record<string, string>;
+});
+
 function cardBoardPos(cardId: string, idx: number): { left: string; top: string } {
   const stored = cardPositions.value[cardId];
   if (stored) return { left: `${stored.x}px`, top: `${stored.y}px` };
-  // default scatter so cards don't stack
+  // default scatter around the world origin (0,0) so content stays centered on zoom
   const col = idx % 3;
   const row = Math.floor(idx / 3);
-  return { left: `${120 + col * 300}px`, top: `${100 + row * 200}px` };
+  return { left: `${-280 + col * 300}px`, top: `${-130 + row * 190}px` };
+}
+
+function boardCenter(): { cx: number; cy: number } {
+  const el = canvasSurfaceEl.value;
+  return { cx: (el?.clientWidth ?? viewportW.value) / 2, cy: (el?.clientHeight ?? 600) / 2 };
+}
+
+function centerWhiteboard(): void {
+  // place world origin (0,0) at the viewport center => cards (around origin) appear centered
+  const { cx, cy } = boardCenter();
+  whiteboardPan.x = cx;
+  whiteboardPan.y = cy;
 }
 
 function onWhiteboardWheel(e: WheelEvent): void {
   e.preventDefault();
+  const { cx, cy } = boardCenter();
   const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
-  whiteboardZoom.value = Math.min(5, Math.max(0.1, whiteboardZoom.value * factor));
-  zoom.value = Math.round(whiteboardZoom.value * 100);
+  const newZoom = Math.min(5, Math.max(0.1, whiteboardZoom.value * factor));
+  // world point currently under the viewport center
+  const wx = (cx - whiteboardPan.x) / whiteboardZoom.value;
+  const wy = (cy - whiteboardPan.y) / whiteboardZoom.value;
+  // keep that world point at the center after zoom
+  whiteboardPan.x = cx - wx * newZoom;
+  whiteboardPan.y = cy - wy * newZoom;
+  whiteboardZoom.value = newZoom;
+  zoom.value = Math.round(newZoom * 100);
 }
 
 function startCardDrag(e: PointerEvent, cardId: string): void {
@@ -1678,6 +1712,7 @@ onMounted(async () => {
   void loadThreads();
   void loadCards();
   mountStudioGraph();
+  void nextTick(() => centerWhiteboard());
 });
 
 onUnmounted(() => {
@@ -1911,8 +1946,8 @@ onUnmounted(() => {
           </div>
 
 
-          <section ref="agentConsoleEl" data-draggable-card :class="['agent-console', 'floating-card', agentPanelMode, { dragged: draggableCards.agent.hasDragged.value && agentPanelMode === 'floating' }]" :style="draggableCards.agent.style.value">
-            <header class="drag-handle" @pointerdown="draggableCards.agent.startDrag">
+          <section ref="agentConsoleEl" :class="['agent-console', 'floating-card', agentPanelMode]" :style="agentBoardStyle">
+            <header class="drag-handle" @pointerdown="startCardDrag($event, '__agent')">
               <div>
                 <span>Workflow Orchestration Agent</span>
                 <strong>Z.ai Streaming Agent</strong>
@@ -1959,27 +1994,6 @@ onUnmounted(() => {
             <div v-if="agentPanelMode !== 'minimized'" class="composer">
               <input v-model="config.agentMessage" aria-label="Agent message" @keyup.enter="runAgentTurn()" />
               <button type="button" :disabled="agentRunning" :title="agentRunning ? '运行中…' : '运行 Agent（真实）'" @click="runAgentTurn()"><Play :size="14" /></button>
-            </div>
-          </section>
-
-          <section ref="detailPopoverEl" data-draggable-card class="detail-popover floating-card" :style="draggableCards.detail.style.value">
-            <header class="drag-handle" @pointerdown="draggableCards.detail.startDrag">
-              <div>
-                <span>工作流详情</span>
-                <strong>{{ selectedWorkflow.title }}</strong>
-              </div>
-              <button type="button" @pointerdown.stop @click="runWorkflow()"><Play :size="14" /> 运行</button>
-            </header>
-            <div class="detail-grid">
-              <div><span>Route Ready</span><strong>{{ routeReadyCount }}/{{ bridgeRouteCount }}</strong></div>
-              <div><span>Agent Cards</span><strong>{{ agentCards.length }}</strong></div>
-              <div><span>Tasks</span><strong>{{ tasks.length }}</strong></div>
-              <div><span>Artifacts</span><strong>{{ artifactRows.length }}</strong></div>
-            </div>
-            <div class="detail-tags">
-              <code>{{ config.dryRun ? "dry-run" : "live" }}</code>
-              <code>{{ config.confirmed ? "confirmed" : "approval required" }}</code>
-              <code>{{ permissionMode }}</code>
             </div>
           </section>
 
